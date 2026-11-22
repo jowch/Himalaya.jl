@@ -9,6 +9,7 @@ export interface CompareChip {
   color: string;
   scale: CompareScale | undefined;
   hidden?: boolean;
+  setup?: string | undefined;
 }
 
 interface Props {
@@ -46,7 +47,7 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
             <button
               type="button"
               aria-pressed={!off}
-              {...(off ? { "aria-label": `${c.name}, hidden` } : {})}
+              {...(off || c.setup ? { "aria-label": [c.name, c.setup, off ? "hidden" : undefined].filter(Boolean).join(", ") } : {})}
               aria-description={sub ? "Subtracted from the current trace" : undefined}
               data-subtracted={sub ? "" : undefined}
               title={`Click to ${off ? "show" : "hide"}. ${modKey}-click to ${sub ? "stop subtracting" : "subtract from the current trace"}.`}
@@ -57,6 +58,7 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
               className={"min-w-0 truncate text-ink" + dim}
             >
               {c.name}
+              {c.setup && <span className="text-ink-faint"> {c.setup}</span>}
             </button>
             {c.scale !== undefined && (
               <span

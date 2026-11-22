@@ -7,6 +7,7 @@ interface Props {
   onPick: (id: number) => void;
   onClose: () => void;
   notes?: ReadonlyMap<number, string>;
+  setups?: ReadonlyMap<number, string>;
   full?: string | undefined;
 }
 
@@ -15,6 +16,7 @@ export function ComparePicker({
   onPick,
   onClose,
   notes,
+  setups,
   full,
 }: Props): JSX.Element {
   const [q, setQ] = useState("");
@@ -31,8 +33,8 @@ export function ComparePicker({
   const shown = useMemo(() => {
     if (full) return [];
     const f = q.trim().toLowerCase();
-    return f ? samples.filter((s) => s.name.toLowerCase().includes(f)) : samples;
-  }, [samples, q, full]);
+    return f ? samples.filter((s) => `${s.name} ${setups?.get(s.id) ?? ""}`.toLowerCase().includes(f)) : samples;
+  }, [samples, q, full, setups]);
   const pick = (s: CorpusSample | undefined): void => {
     if (!s) return;
     onPick(s.id);
@@ -66,7 +68,7 @@ export function ComparePicker({
             <button
               type="button"
               data-sample-id={s.id}
-              aria-label={notes?.get(s.id) ? `${s.name}, ${notes.get(s.id)}` : undefined}
+              aria-label={notes?.get(s.id) || setups?.get(s.id) ? [s.name, setups?.get(s.id), notes?.get(s.id)].filter(Boolean).join(", ") : undefined}
               tabIndex={-1}
               aria-current={i === cursor ? "true" : undefined}
               onMouseEnter={() => highlight.setAt(i)}
@@ -75,6 +77,7 @@ export function ComparePicker({
               className={"flex w-full items-baseline gap-2 px-3 py-1 text-left text-body " + (i === cursor ? "bg-row-cursor" : "")}
             >
               <span className="min-w-0 flex-1 truncate">{s.name}</span>
+              {setups?.get(s.id) && <span className="max-w-24 shrink-0 truncate text-caption text-ink-faint">{setups.get(s.id)}</span>}
               {notes?.get(s.id) && <span className="shrink-0 text-caption">{notes.get(s.id)}</span>}
             </button>
           </li>

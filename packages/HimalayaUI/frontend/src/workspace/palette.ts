@@ -1,4 +1,5 @@
 import { type CorpusSample, type IndexEntry, type LabelColor } from "../api";
+import { joinHints } from "../lib/sample/setupTags";
 import { cleanLabel, labelColorIsFixed, sameLabel, USER_LABEL_COLORS } from "../lib/labels";
 import type { PlotView, PlotViewOption } from "./plotView";
 import { latticeParam } from "./indexing";
@@ -67,6 +68,7 @@ export interface WorkspacePaletteInput extends AppActions {
   history: { undo: string | undefined; redo: string | undefined; run: (dir: "undo" | "redo") => void };
   samples: readonly CorpusSample[];
   goSample: (id: number) => void;
+  setupOf?: ((id: number) => string | undefined) | undefined;
 }
 
 const THEMES: readonly { theme: AppTheme; name: string }[] = [
@@ -216,7 +218,7 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
       arg: "Sample",
       deep: true,
       empty: p.compare.full ?? "No other samples.",
-      items: p.compare.full ? [] : p.compare.samples.map((s) => ({ id: `compare-${s.id}`, label: s.name, hint: p.compare.notes.get(s.id), run: () => p.compare.pick(s.id) })),
+      items: p.compare.full ? [] : p.compare.samples.map((s) => ({ id: `compare-${s.id}`, label: s.name, hint: joinHints(p.setupOf?.(s.id), p.compare.notes.get(s.id)), run: () => p.compare.pick(s.id) })),
     },
     view: {
       title: "Plot view",
@@ -234,7 +236,7 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
       items: p.compare.subtractable.map((s) => ({
         id: `subtract-${s.id}`,
         label: s.name,
-        hint: s.id === p.compare.subtracted ? "Subtracted, Enter stops" : undefined,
+        hint: joinHints(p.setupOf?.(s.id), s.id === p.compare.subtracted ? "Subtracted, Enter stops" : undefined),
         run: () => p.compare.subtract(s.id),
       })),
     };
@@ -244,7 +246,7 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
       title: "Stop comparing",
       arg: "Sample",
       deep: true,
-      items: p.compare.compared.map((s) => ({ id: `uncompare-${s.id}`, label: s.name, run: () => p.compare.remove(s.id) })),
+      items: p.compare.compared.map((s) => ({ id: `uncompare-${s.id}`, label: s.name, hint: p.setupOf?.(s.id), run: () => p.compare.remove(s.id) })),
     };
   }
   if (p.settings) pages.settings = settingsPage(p.settings);
@@ -254,7 +256,7 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
       arg: "Sample",
       deep: true,
       empty: "No other samples.",
-      items: p.bridge.samples.map((s) => ({ id: `bridge-${s.id}`, label: s.name, run: () => p.bridge.pick(s.id) })),
+      items: p.bridge.samples.map((s) => ({ id: `bridge-${s.id}`, label: s.name, hint: p.setupOf?.(s.id), run: () => p.bridge.pick(s.id) })),
     };
     if (p.candidates.list.length > 0) {
       pages.tick = {
@@ -341,7 +343,7 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
     { title: "Plot", items: plot },
     { title: "Experiment", items: experiment },
     { title: "App", items: app },
-    { title: "Samples", searchOnly: true, items: p.samples.map((s) => ({ id: `go-${s.id}`, label: `Go to ${s.name}`, name: s.name, run: () => p.goSample(s.id) })) },
+    { title: "Samples", searchOnly: true, items: p.samples.map((s) => ({ id: `go-${s.id}`, label: `Go to ${s.name}`, name: s.name, hint: p.setupOf?.(s.id), run: () => p.goSample(s.id) })) },
   ];
   return { groups, pages };
 }

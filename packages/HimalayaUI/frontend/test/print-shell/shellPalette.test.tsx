@@ -97,6 +97,23 @@ describe("the palette on the pages outside the workspace", () => {
     expect(location).toBe("/experiments/1/workspace/11");
   });
 
+  it("names the setup of a sample when its experiment shows more than one", async () => {
+    const st = (id: number, name: string, included = true) => ({ id, experiment_id: 1, folder: name, display_name: null, name, position: id, included, root_dir: "", data_dir: "", analysis_dir: "" });
+    vi.spyOn(api, "listExperiments").mockResolvedValue([
+      { ...experiment(1, "Lipids"), setups: [st(1, "setup1"), st(2, "setup2")] },
+      { ...experiment(2, "Peptides"), setups: [st(3, "only"), st(4, "off", false)] },
+    ] as Experiment[]);
+    vi.spyOn(api, "listCorpusSamples").mockResolvedValue([
+      { ...sample(11, 1, "MO_PEG5"), setup_id: 1 }, { ...sample(13, 1, "MO_PEG5"), setup_id: 2 }, { ...sample(12, 2, "MO_PEG5"), setup_id: 3 },
+    ]);
+    const palette = await openPalette("/experiments");
+    await within(palette).findByRole("option", { name: /Open Lipids/ });
+    fireEvent.change(input(), { target: { value: "peg5" } });
+    await within(palette).findAllByRole("option", { name: /Go to MO_PEG5/ });
+    const names = within(palette).getAllByRole("option", { name: /Go to MO_PEG5/ }).map((o) => o.getAttribute("aria-label"));
+    expect(names).toEqual(["Go to MO_PEG5, Lipids · setup1", "Go to MO_PEG5, Lipids · setup2", "Go to MO_PEG5, Peptides"]);
+  });
+
   it("sets the theme", async () => {
     const palette = await openPalette("/experiments");
     fireEvent.click(await within(palette).findByRole("option", { name: /Theme/ }));

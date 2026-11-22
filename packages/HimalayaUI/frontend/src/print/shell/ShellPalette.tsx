@@ -4,6 +4,7 @@ import { useAppState } from "../../state";
 import { useCorpusSamples, useExperiments } from "../../queries";
 import { useAppTheme } from "../../lib/theme";
 import { sampleDisplayName } from "../../lib/sample/displayName";
+import { joinHints, setupTags } from "../../lib/sample/setupTags";
 import { Palette } from "../../workspace/ui/palette/Palette";
 import { workspaceHref } from "../../lib/url/workspaceHref";
 import { shellPalette } from "./shellPalette";
@@ -31,13 +32,14 @@ function OpenShellPalette({ openHelp }: { openHelp: () => void }): JSX.Element {
   );
   const samples = useMemo(() => {
     const names = new Map(experiments.map((e) => [e.id, e.name]));
+    const tags = new Map((experimentsQ.data ?? []).map((e) => [e.id, setupTags(e.setups ?? [])]));
     return (corpusQ.data ?? []).map((s) => ({
       id: s.id,
       name: sampleDisplayName(s),
-      experiment: names.get(s.experiment_id) ?? `Experiment ${s.experiment_id}`,
+      experiment: joinHints(names.get(s.experiment_id) ?? `Experiment ${s.experiment_id}`, s.setup_id != null ? tags.get(s.experiment_id)?.get(s.setup_id) : undefined)!,
       href: workspaceHref(s.experiment_id, s.id),
     }));
-  }, [corpusQ.data, experiments]);
+  }, [corpusQ.data, experiments, experimentsQ.data]);
   const palette = shellPalette({
     pathname,
     experiments,

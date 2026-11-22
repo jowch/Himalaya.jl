@@ -92,6 +92,7 @@ import { MetaList } from "./ui/MetaList";
 import { MainSection, SampleHeading, Section } from "./ui/Section";
 import { CustomIndexButton } from "./ui/CustomIndexButton";
 import { LabelRow } from "./ui/LabelRow";
+import { setupTags } from "../lib/sample/setupTags";
 import type { ExperimentPatch } from "../lib/queue/mutators/experiment";
 import type { SetupPatch } from "../lib/queue/mutators/setup";
 
@@ -223,6 +224,11 @@ export function WorkspacePage(): JSX.Element {
     () => new Set(inExperiment.filter((s) => s.setup_id != null && hiddenSetups.has(s.setup_id)).map((s) => s.id)),
     [inExperiment, hiddenSetups],
   );
+  const sampleSetup = useMemo<ReadonlyMap<number, string>>(() => {
+    const tags = setupTags(setups);
+    if (!tags) return new Map();
+    return new Map(inExperiment.flatMap((s) => (s.setup_id != null && tags.has(s.setup_id) ? [[s.id, tags.get(s.setup_id)!] as const] : [])));
+  }, [setups, inExperiment]);
   const setupHeaders = useMemo(() => {
     const shown = setups.filter((st) => st.included);
     return shown.length > 1 ? new Map(shown.map((st) => [st.id, st.name])) : undefined;
@@ -350,8 +356,11 @@ export function WorkspacePage(): JSX.Element {
   const bridged = useMemo(() => (sampleId === undefined ? [] : bridgedWith(bridgeList, sampleId)), [bridgeList, sampleId]);
   const bridgedNames = useMemo(() => {
     const names = new Map(inExperiment.map((s) => [s.id, s.name]));
-    return bridged.map((r) => names.get(r) ?? `Sample ${r}`);
-  }, [bridged, inExperiment]);
+    return bridged.map((r) => {
+      const setup = sampleSetup.get(r);
+      return `${names.get(r) ?? `Sample ${r}`}${setup ? ` (${setup})` : ""}`;
+    });
+  }, [bridged, inExperiment, sampleSetup]);
   const counts = useMemo(() => bridgeCounts(bridgeList), [bridgeList]);
   const bridgeSamples = useBridgeSamples(experimentId);
   const unbridgeSample = useUnbridgeSample(experimentId);
@@ -997,6 +1006,7 @@ export function WorkspacePage(): JSX.Element {
   };
   const palette = workspacePalette({
     modKey: MOD_KEY,
+    setupOf: (id) => sampleSetup.get(id),
     canEdit: Boolean(username && sample),
     nextUnreviewed: () => {
       const nid = nextUnreviewed(visible, sampleId, 1);
@@ -1172,6 +1182,7 @@ export function WorkspacePage(): JSX.Element {
                 chips={activeRefs.map((rid) => ({
                   id: rid,
                   name: sampleNames.get(rid) ?? `Sample ${rid}`,
+                  setup: sampleSetup.get(rid),
                   color: COMPARE_COLORS[activeRefs.indexOf(rid) % COMPARE_COLORS.length]!,
                   scale: scales.get(rid),
                   hidden: shownCompareSet.has(rid),
@@ -1197,6 +1208,7 @@ export function WorkspacePage(): JSX.Element {
                 <ComparePicker
                   samples={pickable}
                   notes={bufferNotes}
+                  setups={sampleSetup}
                   full={comparesFull ? COMPARES_FULL : undefined}
                   onPick={addReference}
                   onClose={() => setPicking(false)}
