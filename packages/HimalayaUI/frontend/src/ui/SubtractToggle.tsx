@@ -1,3 +1,5 @@
+import { Tooltip } from "./Tooltip";
+
 interface Props {
   name: string;
   on: boolean;
@@ -6,16 +8,17 @@ interface Props {
 
 export function SubtractToggle({ name, on, onChange }: Props): JSX.Element {
   const option = (pressed: boolean, label: string, value: boolean, full = label): JSX.Element => (
-    <button
-      type="button"
-      title={full}
-      aria-label={full}
-      aria-pressed={pressed}
-      onClick={() => onChange(value)}
-      className={"rounded-sm px-2 " + (pressed ? "bg-plate text-ink shadow-sm" : "text-ink-soft hover:text-ink")}
-    >
-      {label}
-    </button>
+    <Tooltip content={full === label ? undefined : full}>
+      <button
+        type="button"
+        aria-label={full}
+        aria-pressed={pressed}
+        onClick={() => onChange(value)}
+        className={"rounded-sm px-2 " + (pressed ? "bg-plate text-ink shadow-sm" : "text-ink-soft hover:text-ink")}
+      >
+        {label}
+      </button>
+    </Tooltip>
   );
   return (
     <div

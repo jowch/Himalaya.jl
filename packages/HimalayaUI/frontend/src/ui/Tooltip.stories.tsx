@@ -24,7 +24,7 @@ export const TwoLines: Story = {
     content: (
       <>
         <span className="block font-semibold">MO_H2O_37C · SAXS 1.5 m</span>
-        <span className="block">Click to hide. ⌘-click to subtract from this sample.</span>
+        <span className="block text-ink-soft">Click to hide. ⌘-click to subtract from this sample.</span>
       </>
     ),
     children: <Button variant="ghost">MO_H2O_37C</Button>,

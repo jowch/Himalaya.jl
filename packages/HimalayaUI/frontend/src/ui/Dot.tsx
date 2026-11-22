@@ -3,7 +3,7 @@ import type { HTMLAttributes } from "react";
 export type DotTone = "accent" | "success" | "muted" | "neutral";
 export type DotSize = "xs" | "sm" | "md";
 
-interface DotProps extends Omit<HTMLAttributes<HTMLSpanElement>, "color"> {
+interface DotProps extends Omit<HTMLAttributes<HTMLSpanElement>, "color" | "title"> {
   label?: string;
   tone?: DotTone;
   size?: DotSize;

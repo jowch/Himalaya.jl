@@ -9,7 +9,7 @@ function setRefs<T>(node: T | null, ...refs: Array<Ref<T> | undefined>): void {
   }
 }
 
-export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "size"> {
+export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "size" | "title"> {
   value: string;
   onValueChange: (v: string) => void;
   inputSize?: "sm" | "md";

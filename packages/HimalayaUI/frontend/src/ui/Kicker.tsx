@@ -3,7 +3,7 @@ import type { HTMLAttributes } from "react";
 
 export type KickerTone = "accent" | "faint" | "soft" | "warning";
 
-interface KickerProps extends HTMLAttributes<HTMLElement> {
+interface KickerProps extends Omit<HTMLAttributes<HTMLElement>, "title"> {
   tone?: KickerTone;
   as?: "div" | "span" | "h2" | "h3";
 }

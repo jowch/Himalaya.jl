@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, type ReactNode } from "react";
 import type { CorpusSample } from "../api";
 import { sampleStatus } from "../workspace/model";
 import { COMPARE_DASH } from "./WorkspacePlot";
+import { Tooltip } from "./Tooltip";
 
 interface Props {
   samples: readonly CorpusSample[];
@@ -21,7 +22,11 @@ function StatusMark({ s }: { s: CorpusSample }): JSX.Element {
   const st = sampleStatus(s);
   if (st.kind === "phase") return <span data-testid="workspace-status" className="text-xs font-semibold text-ink">{st.phase}</span>;
   if (st.kind === "form_factor") return <span data-testid="workspace-status" className="text-xs text-ink-faint">Form factor</span>;
-  return <span data-testid="workspace-status" role="img" aria-label="Unreviewed" title="Unreviewed" className="text-xs text-ink-faint">○</span>;
+  return (
+    <Tooltip content="Unreviewed">
+      <span data-testid="workspace-status" role="img" aria-label="Unreviewed" className="text-xs text-ink-faint">○</span>
+    </Tooltip>
+  );
 }
 
 export function SampleList({ samples, setupHeaders, currentId, filter, onFilter, onPick, onToggleCompare, compareColors, hiddenCompares, bridgeCounts, notice }: Props): JSX.Element {
@@ -96,10 +101,12 @@ export function SampleList({ samples, setupHeaders, currentId, filter, onFilter,
                 <span className="flex min-w-0 items-center gap-2">
                   <span className="truncate">{s.name}</span>
                   {bridges > 0 && (
-                    <span data-bridged title={bridges === 1 ? "1 bridge" : `${bridges} bridges`} className="shrink-0 text-xs text-ink-faint tabular-nums">
-                      <span aria-hidden="true">⇄{bridges}</span>
-                      <span className="sr-only">{bridges === 1 ? "1 bridge" : `${bridges} bridges`}</span>
-                    </span>
+                    <Tooltip content={bridges === 1 ? "1 bridge" : `${bridges} bridges`}>
+                      <span data-bridged className="shrink-0 text-xs text-ink-faint tabular-nums">
+                        <span aria-hidden="true">⇄{bridges}</span>
+                        <span className="sr-only">{bridges === 1 ? "1 bridge" : `${bridges} bridges`}</span>
+                      </span>
+                    </Tooltip>
                   )}
                 </span>
                 <span className="flex shrink-0 items-center gap-2">

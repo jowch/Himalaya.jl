@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Tooltip } from "./Tooltip";
 
 interface Collapsible {
   open: boolean;
@@ -26,7 +27,11 @@ export function Section({ title, aside, folded, className, collapsible, children
           <h2 className="text-sm font-semibold text-ink-soft">{title}</h2>
         )}
         {aside && open && <span className="text-xs text-ink-faint">{aside}</span>}
-        {folded && !open && <span className="min-w-0 flex-1 truncate text-right text-xs text-ink-faint" title={folded} data-section-folded="">{folded}</span>}
+        {folded && !open && (
+          <Tooltip content={folded} overflowOnly>
+            <span className="min-w-0 flex-1 truncate text-right text-xs text-ink-faint" data-section-folded="">{folded}</span>
+          </Tooltip>
+        )}
       </header>
       {open && children}
     </section>
@@ -49,7 +54,9 @@ export function SampleHeading({ name, meta, aside }: { name: string; meta?: Reac
   return (
     <div className="@container flex min-w-0 items-center gap-3 px-3.5 pb-1 pt-2.5">
       <div className="flex min-w-0 items-baseline gap-3">
-        <h2 className="m-0 min-w-0 truncate text-xl font-normal leading-tight text-ink" title={name}>{name}</h2>
+        <Tooltip content={name} overflowOnly>
+          <h2 className="m-0 min-w-0 truncate text-xl font-normal leading-tight text-ink">{name}</h2>
+        </Tooltip>
         {meta && <span className="shrink-0 whitespace-nowrap text-base text-ink-faint @max-[34rem]:hidden">{meta}</span>}
       </div>
       {aside && <div className="flex min-w-min flex-1 basis-0 justify-end">{aside}</div>}
