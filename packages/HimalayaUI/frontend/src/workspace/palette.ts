@@ -1,10 +1,12 @@
 import { type CorpusSample, type IndexEntry, type LabelColor } from "../api";
-import { joinHints } from "../lib/sample/setupTags";
+import type { CorpusExperiment, CorpusSampleRow } from "../hooks/useCorpusPalette";
+import { joinHints } from "../lib/sample/setupNames";
 import { cleanLabel, labelColorIsFixed, sameLabel, USER_LABEL_COLORS } from "../lib/labels";
 import type { PlotView, PlotViewOption } from "./plotView";
 import { latticeParam } from "./indexing";
 import type { AppTheme } from "../lib/theme";
 import { LABEL_SWATCH } from "../ui/labelSwatches";
+import type { KeepCall, KeepChoice } from "../lib/bridgeCall";
 import type { FieldOption, PaletteForm, PaletteGroup, PaletteItem, PalettePage } from "../ui/palette/model";
 
 export interface PaletteLabel {
@@ -37,7 +39,14 @@ export interface WorkspacePaletteInput extends AppActions {
     subtracted: number | undefined;
     subtract: (id: number) => void;
   };
-  bridge: { samples: readonly CorpusSample[]; pick: (id: number) => void; bridged: readonly string[]; leave: () => void };
+  bridge: {
+    samples: readonly CorpusSample[];
+    pick: (id: number, keep?: KeepCall) => void;
+    choices: (id: number) => readonly KeepChoice[] | undefined;
+    names: (id: number) => string;
+    bridged: readonly string[];
+    leave: () => void;
+  };
   candidates: { list: readonly IndexEntry[]; ticked: ReadonlySet<number>; tick: (ix: IndexEntry) => void };
   labels: {
     known: readonly PaletteLabel[];
@@ -68,7 +77,12 @@ export interface WorkspacePaletteInput extends AppActions {
   history: { undo: string | undefined; redo: string | undefined; run: (dir: "undo" | "redo") => void };
   samples: readonly CorpusSample[];
   goSample: (id: number) => void;
-  setupOf?: ((id: number) => string | undefined) | undefined;
+  setupOf: (id: number) => string | undefined;
+  elsewhere?: {
+    experiments: readonly CorpusExperiment[];
+    samples: readonly CorpusSampleRow[];
+    go: (path: string) => void;
+  };
 }
 
 const THEMES: readonly { theme: AppTheme; name: string }[] = [
@@ -89,6 +103,14 @@ export function themePage(theme: AppActions["theme"]): PalettePage {
     arg: "Theme",
     items: THEMES.map((t) => ({ id: `theme-${t.theme}`, label: t.name, hint: t.theme === theme.current ? "Current" : undefined, run: () => theme.choose(t.theme) })),
   };
+}
+
+export function openExperimentItem(e: CorpusExperiment, go: (path: string) => void): PaletteItem {
+  return { id: `open-${e.id}`, label: `Open ${e.name}`, name: e.name, run: () => go(`/experiments/${e.id}`) };
+}
+
+export function goToSampleItem(s: CorpusSampleRow, go: (path: string) => void): PaletteItem {
+  return { id: `go-${s.id}`, label: `Go to ${s.name}`, name: s.name, hint: s.experiment, run: () => go(s.href) };
 }
 
 export function appItems(p: AppActions): PaletteItem[] {
@@ -116,6 +138,7 @@ function newLabelForm(name: string, p: WorkspacePaletteInput): PaletteForm {
         label: "Name",
         kind: "text",
         value: name,
+        typed: true,
         check: (v) => {
           const clean = cleanLabel(v);
           if (clean === undefined) return v.trim() === "" ? "Type a name." : "A label is one line of at most 64 characters.";
@@ -136,6 +159,18 @@ function recolourForm(l: PaletteLabel, p: WorkspacePaletteInput): PaletteForm {
     submit: (v) => {
       const c = asColor(v.color ?? "");
       if (c !== l.color) p.labels.recolour(l.label, c);
+    },
+  };
+}
+
+export function keepCallForm(title: string, choices: readonly KeepChoice[], pick: (keep: KeepCall) => void, verb = "mark"): PaletteForm {
+  return {
+    title,
+    verb,
+    fields: [{ id: "keep", label: "Keep the call of", kind: "choice", value: choices[0]!.value, options: choices.map(({ value, label }) => ({ value, label })) }],
+    submit: (v) => {
+      const hit = choices.find((c) => c.value === v.keep) ?? choices[0]!;
+      pick(hit.keep);
     },
   };
 }
@@ -218,7 +253,7 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
       arg: "Sample",
       deep: true,
       empty: p.compare.full ?? "No other samples.",
-      items: p.compare.full ? [] : p.compare.samples.map((s) => ({ id: `compare-${s.id}`, label: s.name, hint: joinHints(p.setupOf?.(s.id), p.compare.notes.get(s.id)), run: () => p.compare.pick(s.id) })),
+      items: p.compare.full ? [] : p.compare.samples.map((s) => ({ id: `compare-${s.id}`, label: s.name, hint: joinHints(p.setupOf(s.id), p.compare.notes.get(s.id)), run: () => p.compare.pick(s.id) })),
     },
     view: {
       title: "Plot view",
@@ -236,7 +271,7 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
       items: p.compare.subtractable.map((s) => ({
         id: `subtract-${s.id}`,
         label: s.name,
-        hint: joinHints(p.setupOf?.(s.id), s.id === p.compare.subtracted ? "Subtracted, Enter stops" : undefined),
+        hint: joinHints(p.setupOf(s.id), s.id === p.compare.subtracted ? "Subtracted, Enter stops" : undefined),
         run: () => p.compare.subtract(s.id),
       })),
     };
@@ -246,7 +281,7 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
       title: "Stop comparing",
       arg: "Sample",
       deep: true,
-      items: p.compare.compared.map((s) => ({ id: `uncompare-${s.id}`, label: s.name, hint: p.setupOf?.(s.id), run: () => p.compare.remove(s.id) })),
+      items: p.compare.compared.map((s) => ({ id: `uncompare-${s.id}`, label: s.name, hint: p.setupOf(s.id), run: () => p.compare.remove(s.id) })),
     };
   }
   if (p.settings) pages.settings = settingsPage(p.settings);
@@ -256,7 +291,12 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
       arg: "Sample",
       deep: true,
       empty: "No other samples.",
-      items: p.bridge.samples.map((s) => ({ id: `bridge-${s.id}`, label: s.name, hint: p.setupOf?.(s.id), run: () => p.bridge.pick(s.id) })),
+      items: p.bridge.samples.map((s) => {
+        const choices = p.bridge.choices(s.id);
+        const setup = p.setupOf(s.id);
+        if (!choices) return { id: `bridge-${s.id}`, label: s.name, hint: setup, run: () => p.bridge.pick(s.id) };
+        return { id: `bridge-${s.id}`, label: s.name, hint: joinHints(setup, "Different call"), form: () => keepCallForm(`Same sample as ${p.bridge.names(s.id)}`, choices, (keep) => p.bridge.pick(s.id, keep)) };
+      }),
     };
     if (p.candidates.list.length > 0) {
       pages.tick = {
@@ -330,6 +370,7 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
     ...(p.rescan ? [{ id: "rescan", label: "Rescan the data folder", run: p.rescan }] : []),
     ...(p.problems ? [{ id: "problems", label: "Show ingest problems", run: p.problems }] : []),
     { id: "home", label: "Back to all experiments", run: p.home },
+    ...(p.elsewhere?.experiments ?? []).map((e) => ({ ...openExperimentItem(e, p.elsewhere!.go), typeOnly: true })),
     ...(p.removeExperiment ? [{ id: "remove-experiment", label: "Remove this experiment", danger: true, typeOnly: true, run: p.removeExperiment }] : []),
   ];
   const app: PaletteItem[] = [
@@ -343,7 +384,14 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
     { title: "Plot", items: plot },
     { title: "Experiment", items: experiment },
     { title: "App", items: app },
-    { title: "Samples", searchOnly: true, items: p.samples.map((s) => ({ id: `go-${s.id}`, label: `Go to ${s.name}`, name: s.name, hint: p.setupOf?.(s.id), run: () => p.goSample(s.id) })) },
+    {
+      title: "Samples",
+      searchOnly: true,
+      items: [
+        ...p.samples.map((s) => ({ id: `go-${s.id}`, label: `Go to ${s.name}`, name: s.name, hint: p.setupOf(s.id), run: () => p.goSample(s.id) })),
+        ...(p.elsewhere?.samples ?? []).map((s) => goToSampleItem(s, p.elsewhere!.go)),
+      ],
+    },
   ];
   return { groups, pages };
 }

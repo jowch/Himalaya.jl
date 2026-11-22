@@ -13,6 +13,7 @@ import { Kbd } from "../ui/Kbd";
 import { modCombo } from "../lib/modKey";
 import { Kicker } from "../ui/Kicker";
 import { useFireOnce } from "../hooks/useFireOnce";
+import { isFullPath, useFolderSuggestions } from "../hooks/useFolderSuggestions";
 
 type Patterns = api.SetupPreview["patterns"];
 type GeometryKey = "flight_path_m" | "beam_center_x" | "beam_center_y" | "energy_kev" | "pixel_size_um";
@@ -125,16 +126,35 @@ function manifestQuery(e: RowEdit) {
   };
 }
 
+function FieldCaption({ children }: { children: string }): JSX.Element {
+  return <span className="text-caption text-ink-soft">{children}</span>;
+}
+
 function DetailsField({ label, value, onChange, placeholder, testId, error }: {
   label: string; value: string; onChange: (v: string) => void; placeholder?: string; testId: string; error?: string | undefined;
 }): JSX.Element {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-caption text-ink-soft">{label}</span>
+      <FieldCaption>{label}</FieldCaption>
       <Input inputSize="sm" value={value} onValueChange={onChange} testId={testId} invalid={error !== undefined}
         {...(placeholder !== undefined ? { placeholder } : {})} />
       {error !== undefined && <FieldError testId={`${testId}-error`}>{error}</FieldError>}
     </label>
+  );
+}
+
+function FolderField({ label, value, onChange, testId }: {
+  label: string; value: string; onChange: (v: string) => void; testId: string;
+}): JSX.Element {
+  const [focused, setFocused] = useState(false);
+  const typed = useDebounced(value.trim(), 200);
+  const suggested = useFolderSuggestions(typed, focused);
+  return (
+    <div className="flex flex-col gap-1" onFocus={() => setFocused(true)}>
+      <FieldCaption>{label}</FieldCaption>
+      <DirectoryPickerField value={value} onChange={onChange} folders={suggested.folders} more={suggested.more}
+        ariaLabel={label} placeholder="A folder, starting with / or ~" inputSize="sm" testId={testId} />
+    </div>
   );
 }
 
@@ -180,9 +200,9 @@ function SetupRow({ setup, edit, onEdit }: {
       </p>
       {open && (
         <div data-testid="setup-details" className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <DetailsField label="Data folder" value={edit.data_dir} testId="details-data-dir"
+          <FolderField label="Data folder" value={edit.data_dir} testId="details-data-dir"
             onChange={(data_dir) => onEdit({ data_dir })} />
-          <DetailsField label="Integration folder" value={edit.analysis_dir} testId="details-analysis-dir"
+          <FolderField label="Integration folder" value={edit.analysis_dir} testId="details-analysis-dir"
             onChange={(analysis_dir) => onEdit({ analysis_dir })} />
           <DetailsField label="Setup file" value={edit.setup_file} testId="details-setup-file"
             onChange={(setup_file) => onEdit({ setup_file })} />
@@ -227,25 +247,19 @@ export function NewExperimentPage(): JSX.Element {
   const queryClient = useQueryClient();
   const [search] = useSearchParams();
   const [path, setPath] = useState(() => search.get("path") ?? "");
-  const [suggestions, setSuggestions] = useState<string[]>([]);
   const [edits, setEdits] = useState<Record<string, RowEdit>>({});
   const [typedName, setTypedName] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [refused, setRefused] = useState<{ id: number; name: string } | undefined>(undefined);
   const [submitting, setSubmitting] = useState(false);
   const picked = useDebounced(path.trim(), 200);
-
-  useEffect(() => {
-    if (picked === "") { setSuggestions([]); return; }
-    let live = true;
-    void api.suggestPaths(picked).then((r) => { if (live) setSuggestions(r.suggestions); }).catch(() => {});
-    return () => { live = false; };
-  }, [picked]);
+  const full = isFullPath(picked);
+  const suggested = useFolderSuggestions(picked);
 
   const preview = useQuery({
     queryKey: queryKeys.folderPreview(picked),
     queryFn: () => api.previewFolder(picked),
-    enabled: picked !== "",
+    enabled: full,
     retry: false,
   });
   const setups = useMemo(() => preview.data?.setups ?? [], [preview.data]);
@@ -342,14 +356,18 @@ export function NewExperimentPage(): JSX.Element {
 
   const status = picked === ""
     ? "Pick a beamtime folder to add every setup in it, or one setup folder."
+    : !full
+      ? "Type a full path, starting with / or ~."
     : preview.isError
       ? preview.error instanceof api.ApiError && preview.error.status === 400
-        ? "That folder does not exist."
+        ? suggested.folders.length > 0 ? "Keep typing, or press ↓ to choose a folder." : "That folder does not exist."
         : `Could not read that folder: ${preview.error instanceof Error ? preview.error.message : "unknown error"}`
       : preview.isFetching && setups.length === 0
         ? "Looking for setups…"
         : setups.length === 0
-          ? "No images found here or in the folders directly inside it."
+          ? suggested.folders.some((f) => f.kind !== null)
+            ? "No images here. Press ↓ to choose a beamtime or setup inside it."
+            : "No images found here or in the folders directly inside it."
           : setups.length === 1
             ? "Found 1 setup."
             : `Found ${setups.length} setups.`;
@@ -360,7 +378,7 @@ export function NewExperimentPage(): JSX.Element {
         <Kicker tone="accent">New experiment</Kicker>
         <h1 className="text-display text-ink">Add a beamtime</h1>
         <div className="mt-6">
-          <DirectoryPickerField value={path} onChange={setPath} onSubmit={() => (canSubmit ? void submit() : setSubmitWhenReady({ path: path.trim() }))} suggestions={suggestions} autoFocus />
+          <DirectoryPickerField value={path} onChange={setPath} onSubmit={() => (canSubmit ? void submit() : setSubmitWhenReady({ path: path.trim() }))} folders={suggested.folders} more={suggested.more} autoFocus />
           <p data-testid="preview-status" role="status" className="text-meta text-ink-soft mt-2">{existing === undefined
             ? status
             : setups.some((s) => s.duplicate_of === null)

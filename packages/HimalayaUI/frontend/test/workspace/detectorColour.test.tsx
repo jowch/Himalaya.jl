@@ -29,7 +29,7 @@ describe("workspace detector images", () => {
     const { container } = render(
       <>
         <DetectorLutFilters />
-        <ExposureStrip exposures={[exp(1), exp(2)]} currentId={1} onPick={() => {}} onToggleDrop={() => {}} />
+        <ExposureStrip groups={[{ key: 1, title: undefined, exposures: [exp(1), exp(2)] }]} currentId={1} onPick={() => {}} onToggleDrop={() => {}} />
       </>,
     );
     expectMagma([...container.querySelectorAll("img")]);

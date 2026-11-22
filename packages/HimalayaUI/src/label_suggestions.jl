@@ -29,7 +29,7 @@ end
 
 function suggest_labels!(db, sample_id::Int)
     rows = Tables.rowtable(DBInterface.execute(db,
-        "SELECT name FROM samples WHERE id = ? AND merged_into_id IS NULL", [sample_id]))
+        "SELECT name FROM samples WHERE id = ?", [sample_id]))
     (isempty(rows) || ismissing(rows[1].name)) && return nothing
     role = suggested_role(String(rows[1].name))
     role === nothing && return nothing
@@ -68,7 +68,7 @@ end
 
 function suggest_labels_for_experiment!(db, experiment_id::Int)
     ids = [Int(r.id) for r in Tables.rowtable(DBInterface.execute(db,
-        "SELECT id FROM samples WHERE experiment_id = ? AND merged_into_id IS NULL", [experiment_id]))]
+        "SELECT id FROM samples WHERE experiment_id = ?", [experiment_id]))]
     for id in ids
         suggest_labels!(db, id)
         suggest_flight_path!(db, id)

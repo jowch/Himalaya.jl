@@ -309,8 +309,7 @@ production migration applies the same `(load, slot)` partition a fresh scan
 would, so a reshot specimen splits into per-load samples there as well (it
 reuses the old row for the earliest cell to keep the human name, and mints
 a new sample for the later cell). Re-uniting a reshoot's cells into one
-specimen is the deferred capability, and it is the *same* `merged_into_id`
-action for migrated and new data. The hard part is **detecting** which
+specimen is the deferred capability, for migrated and new data alike. The hard part is **detecting** which
 cells to suggest merging: PRP files carry no specimen name/barcode, and
 filenames don't reliably share a specimen token across a reshoot's frame
 ranges — the only in-data signal is same-`horizontal_position`-across-loads,
@@ -318,7 +317,7 @@ which is weak (a holder gets reloaded with different specimens at the same
 slots). So this can't be auto-derived reliably; it needs careful design.
 
 Realistic directions, cheapest first: (1) manual merge with good UX
-(`merged_into_id` exists; the grouping-review merge route was deleted 2026-11-21, and today a bridge links the two samples instead); (2)
+(today a bridge marks the two samples as the same sample and shares their call and labels; the old `merged_into_id` column was dropped 2026-11-22); (2)
 *suggested* merges from position-coincidence, human-confirmed, never auto-applied (a wrong
 auto-merge fuses distinct specimens — worse than a missed one); (3) capture
 specimen identity at acquisition time (an optional label/barcode), which

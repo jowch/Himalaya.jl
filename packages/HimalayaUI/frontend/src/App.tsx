@@ -32,8 +32,6 @@ export function App(): JSX.Element {
   const here = useRef({ navigate, pathname: location.pathname });
   here.current = { navigate, pathname: location.pathname };
 
-  // Expose minimal test helpers on `window.__himalayaTest` in DEV only.
-  // Production bundles tree-shake this out (Vite + DEV gate).
   useEffect(() => {
     exposeTestHelpers(qc, mc);
   }, [qc, mc]);
@@ -53,13 +51,6 @@ export function App(): JSX.Element {
           forgetExperiment(qc, expId);
           return;
         }
-        // Ingest progress is broadcast-only (spec §9.3): never an own-op. Handle
-        // it HERE and RETURN — do NOT feed it to handleRemoteEvent, whose queue
-        // reconciliation would roll back + re-run every pending edit on each
-        // progress tick. The store write lives here (Zustand is NOT imported in
-        // applyRemoteToCache, which stays pure); the cache invalidation delegates
-        // to the shared invalidateIngestFrameCache helper (defined + tested in
-        // applyRemoteToCache.ts, Task 18) — no duplication.
         if (
           parsed.kind === "ingest_started" || parsed.kind === "ingest_progress" ||
           parsed.kind === "ingest_complete" || parsed.kind === "ingest_failed"
@@ -75,20 +66,14 @@ export function App(): JSX.Element {
                 stage: p?.stage,
               });
             } else {
-              // Terminal (complete/failed): drop the in-flight entry; the
-              // experiment's ingest_status (refetched below) is the resting truth.
               clearIngestProgress(expId);
             }
-            // Delegate cache invalidation to the shared helper (defined in
-            // applyRemoteToCache.ts) — the single source of truth for which
-            // query keys the ingest frames affect.
             invalidateIngestFrameCache(qc, expId, parsed.kind === "ingest_complete" || parsed.kind === "ingest_failed", p?.stage);
           }
-          return; // do NOT run the queue reconciler for a broadcast-only frame
+          return;
         }
         handleRemoteEvent(parsed, qc, mc);
       } catch {
-        // malformed frame, ignore
       }
     };
     return openLiveStream("/api/events", {
@@ -100,7 +85,7 @@ export function App(): JSX.Element {
         else c.setStreamDown();
       },
     });
-  }, [qc, mc, setIngestProgress, clearIngestProgress]); // stable selector results; EventSource lifetime unchanged
+  }, [qc, mc, setIngestProgress, clearIngestProgress]);
 
   useEffect(() => {
     void rehydrate(qc, resolveMutator).then(({ dropped, lost }) => {

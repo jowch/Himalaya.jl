@@ -30,9 +30,6 @@ function register_users_routes!()
             "SELECT id, username, first_name, last_name FROM users WHERE username = ?", [username]))
         if !isempty(rows)
             existing = rows[1]
-            # Idempotent enrichment: when a previous create stored NULL for first/last,
-            # a follow-up POST that supplies them should fill the gap. Never overwrite
-            # an existing non-null name — preserves "first wins" for actual identity.
             existing_first = ismissing(existing.first_name) ? nothing : existing.first_name
             existing_last  = ismissing(existing.last_name)  ? nothing : existing.last_name
             new_first = (existing_first === nothing && first_name !== nothing) ? first_name : existing_first

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { IndexEntry } from "../../src/api";
 import { workspacePalette, type PaletteLabel, type WorkspacePaletteInput } from "../../src/workspace/palette";
 import { PLOT_VIEWS } from "../../src/workspace/plotView";
+import { rootRows } from "../../src/ui/palette/model";
 
 function candidate(id: number, lattice: number): IndexEntry {
   return { id, exposure_id: 1, phase: "Ia3d", basis: 0, score: 1, r_squared: null, lattice_d: lattice, status: "candidate", kind: "auto", inputs_hash: null, peaks: [], predicted_q: [] };
@@ -18,7 +19,7 @@ function input(over: Partial<WorkspacePaletteInput> = {}): WorkspacePaletteInput
     canEdit: true,
     nextUnreviewed: noop,
     compare: { samples: [], notes: new Map(), pick: noop, compared: [], remove: noop, subtractable: [], subtracted: undefined, subtract: noop },
-    bridge: { samples: [], pick: noop, bridged: [], leave: noop },
+    bridge: { samples: [], pick: noop, choices: () => undefined, names: (id) => `Sample ${id}`, bridged: [], leave: noop },
     candidates: { list: [], ticked: new Set(), tick: noop },
     labels: { known: [], colorFor: () => "plum", toggle: noop, create: noop, recolour: noop },
     customIndex: noop,
@@ -37,6 +38,7 @@ function input(over: Partial<WorkspacePaletteInput> = {}): WorkspacePaletteInput
     history: { undo: undefined, redo: undefined, run: noop },
     samples: [],
     goSample: noop,
+    setupOf: () => undefined,
     ...over,
   };
 }
@@ -50,7 +52,7 @@ describe("workspacePalette", () => {
     const { pages, groups } = workspacePalette(input({
       setupOf,
       compare: { samples: [a, b], notes: new Map([[3, "Buffer"]]), pick: noop, compared: [a], remove: noop, subtractable: [a], subtracted: 2, subtract: noop },
-      bridge: { samples: [a, b], pick: noop, bridged: [], leave: noop },
+      bridge: { samples: [a, b], pick: noop, choices: () => undefined, names: (id) => `Sample ${id}`, bridged: [], leave: noop },
       samples: [a, b],
     }));
     expect(pages.compare!.items.map((i) => i.hint)).toEqual(["setup1", "setup2 · Buffer"]);
@@ -191,6 +193,31 @@ describe("workspacePalette", () => {
     expect(save).toHaveBeenCalledWith({ description: null });
   });
 
+  it("marks a sample with a different call and asks which call to keep before bridging", () => {
+    const pick = vi.fn();
+    const a = { id: 2, name: "A" } as WorkspacePaletteInput["bridge"]["samples"][number];
+    const b = { id: 3, name: "B" } as WorkspacePaletteInput["bridge"]["samples"][number];
+    const choices = [{ value: "1", label: "Here: Pn3m", keep: 1 }, { value: "3", label: "B: Im3m", keep: 3 }, { value: "both", label: "Both: Im3m + Pn3m", keep: "both" as const }];
+    const setups = new Map([[2, "Short pipe"], [3, "Long pipe"]]);
+    const { pages } = workspacePalette(input({ setupOf: (id) => setups.get(id), bridge: {
+      samples: [a, b], pick, choices: (id) => (id === 3 ? choices : undefined),
+      names: (id) => `${id === 2 ? "A" : "B"} in ${setups.get(id)}`, bridged: [], leave: vi.fn(),
+    } }));
+    const [plain, differs] = pages.bridge!.items;
+    expect(plain!.form).toBeUndefined();
+    expect(plain!.hint).toBe("Short pipe");
+    plain!.run!();
+    expect(pick).toHaveBeenLastCalledWith(2);
+    expect(differs!.hint).toBe("Long pipe · Different call");
+    const form = differs!.form!();
+    expect(form.title).toBe("Same sample as B in Long pipe");
+    expect(form.fields[0]!.options!.map((o) => o.label)).toEqual(["Here: Pn3m", "B: Im3m", "Both: Im3m + Pn3m"]);
+    form.submit({ keep: "both" });
+    expect(pick).toHaveBeenLastCalledWith(3, "both");
+    form.submit({ keep: "3" });
+    expect(pick).toHaveBeenLastCalledWith(3, 3);
+  });
+
   it("lists each setup on the Settings page and saves a rename or a hide from its form", () => {
     const saveSetup = vi.fn();
     const setups = [
@@ -213,5 +240,34 @@ describe("workspacePalette", () => {
     expect(saveSetup).toHaveBeenLastCalledWith(3, { name: null });
     pages.settings!.items[3]!.form!().submit({ name: "Short pipe", shown: "shown" });
     expect(saveSetup).toHaveBeenLastCalledWith(4, { name: "Short pipe", included: true });
+  });
+
+  it("opens another experiment and goes to its samples, but only once typed", () => {
+    const go = vi.fn();
+    const elsewhere = {
+      experiments: [{ id: 2, name: "Beamtime 12" }],
+      samples: [{ id: 40, name: "lipid_A", experimentId: 2, experiment: "Beamtime 12", href: "/experiments/2/workspace/40" }],
+      go,
+    };
+    const { groups, pages } = workspacePalette(input({ elsewhere }));
+    const labels = (q: string) => rootRows(groups, pages, q).flatMap((r) => (r.kind === "item" ? [r.item.label] : []));
+    expect(labels("")).not.toContain("Open Beamtime 12");
+    expect(labels("beamtime 12")).toContain("Open Beamtime 12");
+    const open = rootRows(groups, pages, "beamtime 12").find((r) => r.kind === "item" && r.item.label === "Open Beamtime 12");
+    if (open?.kind === "item") open.item.run!();
+    expect(go).toHaveBeenCalledWith("/experiments/2");
+    const sample = rootRows(groups, pages, "lipid").find((r) => r.kind === "item" && r.item.label === "Go to lipid_A");
+    expect(sample?.kind === "item" && sample.item.hint).toBe("Beamtime 12");
+    if (sample?.kind === "item") sample.item.run!();
+    expect(go).toHaveBeenCalledWith("/experiments/2/workspace/40");
+  });
+
+  it("goes to this experiment's samples in place and keeps them ahead of other experiments' samples", () => {
+    const goSample = vi.fn();
+    const here = { id: 5, name: "lipid_B" } as unknown as WorkspacePaletteInput["samples"][number];
+    const elsewhere = { experiments: [], samples: [{ id: 40, name: "lipid_A", experimentId: 2, experiment: "Beamtime 12", href: "/experiments/2/workspace/40" }], go: vi.fn() };
+    const { groups, pages } = workspacePalette(input({ samples: [here], goSample, elsewhere }));
+    const found = rootRows(groups, pages, "lipid").flatMap((r) => (r.kind === "item" ? [r.item.label] : []));
+    expect(found.indexOf("Go to lipid_B")).toBeLessThan(found.indexOf("Go to lipid_A"));
   });
 });

@@ -4,6 +4,7 @@ import { queryKeys } from "../../../queries";
 import { authOpts } from "../../authOpts";
 import { nextOptimisticId } from "../optimisticId";
 import { peakQTol } from "../peakQTol";
+import { cancelPeakRefetch, refreshPeaks } from "../refreshPeaks";
 import { replacePlaceholder } from "../replacePlaceholder";
 import { stripQueueMetadata } from "../queueMeta";
 import type { Mutator, RollbackContext } from "../types";
@@ -22,6 +23,7 @@ function buildAuthOpts(p: { username: string | undefined; clientId: string; clie
 export const peakAddMutator: Mutator<PeakAddInput, PeakAddScope, PeakAddResponse> = {
   kind: "peak_added",
   onMutate: (p, qc): RollbackContext => {
+    cancelPeakRefetch(qc, p.exposureId);
     const peaksKey = queryKeys.peaks(p.exposureId);
     const prev = qc.getQueryData<Peak[]>(peaksKey);
     const placeholder: Peak = {
@@ -56,6 +58,7 @@ export const peakAddMutator: Mutator<PeakAddInput, PeakAddScope, PeakAddResponse
         { isDuplicate: (pk) => pk.source === "manual" && pk.id === serverPeak.id },
       ),
     );
+    refreshPeaks(qc, p.exposureId);
   },
   synthesizeFromSse: (remote, base) => {
     const payload = (remote.payload as Record<string, unknown> | undefined) ?? {};

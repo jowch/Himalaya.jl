@@ -35,11 +35,18 @@ async function mockFunnel(page: Page, created: Created[]): Promise<void> {
   await page.route("**/api/label-colors", (r) => r.fulfill(json([])));
   await page.route(/\/api\/fs\/suggest\?/, (r) => {
     const prefix = new URL(r.request().url()).searchParams.get("prefix") ?? "";
-    const folders = ["/lab/20261103/notes", "/lab/20261103/setup1", "/lab/20261103/setup2"];
-    return r.fulfill(json({ suggestions: folders.filter((f) => f.startsWith(prefix)) }));
+    const folders = [
+      { path: "/lab/20261103", kind: "beamtime", setups: 2, added: null, described: true },
+      { path: "/lab/20261103/notes", kind: null, setups: null, added: null, described: true },
+      { path: "/lab/20261103/setup1", kind: "setup", setups: null, added: null, described: true },
+      { path: "/lab/20261103/setup2", kind: "setup", setups: null, added: null, described: true },
+    ];
+    const dir = prefix.slice(0, prefix.lastIndexOf("/") + 1);
+    const inDir = folders.filter((f) => f.path.lastIndexOf("/") + 1 === dir.length && f.path.startsWith(prefix));
+    return r.fulfill(json({ folders: inDir, more: false }));
   });
   await page.route(/\/api\/fs\/preview\?/, (r) => {
-    const path = new URL(r.request().url()).searchParams.get("path");
+    const path = (new URL(r.request().url()).searchParams.get("path") ?? "").replace(/\/+$/, "");
     return r.fulfill(json(path === "/lab/20261103"
       ? { path, existing: null, setups: [setup("setup1", 1.8095, 1220), setup("setup2", 0.5, 340)] }
       : { path, existing: null, setups: [] }));
@@ -92,4 +99,31 @@ test("⌘/Ctrl+Enter on a just-unticked setup sends it unticked and opens the ex
     ["/lab/20261103/setup1", true],
     ["/lab/20261103/setup2", false],
   ]);
+});
+
+test("typing a path shows the folders below it, and the keyboard picks one", async ({ page }) => {
+  const created: Created[] = [];
+  await mockFunnel(page, created);
+  await page.goto("/experiments/new");
+  const field = page.getByRole("combobox", { name: "Data directory" });
+  await expect(field).toBeFocused();
+  await page.keyboard.type("/lab/2026");
+  const list = page.getByRole("listbox", { name: "Folders" });
+  await expect(list.getByRole("option")).toHaveCount(1);
+  await expect(list.getByRole("option", { name: "20261103, beamtime, 2 setups" })).toBeVisible();
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Enter");
+  await expect(field).toHaveValue("/lab/20261103/");
+  await expect(page.getByTestId("setup-row")).toHaveCount(2);
+  await expect(list).toBeHidden();
+  await page.keyboard.press("ArrowDown");
+  await expect(list.getByRole("option")).toHaveCount(3);
+  await expect(list.getByRole("option", { name: "notes" })).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("Escape");
+  await expect(list).toBeHidden();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("textbox", { name: "Experiment name" })).toBeFocused();
+  await page.keyboard.press("ControlOrMeta+Enter");
+  await expect(page).toHaveURL(/\/experiments\/1/);
+  expect(created[0]!.path).toBe("/lab/20261103");
 });

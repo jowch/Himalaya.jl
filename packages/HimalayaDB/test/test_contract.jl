@@ -15,20 +15,24 @@ using DBInterface
     ui_pattern = HimalayaUI.integration_pattern_for(ui_setup)
     ui_subs = HimalayaUI.compares_for_experiment(uidb, ids.experiment_id)[:subtractions]
     ui_bridges = HimalayaUI.bridge_groups_for_experiment(uidb, ids.experiment_id)
+    ui_sample_ids = [Int(s.id) for s in HimalayaUI.get_samples(uidb, ids.experiment_id)]
     close(uidb)
 
     db = HimalayaDB.connect(dbpath)
+    db_sample_ids = [s.id for s in samples(db; experiment=ids.experiment_id)]
     db_peaks = curated_peaks(db, ids.exposure_id)
     db_indices = index_candidates(db, ids.exposure_id)
     db_calls = Dict(sid => phase_call(db, sid) for sid in (ids.sample_id, ids.sample2_id))
     db_labels = [l for sid in (ids.sample_id, ids.sample2_id) for l in sample_labels(db, sid)]
     db_setup = only(filter(s -> s.id == ui_setup.id, setups(db)))
-    all_ids = (ids.sample_id, ids.sample2_id, ids.merged_id)
+    all_ids = (ids.sample_id, ids.sample2_id)
     db_subs = [(sid, subtraction_background(db, sid)) for sid in all_ids]
     db_bridges = Dict(sid => bridged_samples(db, sid) for sid in all_ids)
     db_all_labels = [l for sid in all_ids for l in sample_labels(db, sid)]
     close(db)
 
+    @test db_sample_ids == ui_sample_ids
+    @test ids.empty_id in db_sample_ids
     @test [(p.q, p.source, p.excluded) for p in db_peaks] ==
           [(p.q, p.source, p.excluded) for p in ui_peaks]
     @test [(i.id, i.phase, i.score) for i in db_indices] ==

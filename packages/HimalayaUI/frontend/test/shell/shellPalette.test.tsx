@@ -97,11 +97,11 @@ describe("the palette on the pages outside the workspace", () => {
     expect(location).toBe("/experiments/1/workspace/11");
   });
 
-  it("names the setup of a sample when its experiment shows more than one", async () => {
-    const st = (id: number, name: string, included = true) => ({ id, experiment_id: 1, folder: name, display_name: null, name, position: id, included, root_dir: "", data_dir: "", analysis_dir: "" });
+  it("names the setup of a sample when its experiment has more than one", async () => {
+    const st = (id: number, name: string) => ({ id, experiment_id: 1, folder: name, display_name: null, name, position: id, included: true, root_dir: "", data_dir: "", analysis_dir: "" });
     vi.spyOn(api, "listExperiments").mockResolvedValue([
       { ...experiment(1, "Lipids"), setups: [st(1, "setup1"), st(2, "setup2")] },
-      { ...experiment(2, "Peptides"), setups: [st(3, "only"), st(4, "off", false)] },
+      { ...experiment(2, "Peptides"), setups: [st(3, "only")] },
     ] as Experiment[]);
     vi.spyOn(api, "listCorpusSamples").mockResolvedValue([
       { ...sample(11, 1, "MO_PEG5"), setup_id: 1 }, { ...sample(13, 1, "MO_PEG5"), setup_id: 2 }, { ...sample(12, 2, "MO_PEG5"), setup_id: 3 },

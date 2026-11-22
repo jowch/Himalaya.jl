@@ -116,7 +116,7 @@ describe("refresh after the live-update stream reconnects", () => {
     await act(async () => {
       finishRemove({ event_id: 1, view_row_id: 7, analysis_inputs_hash: "h" } as PeakRemoveResponse);
     });
-    await waitFor(() => expect(api.listPeaks).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(api.listPeaks).toHaveBeenCalledTimes(3));
     await waitFor(() => expect(result.current.peaks.isFetching).toBe(false));
     expect(result.current.peaks.data?.map((p) => p.id)).toEqual([8]);
   });

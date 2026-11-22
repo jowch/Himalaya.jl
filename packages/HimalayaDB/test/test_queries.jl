@@ -21,10 +21,10 @@
     @test isempty(setups(db; experiment=999999))
 
     smps = samples(db; experiment=ids.experiment_id)
-    @test length(smps) == 2
-    @test smps[1].id == ids.sample_id
+    @test [s.id for s in smps] == [ids.sample_id, ids.sample2_id, ids.empty_id]
     @test smps[1].setup_id == ids.setup_id
-    @test length(samples(db)) == 2
+    @test length(samples(db)) == 3
+    @test isempty(exposures(db; sample=ids.empty_id))
 
     exs = exposures(db; sample=ids.sample_id)
     @test length(exs) == 2
@@ -93,11 +93,11 @@ end
     @test [m.index_id for m in call.members] == [ids.index_id, ids.index2_id]
     @test [m.exposure_id for m in call.members] == [ids.exposure_id, ids.exposure2_id]
 
-    blank = phase_call(db, ids.sample2_id)
-    @test blank.state == "indexed"
-    @test blank.phase === nothing
-    @test isempty(blank.call_phases)
-    @test isempty(blank.members)
+    shared = phase_call(db, ids.sample2_id)
+    @test shared.state == "indexed"
+    @test shared.phase == "Pn3m"
+    @test shared.call_phases == ["Im3m", "Pn3m"]
+    @test [m.exposure_id for m in shared.members] == [ids.exposure_id, ids.exposure2_id]
 
     close(db)
 end
@@ -116,8 +116,6 @@ end
     @test subtraction_background(db, ids.sample_id) == ids.sample2_id
     @test subtraction_background(db, ids.sample2_id) === nothing
 
-    @test isempty(sample_labels(db, ids.merged_id))
-    @test isempty(bridged_samples(db, ids.merged_id))
     @test bridged_samples(db, ids.sample_id) == [ids.sample2_id]
     @test bridged_samples(db, ids.sample2_id) == [ids.sample_id]
     @test isempty(bridged_samples(db, 999999))
