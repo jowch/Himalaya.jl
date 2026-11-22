@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { act, render, screen } from "@testing-library/react";
-import { LiveRegion } from "../src/print/ui/LiveRegion";
+import { LiveRegion } from "../src/ui/LiveRegion";
 import { announce, setAnnounceImpl } from "../src/lib/announce";
 
 afterEach(() => {
@@ -97,7 +97,7 @@ describe("LiveRegion interleaved re-speak", () => {
 
 describe("LiveRegion barrel export", () => {
   it("LiveRegion is exported from the ui barrel", async () => {
-    const mod = await import("../src/print/ui");
+    const mod = await import("../src/ui");
     expect(typeof mod.LiveRegion).toBe("function");
   });
 });

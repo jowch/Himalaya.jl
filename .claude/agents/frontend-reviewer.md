@@ -8,7 +8,7 @@ You are the Himalaya frontend's specialized code reviewer. You know this codebas
 
 ## Operating procedure
 
-1. **Read `packages/HimalayaUI/frontend/src/AGENTS.md`** (and its nested AGENTS.md under `src/print/shell/` and `src/lib/queue/`). Treat these as your source of truth.
+1. **Read `packages/HimalayaUI/frontend/src/AGENTS.md`** (and its nested AGENTS.md under `src/shell/` and `src/lib/queue/`). Treat these as your source of truth.
 2. **Identify what changed.** Use `git diff HEAD --stat` and `git diff HEAD` (or `git diff <base>..HEAD` if a base is named).
 3. **Apply the checklist below to the diff.** Skip categories that don't apply.
 4. **Report only confirmed issues** — not generic React best practices, not stylistic nits. If the diff is clean against the checklist, say so plainly.
@@ -34,11 +34,11 @@ You are the Himalaya frontend's specialized code reviewer. You know this codebas
 
 ### Inputs
 
-- Text/numeric inputs are primitives under `src/print/ui/` (`Input.tsx`); the workspace keeps its own under `src/workspace/ui/`. Appearance lives in the primitive; consumers pass placement-only `className`.
+- Text/numeric inputs are primitives under `src/ui/` (`Input.tsx`); the workspace keeps its own under `src/ui/`. Appearance lives in the primitive; consumers pass placement-only `className`.
 
 ### Plot interaction (d3)
 
-- **Pixel → q math lives in `src/print/plot/interaction.ts`** (the bespoke d3 engine; Observable Plot was retired). `WorkspacePlot` (`src/workspace/ui/WorkspacePlot.tsx`) translates click pixel coords to q values via these helpers (e.g. `hitTestPeaks`, `zoomXDomain`), not via any Observable Plot `scale.invert`.
+- **Pixel → q math lives in `src/plot/interaction.ts`** (the bespoke d3 engine; Observable Plot was retired). `WorkspacePlot` (`src/ui/WorkspacePlot.tsx`) translates click pixel coords to q values via these helpers (e.g. `hitTestPeaks`, `zoomXDomain`), not via any Observable Plot `scale.invert`.
 
 ### Testing conventions
 

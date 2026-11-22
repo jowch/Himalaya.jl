@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect } from "vitest";
-import { Kicker } from "../../src/print/ui/Kicker";
+import { Kicker } from "../../src/ui/Kicker";
 
 describe("Kicker", () => {
   it("renders its children text", () => {

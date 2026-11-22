@@ -5,5 +5,5 @@ import { defineMain } from "@storybook/react-vite/node";
 // and @vitejs/plugin-react apply in stories with no extra wiring.
 export default defineMain({
   framework: "@storybook/react-vite",
-  stories: ["../src/print/**/*.stories.@(ts|tsx)"],
+  stories: ["../src/**/*.stories.@(ts|tsx)"],
 });
