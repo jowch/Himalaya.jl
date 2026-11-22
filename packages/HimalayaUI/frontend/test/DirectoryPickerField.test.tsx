@@ -144,4 +144,27 @@ describe("DirectoryPickerField (Phase E1)", () => {
     fireEvent.keyDown(input, { key: "Enter", isComposing: true });
     expect(onSubmit).not.toHaveBeenCalled();
   });
+  it("Tab does not complete a suggestion left over from an earlier prefix", () => {
+    const onChange = vi.fn();
+    render(<DirectoryPickerField value="/b/day2" onChange={onChange} suggestions={["/b/day1", "/b/day1x"]} />);
+    const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
+    expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(true);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("Tab skips leftover suggestions and completes the first that matches what is typed", () => {
+    const onChange = vi.fn();
+    render(<DirectoryPickerField value="/b/se" onChange={onChange} suggestions={["/b/notes", "/b/setup1"]} />);
+    const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
+    fireEvent.keyDown(input, { key: "Tab" });
+    expect(onChange).toHaveBeenCalledWith("/b/setup1/");
+  });
+
+  it("keeps the suggestions out of the Tab order", () => {
+    render(<DirectoryPickerField value="/b/s" onChange={() => {}} suggestions={["/b/setup1", "/b/setup2"]} />);
+    fireEvent.click(screen.getByTestId("dirpicker-input").querySelector("input")!);
+    const options = screen.getAllByRole("option");
+    expect(options).toHaveLength(2);
+    for (const o of options) expect(o).toHaveAttribute("tabindex", "-1");
+  });
 });

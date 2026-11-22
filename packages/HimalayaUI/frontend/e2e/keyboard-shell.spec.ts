@@ -64,3 +64,20 @@ test("the new-experiment page takes typing straight into the folder field", asyn
   await page.keyboard.type("/lab");
   await expect(field).toHaveValue("/lab");
 });
+
+test("? on the new-experiment page opens the shortcuts until the folder field has text", async ({ page }) => {
+  await mockShell(page);
+  await page.goto("/experiments/new");
+  const field = page.getByTestId("dirpicker-input").locator("input");
+  await expect(field).toBeFocused();
+  await page.keyboard.press("?");
+  const help = page.getByRole("dialog", { name: "Keyboard shortcuts" });
+  await expect(help).toBeVisible();
+  await expect(field).toHaveValue("");
+  await page.keyboard.press("Escape");
+  await expect(help).toHaveCount(0);
+  await field.focus();
+  await page.keyboard.type("/lab?");
+  await expect(field).toHaveValue("/lab?");
+  await expect(help).toHaveCount(0);
+});

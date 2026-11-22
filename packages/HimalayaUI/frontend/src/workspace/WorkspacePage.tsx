@@ -39,6 +39,7 @@ import {
 } from "../queries";
 import { comparesOf, EMPTY_COMPARES } from "../lib/compares";
 import { byRecent, recentRank, recordRecent } from "../lib/recents";
+import { helpKeyFromEmptyField, inDialog, isEditable, suppressGlobalKeys } from "../lib/keys";
 import { useUndoHistory, type UndoEntry, type UndoStep } from "./undo";
 import {
   bridgeEntry, combinedEntry, customIndexEntry, dropEntry, excludeEntry, identify, labelEntry, noPhaseEntry, peakEntry,
@@ -167,14 +168,6 @@ function exposureRows(e: Exposure | undefined): [string, string][] {
 }
 
 const SHORT_WINDOW = "(max-height: 860px)";
-
-function isTyping(target: EventTarget | null): boolean {
-  return target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
-}
-
-function inOverlay(target: EventTarget | null): boolean {
-  return target instanceof HTMLElement && target.closest('[role="dialog"],[data-keys-trap]') !== null;
-}
 
 export function WorkspacePage(): JSX.Element {
   const { id, sampleId: sampleParam } = useParams<{ id: string; sampleId?: string }>();
@@ -791,7 +784,7 @@ export function WorkspacePage(): JSX.Element {
 
   useEffect(() => {
     const onKey = (ev: KeyboardEvent): void => {
-      if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && !ev.shiftKey && ev.key === "0" && !isTyping(ev.target) && !inOverlay(ev.target)) {
+      if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && !ev.shiftKey && ev.key === "0" && !suppressGlobalKeys(ev)) {
         ev.preventDefault();
         setXDomain(null);
         return;
@@ -807,21 +800,25 @@ export function WorkspacePage(): JSX.Element {
       }
       const lower = ev.key.toLowerCase();
       const redoY = ev.ctrlKey && !ev.metaKey && !ev.shiftKey && lower === "y";
-      if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && (lower === "z" || redoY) && !isTyping(ev.target) && !inOverlay(ev.target)) {
+      if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && (lower === "z" || redoY) && !suppressGlobalKeys(ev)) {
         ev.preventDefault();
         if (ev.repeat) return;
         applyHistory(redoY || ev.shiftKey ? "redo" : "undo");
         return;
       }
-      if (ev.defaultPrevented || ev.metaKey || ev.ctrlKey || ev.altKey) return;
-      if (inOverlay(ev.target)) return;
-      if (ev.key === "/" && !isTyping(ev.target)) {
+      if (helpKeyFromEmptyField(ev)) {
         ev.preventDefault();
-        document.getElementById("workspace-filter")?.focus();
+        setHelpOpen(true);
         return;
       }
-      if (isTyping(ev.target)) {
-        if (ev.key === "Escape") (ev.target as HTMLElement).blur();
+      if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+      if (suppressGlobalKeys(ev)) {
+        if (ev.key === "Escape" && !ev.defaultPrevented && !inDialog(ev) && isEditable(ev.target)) (ev.target as HTMLElement).blur();
+        return;
+      }
+      if (ev.key === "/") {
+        ev.preventDefault();
+        document.getElementById("workspace-filter")?.focus();
         return;
       }
       if (draft) {

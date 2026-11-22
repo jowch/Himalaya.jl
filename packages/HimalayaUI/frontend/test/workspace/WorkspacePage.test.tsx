@@ -644,6 +644,34 @@ describe("WorkspacePage", () => {
     expect(screen.queryByRole("button", { name: "A2, hidden" })).toBeNull();
   });
 
+  it("/ puts the cursor in the filter, where letters type, ? from the empty filter opens the shortcuts, and Esc leaves it", () => {
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "/" });
+    const filter = screen.getByRole("searchbox", { name: "Filter samples" });
+    expect(document.activeElement).toBe(filter);
+    fireEvent.keyDown(filter, { key: "z" });
+    expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/10");
+    fireEvent.keyDown(filter, { key: "?" });
+    const help = screen.getByRole("dialog", { name: "Keyboard shortcuts" });
+    fireEvent.keyDown(help, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
+    filter.focus();
+    fireEvent.change(filter, { target: { value: "a" } });
+    fireEvent.keyDown(filter, { key: "?" });
+    expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
+    fireEvent.keyDown(filter, { key: "Escape" });
+    expect(document.activeElement).not.toBe(filter);
+  });
+
+  it("page keys stay off while a modal is open, even before focus lands in it", () => {
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "?" });
+    expect(screen.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeInTheDocument();
+    fireEvent.keyDown(document.body, { key: "z" });
+    fireEvent.keyDown(document.body, { key: "ArrowDown" });
+    expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/10");
+  });
+
   it("arrow down steps to the next sample in the list", () => {
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "ArrowDown" });

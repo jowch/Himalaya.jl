@@ -34,17 +34,30 @@ describe("shell keys on the pages outside the workspace", () => {
     expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
   });
 
-  it("⌘K opens the finder from inside a text field, where ? and / keep typing", async () => {
+  it("⌘K opens the finder from inside a text field, where ? and / type once it has text", async () => {
     renderAt("/experiments/new");
     await screen.findByTestId("app-shell");
     const field = screen.getByTestId("dirpicker-input").querySelector("input")!;
     expect(document.activeElement).toBe(field);
+    fireEvent.change(field, { target: { value: "/lab" } });
     fireEvent.keyDown(field, { key: "?" });
     fireEvent.keyDown(field, { key: "/" });
     expect(useAppState.getState().navModalOpen).toBe(false);
     expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
     fireEvent.keyDown(field, { key: "k", metaKey: true });
     expect(useAppState.getState().navModalOpen).toBe(true);
+  });
+
+  it("? from the empty folder field opens the shortcuts list, and types once the field has text", async () => {
+    renderAt("/experiments/new");
+    await screen.findByTestId("app-shell");
+    const field = screen.getByTestId("dirpicker-input").querySelector("input")!;
+    fireEvent.change(field, { target: { value: "/lab" } });
+    fireEvent.keyDown(field, { key: "?" });
+    expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
+    fireEvent.change(field, { target: { value: "" } });
+    fireEvent.keyDown(field, { key: "?" });
+    expect(await screen.findByRole("dialog", { name: "Keyboard shortcuts" })).toBeInTheDocument();
   });
 
   it("⌘K does nothing inside an open dialog", async () => {
@@ -71,6 +84,7 @@ describe("shell keys on the pages outside the workspace", () => {
     renderAt("/experiments");
     await screen.findByTestId("app-shell");
     const input = document.createElement("input");
+    input.value = "a";
     document.body.appendChild(input);
     input.focus();
     fireEvent.keyDown(input, { key: "?" });

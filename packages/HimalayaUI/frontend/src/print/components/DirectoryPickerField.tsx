@@ -70,7 +70,7 @@ export function DirectoryPickerField({
   };
 
   const folder = value.endsWith("/") ? value : `${value}/`;
-  const partial = suggestions.some((s) => !s.startsWith(folder));
+  const completion = suggestions.find((s) => s.startsWith(value) && !s.startsWith(folder));
   const highlighted = active >= 0 ? suggestions[active] : undefined;
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
@@ -82,9 +82,9 @@ export function DirectoryPickerField({
     }
     if (suggestions.length === 0) return;
     if (e.key === "Tab") {
-      if (e.shiftKey || !partial) return;
+      if (e.shiftKey || completion === undefined) return;
       e.preventDefault();
-      complete(suggestions[0]!);
+      complete(completion);
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
       setActive((i) => Math.min(i + 1, suggestions.length - 1));
@@ -140,6 +140,7 @@ export function DirectoryPickerField({
               <li key={s}>
                 <button
                   type="button"
+                  tabIndex={-1}
                   role="option"
                   aria-selected={i === active}
                   data-active={i === active ? "true" : undefined}
