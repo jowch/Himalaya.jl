@@ -5,10 +5,6 @@ import { PrintApp as App } from "../src/print/App";
 import { useAppState } from "../src/state";
 import { renderWithProviders } from "./test-utils";
 
-// Plan §Phase 4 introduced URL routing for Compare. Wrap App renders in a
-// MemoryRouter so route hooks resolve. I4.4 (#181): the Index surface at "/"
-// is retired — "/" redirects to the corpus contact sheet (/samples). Tests
-// pass an explicit entry so they land where they assert.
 const renderAppAt = (path: string) =>
   renderWithProviders(
     <MemoryRouter initialEntries={[path]}>
@@ -36,11 +32,7 @@ describe("App smoke", () => {
     localStorage.clear();
     useAppState.setState({
       username: "alice",
-      activeExperimentId: 1,
-      activeSampleId: 10,
-      activeExposureId: undefined,
       tutorialSeen: true,
-      hoveredIndexId: undefined,
       paletteOpen: false,
     });
     mockFetch({
@@ -62,15 +54,6 @@ describe("App smoke", () => {
         { id: 10, experiment_id: 1, display_name: null, name: "s1", notes: null },
       ],
       "/api/samples/10/exposures": [],
-      // Cold-mount root redirect path: useStateFromUrl falls through to
-      // resolve-by-id when the TanStack cache is cold (test env never
-      // hydrates synchronously). Without this, the redirect 404s and
-      // /index wipes the seeded activeExperimentId / activeSampleId.
-      "/api/resolve": {
-        experiment_id: 1, experiment_name: "demo",
-        sample_id: 10, sample_name: "s1",
-        exposure_id: undefined, exposure_filename: undefined,
-      },
     });
   });
 

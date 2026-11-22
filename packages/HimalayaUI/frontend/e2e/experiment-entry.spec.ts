@@ -138,12 +138,6 @@ test("opening a scanned experiment lands on its first sample in the workspace", 
   await expect(page.getByTestId("workspace-notice")).toHaveCount(0);
 });
 
-test("an old corpus link opens the workspace", async ({ page }) => {
-  await mockExperiment(page, { id: 7, ingest_status: "complete", samples: 2 });
-  await page.goto("/experiments/7/corpus");
-  await expect(page).toHaveURL(/\/experiments\/7\/workspace/);
-});
-
 test("problem exposures show in the sample pane and open their sample", async ({ page }) => {
   await mockExperiment(page, {
     id: 7, ingest_status: "complete", samples: 3,

@@ -5,7 +5,7 @@ import { useCorpusSamples, useExperiments } from "../../queries";
 import { useAppTheme } from "../../lib/theme";
 import { sampleDisplayName } from "../../lib/sample/displayName";
 import { Palette } from "../../workspace/ui/palette/Palette";
-import { workspaceHref } from "./SampleRedirect";
+import { workspaceHref } from "../../lib/url/workspaceHref";
 import { shellPalette } from "./shellPalette";
 
 export function ShellPalette({ openHelp }: { openHelp: () => void }): JSX.Element | null {

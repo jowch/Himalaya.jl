@@ -13,13 +13,13 @@ React 18 + Vite + TypeScript strict + TailwindCSS 4. TanStack Query for server s
 | Client state | `state.ts` | Zustand store — **use named actions only** |
 | Phase palette | `phases.ts` | phase → color mapping |
 | Tailwind theme | `styles.css` | `@theme { --color-* … }` |
-| App shell + routing | `print/shell/` | `AppShell`, `TopNav`, `AppRoutes`, `IndexSlugRedirect`, `StaleUrlPage`, `ResolvingFallback`, `OnboardingFlow`, `ShellPalette`, `InfrastructureBanner`. See [print/shell/AGENTS.md](print/shell/AGENTS.md) |
+| App shell + routing | `print/shell/` | `AppShell`, `TopNav`, `AppRoutes`, `ExperimentEntry`, `LinkGone`, `ResolvingFallback`, `OnboardingFlow`, `ShellPalette`, `InfrastructureBanner`. See [print/shell/AGENTS.md](print/shell/AGENTS.md) |
 | Composites | `print/components/` | Page-composing components (rails, plates, panels, rows, modals) built from the `ui/` primitives |
 | Triage workspace | `workspace/` | The three-pane workspace (`WorkspacePage` at `/experiments/:id/workspace/:sampleId?`, outside `AppShell`; pure `model.ts`). Its primitives live in `workspace/ui/`, which is appearance-exempt like `print/ui/`; `WorkspacePage` stays placement-only. The plot (`ui/WorkspacePlot.tsx`) draws the approved mock-up directly on `print/plot/PlotFrame` + `projection.ts`; there is no shared trace-plot engine any more. |
 | UI primitives | `print/ui/` | Closed-look design-system primitives (Button, Card, PhaseChip, ModalShell, Kicker, IconButton, Dot, ToastContainer, …). Appearance lives here; consumer `className` is placement-only. See "Design system" below. |
 | Render layers | `print/{plot,detector}/` | Appearance-authoring render layers (plot frame and projection, detector image). The `lint:design` appearance guard excludes them |
 | Pages | `print/pages/` | `ExperimentsHomePage`, `NewExperimentPage` (under the single `AppShell`) |
-| Hooks | `hooks/` | `useFocusTrap`, `useStateFromUrl`, … |
+| Hooks | `hooks/` | `useFocusTrap`, … |
 | Library | `lib/` | URL helpers, plot helpers, peak refs, custom index, labels, bridges |
 | Mutation queue | `lib/queue/` | See [lib/queue/AGENTS.md](lib/queue/AGENTS.md) |
 
@@ -40,7 +40,7 @@ Two invisible invariants in `state.ts` (`persist` config, `queries.ts`'s sibling
 
 ## State split (load-bearing)
 
-- **Zustand owns *client* state**: active sample/exposure, hoveredIndexId, username.
+- **Zustand owns *client* state**: the user, tutorial, palette and ingest-progress fields. The URL owns the current experiment, sample and frame.
 - **TanStack Query owns *server* state**: experiments, samples, exposures, peaks, indices, assignment.
 - Mutations invalidate scoped query keys (`queryKeys.peaks(id)`, `queryKeys.indices(id)`). Don't mix the two concerns in the same hook.
 
