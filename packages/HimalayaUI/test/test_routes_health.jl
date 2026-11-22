@@ -9,3 +9,8 @@
         @test body.status == "ok"
     end
 end
+
+@testset "serve warns when it would run on one worker thread" begin
+    @test_logs (:warn, r"--threads=4,1") @test HimalayaUI.warn_if_single_threaded(1)
+    @test_logs @test !HimalayaUI.warn_if_single_threaded(4)
+end
