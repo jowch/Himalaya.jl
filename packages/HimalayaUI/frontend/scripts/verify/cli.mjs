@@ -77,7 +77,7 @@ export const COMMANDS = {
   },
   "wait-settle": {
     usage: "wait-settle [--url <regex>] [--timeout <ms>] [--expect-http <status>:<path re>]...",
-    summary: "Wait until no request is in flight (SSE excluded) and no skeleton, aria-busy loader or progressbar is visible, for 500 ms. It only sees requests that start after it connects; actions settle on their own. With --url, first wait for a navigation the server triggers later (e.g. after an ingest scan). Fails when it times out, or when a request it saw returned 4xx/5xx (httpErrors at the top level here, not under settle).",
+    summary: "Wait until no request is in flight (SSE excluded) and no aria-busy loader or progressbar is visible, for 500 ms. It only sees requests that start after it connects; actions settle on their own. With --url, first wait for a navigation the server triggers later (e.g. after an ingest scan). Fails when it times out, or when a request it saw returned 4xx/5xx (httpErrors at the top level here, not under settle).",
     spec: { strings: ["timeout", "url"], lists: ["expect-http"] },
     run: (cfg, f) => settle(cfg, f),
   },
