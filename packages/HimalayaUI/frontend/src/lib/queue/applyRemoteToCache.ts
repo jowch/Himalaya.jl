@@ -1,3 +1,4 @@
+import { refreshPeaks } from "./refreshPeaks";
 import type { QueryClient } from "@tanstack/react-query";
 import type { SseEvent, CurationPostState, AssignmentPostState, SampleCallPostState } from "./types";
 import { writeSampleCall, invalidateOtherFrameAssignments, invalidateSampleCalls } from "./sampleCall";
@@ -146,6 +147,7 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
           },
         ];
       });
+      refreshPeaks(qc, id);
       applyPostState();
       break;
     }
@@ -165,6 +167,7 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
             : p.source === "auto" && Math.abs(p.q - targetQ) < tol;
           return matches ? { ...p, excluded: true } : p;
         }));
+      refreshPeaks(qc, id);
       applyPostState();
       break;
     }
@@ -179,6 +182,7 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
             : p.source === "auto" && Math.abs(p.q - targetQ) < tol;
           return matches ? { ...p, excluded: false } : p;
         }));
+      refreshPeaks(qc, id);
       applyPostState();
       break;
     }
@@ -201,6 +205,7 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
         qc.invalidateQueries({ queryKey: queryKeys.peaks(id) });
         return old;
       });
+      refreshPeaks(qc, id);
       applyPostState();
       break;
     }

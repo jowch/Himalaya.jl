@@ -4,6 +4,7 @@ import { queryKeys } from "../../../queries";
 import { authOpts } from "../../authOpts";
 import { nextOptimisticId } from "../optimisticId";
 import { peakQTol } from "../peakQTol";
+import { refreshPeaks } from "../refreshPeaks";
 import { replacePlaceholder } from "../replacePlaceholder";
 import { stripQueueMetadata } from "../queueMeta";
 import type { Mutator, RollbackContext } from "../types";
@@ -56,6 +57,7 @@ export const peakAddMutator: Mutator<PeakAddInput, PeakAddScope, PeakAddResponse
         { isDuplicate: (pk) => pk.source === "manual" && pk.id === serverPeak.id },
       ),
     );
+    refreshPeaks(qc, p.exposureId);
   },
   synthesizeFromSse: (remote, base) => {
     const payload = (remote.payload as Record<string, unknown> | undefined) ?? {};
