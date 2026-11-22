@@ -164,7 +164,7 @@ function cli_analyze(args)
         exp_row = _resolve_experiment(db, p[:experiment])
         skipped = _analyze_experiment!(db, Int(exp_row.id); sample_filter = p[:sample])
     end
-    skipped > 0 && error("$skipped exposure(s) or experiment(s) skipped; see the SKIP lines above")
+    skipped > 0 && error("$skipped frame(s) or experiment(s) skipped; see the SKIP lines above")
 end
 
 _fmt(x, spec) = ismissing(x) || x === nothing ? "n/a" : Printf.format(Printf.Format(spec), x)
@@ -201,7 +201,7 @@ function cli_show(args)
         pks     = get_peaks_for_exposure(db, e_id)
         idxs    = get_indices_for_exposure(db, e_id)
 
-        println("\nExposure: $(exp_row.filename)")
+        println("\nFrame: $(exp_row.filename)")
         println("  Peaks ($(length(pks))):")
         for pk in pks
             println("    q=", _fmt(pk.q, "%.4f"), "  prom=", _fmt(pk.prominence, "%.3f"),

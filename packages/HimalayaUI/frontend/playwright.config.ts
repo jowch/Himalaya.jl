@@ -4,10 +4,6 @@ const E2E_PORT = 5191;
 
 export default defineConfig({
   testDir: "./e2e",
-  // Live-server integration tests live under `e2e/live/` and need a real
-  // backend + dev DB. Excluded from the default `npm run e2e` (which expects
-  // page.route mocks); run with `npm run e2e:live` instead.
-  testIgnore: ["**/live/**"],
   timeout: 15_000,
   forbidOnly: !!process.env["CI"],
   retries: 0,
