@@ -18,8 +18,8 @@ export function cssBlock(selector: string, css: string = stylesCss): Map<string,
 
 export const THEME_BLOCKS = {
   light: "@theme",
-  dark: '[data-workspace-theme="dark"]',
-  system: '[data-workspace-theme="system"]',
+  dark: '[data-theme="dark"]',
+  system: '[data-theme="system"]',
 } as const;
 
 export function themeToken(theme: keyof typeof THEME_BLOCKS, name: string): string {

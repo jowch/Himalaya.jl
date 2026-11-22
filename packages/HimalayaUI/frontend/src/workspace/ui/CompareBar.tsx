@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Kbd } from "./Kbd";
 import type { CompareScale } from "../compare";
 import { COMPARE_DASH } from "./WorkspacePlot";
@@ -20,9 +21,10 @@ interface Props {
   onSubtract: (id: number) => void;
   onRemove: (id: number) => void;
   onAdd: () => void;
+  trailing?: ReactNode;
 }
 
-export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, onSubtract, onRemove, onAdd }: Props): JSX.Element {
+export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, onSubtract, onRemove, onAdd, trailing }: Props): JSX.Element {
   return (
     <div className="flex min-w-0 flex-nowrap items-center gap-2" data-testid="workspace-compare-bar">
       {chips.map((c) => {
@@ -87,6 +89,7 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
       <button type="button" onClick={onAdd} className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-sm border border-dashed border-hair-strong px-2 py-0.5 text-caption text-ink-soft hover:text-ink">
         + Compare <Kbd>C</Kbd>
       </button>
+      {trailing && <div className="ml-auto shrink-0">{trailing}</div>}
     </div>
   );
 }
