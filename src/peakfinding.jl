@@ -51,25 +51,27 @@ Shape-agnostic; no per-trace tuning.
 # Hybrid (`method = :hybrid`)
 Opt-in. `k` and `kb` apply only to `:hybrid` and are ignored otherwise;
 `normalize_by_σ` affects only the persistence part (the matched filter
-always works on `I`). Runs the persistence detector with `q_trim_high = 0.07`,
-keeps its peaks whose matched-filter z (max within ±3 points) is at least `kb`
-(default 5; a peak where z is undefined because even the narrowest kernel runs
-off the trace is kept), then adds local maxima of z with `z ≥ k` (default 12),
-more than 9 points apart and more than 9 points from a kept peak, at or below
-the same q cut as the persistence path. Added peaks get `prominence` = the
-persistence prominence of `I` there if it is a local maximum, else `0.0`. A
-returned peak with `sharpness` ≤ 0 gets the median of the positive sharpness
-of the returned peaks (fallback: the smallest positive value in
-`sharpness_full`, then `eps()`). `score` falls back to CV = 0 when the mean
-sharpness is ≤ 0, and a near-zero value would inflate the CV and demote the
-peak; the median keeps it neutral. The result has an extra field `z`
-(max-over-width matched-filter z, `NaN` where undefined or masked). If the
-trace has fewer than 150 points the persistence result (with the
-hybrid's `q_trim_high`) is returned and `z` is all `NaN`. Without `σ`
-(`findpeaks(q, I; method = :hybrid)`) σ is estimated as `sqrt(g·max(I, 0))`
-clamped from below at a second-difference noise scale, with the gain `g` from
-the same differences; everything scales with `I`, and the per-width MAD
-normalisation removes the overall scale, so only the relative shape matters. See `docs/peak-finding.md`.
+always works on `I`). Runs the persistence detector with `q_trim_high = 0.07`
+and keeps its peaks unless the matched-filter response judged against the
+second-difference noise scale (max over widths within ±3 points) is defined at
+the peak, below `kb` (default 5), and not cut short by a masked run. Then adds
+local maxima of the clipped matched-filter z with `z ≥ k` (default 20), more
+than 9 points apart and from a kept peak, at or below the same q cut, that are
+maxima at their own width and not valleys at a finer width. See
+`src/matchedfilter.jl` and `docs/peak-finding.md` for the masking, the two noise
+scales and the checks. Added peaks get `prominence` = the persistence
+prominence of `I` there if it is a local maximum, else `0.0`. A returned peak
+with `sharpness` ≤ 0 gets the median of the positive sharpness of the returned
+peaks (fallback: the smallest positive value in `sharpness_full`, then
+`eps()`). `score` falls back to CV = 0 when the mean sharpness is ≤ 0, and a
+near-zero value would inflate the CV and demote the peak; the median keeps it
+neutral. The result has an extra field `z` (max-over-width clipped z, `NaN`
+where undefined or missing). If the trace has fewer than 150 points the
+persistence result (with the hybrid's `q_trim_high`) is returned and `z` is
+all `NaN`. Without `σ` (`findpeaks(q, I; method = :hybrid)`) σ is estimated as
+`sqrt(g·max(I, 0))` clamped from below at a second-difference noise scale, with
+the gain `g` from the same differences; everything scales with `I`, and both
+noise scales are measured on the trace, so only the relative shape matters.
 
 # Returns
 `(; indices, q, prominence, sharpness, sharpness_full)` —
@@ -139,11 +141,11 @@ function _hybrid_findpeaks(q, I, σ; k, kb, q_trim_high, sep = 9, kwargs...)
     # Too short for the widest kernel to give a usable scale: return the
     # persistence result (with the hybrid's q_trim_high) unchanged.
     n < MF_MIN_LENGTH && return (; base..., z = fill(NaN, n))
-    z = matched_filter_z(I, σ)
+    Z, zraw, blocked = mf_width_z(I, σ)
     qmin, qmax = extrema(q)
     qcut = qmin + (1 - q_trim_high) * (qmax - qmin)
     allowed = q .<= qcut
-    idx = hybrid_merge(base.indices, z, k, kb, sep, allowed)
+    idx, z = hybrid_merge(base.indices, Z, zraw, blocked, k, kb, sep, allowed)
 
     sharps_full = base.sharpness_full
     sharp = sharps_full[idx]
@@ -175,7 +177,7 @@ function findpeaks(q, I, σ; method = :persistence,
                               sharp_floor      = nothing,
                               q_trim_high      = nothing,
                               prom_ratio_floor = 15.0,
-                              k                = 12.0,
+                              k                = 20.0,
                               kb               = 5.0)
     if method === :persistence
         return first(_persistence_findpeaks(q, I, σ; normalize_by_σ, sharpness_method,

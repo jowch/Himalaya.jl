@@ -178,44 +178,87 @@ function mf_interpolate(I, fill)
     out
 end
 
-"""
-    matched_filter_z(I, σ; snip_window = MF_SNIP_WINDOW) -> Vector{Float64}
+const MF_CLIP = 3.5
+const MF_MIN_NOISE_POINTS = 30
 
-Per-point matched-filter significance: the maximum over the Ricker widths
-`MF_WIDTHS` of the SNIP-subtracted residual correlated with a unit-norm,
-zero-mean kernel, divided by the kernel-weighted noise `sqrt(Σ k² σ²)`.
+# Robust centre and scale of `x` over the points marked in `use`, with points
+# far from the centre (signal) removed iteratively: points with
+# |x - centre| > MF_CLIP·scale, together with `dilate` points on each side, are
+# dropped and the estimate repeated until the set stops changing. Returns
+# `nothing` when fewer than MF_MIN_NOISE_POINTS points (or a fifth of the
+# starting set) remain or the scale is zero. After 20 rounds that do not
+# settle, the estimate on the last set is returned.
+function mf_noise_scale(x, use, dilate)
+    n = length(x)
+    minpts = max(MF_MIN_NOISE_POINTS, count(use) ÷ 5)
+    cur = copy(use)
+    buf = Float64[]
+    for round in 1:21
+        empty!(buf)
+        for i in 1:n
+            cur[i] && push!(buf, x[i])
+        end
+        length(buf) >= minpts || return nothing
+        med = median!(buf)
+        buf .= abs.(buf .- med)
+        mad = 1.4826 * median!(buf)
+        mad > 0 || return nothing
+        round == 21 && return (med, mad)
+        next = copy(use)
+        for i in 1:n
+            if use[i] && abs(x[i] - med) > MF_CLIP * mad
+                next[max(1, i - dilate):min(n, i + dilate)] .= false
+            end
+        end
+        next .&= use
+        next == cur && return (med, mad)
+        cur = next
+    end
+end
 
-All statistics run over the whole trace. Masked runs (see `mf_masked_runs`)
-and nonfinite points are first replaced by linear interpolation of `I`, which
-is used for both the background and the residual; `z` is `NaN` on masked
-points. The background is the SNIP baseline (`snip_background`) of `I` scaled by
-`s`, the median positive `σ`, so the result does not depend on intensity
-units. Each width is normalised by its median and `1.4826·MAD` over the points
-where that kernel fits inside the trace and that are not masked; a width with
-zero MAD is skipped. The maximum at a point runs over the widths that fit
-there; where none fits the value is `NaN` (undefined). Nonpositive or
-nonfinite `σ` are replaced by the smallest positive `σ` (or 1 if there is
-none).
-"""
-function matched_filter_z(I, σ; snip_window::Integer = MF_SNIP_WINDOW)
+# Matched-filter responses, NaN where undefined. Returns
+# - `Z`: n × length(MF_WIDTHS), each width on its own clipped scale;
+# - `zraw`: per point, the max over widths of the response on the
+#   second-difference scale (`mf_white_scale`);
+# - `blocked`: points where some width fits in the span but covers a missing
+#   point.
+# See `matched_filter_z`.
+function mf_width_z(I, σ; snip_window::Integer = MF_SNIP_WINDOW)
     n = length(I)
     length(σ) == n || throw(DimensionMismatch("I and σ must be equal length"))
+    Z = fill(NaN, n, length(MF_KERNELS))
+    zraw = fill(NaN, n)
+    blocked = falses(n)
     pos = [Float64(x) for x in σ if isfinite(x) && x > 0]
     σmin = isempty(pos) ? 1.0 : minimum(pos)
     s = isempty(pos) ? 1.0 : median(pos)
     σc = [isfinite(x) && x > 0 ? Float64(x) : σmin for x in σ]
-    masked, missing = mf_masked_runs(I, σc)
-    Iw = mf_interpolate(I, missing)
-    B = snip_background(Iw, s, snip_window)
-    r = Iw .- B
-    σ2 = σc .^ 2
-    zbest = fill(NaN, n)
-    zw    = Vector{Float64}(undef, n)
-    tmp   = Vector{Float64}(undef, n)
-    for k in MF_KERNELS
+    _, missing = mf_masked_runs(I, σc)
+    a = findfirst(!, missing)
+    a === nothing && return Z, zraw, blocked
+    b = findlast(!, missing)
+    seg = a:b
+    Iw = mf_interpolate(view(I, seg), view(missing, seg))
+    r = Iw .- snip_background(Iw, s, snip_window)
+    σ2 = view(σc, seg) .^ 2
+    m = length(seg)
+    # cmiss[t] = number of missing points among seg[1:t-1]
+    cmiss = zeros(Int, m + 1)
+    for t in 1:m
+        cmiss[t + 1] = cmiss[t] + missing[seg[t]]
+    end
+    cw = mf_white_scale(Iw, view(σc, seg), view(missing, seg))
+    zw = fill(NaN, m)
+    use = falses(m)
+    for (w, k) in enumerate(MF_KERNELS)
         h = (length(k) - 1) ÷ 2
-        n > 2h || continue
-        @inbounds for i in (h + 1):(n - h)
+        fill!(zw, NaN)
+        fill!(use, false)
+        @inbounds for i in (h + 1):(m - h)
+            if cmiss[i + h + 1] - cmiss[i - h] > 0
+                blocked[seg[i]] = true
+                continue
+            end
             num = 0.0
             var = 0.0
             for j in -h:h
@@ -224,35 +267,128 @@ function matched_filter_z(I, σ; snip_window::Integer = MF_SNIP_WINDOW)
                 var += kj * kj * σ2[i + j]
             end
             zw[i] = num / sqrt(var)
+            use[i] = true
         end
-        m = 0
-        @inbounds for i in (h + 1):(n - h)
-            masked[i] || (tmp[m += 1] = zw[i])
+        @inbounds for i in 1:m
+            if use[i]
+                v = zw[i] / cw
+                zraw[seg[i]] = isnan(zraw[seg[i]]) ? v : max(zraw[seg[i]], v)
+            end
         end
-        m > 0 || continue
-        med = median!(view(tmp, 1:m))
-        c = 0
-        @inbounds for i in (h + 1):(n - h)
-            masked[i] || (tmp[c += 1] = abs(zw[i] - med))
-        end
-        mad = 1.4826 * median!(view(tmp, 1:m))
-        mad > 0 || continue
-        @inbounds for i in (h + 1):(n - h)
-            masked[i] && continue
-            z = (zw[i] - med) / mad
-            zbest[i] = isnan(zbest[i]) ? z : max(zbest[i], z)
+        est = mf_noise_scale(zw, use, ceil(Int, MF_WIDTHS[w]))
+        est === nothing && continue
+        med, mad = est
+        @inbounds for i in 1:m
+            use[i] && (Z[seg[i], w] = (zw[i] - med) / mad)
         end
     end
-    zbest
+    Z, zraw, blocked
+end
+
+# Noise scale of I relative to σ from second differences, which a smooth
+# background barely affects: the clipped scale (`mf_noise_scale`) of
+# (I[i-1] - 2I[i] + I[i+1]) / sqrt(σ[i-1]² + 4σ[i]² + σ[i+1]²) over triples with
+# no missing point, so the curvature of sharp peaks is removed as signal. 1 when
+# there are too few such triples or the scale is zero.
+function mf_white_scale(I, σ, missing)
+    m = length(I)
+    d = zeros(m)
+    use = falses(m)
+    for i in 2:(m - 1)
+        (missing[i - 1] || missing[i] || missing[i + 1]) && continue
+        d[i] = (I[i - 1] - 2I[i] + I[i + 1]) / sqrt(σ[i - 1]^2 + 4σ[i]^2 + σ[i + 1]^2)
+        use[i] = true
+    end
+    est = mf_noise_scale(d, use, 2)
+    est === nothing ? 1.0 : est[2]
+end
+
+"""
+    matched_filter_z(I, σ; snip_window = MF_SNIP_WINDOW) -> Vector{Float64}
+
+Per-point matched-filter significance: the maximum over the Ricker widths
+`MF_WIDTHS` of the SNIP-subtracted residual correlated with a unit-norm,
+zero-mean kernel, divided by the kernel-weighted noise `sqrt(Σ k² σ²)`.
+
+Masked runs (see `mf_masked_runs`) and nonfinite points are missing. The trace
+is cut to the span between the first and last present points; inside it,
+missing points are filled by linear interpolation for the background only. The
+background is the SNIP baseline (`snip_background`) of that span, scaled by `s`,
+the median positive `σ`, so the result does not depend on intensity units.
+
+A width is defined at a point when its kernel fits inside the span and covers
+no missing point. Each width is normalised by a noise centre and scale
+estimated from its own values with signal removed (`mf_noise_scale`), so dense
+or strong peaks do not inflate the scale. A width with too few signal-free
+points is skipped. The maximum at a point runs over the widths defined there;
+where none is, the value is `NaN`. Nonpositive or nonfinite `σ` are replaced by
+the smallest positive `σ` (or 1 if there is none).
+"""
+function matched_filter_z(I, σ; snip_window::Integer = MF_SNIP_WINDOW)
+    mf_best(first(mf_width_z(I, σ; snip_window)))
+end
+
+function mf_best(Z)
+    n = size(Z, 1)
+    z = fill(NaN, n)
+    @inbounds for w in axes(Z, 2), i in 1:n
+        v = Z[i, w]
+        isnan(v) || (z[i] = isnan(z[i]) ? v : max(z[i], v))
+    end
+    z
+end
+
+# Width index with the largest z at each point (0 where none is defined).
+function mf_best_width(Z)
+    n = size(Z, 1)
+    wb = zeros(Int, n)
+    @inbounds for i in 1:n
+        best = -Inf
+        for w in axes(Z, 2)
+            v = Z[i, w]
+            if !isnan(v) && v > best
+                best = v
+                wb[i] = w
+            end
+        end
+    end
+    wb
+end
+
+# An added peak at `i` must not sit in a valley at a finer scale: at every
+# width narrower than its best width `w`, z within ±1 point is above
+# -MF_VALLEY_Z. Between two close peaks a wide kernel sees one blob and peaks
+# at the midpoint, while narrower kernels sit in the valley and respond
+# strongly negatively; a broad peak gives a weak or positive narrow response.
+const MF_VALLEY_Z = 3.0
+function mf_narrower_agrees(Z, i, w)
+    n = size(Z, 1)
+    for v in 1:(w - 1)
+        top = -Inf
+        for t in max(1, i - 1):min(n, i + 1)
+            isnan(Z[t, v]) || (top = max(top, Z[t, v]))
+        end
+        top == -Inf && continue
+        top > -MF_VALLEY_Z || return false
+    end
+    true
 end
 
 # Local maxima of z with z ≥ k at positions where `allowed[i]`, greedily
 # thinned so chosen peaks are more than `sep` points apart (strongest first).
-function mf_local_maxima(z, k, sep, allowed)
+# A point must also be a local maximum at its own best width `wb[i]`, with both
+# neighbours defined there: where a wide width becomes defined (at the trace
+# ends or next to a masked run) the maximum over widths steps up, which is not
+# a peak.
+function mf_local_maxima(z, Z, wb, k, sep, allowed)
     n = length(z)
     cand = Int[]
     @inbounds for i in 2:(n - 1)
-        z[i] >= z[i - 1] && z[i] > z[i + 1] && z[i] >= k && allowed[i] && push!(cand, i)
+        (z[i] >= z[i - 1] && z[i] > z[i + 1] && z[i] >= k && allowed[i]) || continue
+        w = wb[i]
+        a, b, c = Z[i - 1, w], Z[i, w], Z[i + 1, w]
+        (isnan(a) || isnan(c) || b < a || b <= c) && continue
+        push!(cand, i)
     end
     sort!(cand; by = i -> -z[i])
     keep = Int[]
@@ -263,22 +399,25 @@ function mf_local_maxima(z, k, sep, allowed)
 end
 
 # Combine persistence-detector peaks with matched-filter peaks. A persistence
-# peak is dropped only if z is defined at it and stays below `kb` within ±3
-# points. An added peak must be more than `sep` points from every kept peak.
-function hybrid_merge(base_idx, z, k, kb, sep, allowed)
+# peak is dropped only if `zraw` is defined at it, stays below `kb` within ±3
+# points, and no kernel there is `blocked` by a masked run: too close to the
+# trace ends no kernel is centred on the peak, and next to a masked run the
+# wide kernels cannot see a broad peak, so it is kept. `zraw` is judged against the
+# second-difference noise scale, not the per-width clipped scale, so a trace
+# that is mostly signal cannot lower it. An added peak is a local maximum of the
+# clipped z with z ≥ k, more than `sep` points from every kept peak, that passes
+# `mf_narrower_agrees`.
+function hybrid_merge(base_idx, Z, zraw, blocked, k, kb, sep, allowed)
+    z = mf_best(Z)
+    wb = mf_best_width(Z)
     n = length(z)
     kept = Int[]
     for j in base_idx
-        if isnan(z[j])
-            push!(kept, j)
-            continue
-        end
-        zmax = -Inf
-        for t in max(1, j - 3):min(n, j + 3)
-            isnan(z[t]) || (zmax = max(zmax, z[t]))
-        end
-        zmax >= kb && push!(kept, j)
+        r = max(1, j - 3):min(n, j + 3)
+        rmax = maximum((zraw[t] for t in r if !isnan(zraw[t])); init = -Inf)
+        (isnan(zraw[j]) || rmax >= kb || any(view(blocked, r))) && push!(kept, j)
     end
-    added = [i for i in mf_local_maxima(z, k, sep, allowed) if !any(j -> abs(i - j) <= sep, kept)]
-    sort!(vcat(kept, added))
+    added = [i for i in mf_local_maxima(z, Z, wb, k, sep, allowed)
+             if !any(j -> abs(i - j) <= sep, kept) && mf_narrower_agrees(Z, i, wb[i])]
+    sort!(vcat(kept, added)), z
 end
