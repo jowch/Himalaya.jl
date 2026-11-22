@@ -847,7 +847,7 @@ end
 # obviously file-I/O-free).
 # ──────────────────────────────────────────────────────────────────────────────
 
-const ANALYSIS_VERSION = string(pkgversion(Himalaya), "+2")
+const ANALYSIS_VERSION = string(pkgversion(Himalaya), "+3")
 
 function read_analysis_version(db::SQLite.DB, exposure_id::Int)::Union{String, Nothing}
     rows = Tables.rowtable(DBInterface.execute(db,
