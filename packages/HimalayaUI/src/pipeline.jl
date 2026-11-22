@@ -920,7 +920,7 @@ function hash_peak_set_from_db(db::SQLite.DB, exposure_id::Int)::String
     bytes2hex(SHA.sha256(buf))
 end
 
-acquisition_stem(filename::AbstractString) = replace(filename, r"_\d+_\d+$" => "")
+acquisition_stem(filename::AbstractString) = replace(String(filename), r"_\d+_\d+$" => "")
 
 """
     resolve_trace_path(analysis_dir, integration_pattern, filename) -> String | nothing

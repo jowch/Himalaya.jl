@@ -204,7 +204,7 @@ function register_exposures_routes!()
             if !isempty(evt)
                 row = evt[1]
                 payload_obj = ismissing(row.payload) ? nothing :
-                              JSON3.read(String(row.payload))
+                              JSON3.read(String(row.payload)::String)
                 # M0.4 mirror (see `_maybe_broadcast_event!`): a no-op reanalyze
                 # (both skip flags true) must emit NO frame from this manual
                 # route either — foreign tabs have nothing to converge on. This
