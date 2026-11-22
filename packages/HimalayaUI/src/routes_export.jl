@@ -3,8 +3,8 @@ using HTTP, JSON3, DBInterface, Tables, Oxygen, CSV, SQLite
 """
     build_export(db, experiment_id) -> Vector{Dict}
 
-Per-sample summary with the sample's call; `call_state` is `uncalled` until someone ticks a candidate.
-A called sample lists each exposure's members (none when that frame adds nothing, still `called`); others list every candidate.
+Per-sample summary; `indices` holds only the call's members on each frame (empty unless the sample is called).
+`candidates` lists every index and `auto_phases` the analysis's own pick; `call_state` is `uncalled` until a tick.
 """
 function build_export(db::SQLite.DB, experiment_id::Int)
     samples = Tables.rowtable(DBInterface.execute(db,
@@ -30,7 +30,7 @@ function build_export(db::SQLite.DB, experiment_id::Int)
 
         ex_out = Dict[]
         for e in exposures
-            indices = Tables.rowtable(DBInterface.execute(db,
+            candidates = Tables.rowtable(DBInterface.execute(db,
                 "SELECT id, phase, basis, score, r_squared, lattice_d
                  FROM indices WHERE exposure_id = ? ORDER BY score DESC, id", [Int(e.id)]))
             auto_phases = [String(r.phase) for r in Tables.rowtable(DBInterface.execute(db,
@@ -39,13 +39,14 @@ function build_export(db::SQLite.DB, experiment_id::Int)
                  JOIN index_groups g ON g.id = m.group_id
                  WHERE g.exposure_id = ? AND g.kind = 'auto'
                  ORDER BY i.score DESC, i.id", [Int(e.id)]))]
-            called && (indices = filter(ix -> Int(ix.id) in called_ids, indices))
+            indices = called ? filter(ix -> Int(ix.id) in called_ids, candidates) : empty(candidates)
             push!(ex_out, Dict(
                 :filename => e.filename,
                 :selected => e.selected != 0,
                 :called   => called,
                 :auto_phases => auto_phases,
                 :indices  => [delete!(ix, :id) for ix in rows_to_json(indices)],
+                :candidates => [delete!(ix, :id) for ix in rows_to_json(candidates)],
             ))
         end
 
@@ -63,14 +64,14 @@ function build_export(db::SQLite.DB, experiment_id::Int)
 end
 
 function _export_csv(summary)
-    header = ["sample_name","exposure_filename","call_state","call_phases",
+    header = ["sample_name","exposure_filename","call_state","call_phases","auto_phases",
               "phases","lattice_ds","r_squareds","scores","labels"]
     rows = Vector{Vector{Any}}()
     for sm in summary
         label_str = join(sm[:labels], ";")
         call_str = join(sm[:call_phases], ";")
         if isempty(sm[:exposures])
-            push!(rows, [sm[:name], "", sm[:call_state], call_str, "", "", "", "", label_str])
+            push!(rows, [sm[:name], "", sm[:call_state], call_str, "", "", "", "", "", label_str])
             continue
         end
         for ex in sm[:exposures]
@@ -78,7 +79,7 @@ function _export_csv(summary)
             lds    = join([string(ix[:lattice_d]) for ix in ex[:indices]], ";")
             r2s    = join([string(ix[:r_squared]) for ix in ex[:indices]], ";")
             scs    = join([string(ix[:score])     for ix in ex[:indices]], ";")
-            push!(rows, [sm[:name], ex[:filename], sm[:call_state], call_str,
+            push!(rows, [sm[:name], ex[:filename], sm[:call_state], call_str, join(ex[:auto_phases], ";"),
                          phases, lds, r2s, scs, label_str])
         end
     end
