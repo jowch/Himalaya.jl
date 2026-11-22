@@ -225,10 +225,29 @@ end
         _index!(fx.db, 20, e2, "Im3m", 0.9)
         _legacy!(fx.db; members = Dict(e1 => [10], e2 => [20]))
         @test HimalayaUI.representative_exposure_id(Tables.rowtable(DBInterface.execute(fx.db,
-            "SELECT id, selected, status FROM exposures WHERE sample_id = ?", [fx.s_id]))) == e2
+            "SELECT id, status FROM exposures WHERE sample_id = ?", [fx.s_id]))) == e2
 
         HimalayaUI.migrate_sample_calls!(fx.db)
         @test _members(fx.db) == [(e2, 20)]
+    end
+end
+
+@testset "migrate_sample_calls! keeps a legacy selected frame, then the selected column is dropped" begin
+    mktempdir() do dir
+        fx = _call_fixture(dir)
+        e1, e2 = fx.eids
+        DBInterface.execute(fx.db, "ALTER TABLE exposures ADD COLUMN selected BOOLEAN DEFAULT FALSE")
+        DBInterface.execute(fx.db, "UPDATE exposures SET selected = 1 WHERE id = ?", [e1])
+        _index!(fx.db, 10, e1, "Pn3m", 0.5)
+        _index!(fx.db, 20, e2, "Im3m", 0.9)
+        _legacy!(fx.db; members = Dict(e1 => [10], e2 => [20]))
+
+        HimalayaUI.migrate_sample_calls!(fx.db)
+        @test _members(fx.db) == [(e1, 10)]
+
+        HimalayaUI.migrate_drop_exposure_selected!(fx.db)
+        @test "selected" ∉ HimalayaUI.cols_of(fx.db, "exposures")
+        HimalayaUI.migrate_drop_exposure_selected!(fx.db)
     end
 end
 

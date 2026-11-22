@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { ModalShell } from "../../src/print/ui/ModalShell";
+import { ModalShell } from "../../src/ui/ModalShell";
 
 describe("ModalShell", () => {
   it("renders nothing when open=false", () => {

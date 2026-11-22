@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
-import { PrintApp } from "../src/print/App";
+import { App } from "../src/App";
 import { useAppState } from "../src/state";
 import * as api from "../src/api";
 import { FakeEventSource } from "./helpers/fakeEventSource";
@@ -20,7 +20,7 @@ describe("App ingestInFlight SSE listener (Phase E1)", () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <QueryClientProvider client={qc}>
-        <MemoryRouter initialEntries={["/experiments"]}><PrintApp /></MemoryRouter>
+        <MemoryRouter initialEntries={["/experiments"]}><App /></MemoryRouter>
       </QueryClientProvider>,
     );
     return qc;

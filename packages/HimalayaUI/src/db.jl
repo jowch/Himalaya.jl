@@ -131,7 +131,6 @@ CREATE TABLE IF NOT EXISTS exposures (
     sample_id            INTEGER REFERENCES samples(id),
     filename             TEXT,
     kind                 TEXT DEFAULT 'file',
-    selected             BOOLEAN DEFAULT FALSE,
     status               TEXT CHECK (status IN ('accepted', 'rejected')),
     image_path           TEXT,
     trace_hash           TEXT,
@@ -517,6 +516,7 @@ function migrate_schema!(db::SQLite.DB)
     migrate_sample_labels!(db)
     migrate_label_colors!(db)
     migrate_sample_calls!(db)
+    migrate_drop_exposure_selected!(db)
     migrate_drop_retired_tables!(db)
     migrate_label_suggestions!(db)
     migrate_setups!(db)
@@ -1166,6 +1166,19 @@ function migrate_hex_sqrt11!(db::SQLite.DB;
     nothing
 end
 
+function _legacy_representative_id(exps)
+    kept = [e for e in exps if is_kept_exposure(e)]
+    isempty(kept) && return nothing
+    picked = [e for e in kept if coalesce(e.selected, 0) == 1]
+    maximum(e -> Int(e.id), isempty(picked) ? kept : picked)
+end
+
+function migrate_drop_exposure_selected!(db::SQLite.DB)
+    _table_exists(db, "exposures") && "selected" in cols_of(db, "exposures") &&
+        DBInterface.execute(db, "ALTER TABLE exposures DROP COLUMN selected")
+    nothing
+end
+
 function migrate_sample_calls!(db::SQLite.DB)
     _migrated(db, MIGRATION_SAMPLE_CALLS) && return nothing
     SQLite.transaction(db) do
@@ -1189,8 +1202,9 @@ function migrate_sample_calls!(db::SQLite.DB)
         end
         carries(i) = haskey(members, i) || get(states, i, "indexed") != "indexed"
         by_sample = Dict{Int, Vector{NamedTuple}}()
+        sel = "selected" in cols_of(db, "exposures") ? "selected" : "0 AS selected"
         for e in Tables.rowtable(DBInterface.execute(db,
-                "SELECT id, sample_id, selected, status FROM exposures
+                "SELECT id, sample_id, $sel, status FROM exposures
                   WHERE sample_id IS NOT NULL ORDER BY id"))
             push!(get!(by_sample, Int(e.sample_id), NamedTuple[]), e)
         end
@@ -1199,7 +1213,7 @@ function migrate_sample_calls!(db::SQLite.DB)
             candidates = [Int(e.id) for e in exps if carries(Int(e.id))]
             isempty(candidates) && continue
             edited = [i for i in candidates if haskey(last_event, i)]
-            rep = representative_exposure_id(exps)
+            rep = _legacy_representative_id(exps)
             keep = !isempty(edited) ? argmax(i -> last_event[i], edited) :
                    (rep !== nothing && rep in candidates) ? rep : minimum(candidates)
             for i in candidates, ix in get(members, i, Int[])
@@ -1950,7 +1964,6 @@ function create_exposure!(db::SQLite.DB;
         sample_id::Union{Int,Nothing}      = nothing,    # optional (transient pre-group state)
         filename::Union{String,Nothing}    = nothing,
         kind::String                       = "file",
-        selected::Bool                     = false,
         status::Union{String,Nothing}      = nothing,
         image_path::Union{String,Nothing}  = nothing,
         # --- new PRP fields (Phase A) ---
@@ -1970,12 +1983,12 @@ function create_exposure!(db::SQLite.DB;
         setup_id = default_setup_id(db, experiment_id))
     result = DBInterface.execute(db, """
         INSERT INTO exposures
-            (setup_id, experiment_id, sample_id, filename, kind, selected, status, image_path,
+            (setup_id, experiment_id, sample_id, filename, kind, status, image_path,
              prp_path, timestamp, exposure_time, horizontal_position, scan_id, frame_no,
              load_id, content_fingerprint, transmitted_counts, incident_monitor, counting_time,
              pipe_length_m, monitors_read)
-        VALUES (?,?,?,?,?,?,?,?, ?,?,?,?,?,?,?,?, ?,?,?,?,?)
-    """, [setup_id, experiment_id, sample_id, filename, kind, Int(selected), status, image_path,
+        VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?,?,?, ?,?,?,?,?)
+    """, [setup_id, experiment_id, sample_id, filename, kind, status, image_path,
           prp_path, timestamp, exposure_time, horizontal_position, scan_id, frame_no,
           load_id, content_fingerprint, transmitted_counts, incident_monitor, counting_time,
           pipe_length_m, Int(monitors_read)])

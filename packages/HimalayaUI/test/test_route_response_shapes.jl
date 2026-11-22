@@ -275,7 +275,7 @@ end
                 @test r.status == 200
                 body = only(JSON3.read(String(r.body)))
                 expected = [
-                    :id, :sample_id, :filename, :kind, :selected, :status,
+                    :id, :sample_id, :filename, :kind, :status,
                     :image_path, :trace_hash, :analysis_inputs_hash,
                     :experiment_id, :prp_path, :timestamp, :exposure_time,
                     :horizontal_position, :scan_id, :frame_no, :load_id,

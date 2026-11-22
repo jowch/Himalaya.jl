@@ -27,7 +27,7 @@
           {
             "type": "command",
             "description": "WARN-ONLY: print new design-token guard violations on frontend src TS/TSX edit",
-            "command": "f=$(jq -r '.tool_input.file_path // empty'); case \"$f\" in *packages/HimalayaUI/frontend/src/*.ts|*packages/HimalayaUI/frontend/src/*.tsx) cd \"$CLAUDE_PROJECT_DIR/packages/HimalayaUI/frontend\" && out=$(node scripts/check-design.mjs 2>&1); code=$?; if [ \"$code\" -ne 0 ]; then printf '\\n[design-guard WARN] new appearance utility in a consumer (CI build will block; move it into src/print/ui/** or fix):\\n%s\\n' \"$out\" >&2; fi ;; esac; exit 0"
+            "command": "f=$(jq -r '.tool_input.file_path // empty'); case \"$f\" in *packages/HimalayaUI/frontend/src/*.ts|*packages/HimalayaUI/frontend/src/*.tsx) cd \"$CLAUDE_PROJECT_DIR/packages/HimalayaUI/frontend\" && out=$(node scripts/check-design.mjs 2>&1); code=$?; if [ \"$code\" -ne 0 ]; then printf '\\n[design-guard WARN] new appearance utility in a consumer (CI build will block; move it into src/ui/** or fix):\\n%s\\n' \"$out\" >&2; fi ;; esac; exit 0"
           }
         ]
       }

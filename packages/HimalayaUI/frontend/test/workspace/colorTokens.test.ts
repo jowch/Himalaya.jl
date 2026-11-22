@@ -31,7 +31,7 @@ describe("colour tokens the workspace reads from script", () => {
     for (const f of files(join(SRC, "workspace"))) {
       for (const m of readFileSync(f, "utf8").matchAll(/var\(--color-([a-z0-9-]+)\)/g)) used.add(m[1]!);
     }
-    for (const m of readFileSync(join(SRC, "workspace/ui/WorkspacePlot.tsx"), "utf8").matchAll(/--color-([a-z]+)-\$\{n\}/g)) {
+    for (const m of readFileSync(join(SRC, "ui/WorkspacePlot.tsx"), "utf8").matchAll(/--color-([a-z]+)-\$\{n\}/g)) {
       for (let n = 1; n <= 5; n++) used.add(`${m[1]}-${n}`);
     }
     const missing = [...used].filter((name) => {

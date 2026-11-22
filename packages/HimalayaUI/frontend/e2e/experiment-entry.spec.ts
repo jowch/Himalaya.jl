@@ -91,7 +91,7 @@ async function mockExperiment(
   for (const sample of loads.flatMap((l) => (l as { samples: { sample_id: number; exposures: { id: number; filename: string }[] }[] }).samples)) {
     const exposures = sample.exposures.map((e) => ({
       id: e.id, sample_id: sample.sample_id, filename: e.filename, kind: "file",
-      selected: false, status: e.id === 300 ? "rejected" : null, image_path: null,
+      status: e.id === 300 ? "rejected" : null, image_path: null,
     }));
     await page.route(`**/api/samples/${sample.sample_id}/exposures`, (r) =>
       r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(exposures) }));

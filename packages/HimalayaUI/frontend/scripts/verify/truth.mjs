@@ -314,7 +314,7 @@ export async function collectApp(cfg, experimentId) {
       const frames = exposures
         .slice()
         .sort((a, b) => a.id - b.id)
-        .map((e) => ({ id: e.id, filename: e.filename, status: e.status, selected: Boolean(e.selected), autoPhases: autoByFrame.get(e.filename) ?? [] }));
+        .map((e) => ({ id: e.id, filename: e.filename, status: e.status, autoPhases: autoByFrame.get(e.filename) ?? [] }));
       for (const f of frames) f.assignment = await readAssignment(api, f.id);
       return {
         id: s.id,

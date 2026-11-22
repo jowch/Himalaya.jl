@@ -3,13 +3,13 @@ import { StrictMode } from "react";
 import { render, act, cleanup } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
-import { PrintApp } from "../src/print/App";
+import { App } from "../src/App";
 import * as api from "../src/api";
 import * as toast from "../src/lib/toast";
 import { STORAGE_KEY, SCHEMA_VERSION } from "../src/lib/queue/persistence";
 import { FakeEventSource } from "./helpers/fakeEventSource";
 
-describe("PrintApp mounting after a reload during an outage", () => {
+describe("App mounting after a reload during an outage", () => {
   let qc: QueryClient;
 
   beforeEach(() => {
@@ -44,7 +44,7 @@ describe("PrintApp mounting after a reload during an outage", () => {
       render(
         <StrictMode>
           <QueryClientProvider client={qc}>
-            <MemoryRouter initialEntries={["/experiments"]}><PrintApp /></MemoryRouter>
+            <MemoryRouter initialEntries={["/experiments"]}><App /></MemoryRouter>
           </QueryClientProvider>
         </StrictMode>,
       );
@@ -62,7 +62,7 @@ describe("PrintApp mounting after a reload during an outage", () => {
     await act(async () => {
       render(
         <QueryClientProvider client={qc}>
-          <MemoryRouter initialEntries={["/experiments"]}><PrintApp /></MemoryRouter>
+          <MemoryRouter initialEntries={["/experiments"]}><App /></MemoryRouter>
         </QueryClientProvider>,
       );
     });

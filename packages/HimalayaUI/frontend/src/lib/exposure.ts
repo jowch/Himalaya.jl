@@ -1,6 +1,6 @@
 import type { Exposure } from "../api";
 
-type Frame = Pick<Exposure, "id" | "selected" | "status">;
+type Frame = Pick<Exposure, "id" | "status">;
 
 export function isKept(exposure: Pick<Exposure, "status">): boolean {
   return exposure.status !== "rejected";
@@ -15,6 +15,6 @@ export function keptExposures<T extends Pick<Exposure, "status">>(
 export function representativeExposure<T extends Frame>(
   exposures: readonly T[] | undefined,
 ): T | undefined {
-  const newestFirst = keptExposures(exposures).sort((a, b) => b.id - a.id);
-  return newestFirst.find((e) => e.selected) ?? newestFirst[0];
+  return keptExposures(exposures).reduce<T | undefined>(
+    (best, e) => (best === undefined || e.id > best.id ? e : best), undefined);
 }

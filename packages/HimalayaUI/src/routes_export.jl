@@ -42,7 +42,6 @@ function build_export(db::SQLite.DB, experiment_id::Int)
             indices = called ? filter(ix -> Int(ix.id) in called_ids, candidates) : empty(candidates)
             push!(ex_out, Dict(
                 :filename => e.filename,
-                :selected => e.selected != 0,
                 :called   => called,
                 :auto_phases => auto_phases,
                 :indices  => [delete!(ix, :id) for ix in rows_to_json(indices)],

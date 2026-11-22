@@ -6,7 +6,6 @@ import { getClientId } from "./lib/clientId";
 import { useQueueMutation } from "./lib/queue/useQueueMutation";
 import {
   setExposureStatusMutator,
-  selectExposureMutator,
 } from "./lib/queue/mutators/trivial";
 import { peakAddMutator } from "./lib/queue/mutators/peakAdd";
 import { peakRemoveMutator } from "./lib/queue/mutators/peakRemove";
@@ -462,18 +461,6 @@ export function useEditOps(experimentId: number): EditOps {
 export function useSetExposureStatus(sampleId: number) {
   const username = useAppState((s) => s.username);
   return useQueueMutation(setExposureStatusMutator, { sampleId, username, clientId: CLIENT_ID });
-}
-
-export function useSelectExposure(sampleId: number) {
-  const username = useAppState((s) => s.username);
-  const inner = useQueueMutation(selectExposureMutator, { sampleId, username, clientId: CLIENT_ID });
-  return {
-    ...inner,
-    // Threads the optional per-call callbacks through so consumers can toast
-    // on confirmation / terminal failure (see MutateCallbacks).
-    mutate: (exposureId: number, callbacks?: Parameters<typeof inner.mutate>[1]) =>
-      inner.mutate({ exposureId }, callbacks),
-  };
 }
 
 /** Trigger a rescan of a single experiment (cheap change-check then additive

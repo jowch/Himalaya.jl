@@ -3,7 +3,6 @@ import { resolveMutator, resolveMutatorForEvent } from "../../src/lib/queue/muta
 import {
   updateSampleMutator,
   setExposureStatusMutator,
-  selectExposureMutator,
 } from "../../src/lib/queue/mutators/trivial";
 import { peakAddMutator } from "../../src/lib/queue/mutators/peakAdd";
 import { peakRemoveMutator } from "../../src/lib/queue/mutators/peakRemove";
@@ -44,9 +43,6 @@ describe("resolveMutator", () => {
     expect(
       resolveMutator({ kind: "set_exposure_status", payload: {} }),
     ).toBe(setExposureStatusMutator);
-    expect(
-      resolveMutator({ kind: "select_exposure", payload: {} }),
-    ).toBe(selectExposureMutator);
   });
 
   it("returns undefined for speculative_deleted (no outbound op)", () => {
@@ -87,7 +83,6 @@ describe("resolveMutator ↔ resolveMutatorForEvent consistency", () => {
     { mutator: reanalyzeExposureMutator, eventKind: "analyze_run" },
     { mutator: updateSampleMutator,     eventKind: "update_sample" },
     { mutator: setExposureStatusMutator, eventKind: "set_exposure_status" },
-    { mutator: selectExposureMutator,   eventKind: "select_exposure" },
   ];
 
   cases.forEach(({ mutator, eventKind }) => {

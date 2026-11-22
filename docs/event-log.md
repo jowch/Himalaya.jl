@@ -93,10 +93,11 @@ guard for the same reason. Their `user_actions` rows stay in the log, and
 
 **Pure log events — use `log_action!`** (no view side effect, no
 broadcast routing through the dispatcher):
-`set_exposure_status`, `select_exposure`, `update_sample`, `analyze`,
+`set_exposure_status`, `update_sample`, `analyze`,
 `scan`, `experiment_created`, `setups_added`. The dispatcher carries explicit no-op
 `return nothing` guards for the view-less kinds (`set_exposure_status`,
-`select_exposure`, …).
+`update_sample`, …). Old `select_exposure` rows are a retired kind: frame
+selection was removed, and the representative is always the newest kept frame.
 
 `set_exposure_status` is audit-only: it records a Drop action but
 produces no view. There is a single screening verb — **Drop** (the X key) —
@@ -305,7 +306,7 @@ commits. Implications:
 - Subscribers never see an event that was rolled back.
 - Process death between commit and broadcast loses the frame, but the
   event is durable in `user_actions`. Clients reconcile on reconnect by
-  refetching: `PrintApp` opens the stream through `lib/liveStream.ts`, and
+  refetching: `App` opens the stream through `lib/liveStream.ts`, and
   every `open` after the first runs `lib/queue/reconnectRefresh.ts`. That
   invalidates every query except raw exposure traces, and it waits until no
   mutation is pending, so a refetch can't overwrite an optimistic edit that
@@ -355,7 +356,7 @@ intake; cache folding lives in `applyRemoteToCache(remote, qc)`
    kinds are forwarded. Unknown kinds fall through to a default
    invalidate-by-entity-id fallback.
 
-The EventSource connection is bound to `src/print/App.tsx` (`PrintApp`)'s
+The EventSource connection is bound to `src/App.tsx` (`App`)'s
 mount/unmount only; `clientId` is stable for the lifetime of the tab, so
 no listener recycling is needed.
 
