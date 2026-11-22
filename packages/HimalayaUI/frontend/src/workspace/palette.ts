@@ -114,6 +114,7 @@ function newLabelForm(name: string, p: WorkspacePaletteInput): PaletteForm {
         label: "Name",
         kind: "text",
         value: name,
+        typed: true,
         check: (v) => {
           const clean = cleanLabel(v);
           if (clean === undefined) return v.trim() === "" ? "Type a name." : "A label is one line of at most 64 characters.";

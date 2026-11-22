@@ -42,9 +42,24 @@ type Phase = "name" | "tutorial";
 /** Allowed handle characters: letters, digits, underscore. No @, no spaces. */
 const HANDLE_RE = /^[A-Za-z0-9_]+$/;
 
+const UNDECOMPOSED: Record<string, string> = { ł: "l", ø: "o", ß: "ss", đ: "d", æ: "ae", œ: "oe", þ: "th", ı: "i" };
+
+function handleWord(s: string): string {
+  return s.normalize("NFD").toLowerCase().replace(/[łøßđæœþı]/g, (c) => UNDECOMPOSED[c] ?? "").replace(/[^a-z0-9_]/g, "");
+}
+
 export function handleFromName(first: string, last: string): string {
-  const word = (s: string): string => s.normalize("NFD").toLowerCase().replace(/[^a-z0-9_]/g, "");
-  return word(first) || word(last);
+  return handleWord(first) || handleWord(last);
+}
+
+function freeHandle(first: string, last: string, taken: ReadonlySet<string>): string {
+  const base = handleFromName(first, last);
+  if (!base) return "";
+  const free = (h: string): boolean => !taken.has(h.toLowerCase());
+  if (free(base)) return base;
+  const initial = handleWord(first) ? handleWord(last).charAt(0) : "";
+  if (initial && free(`${base}_${initial}`)) return `${base}_${initial}`;
+  for (let n = 2; ; n++) if (free(`${base}${n}`)) return `${base}${n}`;
 }
 
 interface PendingUser {
@@ -93,12 +108,17 @@ export function OnboardingFlow(): JSX.Element | null {
 
   if (username !== undefined && phase !== "tutorial") return null;
 
+  const taken = new Set(users.map((u) => u.username.toLowerCase()));
+  const derivedHandle = freeHandle(newFirst, newLast, taken);
+
   const onSubmitName = async (): Promise<void> => {
     setError(null);
     const isNew = selection === "__new__";
     // Tolerate a leading @ even though the visual prefix means it shouldn't be there.
-    const handle = isNew ? newHandle.trim().replace(/^@/, "") || handleFromName(newFirst, newLast) : selection;
-    if (!handle) { setError("Handle required"); return; }
+    const typedHandle = newHandle.trim().replace(/^@/, "");
+    const handle = isNew ? typedHandle || derivedHandle : selection;
+    if (!handle) { setError("Pick a handle (letters, digits, _)"); return; }
+    if (isNew && taken.has(handle.toLowerCase())) { setError(`@${handle} is taken. Pick another handle.`); return; }
     if (isNew && !HANDLE_RE.test(handle)) {
       setError("Handle may only contain letters, digits, and underscores");
       return;
@@ -160,6 +180,7 @@ export function OnboardingFlow(): JSX.Element | null {
           onNewFirst={setNewFirst}
           newLast={newLast}
           onNewLast={setNewLast}
+          derivedHandle={derivedHandle}
           error={error}
           onSubmit={onSubmitName}
         />
@@ -189,6 +210,7 @@ interface NameStepProps {
   onNewFirst: (s: string) => void;
   newLast: string;
   onNewLast: (s: string) => void;
+  derivedHandle: string;
   error: string | null;
   onSubmit: () => void;
 }
@@ -196,7 +218,7 @@ interface NameStepProps {
 function NameStep({
   users, selection, onSelection,
   newHandle, onNewHandle, newFirst, onNewFirst, newLast, onNewLast,
-  error, onSubmit,
+  derivedHandle, error, onSubmit,
 }: NameStepProps): JSX.Element {
   const inputClass =
     "w-full bg-paper border border-hair-strong rounded-md px-2 py-1 " +
@@ -209,7 +231,7 @@ function NameStep({
 
   const previewLabel = (first: string, last: string, handle: string): string => {
     const name = [first.trim(), last.trim()].filter(Boolean).join(" ");
-    const h = handle.trim().replace(/^@/, "") || handleFromName(first, last);
+    const h = handle.trim().replace(/^@/, "") || derivedHandle;
     if (!name && !h) return " "; // reserve a line of space so layout doesn't jump
     if (!h)          return name;
     if (!name)       return `@${h}`;
@@ -268,7 +290,7 @@ function NameStep({
             <input
               className="flex-1 bg-transparent px-2 py-1 focus:outline-none"
               type="text"
-              placeholder={handleFromName(newFirst, newLast) || "handle"}
+              placeholder={derivedHandle || "handle"}
               value={newHandle}
               onChange={(e) => onNewHandle(e.target.value.replace(/^@/, ""))}
               data-testid="onboarding-new-handle"
