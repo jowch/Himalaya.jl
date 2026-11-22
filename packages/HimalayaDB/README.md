@@ -55,6 +55,12 @@ longer returns `data_dir`, `analysis_dir`, `experiment_type`, `energy_kev` or
 one beamtime can have different flight paths. 0.1 fails on any database
 HimalayaUI has opened since the setups migration.
 
+## Upgrading to 0.4
+
+Samples bridged as the same sample share one call, so `phase_call` of a bridged
+sample now includes the indices confirmed on the other members' exposures. A
+member's `exposure_id` says which sample's frame holds the evidence.
+
 ## Keeping it in step with HimalayaUI
 
 The package re-implements a few HimalayaUI reads. `test/test_contract.jl` runs

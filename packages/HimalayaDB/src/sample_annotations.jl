@@ -7,6 +7,8 @@ The sample's phase call, as HimalayaUI's Call list shows it:
 `state ∈ {"indexed", "form_factor", "null"}` (`"indexed"` when the sample has
 no call row). `members` are the confirmed indices across all of the sample's
 exposures, as `(; index_id, exposure_id, phase, score)` ordered by index id.
+Samples bridged as the same sample share one call, so `members` also holds the
+indices confirmed on the exposures of every sample in `bridged_samples`.
 `phase` is the best-scoring member's phase and `call_phases` the sorted
 distinct member phases; both are empty (`nothing`, `String[]`) unless the state
 is `"indexed"` and there is at least one member.
@@ -18,6 +20,7 @@ function phase_call(db::SQLite.DB, sample_id::Integer)
     srows = Tables.rowtable(DBInterface.execute(db,
         "SELECT state FROM sample_calls WHERE sample_id = ?", [sid]))
     state = isempty(srows) ? "indexed" : String(srows[1].state)
+    group = bridged_samples(db, sid)
     members = [(index_id = Int(r.index_id), exposure_id = Int(r.exposure_id),
                 phase = String(r.phase), score = r.score === missing ? -Inf : Float64(r.score))
                for r in Tables.rowtable(DBInterface.execute(db, """
@@ -25,8 +28,8 @@ function phase_call(db::SQLite.DB, sample_id::Integer)
                      FROM assignment_members m
                      JOIN exposures e ON e.id = m.exposure_id
                      JOIN indices i   ON i.id = m.index_id
-                    WHERE e.sample_id = ?
-                    ORDER BY m.index_id""", [sid]))]
+                    WHERE e.sample_id IN ($(join(fill("?", 1 + length(group)), ", ")))
+                    ORDER BY m.index_id""", vcat(sid, group)))]
     called = state == "indexed" && !isempty(members)
     phase = called ? argmax(m -> m.score, members).phase : nothing
     call_phases = called ? sort(unique([m.phase for m in members])) : String[]
