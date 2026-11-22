@@ -11,7 +11,7 @@ import { useSyncExternalStore } from "react";
 import type { CompareChange, CompareState } from "../../src/api";
 import { applyCompareChange, EMPTY_COMPARES } from "../../src/lib/compares";
 import { COMPARES_FULL, MAX_COMPARES } from "../../src/workspace/compare";
-import { COMPARE_COLORS } from "../../src/workspace/ui/WorkspacePlot";
+import { COMPARE_COLORS } from "../../src/ui/WorkspacePlot";
 
 type Callbacks = { onSuccess?: () => void; onError?: () => void };
 type Call = { hook: string; boundTo: number; arg: unknown; callbacks?: Callbacks };

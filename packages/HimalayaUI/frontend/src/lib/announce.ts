@@ -4,7 +4,7 @@
 // frequent, low-consequence, immediately-visible state changes (peak add/remove,
 // frame flips) where a visible toast on every action would be spam, but a
 // screen-reader user still needs WCAG 4.1.3 status feedback. The message is
-// written into a visually-hidden aria-live region (see print/ui/LiveRegion.tsx).
+// written into a visually-hidden aria-live region (see ui/LiveRegion.tsx).
 
 export interface AnnounceOptions {
   /** true → assertive region (interrupts); default false → polite. */

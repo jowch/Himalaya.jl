@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import type { ScaleType } from "../print/plot/projection";
+import type { ScaleType } from "../plot/projection";
 
 export type PlotView = "log" | "linear" | "loglog" | "kratky";
 

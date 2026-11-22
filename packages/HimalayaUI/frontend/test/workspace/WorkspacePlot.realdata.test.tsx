@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { render, screen } from "@testing-library/react";
-import { PLOT_HEIGHT, WorkspacePlot } from "../../src/workspace/ui/WorkspacePlot";
+import { PLOT_HEIGHT, WorkspacePlot } from "../../src/ui/WorkspacePlot";
 import { PLOT_MARGINS } from "../../src/workspace/plotScale";
 import type { PlotView } from "../../src/workspace/plotView";
 

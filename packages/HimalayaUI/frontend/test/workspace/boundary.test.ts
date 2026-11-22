@@ -2,8 +2,9 @@ import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
-const ROOT = join(__dirname, "../../src/workspace");
-const OLD = /from\s+["'][./]*\/print\/(pages|components|shell|interaction)\//;
+const SRC = join(__dirname, "../../src");
+const ROOTS = [join(SRC, "workspace"), join(SRC, "ui")];
+const PAGE_LAYERS = /from\s+["']\.\.\/(pages|components|shell)\//;
 
 function files(dir: string): string[] {
   return readdirSync(dir).flatMap((n) => {
@@ -12,11 +13,15 @@ function files(dir: string): string[] {
   });
 }
 
-describe("workspace import boundary", () => {
-  it("imports nothing from the old pages, components, shell or interaction layers", () => {
-    const offenders = files(ROOT).flatMap((f) =>
-      readFileSync(f, "utf8").split("\n").filter((l) => OLD.test(l)).map((l) => `${relative(ROOT, f)}: ${l.trim()}`),
+describe("workspace and ui import boundary", () => {
+  it("import nothing from the pages, components or shell layers", () => {
+    const offenders = ROOTS.flatMap(files).flatMap((f) =>
+      readFileSync(f, "utf8").split("\n").filter((l) => PAGE_LAYERS.test(l)).map((l) => `${relative(SRC, f)}: ${l.trim()}`),
     );
     expect(offenders).toEqual([]);
+  });
+
+  it("would catch a page-layer import", () => {
+    expect(PAGE_LAYERS.test('import { X } from "../shell/X";')).toBe(true);
   });
 });

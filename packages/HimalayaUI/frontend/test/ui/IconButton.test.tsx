@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import userEvent from "@testing-library/user-event";
-import { IconButton } from "../../src/print/ui/IconButton";
+import { IconButton } from "../../src/ui/IconButton";
 
 describe("IconButton", () => {
   it("uses label as the accessible name", () => {

@@ -6,19 +6,19 @@ React 18 + Vite + TypeScript strict + TailwindCSS 4. TanStack Query for server s
 
 | Task | Location | Notes |
 |------|----------|-------|
-| App entry | `print/main.tsx` | `index.html → print/main.tsx`; `StrictMode > ErrorBoundary > QueryClientProvider > BrowserRouter > PrintApp`; mounts `#app` |
-| App shell | `print/App.tsx` (`PrintApp`) | Composition root: `AppRoutes` + SSE + mutation-queue effects + shell siblings |
+| App entry | `main.tsx` | `index.html → main.tsx`; `StrictMode > ErrorBoundary > QueryClientProvider > BrowserRouter > App`; mounts `#app` |
+| App shell | `App.tsx` (`App`) | Composition root: `AppRoutes` + SSE + mutation-queue effects + shell siblings |
 | Server state | `queries.ts` | TanStack Query hooks; `authOpts(username, clientId, clientOpId)` helper lives in `lib/authOpts.ts` |
 | API layer | `api.ts` | Fetch wrappers; AuthOpts per-call for mutations |
 | Client state | `state.ts` | Zustand store — **use named actions only** |
 | Phase palette | `phases.ts` | phase → color mapping |
 | Tailwind theme | `styles.css` | `@theme { --color-* … }` |
-| App shell + routing | `print/shell/` | `AppShell`, `TopNav`, `AppRoutes`, `ExperimentEntry`, `LinkGone`, `ResolvingFallback`, `OnboardingFlow`, `ShellPalette`, `InfrastructureBanner`. See [print/shell/AGENTS.md](print/shell/AGENTS.md) |
-| Composites | `print/components/` | Page-composing components (rails, plates, panels, rows, modals) built from the `ui/` primitives |
-| Triage workspace | `workspace/` | The three-pane workspace (`WorkspacePage` at `/experiments/:id/workspace/:sampleId?`, outside `AppShell`; pure `model.ts`). Its primitives live in `workspace/ui/`, which is appearance-exempt like `print/ui/`; `WorkspacePage` stays placement-only. The plot (`ui/WorkspacePlot.tsx`) draws the approved mock-up directly on `print/plot/PlotFrame` + `projection.ts`; there is no shared trace-plot engine any more. |
-| UI primitives | `print/ui/` | Closed-look design-system primitives (Button, Card, PhaseChip, ModalShell, Kicker, IconButton, Dot, ToastContainer, …). Appearance lives here; consumer `className` is placement-only. See "Design system" below. |
-| Render layers | `print/{plot,detector}/` | Appearance-authoring render layers (plot frame and projection, detector image). The `lint:design` appearance guard excludes them |
-| Pages | `print/pages/` | `ExperimentsHomePage`, `NewExperimentPage` (under the single `AppShell`) |
+| App shell + routing | `shell/` | `AppShell`, `TopNav`, `AppRoutes`, `ExperimentEntry`, `LinkGone`, `ResolvingFallback`, `OnboardingFlow`, `ShellPalette`, `InfrastructureBanner`. See [shell/AGENTS.md](shell/AGENTS.md) |
+| Composites | `components/` | Page-composing components (rails, plates, panels, rows, modals) built from the `ui/` primitives |
+| Triage workspace | `workspace/` | The three-pane workspace (`WorkspacePage` at `/experiments/:id/workspace/:sampleId?`, outside `AppShell`; pure `model.ts`). Its components live in `ui/` with every other appearance-owning component; `WorkspacePage` stays placement-only. The plot (`ui/WorkspacePlot.tsx`) draws the approved mock-up directly on `plot/PlotFrame` + `projection.ts`; there is no shared trace-plot engine any more. |
+| UI primitives | `ui/` | Closed-look design-system primitives (Button, Card, PhaseChip, ModalShell, Kicker, IconButton, Dot, ToastContainer, …). Appearance lives here; consumer `className` is placement-only. See "Design system" below. |
+| Render layers | `{plot,detector}/` | Appearance-authoring render layers (plot frame and projection, detector image). The `lint:design` appearance guard excludes them |
+| Pages | `pages/` | `ExperimentsHomePage`, `NewExperimentPage` (under the single `AppShell`) |
 | Hooks | `hooks/` | `useFocusTrap`, … |
 | Library | `lib/` | URL helpers, plot helpers, peak refs, custom index, labels, bridges |
 | Mutation queue | `lib/queue/` | See [lib/queue/AGENTS.md](lib/queue/AGENTS.md) |
@@ -56,31 +56,29 @@ Wrap any function that is both defined inside a component AND used as a `useEffe
 
 ## Tailwind v4 theming
 
-"The Print" palette (light warm paper, terracotta accent hue 38, Source Sans 3 throughout) is defined once in `styles.css` via `@theme { --color-* ... }` (R0a, #221). The app has a dark theme selected by `data-theme`, set on `<html>` by `useDocumentTheme` (`lib/theme.ts`, mounted in `PrintApp`) so every page follows the pick, and on the workspace root from the same store; `useDocumentTheme` sets `data-theme` on `<html>`: the dark blocks at the end of `styles.css` restate the chrome, status and `--color-phase-*` tokens, and `phaseColor()` returns `var(--color-phase-…)` so phase colour follows the theme. Any token built from another token must be restated there too. The legacy dark-era neutral-ramp shim (the duplicated `bg-`/`text-`/`border-` neutral utilities that mirrored the canonical Print names) was excised in R3-F (#259): use the canonical Print utilities directly — `bg-paper`/`bg-paper-sunk`/`bg-plate`, `text-ink`/`text-ink-soft`/`text-ink-faint`, `border-hair`/`border-hair-strong`, `text-print-accent` (or `accent` for terracotta). Reintroducing an old name is self-revealing: Tailwind won't generate the utility and its `--color-*` custom property no longer resolves. Titles use the `text-display`/`text-headline` roles. To add a new color, add it to `@theme` first.
+"The Print" palette (light warm paper, terracotta accent hue 38, Source Sans 3 throughout) is defined once in `styles.css` via `@theme { --color-* ... }` (R0a, #221). The app has a dark theme selected by `data-theme`, set on `<html>` by `useDocumentTheme` (`lib/theme.ts`, mounted in `App`) so every page follows the pick, and on the workspace root from the same store; `useDocumentTheme` sets `data-theme` on `<html>`: the dark blocks at the end of `styles.css` restate the chrome, status and `--color-phase-*` tokens, and `phaseColor()` returns `var(--color-phase-…)` so phase colour follows the theme. Any token built from another token must be restated there too. The legacy dark-era neutral-ramp shim (the duplicated `bg-`/`text-`/`border-` neutral utilities that mirrored the canonical Print names) was excised in R3-F (#259): use the canonical Print utilities directly — `bg-paper`/`bg-paper-sunk`/`bg-plate`, `text-ink`/`text-ink-soft`/`text-ink-faint`, `border-hair`/`border-hair-strong`, `text-print-accent` (or `accent` for terracotta). Reintroducing an old name is self-revealing: Tailwind won't generate the utility and its `--color-*` custom property no longer resolves. Titles use the `text-display`/`text-headline` roles. To add a new color, add it to `@theme` first.
 
 ## Design system — closed-look primitives + the design guard (ENFORCED)
 
-The Print's recurring patterns live as **closed-look** primitives in `print/ui/` (Button, Card, PhaseChip, ModalShell, Kicker, IconButton, Dot, ToastContainer). They own their appearance via semantic props (`variant` / `size` / `tone` / domain props); a consumer's `className` is **placement-only** (margins, position, grid). To change how a primitive looks, build a variant *into the primitive* — the idiom is a `Record<Variant,string>` map + a tiny local `cx()` join helper (no cva/clsx/tailwind-merge). Don't restyle from the outside.
+The Print's recurring patterns live as **closed-look** primitives in `ui/` (Button, Card, PhaseChip, ModalShell, Kicker, IconButton, Dot, ToastContainer). They own their appearance via semantic props (`variant` / `size` / `tone` / domain props); a consumer's `className` is **placement-only** (margins, position, grid). To change how a primitive looks, build a variant *into the primitive* — the idiom is a `Record<Variant,string>` map + a tiny local `cx()` join helper (no cva/clsx/tailwind-merge). Don't restyle from the outside.
 
 **Ratchets (2026-11-19).** `npm run lint:ratchet` (`scripts/check-ratchets.mjs`, also in `npm run build`) counts two things per file against `scripts/ratchet-baseline.json` and fails if any count grows:
 
-- **Appearance tokens** (counted per token, not per `className`) in every string or template literal inside a consumer `className=` expression, including `cx(...)` and ternaries. Named tokens count too (`text-ink-soft`, `text-caption`, `font-*`, `bg-*`, `border*`, `rounded*`, …); text alignment and wrapping are placement. Exempt: `print/{ui,plot,detector}/`, `workspace/ui/` and stories. `lint:design` catches bracket values and raw colours; the ratchet stops the named-token count from growing. It does not see styling built outside a `className=` expression.
+- **Appearance tokens** (counted per token, not per `className`) in every string or template literal inside a consumer `className=` expression, including `cx(...)` and ternaries. Named tokens count too (`text-ink-soft`, `text-caption`, `font-*`, `bg-*`, `border*`, `rounded*`, …); text alignment and wrapping are placement. Exempt: `{ui,plot,detector}/`, `ui/` and stories. `lint:design` catches bracket values and raw colours; the ratchet stops the named-token count from growing. It does not see styling built outside a `className=` expression.
 - **Comment lines** in HimalayaUI frontend `src/` (TypeScript AST, so trailing and JSX comments count and strings do not) and backend `src/*.jl` (`#`, `#= =#` and docstrings; SQL `"""` strings do not count). HimalayaUI code is comment-free: put the reason in a name, a test or an assertion. Exempt: comments that *start* with `physics:`, `eslint-disable… -- <reason>` and `@ts-expect-error`. A reason-less directive and `@ts-ignore` count. The core `Himalaya` package is exempt.
 
 A count that falls must be locked in with `npm run lint:ratchet -- --update` (commit the baseline). `--update` also accepts a rename or split as long as each total does not grow.
 
 `npm run lint` runs ESLint (`react-hooks/rules-of-hooks`, `react-hooks/exhaustive-deps`, `no-console`) on all of `src/`, stories included.
 
-This is **mechanically enforced** (2026-05-29 extraction). `scripts/check-design.mjs` runs as a pure-absolute `lint:design` step prepended to `npm run build` (plus a warn-only PostToolUse hook), and **fails the build** on any inline appearance utility *outside* `print/ui/**` and `workspace/ui/**`:
+This is **mechanically enforced** (2026-05-29 extraction). `scripts/check-design.mjs` runs as a pure-absolute `lint:design` step prepended to `npm run build` (plus a warn-only PostToolUse hook), and **fails the build** on any inline appearance utility *outside* `ui/**` and `ui/**`:
 
 - arbitrary type size `text-[…]` → use a named scale role (`text-xs/sm/base/lg/xl/headline-lg/display`)
 - arbitrary radius `rounded-[…]` → `rounded-sm` / `rounded-md` (both 5px) / `rounded-full`
 - raw colour literal (`oklch(` / `rgba(` / quoted `#hex`) → a `--color-*` token utility
 - side-stripe `border-l/r` > 1px → a full border + a leading icon/word instead
 
-Only the colour-AUTHORING files are exempt (rules #3/#5 share an allowlist: `phases.ts`, `print/main.tsx`, plus the excluded `print/{ui,plot,detector}/` and `workspace/ui/` prefixes).
-
-`check-design.mjs` also enforces a **`no-legacy-import` rule** (`scanLegacyImports`) alongside the appearance guard: it fails the build if any `src/print/**` file relatively imports from top-level `src/components/**` or `src/pages/**`. Those legacy dirs are gone post-cutover, so the rule now functions as a regression tripwire against re-introducing the retired tree.
+Only the colour-AUTHORING files are exempt (rules #3/#5 share an allowlist: `phases.ts`, `main.tsx`, plus the excluded `{ui,plot,detector}/` prefixes).
 
 ## Mutation queue — load-bearing one-liners
 
@@ -102,4 +100,4 @@ Every reconciliation contract has six layers (route emit → SSE payload → `ap
 
 - Mint `client_op_id` inside `mutationFn`, not at hook creation time.
 - Don't assert on Tailwind class strings in tests — use `data-testid` / `data-*` attributes.
-- Don't inline appearance utilities (`text-[…]`, `rounded-[…]`, raw colours, side-stripes) in a consumer — `lint:design` fails the build. Put appearance in a `print/ui/` primitive; `className` is placement-only (see "Design system").
+- Don't inline appearance utilities (`text-[…]`, `rounded-[…]`, raw colours, side-stripes) in a consumer — `lint:design` fails the build. Put appearance in a `ui/` primitive; `className` is placement-only (see "Design system").
