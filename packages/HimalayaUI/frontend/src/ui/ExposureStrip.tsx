@@ -1,6 +1,7 @@
 import type { Exposure } from "../api";
 import { imageUrl } from "../workspace/model";
 import { detectorLutFilter } from "../detector/detectorLut";
+import { Tooltip } from "./Tooltip";
 
 const DETECTOR_COLOUR = { filter: detectorLutFilter("magma") };
 
@@ -23,14 +24,16 @@ export function ExposureStrip({ groups, currentId, onPick, onToggleDrop }: Props
       {groups.map((g, gi) => (
         <section key={g.key} aria-label={g.title} className="flex flex-col gap-1">
           {g.title !== undefined && (
-            <h4 data-testid="frame-group-header" className="m-0 truncate text-xs font-semibold text-ink-soft" title={g.title}>{g.title}</h4>
+            <Tooltip content={g.title} overflowOnly>
+              <h4 data-testid="frame-group-header" className="m-0 truncate text-xs font-semibold text-ink-soft">{g.title}</h4>
+            </Tooltip>
           )}
           <ul className="m-0 grid list-none grid-cols-6 gap-2 p-0">
             {g.exposures.map((e, i) => {
               const cur = e.id === currentId;
               const dropped = e.status === "rejected";
               const src = imageUrl(e, true);
-              const name = gi === 0 || g.title === undefined ? `Frame ${i + 1}` : `Frame ${i + 1} of ${g.title}`;
+              const name = gi === 0 || g.title === undefined ? `Image ${i + 1}` : `Image ${i + 1} of ${g.title}`;
               return (
                 <li
                   key={e.id}
@@ -50,7 +53,7 @@ export function ExposureStrip({ groups, currentId, onPick, onToggleDrop }: Props
                     {src ? (
                       <img src={src} alt="" loading="lazy" style={DETECTOR_COLOUR} className="h-full w-full object-cover" />
                     ) : (
-                      <span className="text-xs text-frame-tag">No image</span>
+                      <span className="text-xs text-frame-tag">No TIFF</span>
                     )}
                   </button>
                   {dropped && <span className="text-xs text-ink-soft line-through">dropped</span>}

@@ -3,7 +3,7 @@ import type { HTMLAttributes } from "react";
 import { CheckCircle } from "./CheckCircle";
 import { cx } from "../lib/cx";
 
-export interface CheckboxProps extends Omit<HTMLAttributes<HTMLSpanElement>, "onChange"> {
+export interface CheckboxProps extends Omit<HTMLAttributes<HTMLSpanElement>, "onChange" | "title"> {
   checked?: boolean;
   indeterminate?: boolean;
   disabled?: boolean;

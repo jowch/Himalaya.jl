@@ -125,7 +125,7 @@ function cli_analyze(args)
         exp_row = _resolve_experiment(db, p[:experiment])
         skipped = _analyze_experiment!(db, Int(exp_row.id); sample_filter = p[:sample])
     end
-    skipped > 0 && error("$skipped frame(s) or experiment(s) skipped; see the SKIP lines above")
+    skipped > 0 && error("$skipped image(s) or experiment(s) skipped; see the SKIP lines above")
 end
 
 _fmt(x, spec) = ismissing(x) || x === nothing ? "n/a" : Printf.format(Printf.Format(spec), x)

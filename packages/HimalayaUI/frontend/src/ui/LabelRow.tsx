@@ -5,6 +5,7 @@ import { Kbd } from "./Kbd";
 import { LabelColorMenu } from "./LabelColorMenu";
 import { LabelPicker } from "./LabelPicker";
 import { LABEL_SWATCH } from "./labelSwatches";
+import { Tooltip } from "./Tooltip";
 
 interface Props {
   labels: readonly SampleLabel[];
@@ -59,9 +60,11 @@ function Chip({ entry, editable, color, measure = false, onAdd, onRemove, onOpen
       className={`inline-flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded-full border pt-0.5 pb-[3px] pl-2.5 pr-1 text-caption ${tone} ${fill}`}
     >
       {suggested && editable && onAdd ? (
-        <button type="button" onClick={() => onAdd(entry.label)} title="Suggested. Click to confirm." aria-label={`Confirm label ${name}`}>
-          {name}
-        </button>
+        <Tooltip content="This label is suggested. Click to confirm it.">
+          <button type="button" onClick={() => onAdd(entry.label)} aria-label={`Confirm label ${name}`}>
+            {name}
+          </button>
+        </Tooltip>
       ) : (
         <span>
           {name}
@@ -196,7 +199,9 @@ export function LabelRow({
     <div className="relative flex h-6 w-full min-w-0 flex-nowrap items-center justify-end gap-1.5" data-testid="workspace-labels">
       {note && (
         <span className="relative min-w-0 flex-1 self-stretch @max-[34rem]:hidden">
-          <span className="absolute inset-0 truncate whitespace-nowrap text-base leading-6 text-ink-faint" title={note}>{note}</span>
+          <Tooltip content={note} overflowOnly>
+            <span className="absolute inset-0 truncate whitespace-nowrap text-base leading-6 text-ink-faint">{note}</span>
+          </Tooltip>
         </span>
       )}
       <div ref={box} style={{ flexBasis: natural }} className={"flex shrink grow-0 flex-nowrap items-center justify-end gap-1.5 overflow-hidden " + (labels.length > 0 ? "min-w-11" : "min-w-0")} data-testid="workspace-label-chips">

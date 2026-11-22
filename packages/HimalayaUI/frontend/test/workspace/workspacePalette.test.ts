@@ -100,12 +100,12 @@ describe("workspacePalette", () => {
   });
   it("keeps the root order and lists undo and redo only when typed, at the end of App", () => {
     const run = vi.fn();
-    const { groups } = workspacePalette(input({ history: { undo: "dropped frame 2 of A1", redo: "ticked Pn3m on A1", run } }));
+    const { groups } = workspacePalette(input({ history: { undo: "dropped image 2 of A1", redo: "ticked Pn3m on A1", run } }));
     expect(groups.map((g) => g.title)).toEqual(workspacePalette(input()).groups.map((g) => g.title));
     expect(groups[0]!.items[0]!.id).toBe("next-unreviewed");
     const app = groups.find((g) => g.title === "App")!.items;
     const undo = app.find((i) => i.id === "undo")!;
-    expect(undo).toMatchObject({ label: "Undo: dropped frame 2 of A1", typeOnly: true });
+    expect(undo).toMatchObject({ label: "Undo: dropped image 2 of A1", typeOnly: true });
     expect(app.find((i) => i.id === "redo")).toMatchObject({ label: "Redo: ticked Pn3m on A1", typeOnly: true });
     undo.run?.();
     expect(run).toHaveBeenCalledWith("undo");

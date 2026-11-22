@@ -157,7 +157,7 @@ end
 function print_merge_plan(io::IO, plan)
     println(io, "Merge into experiment $(plan.into):")
     for x in plan.experiments
-        println(io, "  [$(x.id)] $(x.name)  ($(x.path))  $(x.samples) samples, $(x.exposures) frames")
+        println(io, "  [$(x.id)] $(x.name)  ($(x.path))  $(x.samples) samples, $(x.exposures) images")
     end
     println(io, "Result: \"$(plan.name)\" at $(plan.path)")
     for st in plan.setups
