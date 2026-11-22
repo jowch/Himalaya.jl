@@ -360,6 +360,31 @@ export function bridgeEntry(
   };
 }
 
+export function settleCallEntry(
+  ops: EditOps,
+  at: Where & { from: number; to: number; keep: number; lost: readonly SampleCallMember[] },
+): UndoEntry {
+  const has = (members: readonly SampleCallMember[], m: SampleCallMember): boolean =>
+    members.some((x) => x.exposure_id === m.exposure_id && x.index_id === m.index_id);
+  return {
+    ...at,
+    undo: async () => {
+      const call = await ops.read.call(at.from);
+      let sent = 0;
+      for (const m of at.lost) {
+        if (has(call.members, m)) continue;
+        ops.addPhase(m.exposure_id, m.index_id);
+        sent += 1;
+      }
+      return sent;
+    },
+    redo: async () => {
+      ops.bridge(at.from, at.to, at.keep);
+      return 1;
+    },
+  };
+}
+
 export function unbridgeEntry(
   ops: EditOps,
   at: Where & { target: number; bridges: readonly SampleBridge[] },

@@ -42,7 +42,7 @@ import { byRecent, recentRank, recordRecent } from "../lib/recents";
 import { helpKeyFromEmptyField, inDialog, isEditable, suppressGlobalKeys } from "../lib/keys";
 import { useUndoHistory, type UndoEntry, type UndoStep } from "./undo";
 import {
-  bridgeEntry, combinedEntry, customIndexEntry, dropEntry, excludeEntry, identify, labelEntry, noPhaseEntry, peakEntry,
+  bridgeEntry, combinedEntry, settleCallEntry, customIndexEntry, dropEntry, excludeEntry, identify, labelEntry, noPhaseEntry, peakEntry,
   experimentEntry, setupEntry, labelColorEntry, tickEntry, unbridgeEntry, untickEntry, compareEntry,
 } from "./undoEntries";
 import { showToast } from "../lib/toast";
@@ -692,9 +692,23 @@ export function WorkspacePage(): JSX.Element {
     settlePrompted.current.add(sample.id);
     const here = sample.id;
     const mate = unsettledMate.id;
-    setPaletteStart(keepCallForm(`Calls differ: same sample as ${nameWithSetup(unsettledMate)}`, choices, (keep) => ops.bridge(here, mate, keep), "keep"));
+    const stateOf = new Map([[here, sample.assignment_state ?? "indexed"], [mate, unsettledMate.assignment_state ?? "indexed"]]);
+    const settle = (keep: KeepCall): void => {
+      if (typeof keep !== "number") return;
+      const state = stateOf.get(keep) ?? "indexed";
+      const record = (lost: readonly SampleCallMember[]): void => {
+        ops.bridge(here, mate, keep);
+        history.record(settleCallEntry(ops, {
+          label: `kept ${nameWithSetup(keep === here ? sample : unsettledMate)}'s call for the same sample`, sampleId: here, exposureId: undefined,
+          from: here, to: mate, keep, lost,
+        }));
+      };
+      if (state !== "form_factor") return record([]);
+      ops.read.call(here).then((c) => record(c.members), () => record([]));
+    };
+    setPaletteStart(keepCallForm(`Calls differ: same sample as ${nameWithSetup(unsettledMate)}`, choices, settle, "keep"));
     setPaletteOpen(true);
-  }, [username, sample, unsettledMate, nameWithSetup, ops]);
+  }, [username, sample, unsettledMate, nameWithSetup, ops, history]);
   const labelEdit = useCallback(
     (sid: number, tag: string, added: boolean) => {
       const prev = labelList.find((l) => l.sample_id === sid && sameLabel(l.label, tag))?.state;

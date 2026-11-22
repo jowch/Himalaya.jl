@@ -36,7 +36,7 @@ export function Palette({ groups, pages, onClose, onType, start }: Props): JSX.E
 
   const back = (): void => {
     const prev = stack[stack.length - 1];
-    if (!prev) return onClose();
+    if (!prev || (start && stack.length === 1)) return onClose();
     heldBack.current = true;
     setStack(stack.slice(0, -1));
     setQuery(prev.query);

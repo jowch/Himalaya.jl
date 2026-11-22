@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, render, screen, fireEvent, within, waitFor } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
-import type { CorpusSample, Exposure, IndexEntry, Assignment, Peak, ProblemExposure, SampleBridge, SampleCall, SampleLabel, LabelColorEntry, LabelColor, Trace } from "../../src/api";
+import type { CorpusSample, Exposure, IndexEntry, Assignment, Peak, ProblemExposure, SampleBridge, SampleCall, SampleCallMember, SampleLabel, LabelColorEntry, LabelColor, Trace } from "../../src/api";
 import { ApiError } from "../../src/api";
 import { WorkspacePage } from "../../src/workspace/WorkspacePage";
 import type { PrefetchTarget } from "../../src/workspace/prefetch";
@@ -79,6 +79,7 @@ const server = {
   status: new Map<number, Exposure["status"]>(),
   colors: new Map<string, LabelColor | null>(),
   experiment: { name: "BL-19", description: null as string | null },
+  callMembers: new Map<number, SampleCallMember[]>(),
 };
 const serverStatus = (sid: number, eid: number, status: Exposure["status"]) => {
   server.status.set(eid, status);
@@ -120,7 +121,7 @@ const editOps = {
       ?? { exposure_id: eid, state: "null" as const, members: [] },
     labels: async () => state.labels,
     bridges: async () => state.bridges,
-    call: async (sid: number) => ({ sample_id: sid, state: "indexed" as const, phase: null, call_phases: [], members: sid === 10 ? [{ index_id: 2, exposure_id: 101, phase: "Pn3m" }] : [] }),
+    call: async (sid: number) => ({ sample_id: sid, state: "indexed" as const, phase: null, call_phases: [], members: server.callMembers.get(sid) ?? (sid === 10 ? [{ index_id: 2, exposure_id: 101, phase: "Pn3m" }] : []) }),
     exposures: async () => state.exposures.map((e) => (server.status.has(e.id) ? { ...e, status: server.status.get(e.id)! } : e)),
     labelColors: async () => {
       const merged = new Map(state.labelColors.map((e) => [e.label.toLowerCase(), e]));
@@ -346,6 +347,7 @@ beforeEach(() => {
   state.rescanError = false;
   server.indices = new Map();
   server.assignments = new Map();
+  server.callMembers = new Map();
   server.saving = false;
   server.saved = undefined;
   server.status = new Map();
@@ -2894,7 +2896,7 @@ describe("WorkspacePage", () => {
     await waitFor(() => expect(calls).toContainEqual({ hook: "bridge", boundTo: 1, arg: { sampleId: 10, toSampleId: 13, keepCall: 13 } }));
   });
 
-  it("opening a bridged sample whose call state differs from its mate's asks once which call to keep", () => {
+  it("opening a bridged sample whose call state differs from its mate's asks once which call to keep", async () => {
     state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
     state.setups = [{ id: 1, name: "Short pipe", folder: "s1", included: true }, { id: 2, name: "Long pipe", folder: "s2", included: true }];
     state.corpus = state.corpus.map((s) => (s.id === 10 ? { ...s, setup_id: 1 } : s.id === 12 ? { ...s, setup_id: 2 } : s));
@@ -2905,9 +2907,30 @@ describe("WorkspacePage", () => {
     fireEvent.keyDown(keep, { key: "ArrowDown" });
     fireEvent.keyDown(keep, { key: "Enter" });
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(calls.filter((c) => c.hook === "op:bridge").map((c) => c.arg)).toEqual([[10, 12, 12]]);
+    await waitFor(() => expect(calls.filter((c) => c.hook === "op:bridge").map((c) => c.arg)).toEqual([[10, 12, 12]]));
     fireEvent.click(screen.getByRole("button", { name: "Frame 1" }));
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("keeping the form-factor call when settling an old bridge can be undone, which re-ticks the phases it cleared", async () => {
+    state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
+    renderAt("/experiments/1/workspace/10");
+    const keep = within(screen.getByRole("dialog", { name: "Calls differ: same sample as A3" })).getByRole("combobox", { name: "Keep the call of" });
+    fireEvent.keyDown(keep, { key: "ArrowDown" });
+    fireEvent.keyDown(keep, { key: "Enter" });
+    await waitFor(() => expect(calls.filter((c) => c.hook === "op:bridge")).toHaveLength(1));
+    server.callMembers.set(10, []);
+    await act(async () => { fireEvent.keyDown(window, { key: "z", ctrlKey: true }); for (let i = 0; i < 10; i++) await Promise.resolve(); });
+    await waitFor(() => expect(calls.filter((c) => c.hook === "op:addPhase").map((c) => c.arg)).toEqual([[101, 2]]));
+  });
+
+  it("Esc on the settle prompt closes the palette instead of opening the command list", () => {
+    state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
+    renderAt("/experiments/1/workspace/10");
+    const keep = within(screen.getByRole("dialog", { name: "Calls differ: same sample as A3" })).getByRole("combobox", { name: "Keep the call of" });
+    fireEvent.keyDown(keep, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(calls.filter((c) => c.hook === "op:bridge")).toHaveLength(0);
   });
 
   it("the palette says the open sample is not the same sample as every other sample in its group", () => {
