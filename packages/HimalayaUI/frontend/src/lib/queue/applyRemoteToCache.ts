@@ -7,6 +7,7 @@ import type {
 } from "../../api";
 import { queryKeys } from "../../queries";
 import { mergeExperimentPatch } from "./mutators/experiment";
+import { mergeSetupPatch, type SetupFields } from "./mutators/setup";
 import { peakQTol } from "./peakQTol";
 import { announceAssignmentDropped } from "./assignmentDropped";
 import { INGEST_STAGES } from "../ingestStages";
@@ -312,6 +313,18 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       qc.invalidateQueries({ queryKey: queryKeys.experiment(id) });
       qc.invalidateQueries({ queryKey: queryKeys.experiments });
       break;
+    case "setup_updated": {
+      const expId = payload?.experiment_id as number | undefined;
+      if (expId === undefined) break;
+      const fields: SetupFields = {};
+      if (typeof payload?.name === "string") fields.name = payload.name;
+      if (payload !== undefined && "display_name" in payload) fields.display_name = (payload.display_name as string | null) ?? null;
+      if (typeof payload?.included === "boolean") fields.included = payload.included;
+      mergeSetupPatch(qc, expId, id, fields);
+      qc.invalidateQueries({ queryKey: queryKeys.experiment(expId) });
+      qc.invalidateQueries({ queryKey: queryKeys.experiments });
+      break;
+    }
     case "label_added":
     case "label_removed":
     case "label_suggestion_restored": {

@@ -1,10 +1,11 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, type ReactNode } from "react";
 import type { CorpusSample } from "../../api";
 import { sampleStatus } from "../model";
 import { COMPARE_DASH } from "./WorkspacePlot";
 
 interface Props {
   samples: readonly CorpusSample[];
+  setupHeaders?: ReadonlyMap<number, string> | undefined;
   currentId: number | undefined;
   filter: string;
   onFilter: (v: string) => void;
@@ -23,7 +24,7 @@ function StatusMark({ s }: { s: CorpusSample }): JSX.Element {
   return <span data-testid="workspace-status" role="img" aria-label="Unreviewed" title="Unreviewed" className="text-xs text-ink-faint">○</span>;
 }
 
-export function SampleList({ samples, currentId, filter, onFilter, onPick, onToggleCompare, compareColors, hiddenCompares, bridgeCounts, notice }: Props): JSX.Element {
+export function SampleList({ samples, setupHeaders, currentId, filter, onFilter, onPick, onToggleCompare, compareColors, hiddenCompares, bridgeCounts, notice }: Props): JSX.Element {
   const currentRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     currentRef.current?.scrollIntoView({ block: "nearest" });
@@ -57,12 +58,22 @@ export function SampleList({ samples, currentId, filter, onFilter, onPick, onTog
       </div>
       {notice}
       <ul className="min-h-0 flex-1 overflow-y-auto" data-testid="workspace-samples">
-        {samples.map((s) => {
+        {samples.map((s, i) => {
           const cur = s.id === currentId;
+          const setupId = s.setup_id ?? undefined;
+          const header = setupHeaders && setupId !== undefined && (i === 0 || samples[i - 1]!.setup_id !== s.setup_id)
+            ? setupHeaders.get(setupId)
+            : undefined;
           const bridges = bridgeCounts?.get(s.id) ?? 0;
           const compareColor = compareColors?.get(s.id);
           return (
-            <li key={s.id}>
+            <Fragment key={s.id}>
+            {header !== undefined && (
+              <li data-testid="setup-header" className="sticky top-0 z-[1] border-b border-hair bg-paper px-2.5 pb-1 pt-2 text-xs font-semibold text-ink-soft">
+                {header}
+              </li>
+            )}
+            <li>
               <button
                 ref={cur ? currentRef : undefined}
                 type="button"
@@ -101,6 +112,7 @@ export function SampleList({ samples, currentId, filter, onFilter, onPick, onTog
                 </span>
               </button>
             </li>
+            </Fragment>
           );
         })}
         {samples.length === 0 && filter.trim() !== "" && <li className="px-3 py-2 text-caption">No samples match.</li>}

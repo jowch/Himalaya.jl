@@ -56,3 +56,27 @@ describe("SampleList comparisons", () => {
     expect(onPick).toHaveBeenCalledWith(1);
   });
 });
+
+describe("SampleList setup headers", () => {
+  const inSetup = (id: number, name: string, setup_id: number) => ({ id, name, setup_id } as unknown as CorpusSample);
+
+  it("heads each run of a setup's samples with its name", () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    render(
+      <SampleList
+        samples={[inSetup(1, "A", 3), inSetup(2, "B", 3), inSetup(3, "C", 4)]}
+        setupHeaders={new Map([[3, "Long pipe"], [4, "setup2"]])}
+        currentId={1} filter="" onFilter={() => {}} onPick={() => {}}
+      />,
+    );
+    expect(screen.getAllByTestId("setup-header").map((h) => h.textContent)).toEqual(["Long pipe", "setup2"]);
+    const items = screen.getByTestId("workspace-samples").querySelectorAll(":scope > li");
+    expect([...items].map((li) => li.textContent?.trim().slice(0, 9))).toEqual(["Long pipe", "A○", "B○", "setup2", "C○"]);
+  });
+
+  it("shows no headers without them, as in a one-setup workspace", () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    render(<SampleList samples={[inSetup(1, "A", 3)]} currentId={1} filter="" onFilter={() => {}} onPick={() => {}} />);
+    expect(screen.queryByTestId("setup-header")).toBeNull();
+  });
+});

@@ -69,7 +69,10 @@ row, so a user's confirm or remove always wins.
 `peak_removed`, `speculative_created`, `speculative_deleted`, and
 `experiment_updated` (entity_type=`experiment`, payload: the patched fields,
 e.g. `{name}` or `{description: null}`; `PATCH /api/experiments/{id}` writes the
-row itself and the frontend merges the payload into the experiment caches).
+row itself and the frontend merges the payload into the experiment caches),
+and `setup_updated` (entity_type=`setup`, payload: `experiment_id` plus the
+patched `name`/`display_name` or `included`; `PATCH /api/setups/{id}` writes
+the row and the frontend merges it into that experiment's `setups`).
 Using
 `apply_event!` (with `entity_type='exposure'`) keeps these visible to
 `idx_events_by_exposure` so per-exposure folds find them; the dispatcher
