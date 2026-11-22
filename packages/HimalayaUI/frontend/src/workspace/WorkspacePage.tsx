@@ -99,10 +99,10 @@ function helpSections(mod: string): HelpSection[] {
       ],
     },
     {
-      title: "Exposures",
+      title: "Frames",
       rows: [
-        { keys: ["←", "→"], what: "Previous or next exposure" },
-        { keys: ["X"], what: "Drop the exposure and show the nearest kept one, or restore a dropped one" },
+        { keys: ["←", "→"], what: "Previous or next frame" },
+        { keys: ["X"], what: "Drop the frame and show the nearest kept one, or restore a dropped one" },
         { keys: ["Space"], what: "Enlarge its detector image; ← → and X work inside it" },
       ],
     },
@@ -1084,7 +1084,7 @@ export function WorkspacePage(): JSX.Element {
                 />
               </PlotCard>
             </div>
-            <MainSection title="Exposures" hint={keptHint}>
+            <MainSection title="Frames" hint={keptHint}>
               <ExposureStrip exposures={exposureList} currentId={exposure?.id} onPick={setExposureId} onToggleDrop={toggleDrop} />
             </MainSection>
           </>
@@ -1128,7 +1128,7 @@ export function WorkspacePage(): JSX.Element {
           </div>
           {!shortWindow && indexingSection}
           <Section
-            title="Exposure"
+            title="Frame"
             aside="← →"
             className={shortWindow && exposureOpen ? "min-h-0 flex-1 overflow-y-auto" : exposureOpen ? "min-h-0 shrink overflow-y-auto" : "shrink-0"}
             collapsible={shortWindow ? { open: exposureOpen, onOpen: draft === null ? () => setOpenPanel("exposure") : undefined } : undefined}

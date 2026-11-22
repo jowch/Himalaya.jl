@@ -155,7 +155,7 @@ test("problem exposures show in the sample pane and open their sample", async ({
   });
   await page.goto("/experiments/7");
   const notice = page.getByTestId("workspace-notice");
-  await expect(notice).toContainText("1 exposure waiting for a trace · 1 analysis failed");
+  await expect(notice).toContainText("1 frame waiting for a trace · 1 analysis failed");
   await notice.getByRole("button", { name: "Details" }).click();
   const problems = page.getByTestId("workspace-problems");
   await expect(problems).toContainText("could not read the trace header");

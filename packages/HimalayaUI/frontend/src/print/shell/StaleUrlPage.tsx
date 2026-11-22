@@ -64,7 +64,7 @@ function uiFor(
   const sampleId = ctx.sample_resolved?.id;
   return {
     dataMissing: "exposure",
-    header: `Exposure '${ctx.missing_value}' not found in '${sampleName}'.`,
+    header: `Frame '${ctx.missing_value}' not found in '${sampleName}'.`,
     ctaLabel: "Back to sample",
     onPick: () => store.recoverFromStaleUrl({
       step: "sample",
