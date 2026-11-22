@@ -2869,9 +2869,11 @@ describe("WorkspacePage", () => {
       "Frame 1", "Frame 2", "Frame 1 of A3 in Long pipe", "Frame 2 of A3 in Long pipe", "Frame 3 of A3 in Long pipe",
     ]);
     expect(screen.getByText("Frame 2 of 2")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Frame" }).closest("section")!.textContent).toContain("SampleA1 in Short pipe");
     fireEvent.click(screen.getByRole("button", { name: "Frame 2 of A3 in Long pipe" }));
     expect(screen.getByRole("button", { name: "Frame 2 of A3 in Long pipe" })).toHaveAttribute("aria-current", "true");
-    expect(screen.getByText("Frame 2 of 3, A3 in Long pipe")).toBeInTheDocument();
+    expect(screen.getByText("Frame 2 of 3")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Frame" }).closest("section")!.textContent).toContain("SampleA3 in Long pipe");
     expect(screen.getByTitle("Same as A3 in Long pipe")).toBeInTheDocument();
     fireEvent.keyDown(window, { key: " " });
     expect(screen.getByTestId("workspace-detector-caption")).toHaveTextContent("Frame 2 of 3, A3 in Long pipe");

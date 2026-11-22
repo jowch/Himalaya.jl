@@ -156,11 +156,11 @@ const HELP = helpSections(MOD_KEY);
 
 const RECENT_LABELS = "label";
 
-const EXPOSURE_LABELS = ["File", "Kind", "Acquired", "Exposure", "Flight tube", "Energy", "Detector", "I₀", "I signal"];
+const EXPOSURE_LABELS = ["Sample", "File", "Kind", "Acquired", "Exposure", "Flight tube", "Energy", "Detector", "I₀", "I signal"];
 
-function exposureRows(e: Exposure | undefined): [string, string][] {
+function exposureRows(e: Exposure | undefined, owner: string | undefined): [string, string][] {
   if (!e) return EXPOSURE_LABELS.map((label) => [label, "—"]);
-  const rows: [string, string][] = [["File", e.filename ?? "—"]];
+  const rows: [string, string][] = [["Sample", owner ?? "—"], ["File", e.filename ?? "—"]];
   rows.push(["Kind", e.kind === "averaged" ? "Averaged" : e.kind === "background_subtracted" ? "Subtracted" : "Single"]);
   const i0 = e.incident_monitor;
   const i2 = e.transmitted_counts;
@@ -1061,9 +1061,10 @@ export function WorkspacePage(): JSX.Element {
   const droppedCount = ownFrames.filter((e) => e.status === "rejected").length;
   const keptHint = droppedCount > 0 ? `${ownFrames.length - droppedCount} of ${ownFrames.length} kept` : undefined;
   const reviewed = samples.filter((s) => sampleStatus(s).kind !== "unreviewed").length;
-  const frameLine = shownFrame
-    ? `Frame ${shownFrame.index + 1} of ${shownFrame.group.exposures.length}${shownFrame.group.sampleId !== sampleId ? `, ${shownFrame.group.title ?? ""}` : ""}`
-    : undefined;
+  const ownerSample = shownFrame ? inExperiment.find((s) => s.id === shownFrame.group.sampleId) : undefined;
+  const frameOwner = ownerSample ? frameSetupName(ownerSample) : undefined;
+  const frameCount = shownFrame ? `Frame ${shownFrame.index + 1} of ${shownFrame.group.exposures.length}` : undefined;
+  const frameLine = frameCount && shownFrame && shownFrame.group.sampleId !== sampleId ? `${frameCount}, ${frameOwner ?? ""}` : frameCount;
   const emptyMessage = !Number.isInteger(experimentId)
     ? "This workspace link is not valid."
     : corpus.isLoading || !setupsKnown
@@ -1260,7 +1261,7 @@ export function WorkspacePage(): JSX.Element {
           <>
             <SampleHeading
               name={sample.name}
-              meta={exposure ? frameLine : undefined}
+              meta={exposure ? frameCount : undefined}
               aside={
                 <LabelRow
                   note={bridgedTitles.length > 0 ? `Same as ${bridgedTitles.join(", ")}` : undefined}
@@ -1394,7 +1395,7 @@ export function WorkspacePage(): JSX.Element {
             className={shortWindow && exposureOpen ? "min-h-0 flex-1 overflow-y-auto" : exposureOpen ? "min-h-0 shrink overflow-y-auto" : "shrink-0"}
             collapsible={shortWindow ? { open: exposureOpen, onOpen: draft === null ? () => setOpenPanel("exposure") : undefined } : undefined}
           >
-            <MetaList rows={exposureRows(exposure)} />
+            <MetaList rows={exposureRows(exposure, frameOwner)} />
           </Section>
           {shortWindow && indexingSection}
         </>
