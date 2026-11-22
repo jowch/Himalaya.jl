@@ -2861,7 +2861,7 @@ describe("WorkspacePage", () => {
     state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
     state.setups = [{ id: 1, name: "Short pipe", folder: "s1", included: true }, { id: 2, name: "Long pipe", folder: "s2", included: true }];
     state.corpus = state.corpus.map((s) => (s.id === 10 ? { ...s, setup_id: 1 } : s.id === 12 ? { ...s, setup_id: 2, assignment_state: "indexed" } : s));
-    state.mateExposures = new Map([[12, [exposure(200, { sample_id: 12 }), exposure(201, { sample_id: 12 }), exposure(202, { sample_id: 12 })]]]);
+    state.mateExposures = new Map([[12, [exposure(200, { sample_id: 12 }), exposure(201, { sample_id: 12, image_path: "/m.tif" }), exposure(202, { sample_id: 12 })]]]);
     renderAt("/experiments/1/workspace/10");
     const frames = screen.getByTestId("workspace-exposures");
     expect(within(frames).getAllByTestId("frame-group-header").map((h) => h.textContent)).toEqual(["A1 in Short pipe", "A3 in Long pipe"]);
@@ -2871,7 +2871,20 @@ describe("WorkspacePage", () => {
     expect(screen.getByText("Frame 2 of 2")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Frame 2 of A3 in Long pipe" }));
     expect(screen.getByRole("button", { name: "Frame 2 of A3 in Long pipe" })).toHaveAttribute("aria-current", "true");
-    expect(screen.getByText("Frame 2 of 3")).toBeInTheDocument();
+    expect(screen.getByText("Frame 2 of 3, A3 in Long pipe")).toBeInTheDocument();
+    expect(screen.getByTitle("Same as A3 in Long pipe")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: " " });
+    expect(screen.getByTestId("workspace-detector-caption")).toHaveTextContent("Frame 2 of 3, A3 in Long pipe");
+    fireEvent.keyDown(window, { key: " " });
+  });
+
+  it("the kept count under Frames counts only this sample's own frames", () => {
+    state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
+    state.corpus = state.corpus.map((s) => (s.id === 12 ? { ...s, assignment_state: "indexed" } : s));
+    state.exposures = [exposure(100), exposure(101, { status: "rejected" })];
+    state.mateExposures = new Map([[12, [exposure(200, { sample_id: 12 }), exposure(201, { sample_id: 12, status: "rejected" })]]]);
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByText("1 of 2 kept")).toBeInTheDocument();
   });
 
   it("arrow keys step from this sample's last frame into the same sample's frames", () => {
@@ -3020,7 +3033,7 @@ describe("WorkspacePage", () => {
     state.corpus = [{ ...sample(10, "B1"), setup_id: 2 }, { ...sample(12, "A1"), setup_id: 1 }];
     state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByTitle("Same as A1")).toBeInTheDocument();
+    expect(screen.getByTitle("Same as A1 in setup1")).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "not the same" } });
     expect(screen.getByRole("option", { name: "Not the same sample as A1" })).toBeInTheDocument();

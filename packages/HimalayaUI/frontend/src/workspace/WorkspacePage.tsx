@@ -388,6 +388,13 @@ export function WorkspacePage(): JSX.Element {
     const names = new Map(inExperiment.map((s) => [s.id, s.name]));
     return bridged.map((r) => names.get(r) ?? `Sample ${r}`);
   }, [bridged, inExperiment]);
+  const bridgedTitles = useMemo(
+    () => bridged.map((r) => {
+      const s = inExperiment.find((x) => x.id === r);
+      return s ? frameSetupName(s) : `Sample ${r}`;
+    }),
+    [bridged, inExperiment, frameSetupName],
+  );
   const counts = useMemo(() => bridgeCounts(bridgeList), [bridgeList]);
   const bridgeSamples = useBridgeSamples(experimentId);
   const unbridgeSample = useUnbridgeSample(experimentId);
@@ -1051,11 +1058,12 @@ export function WorkspacePage(): JSX.Element {
     return () => window.removeEventListener("keydown", onKey);
   }, [visible, sampleId, goSample, exposureList, exposure, toggleDrop, keyed, toggleCandidate, toggleGroup, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor, view, setView, sample, openLabeling, applyHistory]);
 
-  const droppedCount = exposureList.filter((e) => e.status === "rejected").length;
-  const keptHint = droppedCount > 0 ? `${exposureList.length - droppedCount} of ${exposureList.length} kept` : undefined;
+  const droppedCount = ownFrames.filter((e) => e.status === "rejected").length;
+  const keptHint = droppedCount > 0 ? `${ownFrames.length - droppedCount} of ${ownFrames.length} kept` : undefined;
   const reviewed = samples.filter((s) => sampleStatus(s).kind !== "unreviewed").length;
-  const exposureIndex = (shownFrame?.index ?? -1) + 1;
-  const groupSize = shownFrame?.group.exposures.length ?? 0;
+  const frameLine = shownFrame
+    ? `Frame ${shownFrame.index + 1} of ${shownFrame.group.exposures.length}${shownFrame.group.sampleId !== sampleId ? `, ${shownFrame.group.title ?? ""}` : ""}`
+    : undefined;
   const emptyMessage = !Number.isInteger(experimentId)
     ? "This workspace link is not valid."
     : corpus.isLoading || !setupsKnown
@@ -1224,10 +1232,11 @@ export function WorkspacePage(): JSX.Element {
           )}
           {bigOpen && exposure && (
             <DetectorOverlay
-              exposures={shownFrame?.group.exposures ?? ownFrames}
+              exposures={exposureList}
               currentId={exposure.id}
+              caption={frameLine}
               onStep={(dir) => {
-                const eid = stepExposure(shownFrame?.group.exposures ?? ownFrames, exposure.id, dir);
+                const eid = stepExposure(exposureList, exposure.id, dir);
                 if (eid !== undefined) setExposureId(eid);
               }}
               onToggleDrop={username ? () => toggleDrop(exposure) : undefined}
@@ -1251,10 +1260,10 @@ export function WorkspacePage(): JSX.Element {
           <>
             <SampleHeading
               name={sample.name}
-              meta={exposure && shownFrame ? `Frame ${exposureIndex} of ${groupSize}` : undefined}
+              meta={exposure ? frameLine : undefined}
               aside={
                 <LabelRow
-                  note={bridgedNames.length > 0 ? `Same as ${bridgedNames.join(", ")}` : undefined}
+                  note={bridgedTitles.length > 0 ? `Same as ${bridgedTitles.join(", ")}` : undefined}
                   labels={sampleLabels}
                   vocabulary={vocabulary}
                   editable={Boolean(username)}
