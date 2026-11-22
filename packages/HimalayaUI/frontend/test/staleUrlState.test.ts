@@ -12,8 +12,7 @@ describe("Zustand state — permalink slots", () => {
       activeExperimentId: undefined,
       activeSampleId: undefined,
       activeExposureId: undefined,
-      navModalOpen: false,
-      navModalStep: "experiment",
+      paletteOpen: false,
     });
   });
 
@@ -45,52 +44,15 @@ describe("Zustand state — permalink slots", () => {
     expect(useAppState.getState().staleUrlContext).toBeNull();
   });
 
-  it("recoverFromStaleUrl row 1 (experiment): clears stale, opens modal at experiment step", () => {
+  it("recoverFromStaleUrl clears stale and opens the palette", () => {
     useAppState.getState().setStaleUrlContext({
       kind: "not_found", missing: "experiment", missing_value: "x",
       experiment_resolved: undefined, sample_resolved: undefined,
     });
-    useAppState.getState().recoverFromStaleUrl({
-      step: "experiment",
-      experimentId: undefined,
-      sampleId: undefined,
-    });
+    useAppState.getState().recoverFromStaleUrl();
     const s = useAppState.getState();
     expect(s.staleUrlContext).toBeNull();
-    expect(s.activeSampleId).toBeUndefined();
-    expect(s.activeExposureId).toBeUndefined();
-    expect(s.navModalOpen).toBe(true);
-    expect(s.navModalStep).toBe("experiment");
-  });
-
-  it("recoverFromStaleUrl row 2 (sample): sets experimentId, opens modal at sample step", () => {
-    useAppState.getState().recoverFromStaleUrl({
-      step: "sample",
-      experimentId: 17,
-      sampleId: undefined,
-    });
-    const s = useAppState.getState();
-    expect(s.staleUrlContext).toBeNull();
-    expect(s.activeExperimentId).toBe(17);
-    expect(s.activeSampleId).toBeUndefined();
-    expect(s.navModalOpen).toBe(true);
-    expect(s.navModalStep).toBe("sample");
-  });
-
-  it("recoverFromStaleUrl row 3 (exposure): preserves sample, openModal=false", () => {
-    useAppState.getState().recoverFromStaleUrl({
-      step: "sample",
-      experimentId: 17,
-      sampleId: 42,
-      openModal: false,
-    });
-    const s = useAppState.getState();
-    expect(s.staleUrlContext).toBeNull();
-    expect(s.activeExperimentId).toBe(17);
-    expect(s.activeSampleId).toBe(42);
-    expect(s.activeExposureId).toBeUndefined();
-    expect(s.navModalOpen).toBe(false);
-    expect(s.navModalStep).toBe("sample");
+    expect(s.paletteOpen).toBe(true);
   });
 
   it("staleUrlContext is NOT in the persisted slice", () => {

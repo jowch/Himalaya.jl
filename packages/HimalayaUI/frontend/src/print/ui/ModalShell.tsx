@@ -13,7 +13,7 @@ export interface ModalShellProps {
   onClose: () => void;
   size?: ModalSize;            // default "md"; ignored for variant="drawer"
   align?: ModalAlign;          // default "center"; ignored for variant="drawer"
-  /** Esc dismiss. Default true. Set false where the parent owns Escape (e.g. NavModal). */
+  /** Esc dismiss. Default true. Set false where the parent owns Escape. */
   closeOnEsc?: boolean;
   /** Backdrop-click dismiss. Default true. */
   closeOnOutsideClick?: boolean;

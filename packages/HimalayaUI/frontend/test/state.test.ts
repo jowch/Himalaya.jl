@@ -88,14 +88,12 @@ describe("useAppState", () => {
     expect("setTheme" in s).toBe(false);
   });
 
-  it("navModal state is ephemeral — open/close + step transitions", () => {
-    expect(useAppState.getState().navModalOpen).toBe(false);
-    useAppState.getState().openNavModal();
-    expect(useAppState.getState().navModalOpen).toBe(true);
-    useAppState.getState().setNavModalStep("sample");
-    expect(useAppState.getState().navModalStep).toBe("sample");
-    useAppState.getState().closeNavModal();
-    expect(useAppState.getState().navModalOpen).toBe(false);
+  it("opens and closes the palette", () => {
+    expect(useAppState.getState().paletteOpen).toBe(false);
+    useAppState.getState().openPalette();
+    expect(useAppState.getState().paletteOpen).toBe(true);
+    useAppState.getState().closePalette();
+    expect(useAppState.getState().paletteOpen).toBe(false);
   });
 
   it("persists the allow-listed fields", () => {
@@ -115,16 +113,14 @@ describe("useAppState", () => {
     expect(parsed.state.theme).toBeUndefined();
   });
 
-  it("does NOT persist ephemeral UI fields (navModal*, hoveredIndexId)", () => {
+  it("does NOT persist ephemeral UI fields (paletteOpen, hoveredIndexId)", () => {
     useAppState.setState({
       hoveredIndexId: 3,
-      navModalOpen: true,
-      navModalStep: "sample",
+      paletteOpen: true,
     });
     const raw = localStorage.getItem(LS_KEY) ?? "";
     expect(raw).not.toContain("hoveredIndexId");
-    expect(raw).not.toContain("navModalOpen");
-    expect(raw).not.toContain("navModalStep");
+    expect(raw).not.toContain("paletteOpen");
   });
 
   it("hoveredPeakId starts undefined and can be set/cleared", () => {

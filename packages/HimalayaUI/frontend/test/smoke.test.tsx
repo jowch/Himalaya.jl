@@ -41,7 +41,7 @@ describe("App smoke", () => {
       activeExposureId: undefined,
       tutorialSeen: true,
       hoveredIndexId: undefined,
-      navModalOpen: false,
+      paletteOpen: false,
     });
     mockFetch({
       "/api/experiments": [{

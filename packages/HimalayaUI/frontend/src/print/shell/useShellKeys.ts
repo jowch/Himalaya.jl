@@ -13,17 +13,22 @@ export function useShellKeys(openHelp: () => void): void {
     const onKey = (e: KeyboardEvent): void => {
       const mod = e.metaKey || e.ctrlKey;
       if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "k") {
-        if (e.defaultPrevented || inDialog(e)) return;
-        e.preventDefault();
+        if (e.defaultPrevented) return;
         const s = useAppState.getState();
-        s.openNavModal(s.activeExperimentId === undefined ? "experiment" : "sample");
+        if (s.paletteOpen) {
+          e.preventDefault();
+          s.closePalette();
+          return;
+        }
+        if (inDialog(e)) return;
+        e.preventDefault();
+        s.openPalette();
         return;
       }
       if (mod || e.altKey || suppressGlobalKeys(e)) return;
       if (e.key === "/") {
         e.preventDefault();
-        const s = useAppState.getState();
-        s.openNavModal(s.activeExperimentId === undefined ? "experiment" : "sample");
+        useAppState.getState().openPalette();
       } else if (e.key === "?") {
         e.preventDefault();
         openHelp();

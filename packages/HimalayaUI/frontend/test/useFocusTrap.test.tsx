@@ -93,7 +93,7 @@ describe("useFocusTrap — engagement (APG modal dialog)", () => {
     document.body.removeChild(outside);
   });
 
-  it("leaves a Tab that a consumer already defaultPrevented alone (NavModal Tab-commit interplay)", () => {
+  it("leaves a Tab that a consumer already defaultPrevented alone", () => {
     const { getByTestId } = render(<TrapContainer />);
     const c = getByTestId("btn-c");
     c.focus();

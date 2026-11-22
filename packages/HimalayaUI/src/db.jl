@@ -32,6 +32,7 @@ const MIGRATION_LOAD_SESSIONS_BACKFILL = "load_sessions_backfill_v1"
 const MIGRATION_DROP_SCAN_SIGNATURE = "drop_scan_signature_v1"
 
 const MIGRATION_EXPOSURES_BEAM_MONITORS = "exposures_beam_monitors_v1"
+const MIGRATION_EXPOSURES_PIPE_LENGTH = "exposures_pipe_length_v1"
 
 const MIGRATION_EXPOSURES_INGEST_STATE = "exposures_ingest_state_v1"
 
@@ -148,6 +149,7 @@ CREATE TABLE IF NOT EXISTS exposures (
     incident_monitor     REAL,
     counting_time        REAL,
     monitors_read        INTEGER NOT NULL DEFAULT 0,
+    pipe_length_m        REAL,
     analysis_version     TEXT,
     analysis_error       TEXT,
     analysis_trace_stat  TEXT,
@@ -518,6 +520,7 @@ function migrate_schema!(db::SQLite.DB)
     migrate_drop_retired_tables!(db)
     migrate_label_suggestions!(db)
     migrate_setups!(db)
+    migrate_exposures_pipe_length!(db)
 end
 
 function migrate_label_colors!(db::SQLite.DB)
@@ -850,6 +853,18 @@ function migrate_exposures_beam_monitors!(db::SQLite.DB)
                 "ALTER TABLE exposures ADD COLUMN $name $decl")
         end
         _record_migration!(db, MIGRATION_EXPOSURES_BEAM_MONITORS)
+    end
+    nothing
+end
+
+function migrate_exposures_pipe_length!(db::SQLite.DB)
+    _migrated(db, MIGRATION_EXPOSURES_PIPE_LENGTH) && return nothing
+    SQLite.transaction(db) do
+        "pipe_length_m" in cols_of(db, "exposures") ||
+            DBInterface.execute(db, "ALTER TABLE exposures ADD COLUMN pipe_length_m REAL")
+        DBInterface.execute(db,
+            "UPDATE exposures SET monitors_read = 0 WHERE prp_path IS NOT NULL AND pipe_length_m IS NULL")
+        _record_migration!(db, MIGRATION_EXPOSURES_PIPE_LENGTH)
     end
     nothing
 end
@@ -1950,6 +1965,7 @@ function create_exposure!(db::SQLite.DB;
         transmitted_counts = nothing,
         incident_monitor  = nothing,
         counting_time     = nothing,
+        pipe_length_m     = nothing,
         monitors_read::Bool = prp_path !== nothing,
         setup_id = default_setup_id(db, experiment_id))
     result = DBInterface.execute(db, """
@@ -1957,12 +1973,12 @@ function create_exposure!(db::SQLite.DB;
             (setup_id, experiment_id, sample_id, filename, kind, selected, status, image_path,
              prp_path, timestamp, exposure_time, horizontal_position, scan_id, frame_no,
              load_id, content_fingerprint, transmitted_counts, incident_monitor, counting_time,
-             monitors_read)
-        VALUES (?,?,?,?,?,?,?,?, ?,?,?,?,?,?,?,?, ?,?,?,?)
+             pipe_length_m, monitors_read)
+        VALUES (?,?,?,?,?,?,?,?, ?,?,?,?,?,?,?,?, ?,?,?,?,?)
     """, [setup_id, experiment_id, sample_id, filename, kind, Int(selected), status, image_path,
           prp_path, timestamp, exposure_time, horizontal_position, scan_id, frame_no,
           load_id, content_fingerprint, transmitted_counts, incident_monitor, counting_time,
-          Int(monitors_read)])
+          pipe_length_m, Int(monitors_read)])
     return Int(DBInterface.lastrowid(result))
 end
 

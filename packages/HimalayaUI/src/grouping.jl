@@ -293,6 +293,7 @@ struct GroupedExposure
     transmitted_counts     ::Union{Float64, Missing}
     incident_monitor       ::Union{Float64, Missing}
     counting_time_s        ::Union{Float64, Missing}
+    pipe_length_m          ::Union{Float64, Missing}
     scan_id    ::Union{Int, Missing}   # parsed from the `_S<digits>_` filename token
     frame_no   ::Union{Int, Missing}   # parsed from the trailing `_<digits>` frame index
 end
@@ -400,6 +401,7 @@ _monitors(prp) = (
     transmitted_counts = prp === nothing ? missing : get(prp, :transmitted_counts, missing),
     incident_monitor   = prp === nothing ? missing : get(prp, :incident_monitor, missing),
     counting_time_s    = prp === nothing ? missing : get(prp, :counting_time_s, missing),
+    pipe_length_m      = prp === nothing ? missing : get(prp, :pipe_length_m, missing),
 )
 
 """
@@ -455,6 +457,7 @@ function group_into_samples(metas::Vector{ExposureMeta})::GroupingResult
                     m.tif_path, m.prp_path, m.dat_path,
                     ts, ets, hpm,
                     mon.transmitted_counts, mon.incident_monitor, mon.counting_time_s,
+                    mon.pipe_length_m,
                     sid, fno,
                 )
             end for m in slot_metas]

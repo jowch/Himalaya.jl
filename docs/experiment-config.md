@@ -379,6 +379,18 @@ the compare picker, where confirmed buffers come before suggested ones. Ranking
 buffers by their traces (no peaks, a flat trace, a low floor) is not built yet
 (#368).
 
+The same step suggests a flight-path label (`suggest_flight_path!`). Each
+exposure stores the `.prp` pipe length, which is the flight path, as
+`exposures.pipe_length_m` (read at scan time, or by the beam-monitor back-fill).
+When every exposure of a sample that has a pipe length rounds to the same
+tenth of a metre, the sample gets the suggested label `<n.n> m`, for example
+`1.7 m`, with source `ingest`. Frames that disagree, or no pipe length at all,
+suggest nothing. A sample that already has any `<number> m` label (lowercase
+m, matched case-sensitively, so a molar `1 M` doesn't count), in any state, is
+left alone, so removing or renaming it sticks. Databases from before
+this column re-read their `.prp` files once (`exposures_pipe_length_v1` resets
+`monitors_read`), and the start-up back-fill then suggests the labels.
+
 A new setup folder is any folder `setup_roots` finds under the experiment's
 `path` that is not one of its setups yet and whose data folder no other
 experiment uses. It waits until `resolve_experiment_layout` detects its layout
