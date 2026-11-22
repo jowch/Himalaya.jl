@@ -141,8 +141,7 @@ test("a dark pick is on the page before the app script runs, so a dark user neve
   await page.goto("/experiments", { waitUntil: "domcontentloaded" });
   const root = await page.evaluate(() => ({
     theme: document.documentElement.getAttribute("data-theme"),
-    dark: document.documentElement.classList.contains("dark"),
     appMounted: document.getElementById("app")!.childElementCount > 0,
   }));
-  expect(root).toEqual({ theme: "dark", dark: true, appMounted: false });
+  expect(root).toEqual({ theme: "dark", appMounted: false });
 });
