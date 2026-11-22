@@ -645,10 +645,10 @@ export function WorkspacePage(): JSX.Element {
       bridgeSamples.mutate({ sampleId, toSampleId: rid });
       history.record(bridgeEntry(ops, {
         label: `marked ${sample?.name ?? "this sample"} as the same sample as ${sampleNames.get(rid) ?? "a sample"}`, sampleId, exposureId: undefined,
-        from: sampleId, to: rid, bridges: bridgeList,
+        from: sampleId, to: rid, bridges: bridgeList, labels: labelList,
       }));
     },
-    [sampleId, sample?.name, bridgeSamples, history, ops, sampleNames, bridgeList],
+    [sampleId, sample?.name, bridgeSamples, history, ops, sampleNames, bridgeList, labelList],
   );
   const labelEdit = useCallback(
     (sid: number, tag: string, added: boolean) => {

@@ -51,6 +51,70 @@ function _emit_bridge_event!(db, req, kind::String, sample_id::Int, payload)
     _enqueue_broadcast_from_result!(result, kind, "sample", sample_id)
 end
 
+function bridge_mates(db, sample_id::Int)
+    g = _bridge_group_of(db, sample_id)
+    g === nothing && return Int[]
+    [Int(r.id) for r in Tables.rowtable(DBInterface.execute(db,
+        """SELECT s.id FROM sample_bridges b JOIN samples s ON s.id = b.sample_id
+            WHERE b.group_id = ? AND s.id <> ? AND s.merged_into_id IS NULL
+            ORDER BY s.id""", [g, sample_id]))]
+end
+
+function _confirmed_shared_labels(db, sample_ids::Vector{Int})
+    isempty(sample_ids) && return Dict{String, String}()
+    marks = join(fill("?", length(sample_ids)), ", ")
+    out = Dict{String, String}()
+    for r in Tables.rowtable(DBInterface.execute(db,
+            "SELECT label FROM sample_labels WHERE sample_id IN ($marks) AND state = 'confirmed' ORDER BY id",
+            sample_ids))
+        label = String(r.label)
+        shared_label(label) && get!(out, lowercase(label), label)
+    end
+    out
+end
+
+function _share_labels!(db, req, sample_id::Int, exp_id::Int)
+    group = vcat(sample_id, bridge_mates(db, sample_id))
+    labels = collect(values(_confirmed_shared_labels(db, group)))
+    for sid in group, label in labels
+        _add_label_one!(db, req, sid, label, exp_id)
+    end
+end
+
+function bridged_label_drift(db)
+    sets(sid) = Set(keys(_confirmed_shared_labels(db, [sid])))
+    sort([g for (g, ms) in _live_bridge_groups(db) if length(unique(sets.(ms))) > 1])
+end
+
+function _live_bridge_groups(db)
+    groups = Dict{Int, Vector{Int}}()
+    for r in Tables.rowtable(DBInterface.execute(db,
+            """SELECT b.group_id, b.sample_id FROM sample_bridges b JOIN samples s ON s.id = b.sample_id
+                WHERE s.merged_into_id IS NULL ORDER BY b.group_id, b.sample_id"""))
+        push!(get!(groups, Int(r.group_id), Int[]), Int(r.sample_id))
+    end
+    filter(kv -> length(last(kv)) >= 2, groups)
+end
+
+function migrate_share_bridged_labels!(db::SQLite.DB)
+    _migrated(db, MIGRATION_BRIDGED_LABELS) && return nothing
+    SQLite.transaction(db) do
+        req = _system_request()
+        for (_, members) in sort(collect(_live_bridge_groups(db)); by = first)
+            exp_id = Int(first(Tables.rowtable(DBInterface.execute(db,
+                "SELECT experiment_id FROM samples WHERE id = ?", [first(members)]))).experiment_id)
+            labels = sort(collect(values(_confirmed_shared_labels(db, members))))
+            for sid in members, label in labels
+                _label_state(db, sid, label) == "confirmed" && continue
+                apply_event!(InTransaction(), db, req; kind = "label_added", entity_type = "sample",
+                    entity_id = sid, payload = Dict(:label => label, :experiment_id => exp_id))
+            end
+        end
+        _record_migration!(db, MIGRATION_BRIDGED_LABELS)
+    end
+    nothing
+end
+
 function bridge_samples!(db, req, a::Int, b::Int, exp_id::Int)
     moves = bridge_moves(_bridge_group_of(db, a), _bridge_group_of(db, b), a, b,
                          g -> _bridge_members(db, g), () -> _next_bridge_group_id(db))
@@ -58,6 +122,7 @@ function bridge_samples!(db, req, a::Int, b::Int, exp_id::Int)
         _emit_bridge_event!(db, req, "sample_bridged", sid,
             Dict(:group_id => g, :experiment_id => exp_id))
     end
+    _share_labels!(db, req, a, exp_id)
 end
 
 function register_bridge_routes!()

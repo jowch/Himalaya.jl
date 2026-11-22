@@ -5,6 +5,10 @@ function build_export(db::SQLite.DB, experiment_id::Int)
         "SELECT * FROM samples WHERE experiment_id = ? ORDER BY id",
         [experiment_id]))
     sids = [Int(sm.id) for sm in samples]
+    setup_names = Dict(Int(r.id) => setup_display_name(r) for r in Tables.rowtable(DBInterface.execute(db,
+        "SELECT id, display_name, folder FROM setups WHERE experiment_id = ?", [experiment_id])))
+    setup_of(sm) = sm.setup_id === missing ? nothing : get(setup_names, Int(sm.setup_id), nothing)
+    who = Dict(Int(sm.id) => Dict(:name => String(sm.name), :setup => setup_of(sm)) for sm in samples)
     states = sample_call_states(db, sids)
     members = sample_call_members(db, sids)
 
@@ -47,6 +51,8 @@ function build_export(db::SQLite.DB, experiment_id::Int)
             :name        => sm.name,
             :notes       => sm.notes isa Missing ? nothing : sm.notes,
             :labels      => labels,
+            :setup       => setup_of(sm),
+            :bridged_with => [who[m] for m in bridge_mates(db, sid) if haskey(who, m)],
             :call_state  => export_call_state(state, ms),
             :phase       => summary.phase,
             :call_phases => summary.call_phases,
@@ -58,13 +64,15 @@ end
 
 function _export_csv(summary)
     header = ["sample_name","exposure_filename","call_state","call_phases","auto_phases",
-              "phases","lattice_ds","r_squareds","scores","labels"]
+              "phases","lattice_ds","r_squareds","scores","labels","setup","bridged_with"]
     rows = Vector{Vector{Any}}()
     for sm in summary
         label_str = join(sm[:labels], ";")
         call_str = join(sm[:call_phases], ";")
+        bridged_str = join([b[:setup] === nothing ? b[:name] : "$(b[:name]) ($(b[:setup]))" for b in sm[:bridged_with]], ";")
+        setup_str = something(sm[:setup], "")
         if isempty(sm[:exposures])
-            push!(rows, [sm[:name], "", sm[:call_state], call_str, "", "", "", "", "", label_str])
+            push!(rows, [sm[:name], "", sm[:call_state], call_str, "", "", "", "", "", label_str, setup_str, bridged_str])
             continue
         end
         for ex in sm[:exposures]
@@ -73,7 +81,7 @@ function _export_csv(summary)
             r2s    = join([string(ix[:r_squared]) for ix in ex[:indices]], ";")
             scs    = join([string(ix[:score])     for ix in ex[:indices]], ";")
             push!(rows, [sm[:name], ex[:filename], sm[:call_state], call_str, join(ex[:auto_phases], ";"),
-                         phases, lds, r2s, scs, label_str])
+                         phases, lds, r2s, scs, label_str, setup_str, bridged_str])
         end
     end
     io = IOBuffer()

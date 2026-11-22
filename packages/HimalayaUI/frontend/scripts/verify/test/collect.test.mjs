@@ -24,6 +24,8 @@ function routes(demoDir) {
       { id: 10, name: "MO_H2O_S1 (S01P01)", assignment_state: "indexed", phase: "Pn3m", representative_exposure_id: 1 },
       { id: 11, name: "MO_PEG5_S3 (S01P02)", assignment_state: "indexed", phase: "Pn3m", representative_exposure_id: 3 },
     ],
+    "/api/experiments/4/labels": [],
+    "/api/experiments/4/bridges": [],
     "/api/experiments/4/problems": { ingest_error: null, exposures: [] },
     "/api/experiments/4/export": [
       { name: "MO_H2O_S1 (S01P01)", exposures: [
