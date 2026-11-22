@@ -12,7 +12,7 @@ grep -E "FAIL|passed|failed" /tmp/vitest.out
 Single-file run:
 
 ```bash
-node_modules/.bin/vitest run test/print-detector/DetectorImage.test.tsx
+node_modules/.bin/vitest run test/workspace/WorkspacePage.test.tsx
 ```
 
 ## RTL over `document.querySelector`
@@ -36,11 +36,7 @@ Don't construct a `Request` to introspect the call. See `test/queue/authHeaders.
 
 ## ResizeObserver stub
 
-JSDOM doesn't ship `ResizeObserver`. `test/setup.ts` provides a no-op stub so components like `DetectorImage` (whose auto-rotate logic depends on it) can render. Don't strip the stub even if a passing test seems not to need it — the production component code path still references the global.
-
-## `DetectorImage` object-URL stub
-
-`DetectorImage` recolors via a GPU SVG filter on a plain `<img>`: it fetches the image blob and shows it through `URL.createObjectURL`. JSDOM implements neither object-URL method, so `test/setup.ts` stubs both globally (any component rendering a detector image would otherwise throw). Tests asserting the value re-stub `URL.createObjectURL` locally (`() => "blob:mock-url"`) and assert `revokeObjectURL` for the unmount leak-freedom contract.
+JSDOM doesn't ship `ResizeObserver`. `test/setup.ts` provides a no-op stub so components that measure themselves (`LabelRow`, `PlotFrame`) can render. Don't strip the stub even if a passing test seems not to need it — the production component code path still references the global.
 
 ## Anti-patterns
 
