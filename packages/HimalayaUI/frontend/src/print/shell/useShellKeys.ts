@@ -1,12 +1,6 @@
 import { useEffect } from "react";
 import { useAppState } from "../../state";
-import { suppressGlobalKeys } from "../../lib/keys";
-
-function inDialog(e: KeyboardEvent): boolean {
-  const t = e.target;
-  if (t instanceof Element && t.closest('[role="dialog"], [data-keys-trap]') !== null) return true;
-  return document.querySelector('[role="dialog"][aria-modal="true"]') !== null;
-}
+import { helpKeyFromEmptyField, inDialog, suppressGlobalKeys } from "../../lib/keys";
 
 export function useShellKeys(openHelp: () => void): void {
   useEffect(() => {
@@ -23,6 +17,11 @@ export function useShellKeys(openHelp: () => void): void {
         if (inDialog(e)) return;
         e.preventDefault();
         s.openPalette();
+        return;
+      }
+      if (helpKeyFromEmptyField(e)) {
+        e.preventDefault();
+        openHelp();
         return;
       }
       if (mod || e.altKey || suppressGlobalKeys(e)) return;

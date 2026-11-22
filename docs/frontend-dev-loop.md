@@ -9,7 +9,7 @@ Two terminals:
 ```bash
 # Terminal 1 — backend on :8080. DB is chosen by HIMALAYA_DB_PATH (or the default ~/.himalaya/himalaya.db), NOT a path argument.
 HIMALAYA_DB_PATH=/path/to/experiment/himalaya.db bin/himalaya serve --port 8080
-# (Or, without sysimage: julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- serve --port 8080)
+# (Or, without sysimage: julia --threads=4,1 --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- serve --port 8080)
 
 # Terminal 2 — Vite on :5173, proxying /api/* to :8080.
 cd packages/HimalayaUI/frontend && npm run dev -- --host 127.0.0.1
@@ -28,7 +28,7 @@ cp /opt/Himalaya.jl/data/himalaya.db /tmp/himalaya-uat/himalaya.db   # adjust so
 
 # 2. Backend on a free port pointed at the copy.
 HIMALAYA_DB_PATH=/tmp/himalaya-uat/himalaya.db \
-  julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
+  julia --threads=4,1 --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \
   serve --port 8091 > /tmp/himalaya-uat/backend.log 2>&1 &
 
 # 3. Vite on a matching free port, with VITE_API_PORT pointing at the dev backend.

@@ -80,7 +80,7 @@ export PATH="/path/to/Himalaya.jl/bin:$PATH"
 The examples below use `himalaya` assuming it is on your PATH. Substitute the explicit form if preferred:
 
 ```bash
-julia --project=/path/to/Himalaya.jl/packages/HimalayaUI \
+julia --threads=4,1 --project=/path/to/Himalaya.jl/packages/HimalayaUI \
       -e 'using HimalayaUI; main(ARGS)' -- <command> ...
 ```
 

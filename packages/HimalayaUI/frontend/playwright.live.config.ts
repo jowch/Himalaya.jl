@@ -11,7 +11,7 @@ import { defineConfig } from "@playwright/test";
  * serve can keep running on the same machine without colliding.
  *
  *   HIMALAYA_DB_PATH=/tmp/himalaya-test/himalaya.db \
- *     julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' \
+ *     julia --threads=4,1 --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' \
  *     -- serve --port 8090 --host 127.0.0.1
  *   (cd packages/HimalayaUI/frontend && \
  *      VITE_API_PORT=8090 npm run dev -- --host 127.0.0.1 --port 5180 --strictPort)
