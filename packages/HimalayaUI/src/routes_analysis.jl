@@ -120,10 +120,11 @@ function register_analysis_routes!()
                 entity_type = "sample",
                 entity_id   = id,
                 payload     = Dict(:state => state))
-            align_call_state!(db, req, bridge_mates(db, id), state)
+            mates = align_call_state!(db, req, bridge_mates(db, id), state; broadcast = false)
             b = _sample_call_body(db, id)
             _enqueue_broadcast_from_result!(result, "sample_call_set_state", "sample", id;
                 post_state = Dict(:call => _sample_call_post_state(b)))
+            broadcast_call_states!(db, mates)
             b[:event_id]    = result.event_id
             b[:view_row_id] = result.view_row_id
             HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(b))
@@ -154,10 +155,11 @@ function register_analysis_routes!()
                 entity_type = "exposure",
                 entity_id   = id,
                 payload     = Dict(:index_id => index_id))
-            _align_mates_to_indexed!(db, req, id)
+            mates = _align_mates_to_indexed!(db, req, id)
             b = _assignment_body(db, id)
             _enqueue_broadcast_from_result!(result, "assignment_add", "exposure", id;
                 post_state = Dict(:assignment => _assignment_post_state(b)))
+            broadcast_call_states!(db, mates)
             b[:event_id]    = result.event_id
             b[:view_row_id] = result.view_row_id
             HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(b))
@@ -312,10 +314,12 @@ function register_analysis_routes!()
                 entity_type = "exposure",
                 entity_id   = id,
                 payload     = Dict(:index_id => nid))
+            mates = _align_mates_to_indexed!(db, req, id)
             ab = _assignment_body(db, id)
             _enqueue_broadcast_from_result!(aa, "assignment_add", "exposure", id;
                 post_state = Dict(:assignment =>
                     Dict(:state => ab[:state], :members => ab[:members])))
+            broadcast_call_states!(db, mates)
 
             rows = Tables.rowtable(DBInterface.execute(db,
                 """SELECT id, exposure_id, phase, basis, score, r_squared, lattice_d,
