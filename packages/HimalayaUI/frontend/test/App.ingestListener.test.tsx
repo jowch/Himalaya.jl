@@ -6,26 +6,11 @@ import { MemoryRouter } from "react-router-dom";
 import { PrintApp } from "../src/print/App";
 import { useAppState } from "../src/state";
 import * as api from "../src/api";
-
-// Minimal EventSource stub that captures listeners so the test can fire frames.
-class FakeES {
-  static last: FakeES | null = null;
-  listeners: Record<string, ((e: MessageEvent) => void)[]> = {};
-  url: string;
-  constructor(url: string) { this.url = url; FakeES.last = this; }
-  addEventListener(t: string, fn: (e: MessageEvent) => void) {
-    (this.listeners[t] ??= []).push(fn);
-  }
-  removeEventListener() {}
-  close() {}
-  emit(type: string, data: unknown) {
-    for (const fn of this.listeners[type] ?? []) fn({ data: JSON.stringify(data) } as MessageEvent);
-  }
-}
+import { FakeEventSource } from "./helpers/fakeEventSource";
 
 describe("App ingestInFlight SSE listener (Phase E1)", () => {
   beforeEach(() => {
-    (globalThis as unknown as { EventSource: unknown }).EventSource = FakeES;
+    FakeEventSource.install();
     useAppState.setState({ ingestInFlight: null });
     vi.spyOn(api, "listExperiments").mockResolvedValue([]);
   });
@@ -44,7 +29,7 @@ describe("App ingestInFlight SSE listener (Phase E1)", () => {
   it("refreshes the experiment and its problems when an ingest fails", () => {
     const qc = mount();
     const spy = vi.spyOn(qc, "invalidateQueries");
-    FakeES.last!.emit("curation", { kind: "ingest_failed", entity_id: 7, entity_type: "experiment", payload: { experiment_id: 7 } });
+    FakeEventSource.current().emit("curation", { kind: "ingest_failed", entity_id: 7, entity_type: "experiment", payload: { experiment_id: 7 } });
     const keys = spy.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey));
     expect(keys).toContain(JSON.stringify(["experiment", 7]));
     expect(keys).toContain(JSON.stringify(["experiment", 7, "problems"]));
@@ -52,7 +37,7 @@ describe("App ingestInFlight SSE listener (Phase E1)", () => {
 
   it("writes ingestInFlight on ingest_progress", () => {
     mount();
-    FakeES.last!.emit("curation", {
+    FakeEventSource.current().emit("curation", {
       kind: "ingest_progress", entity_id: 7, entity_type: "experiment",
       payload: { experiment_id: 7, processed: 300, total: 680 },
     });
@@ -65,7 +50,7 @@ describe("App ingestInFlight SSE listener (Phase E1)", () => {
     // A rescan (/{id}/scan) tags its frames phase:"rescan" → "analyzing", since
     // the experiment's table data is already present.
     mount();
-    FakeES.last!.emit("curation", {
+    FakeEventSource.current().emit("curation", {
       kind: "ingest_progress", entity_id: 7, entity_type: "experiment",
       payload: { experiment_id: 7, processed: 120, total: 400, phase: "rescan" },
     });
@@ -76,7 +61,7 @@ describe("App ingestInFlight SSE listener (Phase E1)", () => {
 
   it("a rescan-phase ingest_started also yields status=analyzing", () => {
     mount();
-    FakeES.last!.emit("curation", {
+    FakeEventSource.current().emit("curation", {
       kind: "ingest_started", entity_id: 7, entity_type: "experiment",
       payload: { experiment_id: 7, processed: 0, total: 0, phase: "rescan" },
     });
@@ -85,8 +70,8 @@ describe("App ingestInFlight SSE listener (Phase E1)", () => {
 
   it("clears ingestInFlight on ingest_complete", () => {
     mount();
-    FakeES.last!.emit("curation", { kind: "ingest_started", entity_id: 7, entity_type: "experiment", payload: { experiment_id: 7, processed: 0, total: 680 } });
-    FakeES.last!.emit("curation", { kind: "ingest_complete", entity_id: 7, entity_type: "experiment", payload: { experiment_id: 7, processed: 680, total: 680 } });
+    FakeEventSource.current().emit("curation", { kind: "ingest_started", entity_id: 7, entity_type: "experiment", payload: { experiment_id: 7, processed: 0, total: 680 } });
+    FakeEventSource.current().emit("curation", { kind: "ingest_complete", entity_id: 7, entity_type: "experiment", payload: { experiment_id: 7, processed: 680, total: 680 } });
     expect(useAppState.getState().ingestInFlight).toBeNull();
   });
 
@@ -96,13 +81,13 @@ describe("App ingestInFlight SSE listener (Phase E1)", () => {
     const rc = await import("../src/lib/queue/replayCoordinator");
     const spy = vi.spyOn(rc, "handleRemoteEvent");
     mount();
-    FakeES.last!.emit("curation", {
+    FakeEventSource.current().emit("curation", {
       kind: "ingest_progress", entity_id: 7, entity_type: "experiment",
       payload: { experiment_id: 7, processed: 300, total: 680 },
     });
     expect(spy).not.toHaveBeenCalled();
     // A NON-ingest frame still flows through (control).
-    FakeES.last!.emit("curation", { kind: "peak_added", entity_id: 1, entity_type: "exposure", payload: {} });
+    FakeEventSource.current().emit("curation", { kind: "peak_added", entity_id: 1, entity_type: "exposure", payload: {} });
     expect(spy).toHaveBeenCalledTimes(1);
   });
 });
