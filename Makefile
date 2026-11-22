@@ -24,7 +24,7 @@ DEPOT_PROBE = 'd = first(DEPOT_PATH); print(ispath(d) ? realpath(d) : rstrip(nor
 sysimage:
 	@$(JULIA) -e 'print("Building sysimage with depot ")' -e $(DEPOT_PROBE) -e 'println()'
 	$(JULIA) --project=scripts -e 'using Pkg; Pkg.instantiate()'
-	$(JULIA) --project=scripts scripts/build_sysimage.jl
+	$(JULIA) --project=scripts scripts/build_sysimage.jl $(BUILD_DIR)
 
 check-sysimage:
 	@$(LOAD_ENV) \
@@ -101,14 +101,23 @@ setup:
 	@! grep -qs 'precompile_workload *= *false' $(UI_PREFS) || \
 		echo "Note: $(UI_PREFS) turns the route warm-up off. Delete it on a server."
 
-SERVICE ?= himalaya
-RESTART ?= sudo systemctl restart $(SERVICE)
+HIMALAYA_SERVICE ?= himalaya
+HIMALAYA_RESTART ?= sudo systemctl restart $(HIMALAYA_SERVICE)
+NEXT_BUILD_DIR   := $(BUILD_DIR)/next
+DIST              = "$${HIMALAYA_FRONTEND_DIST:-$(CURDIR)/$(FRONTEND_DIR)/dist}"
 
-deploy: setup
-	cd $(FRONTEND_DIR) && npm run build
-	$(MAKE) sysimage
-	$(MAKE) check-sysimage
-	$(RESTART)
+deploy:
+	@case '$(HIMALAYA_RESTART)' in sudo\ *) sudo -v ;; esac
+	$(MAKE) setup
+	@$(LOAD_ENV) dist=$(DIST); rm -rf "$$dist.next"; \
+	cd $(FRONTEND_DIR) && npm run build -- --outDir "$$dist.next"
+	$(MAKE) sysimage BUILD_DIR=$(NEXT_BUILD_DIR)
+	$(MAKE) check-sysimage BUILD_DIR=$(NEXT_BUILD_DIR)
+	mv $(NEXT_BUILD_DIR)/julia_version $(NEXT_BUILD_DIR)/depot_path $(BUILD_DIR)/
+	mv $(NEXT_BUILD_DIR)/himalaya.so $(BUILD_DIR)/himalaya.so
+	@$(LOAD_ENV) dist=$(DIST); rm -rf "$$dist.old"; \
+	{ [ ! -d "$$dist" ] || mv "$$dist" "$$dist.old"; } && mv "$$dist.next" "$$dist" && rm -rf "$$dist.old"
+	$(HIMALAYA_RESTART)
 
 dev-setup:
 	@test -f $(UI_PREFS) || printf '[HimalayaUI]\nprecompile_workload = false\n' > $(UI_PREFS)

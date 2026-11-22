@@ -186,11 +186,20 @@ git pull
 make deploy
 ```
 
-`make deploy` runs `make setup`, builds the frontend, runs `make sysimage` and
-`make check-sysimage`, then `sudo systemctl restart himalaya`. It stops at the
-first step that fails, so a broken build or a sysimage that won't start never
-reaches the restart, and the old daemon keeps serving. It takes about 5–10 min.
-`SERVICE=<unit>` names another systemd unit, and `RESTART=` skips the restart.
+`make deploy` runs `make setup`, then builds the frontend into `dist.next` and
+the sysimage into `build/next/`, and runs `make check-sysimage` on the new
+sysimage. Only when all of that passes does it move both into place and run
+`sudo systemctl restart himalaya`. It stops at the first step that fails, and
+until the swap the running daemon, the CLI and the served UI all stay on the
+old version. It takes about 5–10 min. The frontend goes to
+`HIMALAYA_FRONTEND_DIST` when `.env` sets it.
+
+It runs `sudo -v` first, so the password prompt comes at the start, not after the
+build. sudo's credential cache can expire during the build, so it may ask again
+at the restart. To avoid that, allow exactly the restart without a password, e.g.
+`<user> ALL=(root) NOPASSWD: /usr/bin/systemctl restart himalaya` in
+`/etc/sudoers.d/himalaya`. `HIMALAYA_SERVICE=<unit>` names another systemd unit,
+and `HIMALAYA_RESTART=` skips the restart.
 
 Packages and the sysimage go into the shared depot that `bin/himalaya` runs
 against: every make target reads `JULIA_DEPOT_PATH` from the same `.env`, so
