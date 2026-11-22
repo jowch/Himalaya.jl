@@ -48,7 +48,7 @@ function main(args)
             join(["$(n)=$(count(==(l), ds.label))" for (n, l) in
                   ("positive" => 1, "negative" => 0, "weak_negative" => -1, "dropped" => -2)], ", "))
     if cmd == "cv"
-        PeakClassifier.print_cv(cross_validate(exps, ds; kw...))
+        print_cv(cross_validate(exps, ds; kw...))
     elseif cmd == "train"
         haskey(opt, "out") || error("train needs --out PATH")
         m = train(ds; kw...)

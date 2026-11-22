@@ -1,15 +1,13 @@
 module PeakClassifier
 
-using Himalaya, Statistics, Random, Printf, Serialization
-using DecisionTree
+using Serialization
+using HimalayaPeakModel
+import HimalayaUI
 
-include("features.jl")
-include("dataset.jl")
-include("model.jl")
-include("cv.jl")
+include("modelio.jl")
 include("db.jl")
 
-export LabeledExposure, build_dataset, train, predict_peaks, save_model, load_model,
-       cross_validate, load_labeled_exposures, FEATURE_NAMES
+export open_readonly, load_labeled_exposures, save_model, load_model,
+       LabeledExposure, build_dataset, train, predict_peaks, cross_validate, print_cv, FEATURE_NAMES
 
 end

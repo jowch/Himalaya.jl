@@ -1,10 +1,6 @@
-const PEAK_MATCH_POINTS = 6
-
-function peak_match_tol(q::Real, q_step)
-    base = max(1e-6, 0.001 * abs(Float64(q)))
-    (q_step === nothing || q_step === missing) && return base
-    max(base, PEAK_MATCH_POINTS * Float64(q_step))
-end
+import HimalayaPeakModel
+import HimalayaPeakModel: peak_match_tol, grid_step
+const PEAK_MATCH_POINTS = HimalayaPeakModel.PEAK_MATCH_POINTS
 
 function exposure_q_step(db::SQLite.DB, exposure_id::Integer)
     rows = Tables.rowtable(DBInterface.execute(db,
@@ -12,13 +8,6 @@ function exposure_q_step(db::SQLite.DB, exposure_id::Integer)
     (isempty(rows) || ismissing(rows[1].q_step)) && return nothing
     s = Float64(rows[1].q_step)
     (isfinite(s) && s > 0) ? s : nothing
-end
-
-function grid_step(q::AbstractVector{<:Real})
-    length(q) >= 2 || return nothing
-    d = sort!(Float64.(diff(q)))
-    m = isodd(length(d)) ? d[(end + 1) ÷ 2] : (d[end ÷ 2] + d[end ÷ 2 + 1]) / 2
-    (isfinite(m) && m > 0) ? m : nothing
 end
 
 function _nearest_auto(auto_q, cq, q_step)

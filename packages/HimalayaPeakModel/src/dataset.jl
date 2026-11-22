@@ -1,11 +1,10 @@
-import HimalayaUI
-
 """
 One exposure with the user's curation reduced to q values.
 
 - `adds`: peaks the user added by hand.
 - `kept`: stored auto peaks the user did not exclude (and no add replaced).
-- `excluded`: stored auto peaks the user excluded.
+- `excluded`: q of every exclude the user recorded, whether or not a stored
+  auto peak still matches it.
 - `curated`: has at least one add or exclude. `kept` is only trusted as
   "the user looked and accepted" on curated exposures.
 - `form_factor`: the sample was called form factor (no Bragg peaks expected).
@@ -24,7 +23,7 @@ struct LabeledExposure
     form_factor::Bool
 end
 
-match_tol(q, q_step) = HimalayaUI.peak_match_tol(q, q_step)
+match_tol(q, q_step) = peak_match_tol(q, q_step)
 
 # Candidate labels: 1 positive, 0 strong negative, -1 weak negative, -2 dropped.
 const POS, NEG, WEAK, DROP = 1, 0, -1, -2
@@ -35,14 +34,15 @@ const POS, NEG, WEAK, DROP = 1, 0, -1, -2
 A candidate is positive when it is the nearest candidate to an add or a kept
 auto peak within the match tolerance. Other candidates inside the tolerance of
 a positive are dropped (duplicates of a real peak, resolved by non-maximum
-suppression at prediction time). A candidate within tolerance of an excluded
-auto peak, or on a form-factor exposure, is a strong negative. Any other
+suppression at prediction time). A candidate within tolerance of an exclude is a
+strong negative whether or not a stored auto peak matches the exclude, and so
+is every candidate on a form-factor exposure. Any other
 candidate on a curated exposure is a weak negative: the user looked at the
 exposure and did not add it, but users do not add every faint peak. Candidates
 on exposures without curations are dropped.
 """
 function label_candidates(q, idx, adds, kept, excluded, curated::Bool, form_factor::Bool)
-    q_step = HimalayaUI.grid_step(q)
+    q_step = grid_step(q)
     lab = fill(DROP, length(idx))
     pos = form_factor ? collect(Float64, adds) : vcat(adds, kept)
     qi = q[idx]
