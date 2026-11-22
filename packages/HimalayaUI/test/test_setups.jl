@@ -186,4 +186,21 @@ _count(db, sql, args...) = Int(only(Tables.rowtable(DBInterface.execute(db, sql,
             "SELECT setup_id FROM exposures WHERE filename = 'orphan'"))).setup_id)
         @test _count(db, "SELECT COUNT(*) AS c FROM setups") == 2
     end
+    @testset "a scan stores each frame's pipe length and an upgraded DB rereads it" begin
+        bt = mktempdir()
+        d1, a1 = _write_setup!(joinpath(bt, "setup1"); stems = ["MO_S0001_0_001"], pipe_length_mm = 700)
+        db = fresh_db()
+        eid = HimalayaUI.create_experiment!(db; name = "bt", path = bt, data_dir = d1, analysis_dir = a1)
+        HimalayaUI.scan_and_group!(db, eid; analyze = false)
+        HimalayaUI.suggest_labels_for_experiment!(db, eid)
+        @test only(Tables.rowtable(DBInterface.execute(db, "SELECT pipe_length_m FROM exposures"))).pipe_length_m ≈ 0.7
+        @test any(r -> r.label == "0.7 m", Tables.rowtable(DBInterface.execute(db, "SELECT label FROM sample_labels")))
+
+        DBInterface.execute(db, "UPDATE exposures SET pipe_length_m = NULL")
+        DBInterface.execute(db, "DELETE FROM schema_migrations WHERE name = ?", [HimalayaUI.MIGRATION_EXPOSURES_PIPE_LENGTH])
+        HimalayaUI.migrate_exposures_pipe_length!(db)
+        @test only(Tables.rowtable(DBInterface.execute(db, "SELECT monitors_read FROM exposures"))).monitors_read == 0
+        @test HimalayaUI.backfill_monitors!(db, eid) == 1
+        @test only(Tables.rowtable(DBInterface.execute(db, "SELECT pipe_length_m FROM exposures"))).pipe_length_m ≈ 0.7
+    end
 end

@@ -132,6 +132,7 @@ function register_routes!()
 
     register_users_routes!()
     register_experiments_routes!()
+    register_setups_routes!()
     register_samples_routes!()
     register_exposures_routes!()
     register_peaks_routes!()
@@ -327,7 +328,8 @@ function backfill_all_monitors!(db::SQLite.DB)
         "SELECT DISTINCT experiment_id FROM exposures
           WHERE prp_path IS NOT NULL AND monitors_read = 0 AND experiment_id IS NOT NULL"))
     for r in ids
-        try_backfill_monitors!(db, Int(r.experiment_id))
+        eid = Int(r.experiment_id)
+        try_backfill_monitors!(db, eid) > 0 && suggest_labels_quietly!(db, eid)
     end
     nothing
 end
