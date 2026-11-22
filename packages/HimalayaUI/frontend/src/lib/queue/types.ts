@@ -32,7 +32,7 @@ import type { Assignment, SampleCall } from "../../api";
 export type OpKind =
   | "peak_added" | "peak_excluded" | "peak_unexcluded" | "peak_removed"
   | "speculative_created" | "speculative_deleted"
-  | "set_exposure_status" | "select_exposure"
+  | "set_exposure_status"
   | "update_sample"
   | "reanalyze_exposure"
   | "delete_index"

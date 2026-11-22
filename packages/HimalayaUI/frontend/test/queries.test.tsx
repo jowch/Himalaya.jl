@@ -29,7 +29,7 @@ describe("queries", () => {
 
   it("useExposures fetches when sampleId is provided", async () => {
     mockOnce(200, [{ id: 1, sample_id: 10, filename: "f", kind: "file",
-                     selected: false, sources: [] }]);
+                     sources: [] }]);
     const { wrapper } = withClient();
     const { result } = renderHook(() => useExposures(10), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));

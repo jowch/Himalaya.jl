@@ -69,7 +69,7 @@ export interface CorpusSample extends Sample {
   setup_id?: number | null;
   phase?: string | null;
   /** The representative exposure's durable assignment state (`representative_exposure_id`:
-   *  the selected frame if kept, else the newest kept frame). Drives the contact-sheet status: `form_factor` shows a
+   *  the newest kept frame). Drives the contact-sheet status: `form_factor` shows a
    *  distinct "Form factor" status, `indexed` with a `phase` shows the chip,
    *  everything else reads "Not indexed". Absent on older payloads → treated as
    *  unindexed. */
@@ -363,7 +363,6 @@ export interface Exposure {
   sample_id: number;
   filename: string | null;
   kind: "file" | "averaged" | "background_subtracted";
-  selected: boolean;
   status: "accepted" | "rejected" | null;
   image_path: string | null;
   /**
@@ -396,10 +395,6 @@ export const setExposureStatus = (
   opts?: AuthOpts,
 ) => request<{ id: number; status: string | null }>(
   "PATCH", `/api/exposures/${id}/status`, { status }, opts);
-
-export const selectExposure = (id: number, opts?: AuthOpts) =>
-  request<{ id: number; selected: boolean }>(
-    "PATCH", `/api/exposures/${id}/select`, {}, opts);
 
 // Trace
 export interface TraceMonitors {

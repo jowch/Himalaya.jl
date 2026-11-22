@@ -60,8 +60,7 @@ end
     _analyze_experiment!(db, exp_id; sample_filter=nothing) -> Int
 
 Run peak-finding + indexing for every exposure of `exp_id`, optionally
-restricted to a single sample label. Skips rejected exposures and leaves
-`selected` alone: the representative is derived by `representative_exposure_id`.
+restricted to a single sample label. Skips rejected exposures.
 Errors per-exposure are caught and printed as `SKIP (...)` so one bad
 .dat file doesn't abort the batch.
 

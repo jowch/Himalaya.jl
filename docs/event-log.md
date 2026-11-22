@@ -93,10 +93,11 @@ guard for the same reason. Their `user_actions` rows stay in the log, and
 
 **Pure log events — use `log_action!`** (no view side effect, no
 broadcast routing through the dispatcher):
-`set_exposure_status`, `select_exposure`, `update_sample`, `analyze`,
+`set_exposure_status`, `update_sample`, `analyze`,
 `scan`, `experiment_created`, `setups_added`. The dispatcher carries explicit no-op
 `return nothing` guards for the view-less kinds (`set_exposure_status`,
-`select_exposure`, …).
+`update_sample`, …). Old `select_exposure` rows are a retired kind: frame
+selection was removed, and the representative is always the newest kept frame.
 
 `set_exposure_status` is audit-only: it records a Drop action but
 produces no view. There is a single screening verb — **Drop** (the X key) —
@@ -376,9 +377,6 @@ frontend (R5b in Plan 7) was originally **deferred**. The gate was R4
 instrumentation showing real contention: ≥2% delta-event collision rate over
 ≥4 weeks / ≥500 events. Until then, multiplayer is last-write-wins, which the
 event log makes auditable after the fact.
-
-`exposures.selected` is intentionally LWW — see the note in `CLAUDE.md`. (Under
-the 2026-06-03 decision above, *all* entities follow this LWW grain.)
 
 ---
 

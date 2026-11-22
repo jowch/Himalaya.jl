@@ -46,7 +46,6 @@ function build_export(db::SQLite.DB, experiment_id::Int)
 
             push!(ex_out, Dict(
                 :filename          => e.filename,
-                :selected          => e.selected != 0,
                 :active_group_kind => ag_kind,
                 :indices           => rows_to_json(indices),
             ))

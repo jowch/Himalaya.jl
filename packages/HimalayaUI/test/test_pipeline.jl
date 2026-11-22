@@ -548,21 +548,6 @@ let
         end
     end
 
-    @testset "cli_analyze leaves the representative pick alone" begin
-        db_file = joinpath(mktempdir(), "himalaya.db")
-        dir     = mktempdir()
-        withenv("HIMALAYA_DB_PATH" => db_file) do
-            db = open_db(db_file)
-            seeded = setup_exp_dir(db, dir; name="ExpSel", stems=["ST001", "ST002"])
-            DBInterface.execute(db, "UPDATE exposures SET status='rejected' WHERE id=?",
-                                [seeded.exposure_ids[1]])
-            cli_analyze(["-e", dir])
-            selected = [Int(r.id) for r in DBInterface.execute(db,
-                "SELECT id FROM exposures WHERE selected=1")]
-            @test isempty(selected)
-        end
-    end
-
     @testset "cli_analyze fails after the batch when an exposure was skipped" begin
         db_file = joinpath(mktempdir(), "himalaya.db")
         dir     = mktempdir()
