@@ -104,7 +104,7 @@ function effective_peaks(db::SQLite.DB, exposure_id::Int,
                           q_grid::Vector{Float64}, I::Vector{Float64};
                           sharps_full::Union{Vector{Float64}, Nothing} = nothing)
     auto = Tables.rowtable(DBInterface.execute(db,
-        "SELECT id, q, sharpness FROM auto_peaks WHERE exposure_id = ?", [exposure_id]))
+        "SELECT id, q, sharpness FROM auto_peaks WHERE exposure_id = ? ORDER BY id", [exposure_id]))
     fl   = curation_flags(db, exposure_id, [Float64(r.q) for r in auto])
     adds = fl.adds
 
@@ -168,21 +168,35 @@ function diff_update_auto_peaks!(db::SQLite.DB, exposure_id::Int,
                                   I_full::Vector{Float64};
                                   q_step::Union{Float64, Nothing} = exposure_q_step(db, exposure_id))
     existing = Tables.rowtable(DBInterface.execute(db,
-        "SELECT id, q FROM auto_peaks WHERE exposure_id = ?", [exposure_id]))
+        "SELECT id, q FROM auto_peaks WHERE exposure_id = ? ORDER BY id", [exposure_id]))
     remaining = Set{Int}(Int(r.id) for r in existing)
 
-    pairs = Tuple{Float64, Int, Int}[]
-    for i in eachindex(peaks_result.q), (j, r) in enumerate(existing)
-        d = abs(Float64(r.q) - peaks_result.q[i])
-        d <= peak_match_tol(peaks_result.q[i], q_step) && push!(pairs, (d, i, j))
-    end
-    sort!(pairs)
     matched_id = Dict{Int, Int}()
-    used_old   = Set{Int}()
-    for (_, i, j) in pairs
-        (haskey(matched_id, i) || j in used_old) && continue
-        matched_id[i] = Int(existing[j].id)
-        push!(used_old, j)
+    if q_step === nothing
+        free = Set{Int}(1:length(existing))
+        for i in eachindex(peaks_result.q)
+            best_j, best_d = 0, Inf
+            for j in free
+                d = abs(Float64(existing[j].q) - peaks_result.q[i])
+                d < best_d && d <= peak_match_tol(peaks_result.q[i], nothing) && ((best_j, best_d) = (j, d))
+            end
+            best_j == 0 && continue
+            matched_id[i] = Int(existing[best_j].id)
+            delete!(free, best_j)
+        end
+    else
+        pairs = Tuple{Float64, Int, Int}[]
+        for i in eachindex(peaks_result.q), (j, r) in enumerate(existing)
+            d = abs(Float64(r.q) - peaks_result.q[i])
+            d <= peak_match_tol(peaks_result.q[i], q_step) && push!(pairs, (d, i, j))
+        end
+        sort!(pairs)
+        used_old = Set{Int}()
+        for (_, i, j) in pairs
+            (haskey(matched_id, i) || j in used_old) && continue
+            matched_id[i] = Int(existing[j].id)
+            push!(used_old, j)
+        end
     end
 
     q_to_id = Dict{Float64, Int}()
@@ -871,7 +885,7 @@ per peak (8 q + 8 sharpness, native order), SHA-256.
 """
 function hash_peak_set_from_db(db::SQLite.DB, exposure_id::Int)::String
     auto = Tables.rowtable(DBInterface.execute(db,
-        "SELECT q, sharpness FROM auto_peaks WHERE exposure_id = ?", [exposure_id]))
+        "SELECT q, sharpness FROM auto_peaks WHERE exposure_id = ? ORDER BY id", [exposure_id]))
     excluded = curation_flags(db, exposure_id, [Float64(r.q) for r in auto]).excluded
 
     qs  = Float64[]

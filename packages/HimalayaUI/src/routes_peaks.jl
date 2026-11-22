@@ -221,7 +221,8 @@ function register_peaks_routes!()
                 """, [exposure_id, peak_q, peak_match_tol(peak_q, q_step)]))
                 undoes = isempty(prior) ? nothing : Int(prior[1].id)
 
-                payload = Dict(:q => peak_q, :auto_peak_id => id)
+                payload = Dict(:q => peak_q, :auto_peak_id => id,
+                               :curation_qs => exclude_qs_for_peak(db, exposure_id, peak_q))
                 result = apply_event!(InTransaction(), db, req;
                     kind            = "peak_unexcluded",
                     entity_type     = "exposure",

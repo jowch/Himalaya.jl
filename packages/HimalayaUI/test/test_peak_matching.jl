@@ -348,7 +348,7 @@ end
     @test [Bool(r.excluded) for r in rows] == [false, true]
 end
 
-@testset "peak_unexcluded replay deletes the recorded ids even if auto peaks change" begin
+@testset "peak_unexcluded replay deletes the recorded q values even if auto peaks change" begin
     fx = _pm_fixture(auto_qs = [0.2, 0.2 + 2PM_H])
     hdr = ["Content-Type" => "application/json", "X-Username" => "alice"]
     e1 = 0.2 + 1.5PM_H; e2 = 0.2 - 1.6PM_H
@@ -359,14 +359,14 @@ end
     end
     ids = Dict(Float64(r.q) => Int(r.id) for r in Tables.rowtable(DBInterface.execute(fx.db,
         "SELECT id, q FROM peak_curations WHERE kind='exclude'")))
-    live = HimalayaUI.exclude_ids_for_peak(fx.db, fx.e_id, 0.2)
+    live = HimalayaUI.exclude_qs_for_peak(fx.db, fx.e_id, 0.2)
     HimalayaUI.apply_event!(fx.db, req; kind = "peak_unexcluded", entity_type = "exposure",
         entity_id = fx.e_id,
-        payload = Dict(:q => 0.2, :auto_peak_id => 1, :curation_ids => live))
+        payload = Dict(:q => 0.2, :auto_peak_id => 1, :curation_qs => live))
     after_live = [Float64(r.q) for r in Tables.rowtable(DBInterface.execute(fx.db,
         "SELECT q FROM peak_curations WHERE kind='exclude' ORDER BY q"))]
     # a re-detect drops the neighbouring auto peak, then the views are rebuilt
-    DBInterface.execute(fx.db, "DELETE FROM auto_peaks WHERE q > 0.2 + 1PM_H".replace("PM_H", string(PM_H)))
+    DBInterface.execute(fx.db, "DELETE FROM auto_peaks WHERE q > ?", [0.2 + PM_H])
     DBInterface.execute(fx.db, "DELETE FROM peak_curations WHERE exposure_id = ?", [fx.e_id])
     HimalayaUI.rebuild_views_from_log!(fx.db, fx.e_id)
     after_rebuild = [Float64(r.q) for r in Tables.rowtable(DBInterface.execute(fx.db,
@@ -374,7 +374,7 @@ end
     @test after_rebuild == after_live
 end
 
-@testset "unexclude route records the deleted curation ids in the event" begin
+@testset "unexclude route records the deleted curation q values in the event" begin
     tmp = mktempdir()
     analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
     mkpath(analysis_dir)
@@ -402,6 +402,6 @@ end
     end
     row = Tables.rowtable(DBInterface.execute(db,
         "SELECT payload FROM user_actions WHERE action = 'peak_unexcluded'"))[1]
-    @test sort(Int.(JSON3.read(String(row.payload)).curation_ids)) == cids
+    @test sort(Float64.(JSON3.read(String(row.payload)).curation_qs)) == [0.2, 0.2 + 2step]
     @test isempty(Tables.rowtable(DBInterface.execute(db, "SELECT id FROM peak_curations")))
 end

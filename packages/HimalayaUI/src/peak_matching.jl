@@ -21,26 +21,26 @@ function grid_step(q::AbstractVector{<:Real})
     (isfinite(m) && m > 0) ? m : nothing
 end
 
-function _assign_nearest(auto_q, cur_q, q_step, blocked)
-    pairs = Tuple{Float64, Int, Int}[]
-    for (ci, cq) in enumerate(cur_q), (ai, aq) in enumerate(auto_q)
-        blocked[ai] && continue
+function _nearest_auto(auto_q, cq, q_step)
+    best, best_d = 0, Inf
+    for (ai, aq) in enumerate(auto_q)
         d = abs(Float64(cq) - Float64(aq))
-        d <= peak_match_tol(aq, q_step) && push!(pairs, (d, ai, ci))
+        d <= peak_match_tol(aq, q_step) && d < best_d && ((best, best_d) = (ai, d))
     end
-    sort!(pairs)
+    best
+end
+
+function _assign_nearest(auto_q, cur_q, q_step)
     owner = zeros(Int, length(auto_q))
-    used  = falses(length(cur_q))
-    for (_, ai, ci) in pairs
-        (owner[ai] != 0 || used[ci]) && continue
-        owner[ai] = ci
-        used[ci]  = true
+    owner_d = fill(Inf, length(auto_q))
+    for (ci, cq) in enumerate(cur_q)
+        ai = _nearest_auto(auto_q, cq, q_step)
+        ai == 0 && continue
+        d = abs(Float64(cq) - Float64(auto_q[ai]))
+        d < owner_d[ai] && ((owner[ai], owner_d[ai]) = (ci, d))
     end
     owner
 end
-
-_claim_nearest(auto_q, cur_q, q_step, blocked) =
-    BitVector(_assign_nearest(auto_q, cur_q, q_step, blocked) .!= 0)
 
 function match_curations(auto_q::AbstractVector, exclude_q::AbstractVector,
                          add_q::AbstractVector, q_step)
@@ -50,14 +50,15 @@ function match_curations(auto_q::AbstractVector, exclude_q::AbstractVector,
                                   exclude_q) for a in auto_q])
         return (excluded = excluded, superseded = falses(n))
     end
-    excluded   = _claim_nearest(auto_q, exclude_q, q_step, falses(n))
-    superseded = _claim_nearest(auto_q, add_q, q_step, excluded)
+    excluded   = BitVector(_assign_nearest(auto_q, exclude_q, q_step) .!= 0)
+    owner      = _assign_nearest(auto_q, add_q, q_step)
+    superseded = BitVector((owner .!= 0) .& .!excluded)
     (excluded = excluded, superseded = superseded)
 end
 
 function curation_flags(db::SQLite.DB, exposure_id::Integer, auto_q::AbstractVector)
     ex = Tables.rowtable(DBInterface.execute(db,
-        "SELECT q FROM peak_curations WHERE exposure_id = ? AND kind = 'exclude'",
+        "SELECT q FROM peak_curations WHERE exposure_id = ? AND kind = 'exclude' ORDER BY id",
         [Int(exposure_id)]))
     adds = Tables.rowtable(DBInterface.execute(db,
         "SELECT id, q FROM peak_curations WHERE exposure_id = ? AND kind = 'add' ORDER BY id",
@@ -102,15 +103,21 @@ function exclude_ids_for_peak(db::SQLite.DB, exposure_id::Integer, q::Real)
     auto = Tables.rowtable(DBInterface.execute(db,
         "SELECT q FROM auto_peaks WHERE exposure_id = ? ORDER BY id", [Int(exposure_id)]))
     aq = [Float64(r.q) for r in auto]
-    exq = [Float64(e.q) for e in ex]
     ti = isempty(aq) ? 0 : argmin(abs.(aq .- q0))
     if ti != 0 && abs(aq[ti] - q0) <= base
-        owner = _assign_nearest(aq, exq, step, falses(length(aq)))
-        return owner[ti] == 0 ? Int[] : [Int(ex[owner[ti]].id)]
+        return [Int(e.id) for e in ex if _nearest_auto(aq, Float64(e.q), step) == ti]
     end
     tol = peak_match_tol(q0, step)
-    near = [i for i in eachindex(exq) if abs(exq[i] - q0) <= tol]
+    near = [i for i in eachindex(ex) if abs(Float64(ex[i].q) - q0) <= tol]
     ids = Set(legacy)
-    isempty(near) || push!(ids, Int(ex[near[argmin([abs(exq[i] - q0) for i in near])]].id))
-    collect(ids)
+    isempty(near) || push!(ids, Int(ex[near[argmin([abs(Float64(ex[i].q) - q0) for i in near])]].id))
+    sort!(collect(ids))
+end
+
+function exclude_qs_for_peak(db::SQLite.DB, exposure_id::Integer, q::Real)
+    ids = Set(exclude_ids_for_peak(db, exposure_id, q))
+    rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id, q FROM peak_curations WHERE exposure_id = ? AND kind = 'exclude' ORDER BY id",
+        [Int(exposure_id)]))
+    [Float64(r.q) for r in rows if Int(r.id) in ids]
 end
