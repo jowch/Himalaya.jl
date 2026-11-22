@@ -137,21 +137,9 @@ function _create_one_setup_experiment(db, body)
     (exp_id, exp_name, data_dir)
 end
 
-function _create_beamtime_experiment(db, body, raw_setups)
-    raw_path = _body_get(body, :path)
-    raw_path === nothing && return _json_error(400, Dict(:error => "path is required"))
-    isdir(String(raw_path)) || return _json_error(400,
-        Dict(:error => "path does not exist or is not a directory", :path => String(raw_path)))
-    path = _canonical_dir(String(raw_path))
-    existing = experiment_at_path(db, path)
-    existing === nothing || return _json_error(409, Dict(
-        :error => "this beamtime is already added as $(existing.name)",
-        :experiment_id => existing.id, :name => existing.name, :path => path))
+function _beamtime_setup_specs(db, path, raw_setups)
     raw_setups isa AbstractVector && !isempty(raw_setups) ||
         return _json_error(400, Dict(:error => "setups must be a non-empty list"))
-    name_val = _body_get(body, :name)
-    name_val === nothing || name_val isa AbstractString ||
-        return _json_error(400, Dict(:error => "name must be a string"))
     specs = Dict{Symbol,Any}[]
     for s in raw_setups
         bad = _malformed_setup(s)
@@ -172,6 +160,40 @@ function _create_beamtime_experiment(db, body, raw_setups)
     end
     any(sp -> sp[:included], specs) ||
         return _json_error(400, Dict(:error => "tick at least one setup"))
+    specs
+end
+
+function _add_beamtime_setups(db, id, body)
+    rows = Tables.rowtable(DBInterface.execute(db, "SELECT path FROM experiments WHERE id = ?", [id]))
+    isempty(rows) && return _json_error(404, Dict(:error => "experiment not found"))
+    path = _canonical_dir(String(first(rows).path))
+    any(st -> _same_dir(st.root_dir, path), setups_of(db, id)) && return _json_error(400,
+        Dict(:error => "this experiment is one setup folder, so it cannot hold more setups"))
+    specs = _beamtime_setup_specs(db, path, _body_get(body, :setups))
+    specs isa HTTP.Response && return specs
+    lock(_DB_WRITE_LOCK) do
+        SQLite.transaction(db) do
+            Int[create_setup!(db; experiment_id = id, position = _next_position(db, id), spec...)
+                for spec in specs]
+        end
+    end
+end
+
+function _create_beamtime_experiment(db, body, raw_setups)
+    raw_path = _body_get(body, :path)
+    raw_path === nothing && return _json_error(400, Dict(:error => "path is required"))
+    isdir(String(raw_path)) || return _json_error(400,
+        Dict(:error => "path does not exist or is not a directory", :path => String(raw_path)))
+    path = _canonical_dir(String(raw_path))
+    existing = experiment_at_path(db, path)
+    existing === nothing || return _json_error(409, Dict(
+        :error => "this beamtime is already added as $(existing.name)",
+        :experiment_id => existing.id, :name => existing.name, :path => path))
+    name_val = _body_get(body, :name)
+    name_val === nothing || name_val isa AbstractString ||
+        return _json_error(400, Dict(:error => "name must be a string"))
+    specs = _beamtime_setup_specs(db, path, raw_setups)
+    specs isa HTTP.Response && return specs
     exp_name = name_val !== nothing && !isempty(strip(String(name_val))) ?
         String(strip(String(name_val))) : basename(rstrip(path, '/'))
     exp_id = lock(_DB_WRITE_LOCK) do
@@ -292,7 +314,22 @@ function register_experiments_routes!()
             "SELECT ingest_error FROM experiments WHERE id = ?", [id]))
         isempty(rows) && return _json(404, Dict(:error => "experiment not found"))
         _json(200, Dict(:ingest_error => coalesce(first(rows).ingest_error, nothing),
-                        :exposures => ingest_problems(db, id)))
+                        :exposures => ingest_problems(db, id),
+                        :setups => [Dict(:root => r, :folder => basename(rstrip(r, '/')))
+                                    for r in unrecognized_setup_roots(db, id)]))
+    end
+
+    @post "/api/experiments/{id}/setups" function(req::HTTP.Request, id::Int)
+        db = current_db()
+        body = json(req)
+        _is_obj(body) || return _json_error(400, Dict(:error => "body must be an object"))
+        added = _add_beamtime_setups(db, id, body)
+        added isa HTTP.Response && return added
+        _set_ingest_status!(db, id, "scanning")
+        Threads.@spawn run_ingest!(db, id; phase = "rescan")
+        log_action!(db, req; action = "setups_added", entity_type = "experiment", entity_id = id)
+        HTTP.Response(202, ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:status => "scanning", :experiment_id => id, :setup_ids => added)))
     end
 
     @post "/api/experiments/{id}/scan" function(req::HTTP.Request, id::Int)

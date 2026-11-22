@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as api from "../../api";
 import { queryKeys } from "../../queries";
@@ -210,7 +210,8 @@ function existingFrom(body: unknown): { id: number; name: string } | undefined {
 export function NewExperimentPage(): JSX.Element {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [path, setPath] = useState("");
+  const [search] = useSearchParams();
+  const [path, setPath] = useState(() => search.get("path") ?? "");
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [edits, setEdits] = useState<Record<string, RowEdit>>({});
   const [typedName, setTypedName] = useState<string | undefined>(undefined);
@@ -250,7 +251,7 @@ export function NewExperimentPage(): JSX.Element {
 
   const chosen = setups.filter((s) => edits[s.root]?.include === true);
   const current = path.trim() === picked && !preview.isFetching && preview.data !== undefined && setups.every((s) => edits[s.root] !== undefined);
-  const canSubmit = current && chosen.length > 0 && !submitting && name.trim() !== "" && existing === undefined;
+  const canSubmit = current && chosen.length > 0 && !submitting && (existing !== undefined || name.trim() !== "");
   const [submitWhenReady, setSubmitWhenReady] = useState<string | undefined>(undefined);
   const inFlight = useRef(false);
 
@@ -264,6 +265,7 @@ export function NewExperimentPage(): JSX.Element {
       for (const s of setups) {
         if (s.duplicate_of !== null) continue;
         const e = edits[s.root]!;
+        if (existing !== undefined && !e.include) continue;
         let manifest: api.ManifestResponse | undefined;
         if (e.include && layoutEdited(s, e)) {
           try {
@@ -282,7 +284,9 @@ export function NewExperimentPage(): JSX.Element {
           ...(geometry ? { geometry } : {}),
         });
       }
-      const exp = await api.createExperiment({ name: name.trim(), path: folder, setups: body });
+      const exp = existing !== undefined
+        ? (await api.addSetups(existing.id, body), existing)
+        : await api.createExperiment({ name: name.trim(), path: folder, setups: body });
       void queryClient.invalidateQueries({ queryKey: queryKeys.experiments });
       void queryClient.invalidateQueries({ queryKey: queryKeys.folderPreviews });
       navigate(`/experiments/${exp.id}`);
@@ -294,7 +298,7 @@ export function NewExperimentPage(): JSX.Element {
       setSubmitting(false);
       inFlight.current = false;
     }
-  }, [canSubmit, setups, edits, name, folder, navigate, queryClient]);
+  }, [canSubmit, setups, edits, name, folder, existing, navigate, queryClient]);
 
   useEffect(() => {
     if (submitWhenReady === undefined) return;
@@ -341,12 +345,16 @@ export function NewExperimentPage(): JSX.Element {
         <h1 className="text-display text-ink">Add a beamtime</h1>
         <div className="mt-6">
           <DirectoryPickerField value={path} onChange={setPath} onSubmit={() => (canSubmit ? void submit() : setSubmitWhenReady(path.trim()))} suggestions={suggestions} autoFocus />
-          <p data-testid="preview-status" role="status" className="text-meta text-ink-soft mt-2">{existing !== undefined ? `This beamtime is already added as ${existing.name}. New setup folders in it are added when it is rescanned.` : status}</p>
+          <p data-testid="preview-status" role="status" className="text-meta text-ink-soft mt-2">{existing === undefined
+            ? status
+            : setups.some((s) => s.duplicate_of === null)
+              ? `This beamtime is already added as ${existing.name}. Tick a setup folder below to add it there.`
+              : `This beamtime is already added as ${existing.name}. New setup folders in it are added when it is rescanned.`}</p>
           {existing !== undefined && (
             <Button variant="ghost" data-testid="open-existing" className="mt-1" onClick={() => navigate(`/experiments/${existing.id}`)}>Open {existing.name}</Button>
           )}
         </div>
-        {setups.length > 0 && (
+        {setups.length > 0 && existing === undefined && (
           <div className="mt-6">
             <DetailsField label="Experiment name" value={name} onChange={setTypedName} testId="experiment-name" />
           </div>
@@ -367,7 +375,7 @@ export function NewExperimentPage(): JSX.Element {
       >
         <Button variant="ghost" onClick={() => navigate("/experiments")}>Cancel</Button>
         <Button variant="accent" data-testid="create-submit" disabled={!canSubmit} onClick={() => { void submit(); }}>
-          Add experiment
+          {existing !== undefined ? "Add setups" : "Add experiment"}
           <KbKey variant="frost" className="ml-2">{modCombo("↵")}</KbKey>
         </Button>
       </footer>

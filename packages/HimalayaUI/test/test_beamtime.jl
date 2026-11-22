@@ -211,4 +211,50 @@ _post(call, body) = call("POST", "/api/experiments";
         DBInterface.execute(db, "UPDATE experiments SET ingest_status = 'analyzing' WHERE id = ?", [a])
         @test_throws ErrorException HimalayaUI.merge_plan(db, [a, b]; path = "/y")
     end
+    @testset "a setup folder with an unrecognised layout is reported and can be added by hand" begin
+        bt = mktempdir()
+        d1, a1 = _write_setup!(joinpath(bt, "setup1"); stems = ["A_S0001_0_001"])
+        mkpath(joinpath(a1, "automatic_analysis", "tot_files"))
+        d2, a2 = _write_setup!(joinpath(bt, "setup2"); stems = ["B_S0001_0_001"])
+        db = fresh_db()
+        with_inproc_routes(db) do call
+            r = _post(call, Dict(:path => bt, :setups => [Dict(:root => joinpath(bt, "setup1"), :data_dir => d1)]))
+            eid = Int(JSON3.read(String(r.body)).id)
+            _wait_ingest(db, eid)
+            @test isempty(HimalayaUI.new_setup_roots(db, eid))
+            problems = JSON3.read(String(call("GET", "/api/experiments/$eid/problems").body))
+            @test [p.folder for p in problems.setups] == ["setup2"]
+            @test problems.setups[1].root == realpath(joinpath(bt, "setup2"))
+
+            add(body) = call("POST", "/api/experiments/$eid/setups";
+                headers = ["Content-Type" => "application/json"], body = Vector{UInt8}(JSON3.write(body)))
+            spec = Dict(:root => joinpath(bt, "setup2"), :data_dir => d2, :analysis_dir => a2,
+                        :patterns => Dict(:image => "{name}.tif", :metadata => "{name}.prp",
+                                          :integration => "{name}_avg.dat"))
+            @test add(Dict(:setups => [Dict(:data_dir => d2, :root => mktempdir())])).status == 400
+            @test call("POST", "/api/experiments/99999/setups";
+                headers = ["Content-Type" => "application/json"],
+                body = Vector{UInt8}(JSON3.write(Dict(:setups => [spec])))).status == 404
+            a = add(Dict(:setups => [spec]))
+            @test a.status == 202
+            sid = only(JSON3.read(String(a.body)).setup_ids)
+            _wait_ingest(db, eid)
+            st = HimalayaUI.setup_row(db, sid)
+            @test (st.folder, st.position, st.included, st.integration_pattern) == ("setup2", 1, 1, "{name}_avg.dat")
+            @test _count(db, "SELECT COUNT(*) AS c FROM exposures WHERE setup_id = ?", sid) == 1
+            @test isempty(JSON3.read(String(call("GET", "/api/experiments/$eid/problems").body)).setups)
+            @test add(Dict(:setups => [spec])).status == 409
+        end
+
+        one = mktempdir()
+        od, oa = _write_setup!(joinpath(one, "setup1"); stems = ["C_S0001_0_001"])
+        db2 = fresh_db()
+        sid1 = HimalayaUI.create_experiment!(db2; name = "s1", path = realpath(joinpath(one, "setup1")),
+            data_dir = realpath(od), analysis_dir = realpath(oa))
+        with_inproc_routes(db2) do call
+            r = call("POST", "/api/experiments/$sid1/setups"; headers = ["Content-Type" => "application/json"],
+                body = Vector{UInt8}(JSON3.write(Dict(:setups => [Dict(:data_dir => mktempdir())]))))
+            @test r.status == 400
+        end
+    end
 end

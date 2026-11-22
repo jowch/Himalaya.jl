@@ -176,6 +176,9 @@ export interface CreateExperimentBody {
 export const createExperiment = (body: CreateExperimentBody, opts?: AuthOpts) =>
   request<Experiment>("POST", "/api/experiments", body, opts);
 
+export const addSetups = (id: number, setups: CreateSetupBody[], opts?: AuthOpts) =>
+  request<{ status: string; experiment_id: number; setup_ids: number[] }>("POST", `/api/experiments/${id}/setups`, { setups }, opts);
+
 /** Rescan: cheap change-check then additive ingest of new files. Idempotent.
  *  Pass `force = true` to bypass the cheap change-check and always run a full
  *  scan — used when a pattern field edit changes what files are discovered. */
@@ -196,7 +199,8 @@ export interface ProblemExposure {
   problem: "no_trace" | "failed";
   reason: string;
 }
-export interface IngestProblems { ingest_error: string | null; exposures: ProblemExposure[] }
+export interface UnrecognizedSetup { root: string; folder: string }
+export interface IngestProblems { ingest_error: string | null; exposures: ProblemExposure[]; setups?: UnrecognizedSetup[] }
 export const listProblems = (id: number) =>
   request<IngestProblems>("GET", `/api/experiments/${id}/problems`);
 

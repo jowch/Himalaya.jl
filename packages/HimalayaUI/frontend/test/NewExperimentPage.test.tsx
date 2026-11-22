@@ -59,6 +59,18 @@ describe("NewExperimentPage", () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
+  it("starts on the folder a link passes in", async () => {
+    vi.spyOn(api, "previewFolder").mockResolvedValue({ path: "/b/20261103", setups: [setup("/b/20261103/setup1")] });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={["/experiments/new?path=%2Fb%2F20261103"]}><NewExperimentPage /></MemoryRouter>
+      </QueryClientProvider>,
+    );
+    expect(screen.getByTestId("dirpicker-input").querySelector("input")).toHaveValue("/b/20261103");
+    await screen.findAllByTestId("setup-row");
+  });
+
   it("puts the cursor in the folder field on arrival", () => {
     renderPage();
     expect(document.activeElement).toBe(screen.getByTestId("dirpicker-input").querySelector("input"));
@@ -357,19 +369,43 @@ describe("NewExperimentPage", () => {
     await waitFor(() => expect(screen.getByTestId("preview-status")).toHaveTextContent("No images found"));
     expect(screen.getByTestId("create-submit")).toBeDisabled();
   });
-  it("points to the experiment that already holds a picked beamtime instead of adding it again", async () => {
+  it("points to the experiment that already holds a picked beamtime and adds only the folders it does not have", async () => {
     vi.spyOn(api, "previewFolder").mockResolvedValue({
       path: "/b/20261103", existing: { id: 4, name: "Nov beamtime" },
-      setups: [setup("/b/20261103/setup3")],
+      setups: [
+        setup("/b/20261103/setup1", { duplicate_of: { id: 4, name: "Nov beamtime" } }),
+        setup("/b/20261103/setup3", { layout_detected: false }),
+      ],
     });
     const create = vi.spyOn(api, "createExperiment");
+    const add = vi.spyOn(api, "addSetups").mockResolvedValue({ status: "scanning", experiment_id: 4, setup_ids: [9] });
     renderPage();
     pick("/b/20261103");
-    await waitFor(() => expect(screen.getByTestId("preview-status")).toHaveTextContent("already added as Nov beamtime"));
+    await waitFor(() => expect(screen.getByTestId("preview-status")).toHaveTextContent("already added as Nov beamtime. Tick a setup folder"));
+    expect(screen.queryByTestId("experiment-name")).toBeNull();
+    expect(screen.getByTestId("create-submit")).toBeDisabled();
+    expect(screen.getByTestId("create-submit")).toHaveTextContent("Add setups");
+    const rows = screen.getAllByTestId("setup-row");
+    fireEvent.click(within(rows[1]!).getByRole("checkbox"));
+    fireEvent.click(screen.getByTestId("create-submit"));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/experiments/4"));
+    expect(create).not.toHaveBeenCalled();
+    expect(add).toHaveBeenCalledTimes(1);
+    expect(add.mock.calls[0]![0]).toBe(4);
+    expect(add.mock.calls[0]![1].map((x) => [x.root, x.included])).toEqual([["/b/20261103/setup3", true]]);
+  });
+
+  it("only points to the existing experiment when every setup folder is already in it", async () => {
+    vi.spyOn(api, "previewFolder").mockResolvedValue({
+      path: "/b/20261103", existing: { id: 4, name: "Nov beamtime" },
+      setups: [setup("/b/20261103/setup1", { duplicate_of: { id: 4, name: "Nov beamtime" } })],
+    });
+    renderPage();
+    pick("/b/20261103");
+    await waitFor(() => expect(screen.getByTestId("preview-status")).toHaveTextContent("added when it is rescanned"));
     expect(screen.getByTestId("create-submit")).toBeDisabled();
     fireEvent.click(screen.getByTestId("open-existing"));
     expect(navigate).toHaveBeenCalledWith("/experiments/4");
-    expect(create).not.toHaveBeenCalled();
   });
 
   it("offers the existing experiment when the server refuses a beamtime someone just added", async () => {
@@ -382,7 +418,7 @@ describe("NewExperimentPage", () => {
     await screen.findAllByTestId("setup-row");
     fireEvent.click(screen.getByTestId("create-submit"));
     await screen.findByTestId("open-existing");
-    expect(screen.getByTestId("create-submit")).toBeDisabled();
+    expect(screen.getByTestId("create-submit")).toHaveTextContent("Add setups");
     expect(screen.queryByRole("alert")).toBeNull();
   });
 });

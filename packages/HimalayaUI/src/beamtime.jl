@@ -9,7 +9,7 @@ function _setup_data_dir_taken(db::SQLite.DB, data_dir::AbstractString)
         [plain, _canonical_dir(data_dir)])))
 end
 
-function new_setup_roots(db::SQLite.DB, experiment_id::Integer)::Vector{String}
+function _unknown_setup_roots(db::SQLite.DB, experiment_id::Integer)::Vector{String}
     rows = Tables.rowtable(DBInterface.execute(db,
         "SELECT path FROM experiments WHERE id = ?", [Int(experiment_id)]))
     isempty(rows) && return String[]
@@ -25,9 +25,16 @@ function new_setup_roots(db::SQLite.DB, experiment_id::Integer)::Vector{String}
     end
     String[r for r in roots
            if !any(st -> _same_dir(st.root_dir, r), known) &&
-              !_setup_data_dir_taken(db, _canonical_dir(_setup_data_dir(r))) &&
-              resolve_experiment_layout(r).integration_pattern !== nothing]
+              !_setup_data_dir_taken(db, _canonical_dir(_setup_data_dir(r)))]
 end
+
+_layout_detected(root) = resolve_experiment_layout(root).integration_pattern !== nothing
+
+new_setup_roots(db::SQLite.DB, experiment_id::Integer) =
+    filter(_layout_detected, _unknown_setup_roots(db, experiment_id))
+
+unrecognized_setup_roots(db::SQLite.DB, experiment_id::Integer) =
+    filter(!_layout_detected, _unknown_setup_roots(db, experiment_id))
 
 function _next_position(db::SQLite.DB, experiment_id::Integer)
     rows = Tables.rowtable(DBInterface.execute(db,

@@ -187,6 +187,7 @@ export function WorkspacePage(): JSX.Element {
   const problemRows = problems.data?.exposures ?? [];
   const waitingForTrace = problemRows.filter((p) => p.problem === "no_trace").length;
   const failedAnalyses = problemRows.length - waitingForTrace;
+  const unrecognizedSetups = problems.data?.setups?.length ?? 0;
   const ingesting = scan.scanning || scan.rescanning;
   const count = (n: number): string => n.toLocaleString("en-US");
   const ingestProgress = !ingesting
@@ -915,7 +916,7 @@ export function WorkspacePage(): JSX.Element {
         ? { name: experiment.data.name ?? "", description: experiment.data.description ?? "", save: editExperiment }
         : undefined,
     rescan: ingesting ? undefined : () => triggerScan.mutate(ingestFailed || failedAnalyses > 0),
-    problems: problemRows.length > 0 || ingestFailed ? () => setProblemsOpen(true) : undefined,
+    problems: problemRows.length > 0 || unrecognizedSetups > 0 || ingestFailed ? () => setProblemsOpen(true) : undefined,
     removeExperiment:
       ingesting || !username
         ? undefined
@@ -956,6 +957,7 @@ export function WorkspacePage(): JSX.Element {
             <ProblemList
               problems={problems.data}
               onPick={(sid) => { setProblemsOpen(false); goSample(sid); }}
+              onAddSetups={() => navigate(`/experiments/new?path=${encodeURIComponent(experiment.data?.path ?? "")}`)}
               onClose={() => setProblemsOpen(false)}
             />
           )}
@@ -982,7 +984,7 @@ export function WorkspacePage(): JSX.Element {
           onHelp={() => setHelpOpen(true)}
         />
       }
-      nav={<SampleList samples={visible} currentId={sampleId} filter={filter} onFilter={setFilter} onPick={goSample} onToggleCompare={toggleCompare} compareColors={compareColors} hiddenCompares={shownCompareSet} bridgeCounts={counts} notice={<ExperimentNotice progress={ingestProgress} ingestFailed={ingestFailed} waiting={waitingForTrace} failed={failedAnalyses} onDetails={() => setProblemsOpen(true)} />} />}
+      nav={<SampleList samples={visible} currentId={sampleId} filter={filter} onFilter={setFilter} onPick={goSample} onToggleCompare={toggleCompare} compareColors={compareColors} hiddenCompares={shownCompareSet} bridgeCounts={counts} notice={<ExperimentNotice progress={ingestProgress} ingestFailed={ingestFailed} waiting={waitingForTrace} failed={failedAnalyses} unrecognized={unrecognizedSetups} onDetails={() => setProblemsOpen(true)} />} />}
       main={
         sample ? (
           <>

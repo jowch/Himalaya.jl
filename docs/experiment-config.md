@@ -317,6 +317,22 @@ waiting for its trace says "Waiting for this frame's trace." in the plot, not
 "No integrated trace", and the plot refetches the trace when the next pass
 completes.
 
+It also returns `setups`: each folder under the beamtime that would be a new
+setup but whose file layout `resolve_experiment_layout` does not recognise
+(`unrecognized_setup_roots`, `{root, folder}`). A rescan skips these, so the
+notice counts them ("1 setup folder not recognised") and the list names them,
+with an "Add setup folders" link that opens New experiment on the beamtime
+folder. There the funnel shows the beamtime as already added, keeps its
+setups locked, and lets the user tick the new folder, type its patterns in
+Details, and add it with `POST /api/experiments/:id/setups`.
+
+`POST /api/experiments/:id/setups` takes `{setups: [...]}` in the same shape and
+with the same checks as the beamtime create (each root inside the experiment's
+`path`, each data folder unused, at least one ticked). It adds them as the next
+positions under the write lock, starts a rescan and answers
+`202 {status: "scanning", experiment_id, setup_ids}`. An experiment whose `path`
+is its own single setup folder cannot take more setups (`400`).
+
 ## Rescans
 
 Every pass goes through `run_ingest!` (`server.jl`), which holds a per-experiment
@@ -354,7 +370,8 @@ A new setup folder is any folder `setup_roots` finds under the experiment's
 experiment uses. It waits until `resolve_experiment_layout` detects its layout
 (an integrated trace, or the SSRL `analysis/automatic_analysis/tot_files`
 folder), so a folder whose images arrive before anything else is not stored
-with guessed patterns. It is then added as the next `position`, ticked, with
+with guessed patterns (until then it is listed under [Problems](#problems)).
+It is then added as the next `position`, ticked, with
 that layout; the scan then fills its geometry. Setups
 the user unticked stay setups, so they are never re-added. An experiment whose
 `path` is one of its own setup folders (a single setup was picked, or a DB
