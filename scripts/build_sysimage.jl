@@ -17,6 +17,8 @@ create_sysimage(
 )
 
 write(joinpath(out_dir, "julia_version"), string(VERSION))
+depot = first(DEPOT_PATH)
+write(joinpath(out_dir, "depot_path"), ispath(depot) ? realpath(depot) : rstrip(normpath(depot), collect("/")))
 
 @info """
 Sysimage built: $out_path

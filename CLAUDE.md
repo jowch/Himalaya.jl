@@ -72,8 +72,9 @@ scratch/                            # gitignored — exploratory scripts and tra
 # steps (with `npm ci`) and undoes Pkg.develop's rewrite of HimalayaUI/Project.toml:
 # HimalayaUI must `develop` the local core BEFORE instantiating — Manifest.toml is
 # gitignored and there is no [sources], so a bare instantiate resolves Himalaya from
-# the REGISTRY (different physics from this checkout). `[compat] Himalaya = "0.6"`
-# makes that fail loudly instead of silently; `develop` is the fix, not a workaround.
+# the REGISTRY (the published core, not this checkout). `[compat] Himalaya = "0.6"`
+# only catches a mismatch across VERSIONS: an unbumped core edit resolves cleanly
+# and silently disagrees with this checkout. `develop` is the fix, not a workaround.
 # For development use `make dev-setup`: it first writes packages/HimalayaUI/LocalPreferences.toml
 # (gitignored) with `precompile_workload = false`, so a src/ edit recompiles in ~5 s, not
 # ~100 s. `make setup` is the deploy path and keeps the route warm-up. Delete that file (or
