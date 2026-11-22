@@ -8,6 +8,8 @@ const ROLE_WORDS = (
     "Buffer"          => BUFFER_WORDS,
 )
 
+const ROLE_LABELS = Tuple(first.(ROLE_WORDS))
+
 const SOLVENT_WORDS = Set(["hepes", "pbs", "tris"])
 
 _bare(t) = (b = rstrip(isdigit, t); isempty(b) ? t : String(b))

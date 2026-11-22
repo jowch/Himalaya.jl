@@ -11,23 +11,28 @@ describe("LabelColorMenu", () => {
     const { rerender } = render(menu());
     expect(screen.getByRole("radio", { name: "Violet" })).toHaveFocus();
     fireEvent.keyDown(screen.getByRole("radio", { name: "Violet" }), { key: "ArrowRight" });
-    expect(screen.getByRole("radio", { name: "Blue" })).toHaveFocus();
+    expect(screen.getByRole("radio", { name: "Teal" })).toHaveFocus();
     rerender(menu(vi.fn(), vi.fn()));
-    expect(screen.getByRole("radio", { name: "Blue" })).toHaveFocus();
+    expect(screen.getByRole("radio", { name: "Teal" })).toHaveFocus();
+  });
+
+  it("offers only the five user colours, never the system labels' blue, ochre or stone", () => {
+    render(menu());
+    expect(screen.getAllByRole("radio").map((r) => r.getAttribute("data-label-color"))).toEqual(["rose", "plum", "violet", "teal", "green"]);
   });
 
   it("is one tab stop whose arrows, Home and End move through the colours, wrapping", () => {
     render(menu());
-    expect(screen.getAllByRole("radio").map((r) => r.tabIndex)).toEqual([-1, -1, 0, -1, -1, -1, -1, -1]);
+    expect(screen.getAllByRole("radio").map((r) => r.tabIndex)).toEqual([-1, -1, 0, -1, -1]);
     const group = screen.getByRole("radiogroup");
     fireEvent.keyDown(group, { key: "ArrowLeft" });
     expect(screen.getByRole("radio", { name: "Plum" })).toHaveFocus();
     fireEvent.keyDown(group, { key: "Home" });
     expect(screen.getByRole("radio", { name: "Rose" })).toHaveFocus();
     fireEvent.keyDown(group, { key: "ArrowLeft" });
-    expect(screen.getByRole("radio", { name: "Stone" })).toHaveFocus();
+    expect(screen.getByRole("radio", { name: "Green" })).toHaveFocus();
     fireEvent.keyDown(group, { key: "End" });
-    expect(screen.getByRole("radio", { name: "Stone" })).toHaveFocus();
+    expect(screen.getByRole("radio", { name: "Green" })).toHaveFocus();
   });
 
   it("Escape and a pick close it handing focus back; an outside click closes it without", () => {
