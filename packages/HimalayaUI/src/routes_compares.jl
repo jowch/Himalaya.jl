@@ -46,7 +46,8 @@ function compare_changes(current::Set{Int}, subtraction::Union{Int, Nothing},
     isempty(removing) || (payload[:remove] = removing)
     if sub_given
         sub != subtraction && (payload[:subtraction] = sub)
-    elseif subtraction !== nothing && subtraction ∈ removing
+    elseif subtraction !== nothing && (subtraction ∈ removing ||
+                                       (subtraction ∉ current && !(isempty(adding) && isempty(removing))))
         payload[:subtraction] = nothing
     end
     payload

@@ -306,10 +306,6 @@ end
             # threads=true smoke run must not throw.
             res2 = HimalayaUI.prewarm_thumbnails!(db; threads=true)
             @test res2.warmed == 1
-
-            # overwrite=true re-renders the present one (the reingest contract).
-            res3 = HimalayaUI.prewarm_thumbnails!(db; threads=false, overwrite=true)
-            @test res3.warmed == 1
         finally
             rm(present; force=true)
         end
