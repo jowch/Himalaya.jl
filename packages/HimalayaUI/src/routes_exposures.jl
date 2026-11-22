@@ -49,12 +49,12 @@ function register_exposures_routes!()
             "SELECT image_path FROM exposures WHERE id = ?", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "exposure not found")))
+            JSON3.write(Dict(:error => "frame not found")))
 
         ip = rows[1].image_path
         (ip === nothing || ip isa Missing) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "no image for this exposure")))
+            JSON3.write(Dict(:error => "no image for this frame")))
 
         # The DB stores image_path at ingest, but the source TIFF may have been
         # moved or deleted since. Guard before load_and_lognormalize, which
@@ -131,7 +131,7 @@ function register_exposures_routes!()
             "SELECT id FROM exposures WHERE id = ?", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "exposure not found")))
+            JSON3.write(Dict(:error => "frame not found")))
 
         return with_idempotency(db, req) do
             DBInterface.execute(db,
@@ -159,10 +159,10 @@ function register_exposures_routes!()
             "SELECT sample_id, status FROM exposures WHERE id = ?", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "exposure not found")))
+            JSON3.write(Dict(:error => "frame not found")))
         is_kept_exposure(rows[1]) || return HTTP.Response(422,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "a dropped exposure can't be the representative")))
+            JSON3.write(Dict(:error => "a dropped frame can't be the representative")))
         sample_id = Int(rows[1].sample_id)
 
         return with_idempotency(db, req) do
@@ -191,7 +191,7 @@ function register_exposures_routes!()
              WHERE e.id = ?", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "exposure not found")))
+            JSON3.write(Dict(:error => "frame not found")))
         analysis_dir = String(rows[1].analysis_dir)
 
         # Issue #9: route is now queue-shaped — `with_idempotency` honors the

@@ -54,10 +54,6 @@ describe("App smoke", () => {
         analysis_dir: "/x/analysis", manifest_path: null,
         created_at: "2026-04-22T00:00:00Z",
       },
-      "/api/experiments/1/samples": [
-        { id: 10, experiment_id: 1, display_name: null, name: "s1", notes: null },
-      ],
-      // Corpus list — "/" now lands on the /samples contact sheet (#181).
       "/api/samples": [
         { id: 10, experiment_id: 1, display_name: null, name: "s1", notes: null },
       ],
@@ -100,6 +96,5 @@ describe("App smoke", () => {
     await waitFor(() => expect(document.documentElement).toHaveAttribute("data-theme", "dark"));
     localStorage.removeItem("himalaya-ui:theme");
     document.documentElement.removeAttribute("data-theme");
-    document.documentElement.classList.remove("dark");
   });
 });

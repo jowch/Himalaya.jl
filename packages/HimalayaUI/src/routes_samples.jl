@@ -1,15 +1,6 @@
 using HTTP, JSON3, DBInterface, Tables, Oxygen
 
 function register_samples_routes!()
-    @get "/api/experiments/{id}/samples" function(req::HTTP.Request, id::Int)
-        db      = current_db()
-        samples = Tables.rowtable(DBInterface.execute(db,
-            "SELECT * FROM samples WHERE experiment_id = ? ORDER BY id", [id]))
-        out = [row_to_json(sm) for sm in samples]
-        HTTP.Response(200, ["Content-Type" => "application/json"],
-            JSON3.write(out))
-    end
-
     @get "/api/samples" function(req::HTTP.Request)
         db     = current_db()
         params = HTTP.queryparams(HTTP.URI(req.target))

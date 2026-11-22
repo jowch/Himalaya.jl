@@ -6,17 +6,8 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
     exp_id = HimalayaUI.init_experiment!(db; path="/t", data_dir="/t/d",
                                              analysis_dir="/t/a")
     s1 = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    s2 = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D2")
 
     with_inproc_routes(db) do call
-        # List
-        r = call("GET", "/api/experiments/$exp_id/samples")
-        @test r.status == 200
-        list = JSON3.read(String(r.body))
-        @test length(list) == 2
-        @test list[1].name == "D1"
-        @test !haskey(list[1], :tags)
-
         # PATCH
         r = call("PATCH", "/api/samples/$s1";
             headers = ["Content-Type" => "application/json",
