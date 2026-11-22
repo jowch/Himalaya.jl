@@ -50,3 +50,5 @@ lib/queue/
 ## ANTI-PATTERNS
 - Never capture `client_op_id` in a closure at hook mount time
 - Fixing one layer of a queue bug requires regression tests at all six layers (see `docs/contract-testing.md`)
+
+- **Peak list settles by refetch, deferred.** `refreshPeaks.ts` invalidates an exposure's peaks only when no peak mutation for it is pending; an earlier refetch would erase later optimistic patches. Own `onSuccess` and `applyRemoteToCache` peak cases call it. Test: `test/queue/peakRefetchRace.test.tsx`.

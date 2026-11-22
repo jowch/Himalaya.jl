@@ -10,14 +10,14 @@
   "comments": {
     "frontend/src/api.ts": 73,
     "frontend/src/lib/queue/applyRemoteToCache.ts": 81,
-    "frontend/src/lib/queue/peakQTol.ts": 6,
+    "frontend/src/lib/queue/peakQTol.ts": 5,
     "frontend/src/pages/ExperimentsHomePage.tsx": 25,
     "frontend/src/shell/OnboardingFlow.tsx": 7,
     "src/db.jl": 609,
     "src/events.jl": 333,
     "src/pipeline.jl": 427,
     "src/routes_exposures.jl": 63,
-    "src/routes_peaks.jl": 56,
+    "src/routes_peaks.jl": 51,
     "src/speculative.jl": 239
   }
 }
