@@ -1,6 +1,7 @@
 module HimalayaUI
 
 include("db.jl")
+include("setups.jl")
 include("image.jl")
 include("datfile.jl")
 include("prp.jl")

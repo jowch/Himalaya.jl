@@ -31,11 +31,10 @@ function register_samples_routes!()
                 "SELECT * FROM samples WHERE experiment_id = ? ORDER BY id",
                 [exp_filter]))
 
-        qunits_by_exp = Dict{Int, String}()
-        for er in Tables.rowtable(DBInterface.execute(db,
-                "SELECT id, q_units FROM experiments"))
-            qunits_by_exp[Int(er.id)] =
-                (er.q_units === nothing || er.q_units === missing) ? "A-1" : String(er.q_units)
+        qunits_by_setup = Dict{Int, String}()
+        for sr in Tables.rowtable(DBInterface.execute(db,
+                "SELECT id, q_units FROM setups"))
+            qunits_by_setup[Int(sr.id)] = ismissing(sr.q_units) ? "A-1" : String(sr.q_units)
         end
 
         rep_by_sample = Dict{Int, Int}()
@@ -58,10 +57,8 @@ function register_samples_routes!()
 
         out = map(samples) do sm
             d          = row_to_json(sm)
-            # experiment_id is a nullable FK column; tolerate a SQL NULL
-            # (e.g. a future ON DELETE SET NULL) rather than throwing in Int().
-            d[:q_units] = ismissing(sm.experiment_id) ? "A-1" :
-                get(qunits_by_exp, Int(sm.experiment_id), "A-1")
+            d[:q_units] = ismissing(sm.setup_id) ? "A-1" :
+                get(qunits_by_setup, Int(sm.setup_id), "A-1")
             d[:representative_exposure_id] = get(rep_by_sample, Int(sm.id), nothing)
             state = get(call_states, Int(sm.id), "indexed")
             summary = call_summary(state, get(call_members, Int(sm.id), []))

@@ -560,7 +560,7 @@ end
                 body = Vector{UInt8}(JSON3.write(Dict("data_dir" => path, "name" => basename(path)))))
             r = post(joinpath(link, "data") * "/")
             @test r.status == 202
-            stored = first(Tables.rowtable(DBInterface.execute(db, "SELECT data_dir FROM experiments WHERE id = ?",
+            stored = first(Tables.rowtable(DBInterface.execute(db, "SELECT data_dir FROM setups WHERE experiment_id = ?",
                 [JSON3.read(r.body).id]))).data_dir
             @test stored == realpath(real)
             @test post(real).status == 409

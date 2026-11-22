@@ -27,7 +27,7 @@ async function seedEmpty(experiments) {
 }
 
 test("seed --empty refuses an app that already has experiments", async () => {
-  const { code, r } = await seedEmpty([{ id: 1, data_dir: "/x/data", ingest_status: "complete" }]);
+  const { code, r } = await seedEmpty([{ id: 1, setups: [{ data_dir: "/x/data" }], ingest_status: "complete" }]);
   assert.equal(code, 1);
   assert.match(r.error, /needs an empty DB.*1 experiment/);
   assert.match(r.hint, /DEMO_API_PORT=8081/);

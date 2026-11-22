@@ -66,3 +66,11 @@ function align_next_curation_id!(db, id::Integer)
         "INSERT INTO sqlite_sequence (name, seq) VALUES ('peak_curations', ?)", [id - 1])
     nothing
 end
+
+function add_legacy_experiment_columns!(db)
+    for c in ("data_dir", "analysis_dir")
+        c in HimalayaUI.cols_of(db, "experiments") ||
+            DBInterface.execute(db, "ALTER TABLE experiments ADD COLUMN $c TEXT")
+    end
+    nothing
+end

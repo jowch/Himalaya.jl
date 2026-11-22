@@ -133,6 +133,7 @@ function build_legacy_db(dir::AbstractString)
     HimalayaUI.create_schema!(db)   # LEGACY shape: samples(name,display_name); exposures(sample_id,filename), NO experiment_id
 
     # --- experiment (data_dir/analysis_dir NOT NULL → point at fixture dirs) ---
+    add_legacy_experiment_columns!(db)
     DBInterface.execute(db,
         "INSERT INTO experiments (id, name, path, data_dir, analysis_dir) VALUES (1,'legacy',?,?,?)",
         [dir, data_dir, analysis_dir])
@@ -487,7 +488,7 @@ end
     # Insert one experiment with 3 loads: two within 1 h (session 1), then
     # a >3 h gap, then one more (session 2).
     DBInterface.execute(db,
-        "INSERT INTO experiments (id, name, path, data_dir, analysis_dir) VALUES (1,'bftest','/t','/d','/a')")
+        "INSERT INTO experiments (id, name, path) VALUES (1,'bftest','/t')")
     t0 = "2026-04-25T10:00:00"
     t1 = "2026-04-25T10:30:00"
     t2 = "2026-04-25T14:00:00"   # +4 h gap → new session

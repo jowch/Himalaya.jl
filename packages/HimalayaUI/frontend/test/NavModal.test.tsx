@@ -28,29 +28,13 @@ function renderModal() {
 
 const EXP_BASE = {
   description: null,
-  manifest_path: null,
-  q_units: null,
-  beam_center_x: null,
-  beam_center_y: null,
-  pixel_size_um: null,
-  energy_kev: null,
-  flight_path_m: null,
-  energy_kev_source: "default" as api.GeometrySource,
-  flight_path_m_source: "default" as api.GeometrySource,
-  beam_center_x_source: "default" as api.GeometrySource,
-  beam_center_y_source: "default" as api.GeometrySource,
-  pixel_size_um_source: "default" as api.GeometrySource,
-  q_units_source: "default" as api.GeometrySource,
   last_scanned_at: null,
   ingest_status: "idle" as api.IngestStatus,
-  image_pattern: null,
-  metadata_pattern: null,
-  integration_pattern: null,
 };
 
 const EXPERIMENTS: api.Experiment[] = [
-  { id: 1, name: "SSRL May 2026", path: "/data/ssrl_2026_05", data_dir: "/data/ssrl_2026_05/data", analysis_dir: "/data/ssrl_2026_05/analysis", created_at: "2026-05-01", ...EXP_BASE },
-  { id: 2, name: "APS Apr 2026",  path: "/data/aps_2026_04",  data_dir: "/data/aps_2026_04/data",  analysis_dir: "/data/aps_2026_04/analysis",  created_at: "2026-04-15", ...EXP_BASE },
+  { id: 1, name: "SSRL May 2026", path: "/data/ssrl_2026_05", created_at: "2026-05-01", ...EXP_BASE },
+  { id: 2, name: "APS Apr 2026",  path: "/data/aps_2026_04",  created_at: "2026-04-15", ...EXP_BASE },
 ];
 
 const SAMPLES_EXP1: api.Sample[] = [
