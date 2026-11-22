@@ -49,7 +49,7 @@ import { useScanState } from "../hooks/useScanState";
 import { useMediaQuery } from "./useMediaQuery";
 import { isIngestStage, stageLabel } from "../lib/ingestStages";
 import { bridgeCounts, bridgedWith } from "../lib/bridges";
-import { bufferRole, buffersFirst, displayLabel, firstUnusedColor, labelColor, labelColorIsDefault, labelsFor, sameLabel, sampleMatchesFilter, labelVocabulary } from "../lib/labels";
+import { bufferRole, buffersFirst, displayLabel, firstUnusedColor, labelColor, labelColorIsDefault, labelsFor, sameLabel, sampleMatchesFilter, labelVocabulary, labelKey } from "../lib/labels";
 import { representativeExposure } from "../lib/exposure";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
@@ -145,6 +145,8 @@ function helpSections(mod: string): HelpSection[] {
 
 const HELP = helpSections(MOD_KEY);
 
+const RECENT_LABELS = "label";
+
 const EXPOSURE_LABELS = ["File", "Kind", "Acquired", "Exposure", "Flight tube", "Energy", "Detector", "I₀", "I signal"];
 
 function exposureRows(e: Exposure | undefined): [string, string][] {
@@ -211,7 +213,11 @@ export function WorkspacePage(): JSX.Element {
   );
   const labels = useLabels(experimentId);
   const labelList = useMemo(() => labels.data ?? [], [labels.data]);
-  const vocabulary = useMemo(() => labelVocabulary(labelList), [labelList]);
+  const [recentLabels, setRecentLabels] = useState(() => recentRank(RECENT_LABELS));
+  const vocabulary = useMemo(
+    () => byRecent(labelVocabulary(labelList), labelKey, recentLabels),
+    [labelList, recentLabels],
+  );
   const addLabel = useAddLabel(experimentId);
   const removeLabel = useRemoveLabel(experimentId);
   const [labeling, setLabeling] = useState(false);
@@ -599,6 +605,10 @@ export function WorkspacePage(): JSX.Element {
     (sid: number, tag: string, added: boolean) => {
       const prev = labelList.find((l) => l.sample_id === sid && sameLabel(l.label, tag))?.state;
       (added ? addLabel : removeLabel).mutate({ sampleId: sid, label: tag });
+      if (added) {
+        recordRecent(RECENT_LABELS, labelKey(tag));
+        setRecentLabels(recentRank(RECENT_LABELS));
+      }
       const verb = prev === "suggested" ? (added ? "confirmed the suggested" : "dismissed the suggested") : added ? "added the" : "removed the";
       return labelEntry(ops, {
         label: `${verb} label ${displayLabel(tag)} on ${sample?.name ?? "this sample"}`,
