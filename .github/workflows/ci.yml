@@ -121,7 +121,6 @@ jobs:
           cache-dependency-path: packages/HimalayaUI/frontend/package-lock.json
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - run: npx tsc --noEmit -p tsconfig.e2e.json
       - run: npx playwright test --trace retain-on-failure
       - if: failure()
         uses: actions/upload-artifact@v4

@@ -68,6 +68,10 @@ Instead, R² is surfaced **informationally** in the UI: the comb/residual chart 
 
 When a bicontinuous cubic (Pn3m / Im3m / Ia3d) is in an exposure's assignment, the `bonnet` field on the indices response (`GET /api/exposures/{id}/indices`) flags candidates whose measured lattice matches what the Gauss–Bonnet ratio predicts for a *coexisting* cubic of a different phase (`a_Pn3m : a_Im3m : a_Ia3d = 1.000 : 1.279 : 1.576`; kernel in `src/bonnet.jl`). It is a **display-and-ranking affordance computed from the live assignment**, recomputed per request and **never persisted, never folded into `score`**. Folding it in would corrupt the `auto_group` / `remove_subsets` ordering, which relies on `score` being coverage×consistency alone — so the Bonnet match surfaces only as the ⭙ badge (and may sort up within the candidate-list view), never as a score change.
 
+## Bonnet groups in the Call list — not in the score
+
+The workspace's Call list groups cubic candidates that coexist through the Bonnet relation (`frontend/src/workspace/bonnetGroups.ts`). Equal Gaussian curvature fixes their lattices at 1 : 1.279 : 1.576, matched within 1%. Because a curvature match alone admits lattice aliases, every member must explain at least 2 peaks the others do not, and groups claim peaks greedily by peaks explained, then summed score. Groups come from the candidate list alone, never the current call, so ticking never reorders the list. They are display only: they never touch `score`, `auto_group` or `remove_subsets`, and the stored call is still a set of individual members.
+
 ## Peak-to-ratio assignment is greedy, not optimal
 
 Before `score` ever runs, `indexpeaks` has to decide *which* observed peak fills
