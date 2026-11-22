@@ -22,7 +22,6 @@ React 18 + Vite + TypeScript strict + TailwindCSS 4. TanStack Query for server s
 | Hooks | `hooks/` | `useFocusTrap`, `useStateFromUrl`, … |
 | Library | `lib/` | URL helpers, plot helpers, peak refs, custom index, labels, bridges |
 | Mutation queue | `lib/queue/` | See [lib/queue/AGENTS.md](lib/queue/AGENTS.md) |
-| Skeletons | `bones/` | Committed `*.bones.json` + auto-generated `registry.ts` |
 
 ## TypeScript strict + `exactOptionalPropertyTypes`
 
@@ -57,7 +56,7 @@ Wrap any function that is both defined inside a component AND used as a `useEffe
 
 ## Tailwind v4 theming
 
-"The Print" palette (light warm paper, terracotta accent hue 38, Source Sans 3 throughout) is defined once in `styles.css` via `@theme { --color-* ... }` (R0a, #221). The app has a dark theme selected by `data-theme`, set on `<html>` by `useDocumentTheme` (`lib/theme.ts`, mounted in `PrintApp`) so every page follows the pick, and on the workspace root from the same store; `useDocumentTheme` also toggles `.dark` on `<html>`, which is how boneyard picks its `darkColor`: the dark blocks at the end of `styles.css` restate the chrome, status and `--color-phase-*` tokens, and `phaseColor()` returns `var(--color-phase-…)` so phase colour follows the theme. Any token built from another token must be restated there too. The legacy dark-era neutral-ramp shim (the duplicated `bg-`/`text-`/`border-` neutral utilities that mirrored the canonical Print names) was excised in R3-F (#259): use the canonical Print utilities directly — `bg-paper`/`bg-paper-sunk`/`bg-plate`, `text-ink`/`text-ink-soft`/`text-ink-faint`, `border-hair`/`border-hair-strong`, `text-print-accent` (or `accent` for terracotta). Reintroducing an old name is self-revealing: Tailwind won't generate the utility and its `--color-*` custom property no longer resolves. Titles use the `text-display`/`text-headline` roles. To add a new color, add it to `@theme` first.
+"The Print" palette (light warm paper, terracotta accent hue 38, Source Sans 3 throughout) is defined once in `styles.css` via `@theme { --color-* ... }` (R0a, #221). The app has a dark theme selected by `data-theme`, set on `<html>` by `useDocumentTheme` (`lib/theme.ts`, mounted in `PrintApp`) so every page follows the pick, and on the workspace root from the same store; `useDocumentTheme` sets `data-theme` on `<html>`: the dark blocks at the end of `styles.css` restate the chrome, status and `--color-phase-*` tokens, and `phaseColor()` returns `var(--color-phase-…)` so phase colour follows the theme. Any token built from another token must be restated there too. The legacy dark-era neutral-ramp shim (the duplicated `bg-`/`text-`/`border-` neutral utilities that mirrored the canonical Print names) was excised in R3-F (#259): use the canonical Print utilities directly — `bg-paper`/`bg-paper-sunk`/`bg-plate`, `text-ink`/`text-ink-soft`/`text-ink-faint`, `border-hair`/`border-hair-strong`, `text-print-accent` (or `accent` for terracotta). Reintroducing an old name is self-revealing: Tailwind won't generate the utility and its `--color-*` custom property no longer resolves. Titles use the `text-display`/`text-headline` roles. To add a new color, add it to `@theme` first.
 
 ## Design system — closed-look primitives + the design guard (ENFORCED)
 
@@ -82,13 +81,6 @@ This is **mechanically enforced** (2026-05-29 extraction). `scripts/check-design
 Only the colour-AUTHORING files are exempt (rules #3/#5 share an allowlist: `phases.ts`, `print/main.tsx`, plus the excluded `print/{ui,plot,detector}/` and `workspace/ui/` prefixes).
 
 `check-design.mjs` also enforces a **`no-legacy-import` rule** (`scanLegacyImports`) alongside the appearance guard: it fails the build if any `src/print/**` file relatively imports from top-level `src/components/**` or `src/pages/**`. Those legacy dirs are gone post-cutover, so the rule now functions as a regression tripwire against re-introducing the retired tree.
-
-## Skeleton loading via boneyard-js
-
-Each load-gated card wraps content in `<Skeleton>` from `boneyard-js/react`. Full reference: `packages/HimalayaUI/docs/boneyard.md`. Two rules that bite hardest:
-
-- **Gate on `query.isLoading`, not `isPending`.** `isLoading = isPending && isFetching` — disabled queries and background refetches stay skeleton-free; only true cold fetches animate. Wrong gating ⇒ flicker on every refetch.
-- **`className` on `<Skeleton>` is load-bearing.** Boneyard adds two wrapper divs that break parent flex chains (e.g. a scrolling list inside a card collapsing to a fixed small height). Pass `flex-1 min-h-0 flex flex-col` (or `h-full w-full`) to inherit the original child's layout role. Companion CSS in `styles.css`: `[data-boneyard-content] { display: contents }`.
 
 ## Mutation queue — load-bearing one-liners
 
