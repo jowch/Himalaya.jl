@@ -42,10 +42,17 @@ isdefined(@__MODULE__, :_write_setup!) || include("test_setups.jl")
         @test only(Tables.rowtable(DBInterface.execute(db,
             "SELECT COUNT(*) AS c FROM exposures WHERE setup_id = ?", [s2]))).c == 1
         @test patch(call, s1, """{"included":false}""").status == 200
+        _write_setup!(joinpath(bt, "setup1"); stems = ["A_S0001_0_001", "A_S0002_0_001"])
         @test patch(call, s1, """{"included":true}""").status == 200
+        t0 = time()
+        while time() - t0 < 30
+            n = only(Tables.rowtable(DBInterface.execute(db,
+                "SELECT COUNT(*) AS c FROM exposures WHERE setup_id = ?", [s1]))).c
+            n == 2 && !HimalayaUI.ingest_running(eid) && break
+            sleep(0.05)
+        end
         @test only(Tables.rowtable(DBInterface.execute(db,
-            "SELECT ingest_status FROM experiments WHERE id = ?", [eid]))).ingest_status != "scanning"
-        @test !HimalayaUI.ingest_running(eid)
+            "SELECT COUNT(*) AS c FROM exposures WHERE setup_id = ?", [s1]))).c == 2
 
         for bad in ("""{"included":"no"}""", """{"name":3}""", """{"folder":"x"}""", "{}",
                     """{"name":"x","data_dir":"/y"}""")

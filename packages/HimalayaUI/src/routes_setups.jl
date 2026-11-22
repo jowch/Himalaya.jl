@@ -37,9 +37,7 @@ function register_setups_routes!()
         patch = _setup_patch(db, row, json(req))
         patch isa String && return _json_error(400, Dict(:error => patch))
         sets, params, changed = patch
-        scan = get(changed, :included, false) === true && Int(row.included) == 0 &&
-            isempty(Tables.rowtable(DBInterface.execute(db,
-                "SELECT 1 FROM exposures WHERE setup_id = ? LIMIT 1", [id])))
+        scan = get(changed, :included, false) === true && Int(row.included) == 0
         resp = with_idempotency(db, req) do
             DBInterface.execute(db, "UPDATE setups SET $(join(sets, ", ")) WHERE id = ?", [params..., id])
             result = apply_event!(InTransaction(), db, req;

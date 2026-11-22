@@ -14,6 +14,8 @@ const calls: Call[] = [];
 const traceRefetch = vi.fn();
 const corpusRequests: number[] = [];
 const state = {
+  experimentLoaded: true,
+  setups: [] as { id: number; name: string; folder: string; included: boolean }[],
   corpus: [] as CorpusSample[],
   exposures: [] as Exposure[],
   indices: [] as IndexEntry[],
@@ -96,7 +98,10 @@ vi.mock("../../src/queries", () => ({
     corpusRequests.push(experimentId);
     return { data: state.corpus, isLoading: false };
   },
-  useExperiment: () => ({ data: { id: 1, name: "BL-19", last_scanned_at: "2026-11-01T00:00:00" } }),
+  useExperiment: () => ({
+    data: state.experimentLoaded ? { id: 1, name: "BL-19", last_scanned_at: "2026-11-01T00:00:00", setups: state.setups } : undefined,
+    isError: false,
+  }),
   useProblems: () => ({ data: state.problems }),
   useTriggerScan: () => ({ mutate: (force = false) => rescans.push(force), isError: state.rescanError }),
   useCheckForNewFilesOnOpen: (experimentId: number) => { opened.push(experimentId); },
@@ -240,6 +245,8 @@ beforeEach(() => {
   toasts.length = 0;
   prefetchTargets.length = 0;
   state.username = "jc";
+  state.experimentLoaded = true;
+  state.setups = [];
   state.corpus = [
     sample(10, "A1", { assignment_state: "indexed", phase: "Pn3m" }),
     sample(11, "A2"),
@@ -288,6 +295,26 @@ describe("WorkspacePage", () => {
     state.traceFetching = false;
     rerender(page("/experiments/1/workspace/11"));
     expect(prefetchTargets.at(-1)!.settled).toBe(true);
+  });
+
+  it("holds the sample list until the setups are known, so it paints once in its final order", () => {
+    state.experimentLoaded = false;
+    state.setups = [
+      { id: 2, name: "setup2", folder: "setup2", included: true },
+      { id: 1, name: "setup1", folder: "setup1", included: false },
+    ];
+    state.corpus = [
+      { ...sample(10, "A1"), setup_id: 1 },
+      { ...sample(11, "B1"), setup_id: 2 },
+      { ...sample(12, "B2"), setup_id: 2 },
+    ];
+    const { rerender } = renderAt("/experiments/1/workspace");
+    expect(within(screen.getByTestId("workspace-samples")).queryAllByRole("button")).toHaveLength(0);
+    expect(screen.getByText("Loading samples…")).toBeInTheDocument();
+    state.experimentLoaded = true;
+    rerender(page("/experiments/1/workspace"));
+    const rows = within(screen.getByTestId("workspace-samples")).getAllByRole("button");
+    expect(rows.map((r) => r.getAttribute("data-sample-id"))).toEqual(["11", "12"]);
   });
 
   it("lists only this experiment's samples and marks unreviewed ones", () => {

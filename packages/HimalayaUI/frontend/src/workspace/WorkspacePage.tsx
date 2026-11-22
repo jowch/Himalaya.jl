@@ -203,9 +203,10 @@ export function WorkspacePage(): JSX.Element {
   const setups = useMemo(() => experiment.data?.setups ?? [], [experiment.data]);
   const setupOrder = useMemo(() => new Map(setups.map((st, i) => [st.id, i])), [setups]);
   const hiddenSetups = useMemo(() => new Set(setups.filter((st) => !st.included).map((st) => st.id)), [setups]);
+  const setupsKnown = experiment.data !== undefined || experiment.isError;
   const inExperiment = useMemo(
-    () => (corpus.data ?? []).filter((s) => s.experiment_id === experimentId),
-    [corpus.data, experimentId],
+    () => (setupsKnown ? (corpus.data ?? []).filter((s) => s.experiment_id === experimentId) : []),
+    [setupsKnown, corpus.data, experimentId],
   );
   const samples = useMemo(() => {
     const rank = (s: CorpusSample): number => setupOrder.get(s.setup_id ?? -1) ?? 0;
@@ -885,7 +886,7 @@ export function WorkspacePage(): JSX.Element {
   const exposureIndex = exposure ? exposureList.findIndex((e) => e.id === exposure.id) + 1 : 0;
   const emptyMessage = !Number.isInteger(experimentId)
     ? "This workspace link is not valid."
-    : corpus.isLoading
+    : corpus.isLoading || !setupsKnown
       ? "Loading samples…"
       : samples.length === 0
         ? ingesting ? "No samples yet. They appear as the ingest reads the data folder." : "No samples in this experiment."
