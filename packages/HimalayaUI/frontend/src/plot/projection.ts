@@ -2,13 +2,9 @@ import { scaleLinear, scaleLog } from "d3-scale";
 
 export type ScaleType = "log" | "linear";
 
-/** One axis: data↔pixel mapping plus "nice" tick values. Backed by d3-scale. */
 export interface Axis1D {
-  /** data value → pixel. */
   to(value: number): number;
-  /** pixel → data value. */
   invert(px: number): number;
-  /** "Nice" tick values across the domain (default ~6). */
   ticks(count?: number): number[];
   readonly domain: readonly [number, number];
   readonly range: readonly [number, number];
@@ -34,11 +30,6 @@ export function makeAxis(
   };
 }
 
-/**
- * Tight [min, max] over the positive, finite values — the domain a log scale
- * needs. Falls back to [1, 10] when there is no positive data, and pads a
- * degenerate single-value extent so the scale is non-empty.
- */
 export function positiveExtent(
   values: number[],
   fallback: [number, number] = [1, 10],

@@ -1,12 +1,3 @@
-/**
- * Plain-decimal axis label formatter for SAXS log scales. Avoids Observable
- * Plot's default SI-suffix formatter, which renders 0.04 as "40m" (milli) —
- * unidiomatic for SAXS q values and actively confusing on first read. Uses
- * scientific notation only at the extremes where decimals would be unreadable.
- *
- * Used by `TraceViewer` (Index page) and `MultiTracePlot` (Compare page) so
- * both views render q ticks with the same vocabulary.
- */
 export function formatAxis(d: number): string {
 	const ad = Math.abs(d);
 	if (ad === 0) return "0";
@@ -21,11 +12,9 @@ export function formatAxis(d: number): string {
 	if (ad < 100) return d.toFixed(ad < 10 ? 1 : 0);
 	return d.toFixed(0);
 }
-
 function faithful(label: string, v: number): boolean {
 	return Math.abs(Number(label) - v) <= 1e-9 * Math.max(Math.abs(v), 1e-300);
 }
-
 function exponential(v: number): string {
 	for (let digits = 0; digits <= 10; digits++) {
 		const label = v.toExponential(digits).replace("e+", "e");
@@ -38,7 +27,6 @@ function isExponential(v: number): boolean {
 	const av = Math.abs(v);
 	return av !== 0 && (av < 1e-3 || av >= 1e4);
 }
-
 export function formatTicks(values: readonly number[]): string[] {
 	if (values.every((v) => Number.isInteger(v) && Math.abs(v) < 1e4)) return values.map((v) => v.toFixed(0));
 	const base = values.map(formatAxis);

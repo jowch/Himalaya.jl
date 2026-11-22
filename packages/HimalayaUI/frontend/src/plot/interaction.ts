@@ -1,23 +1,9 @@
-/**
- * Pure interaction math ported from the legacy PlotSurface so the greenfield
- * engine reproduces its feel exactly. No DOM, no d3 — caller supplies the q→px
- * projection.
- */
-
-/** Click within this many pixels of a peak to act on it. (PlotSurface #180.) */
 export const PEAK_HIT_PX = 10;
-/** Refuse zooms narrower than this fraction of the full extent. */
 export const MIN_SPAN_FRAC = 1e-4;
-
 export interface HitPeak {
   id: number;
   q: number;
 }
-
-/**
- * Nearest clickable peak (id ≥ 0) to a pixel x, within `tolerancePx`, or null.
- * On an exact tie the later peak wins (`<=`), matching PlotSurface:104-123.
- */
 export function hitTestPeaks<T extends HitPeak>(
   peaks: T[],
   clickX: number,
@@ -38,12 +24,6 @@ export function hitTestPeaks<T extends HitPeak>(
   }
   return best;
 }
-
-/**
- * Wheel-zoom the x domain about the cursor (log-aware). Returns the new
- * [min, max] clamped to `extent`, or null when the zoom would collapse the
- * span below MIN_SPAN_FRAC of the extent. Ported from PlotSurface:258-284.
- */
 export function zoomXDomain(opts: {
   cursorQ: number;
   deltaY: number;
