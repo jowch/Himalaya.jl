@@ -275,8 +275,6 @@ export const fetchManifest = (
 };
 
 // Samples
-export const listSamples    = (experiment_id: number) =>
-  request<Sample[]>("GET", `/api/experiments/${experiment_id}/samples`);
 export const listCorpusSamples = (experimentId?: number): Promise<CorpusSample[]> =>
   request<CorpusSample[]>("GET", experimentId === undefined ? "/api/samples" : `/api/samples?experiment_id=${experimentId}`);
 export const updateSample   = (id: number, patch: { name?: string; notes?: string }, opts?: AuthOpts) =>
