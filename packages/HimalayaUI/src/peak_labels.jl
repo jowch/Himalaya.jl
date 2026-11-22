@@ -27,15 +27,6 @@ function _latest_snapshot(db::SQLite.DB, exposure_id)
     isempty(rows) ? nothing : JSON3.read(String(rows[1].peaks_json))
 end
 
-"""
-    labeled_exposures(db; group_by = :experiment, include_form_factor = true, io = stderr)
-
-Reviewed exposures (`reviewed_at` set) and, unless `include_form_factor` is
-false, form-factor ones, with labels read from the latest review snapshot: the
-peaks the user saw, minus those an exclude or an add now hides, split by
-`found_by` into `kept` (hybrid or both) and `kept_model`. Adds and excludes are
-read as they stand now. Requires a database that `open_db` has migrated.
-"""
 function labeled_exposures(db::SQLite.DB; group_by::Symbol = :experiment,
                            include_form_factor::Bool = true, io::IO = stderr)
     group_by in (:experiment, :sample) || throw(ArgumentError("group_by must be :experiment or :sample"))

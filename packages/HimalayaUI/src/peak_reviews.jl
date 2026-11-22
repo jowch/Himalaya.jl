@@ -23,15 +23,6 @@ function _snapshot_peaks_json(db::SQLite.DB, exposure_id::Integer)
                  for r in rows])
 end
 
-"""
-    record_review!(db, exposure_id; event_id = nothing, at = now_iso(),
-                   backfilled = false) -> Nothing
-
-Pin the exposure and snapshot its auto peaks. Called by `apply_event!` inside
-the event's transaction, and by the `peak_provenance_v1` backfill. It is not
-a view write: `rebuild_views_from_log!` never calls it and leaves
-`reviewed_at` and `peak_reviews` as they are.
-"""
 function record_review!(db::SQLite.DB, exposure_id::Integer;
                         event_id::Union{Int,Nothing} = nothing,
                         at::AbstractString = now_iso(),

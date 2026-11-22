@@ -57,21 +57,25 @@ Tests: `julia --project=. -e 'using Pkg; Pkg.test()'` (synthetic data only; CI j
    prominence, curvature, background slope, position, local density of
    candidates, and whether the persistence and hybrid detectors found it. All
    are noise-normalised or relative, so intensity units do not matter.
-3. **Labels** (`label_candidates`). On a curated exposure (one with at least
-   one add or exclude):
-   - positive: the nearest candidate to each add and to each auto peak you
-     did not exclude;
+3. **Labels** (`label_candidates`). A reviewed exposure is one an event
+   pinned (a peak or assignment edit, a phase call, an accept or reject). Its
+   kept peaks come from the latest review snapshot, the auto peaks you saw, minus
+   those an exclude or add now hides. Rules apply in order, first match wins:
+   - positive: the nearest candidate to each add, and to each kept peak the
+     hybrid detector found (`found_by` hybrid or both);
    - dropped: other candidates inside the match tolerance of a positive
-     (duplicates; non-maximum suppression handles them at prediction time);
+     (duplicates; non-maximum suppression handles them at prediction time),
+     and candidates inside the tolerance of a kept peak only a model found;
    - strong negative: a candidate within the match tolerance of any exclude
      you recorded (even one no stored auto peak matches any more), and every
-     candidate on a form-factor exposure;
-   - weak negative: any other candidate on a curated exposure (you looked and
-     did not add it). Weak negatives are subsampled at 50% in training.
-   Exposures without curations give no labels. Tolerance and the matching of
-   curations to auto peaks come from `peak_match_tol` (defined in
-   `HimalayaPeakModel`, used by HimalayaUI) and `HimalayaUI.curation_flags`, the
-   app's own code.
+     remaining candidate on a form-factor exposure;
+   - weak negative: any other candidate on a reviewed exposure. Weak negatives
+     are subsampled at 50% in training.
+   Other exposures give no labels. Tolerance and the matching of curations to
+   auto peaks come from `peak_match_tol` (defined in `HimalayaPeakModel`, used
+   by HimalayaUI) and `HimalayaUI.curation_flags`, the app's own code. The
+   database must have been opened once by a HimalayaUI that has review
+   snapshots (`peak_reviews`); the tool does not migrate.
 4. **Model.** Random forest (DecisionTree.jl). Prediction keeps candidates with
    probability at or above the threshold, then thins them by non-maximum
    suppression.

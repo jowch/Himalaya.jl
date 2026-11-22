@@ -119,6 +119,28 @@ so old logs fold cleanly and no migration is needed.
 and the §3a no-op suppression rule (suppress both frame and durable row
 when both skip flags are true).
 
+### Review pins and snapshots are not views
+
+`apply_event!(InTransaction(), …)` calls `record_event_reviews!` after the
+dispatcher, on a fresh insert only. For the kinds in `REVIEW_EXPOSURE_KINDS`
+(peak add, remove, exclude, un-exclude; assignment add, remove, state; the
+retired index confirm kinds; `set_exposure_status`) it pins the event's
+exposure, and for `sample_call_set_state` every exposure of the sample. Pinning
+sets `exposures.reviewed_at` if it is NULL and appends a `peak_reviews` row with
+the exposure's `auto_peaks` (q, `found_by`, `model_id`) at that moment. It runs
+in the event's transaction, so a failing event writes neither, and an
+idempotent retry writes nothing. It runs for payload-less events too.
+
+`reviewed_at` and `peak_reviews` are **bookkeeping, not views**.
+`rebuild_views_from_log!` calls `update_view_for_event!` directly, never
+`apply_event!`, so it does not touch them. They cannot be rebuilt from the log:
+a snapshot holds auto peaks as they were at event time, and a re-detection
+changes them. A rebuild therefore preserves them, which is also what labels
+need. The `peak_provenance_v1` migration backfills them for events that
+predate the tables (`backfilled = 1`, `event_id` NULL). Events written by
+migrations through `_log_migration_event!` bypass `apply_event!` and pin
+nothing. Deleting an experiment deletes its snapshots.
+
 ### Phase calls belong to the sample (#350)
 
 A sample's phase call is one sample-level record. Its state (`indexed`,

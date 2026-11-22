@@ -173,8 +173,7 @@ Match new findpeaks output against existing auto_peaks rows by q-value within
 `peak_match_tol` (nearest first, one-to-one), UPDATE matched rows in place,
 INSERT unmatched, DELETE orphans. `q_step` is the trace grid step (`nothing`
 when unknown). Populates `findpeaks_index` from `peaks_result.indices[i]` on
-every INSERT/UPDATE. `found_by` and `model_id` (one value or one per peak)
-are written on every INSERT/UPDATE.
+every INSERT/UPDATE.
 """
 function diff_update_auto_peaks!(db::SQLite.DB, exposure_id::Int,
                                   peaks_result::NamedTuple,

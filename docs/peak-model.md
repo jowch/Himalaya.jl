@@ -1,8 +1,8 @@
 # Per-database peak model
 
-Status: design. Step 1 (packaging) is implemented: the features, labels,
+Status: design. Steps 1 (packaging) and 2 (provenance and pinning) are implemented: the features, labels,
 model and cross-validation live in `packages/HimalayaPeakModel`, the database
-loader is `HimalayaUI.labeled_exposures`, and `tools/peak-classifier/` (#486)
+loader is `HimalayaUI.labeled_exposures` (reading review snapshots), and `tools/peak-classifier/` (#486)
 is the command-line tool on top of both. This document describes how HimalayaUI trains such a model for its own
 database, keeps it up to date as users curate, and uses it.
 
@@ -113,6 +113,22 @@ dropped rather than left to the weak-negative rule, which would otherwise
 make it, and its neighbours, a negative. Exposures reviewed before snapshots
 existed get one snapshot from their current auto peaks when the migration
 runs, all `found_by = hybrid`.
+
+Implementation (step 2). The pin and snapshot are written by
+`record_event_reviews!`, called from `apply_event!` after the dispatcher (not
+from `update_view_for_event!`). `exposures.reviewed_at`, `peak_reviews` and
+`auto_peaks.found_by`/`model_id` are bookkeeping, not views: the log cannot
+reproduce them, so `rebuild_views_from_log!` leaves them alone (see
+`docs/event-log.md`). `peak_reviews` holds `exposure_id`, `event_id` (NULL for
+backfilled rows), `created_at`, `shown_detector` (`ANALYSIS_VERSION`),
+`shown_model_id` (NULL until models exist), `backfilled` and `peaks_json`.
+The backfill pins exposures that have a curation, an assignment member, an
+accept or reject status, or a sample call (all frames of the sample), with
+the first matching event time or the migration time. `labeled_exposures`
+reads the latest snapshot and `LabeledExposure.kept_model` carries kept
+`found_by = model` peaks, which `label_candidates` drops with their
+neighbours. Bridge call changes emit `sample_call_set_state` and
+`assignment_set_state` too, so they pin the frames of the bridged samples.
 
 ## Training
 
