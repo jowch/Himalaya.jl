@@ -1,5 +1,6 @@
 import type { IndexEntry } from "../../api";
 import { PhaseChip } from "../../print/ui/PhaseChip";
+import { formatCurvature, gaussianCurvature } from "../curvature";
 import { Kbd } from "./Kbd";
 import { Note } from "./Note";
 
@@ -41,6 +42,8 @@ function Rows({ candidates, assigned, disabled, onToggle, onHover }: Omit<Props,
     <ol className="flex flex-col gap-1" data-testid="workspace-candidates" onMouseLeave={() => onHover(undefined)}>
       {candidates.map((c, i) => {
         const on = assigned.has(c.id);
+        const kappa = gaussianCurvature(c.phase, c.lattice_d);
+        const lattice = c.lattice_d !== null ? `${c.lattice_d.toFixed(1)} Å` : "";
         return (
           <li key={c.id}>
             <button
@@ -57,7 +60,10 @@ function Rows({ candidates, assigned, disabled, onToggle, onHover }: Omit<Props,
             >
               {i < 9 ? <Kbd>{i + 1}</Kbd> : <span aria-hidden="true" className="invisible"><Kbd>9</Kbd></span>}
               <PhaseChip phase={c.phase} variant="solid" />
-              <span className="text-ink-soft">{c.lattice_d !== null ? `${c.lattice_d.toFixed(1)} Å` : ""}</span>
+              <span className="min-w-0 truncate whitespace-nowrap text-ink-soft" title={kappa !== null ? `${lattice}, ${formatCurvature(kappa)}` : undefined}>
+                {lattice}
+                {kappa !== null && <span className="ml-2" data-testid="workspace-candidate-curvature">{formatCurvature(kappa)}</span>}
+              </span>
               <span className="text-right text-ink-faint">{c.kind === "speculative" ? "Custom" : c.score !== null ? c.score.toFixed(2) : ""}</span>
             </button>
           </li>
