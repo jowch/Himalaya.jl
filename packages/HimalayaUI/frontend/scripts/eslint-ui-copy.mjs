@@ -14,12 +14,10 @@ const VOCABULARY = [
 const HINT_VERBS = [
   "add", "remove", "hide", "show", "open", "close", "cancel", "confirm", "subtract", "toggle", "drop", "restore",
   "select", "move", "zoom", "reset", "commit", "clear", "apply", "create", "delete", "undo", "redo", "enlarge",
-  "nudge", "pick", "tick", "untick", "compare", "fill", "complete", "save", "go", "jump", "stop", "start", "keep",
-  "mark", "set", "switch", "focus", "expand", "collapse", "filter", "run", "copy", "rename", "edit", "accept",
-  "dismiss", "insert", "step", "pan", "scale", "shift", "turn", "use", "include", "exclude", "label", "call", "back",
+  "nudge", "compare", "go", "jump", "expand", "collapse", "rename", "accept", "dismiss",
 ];
 const VERB_FORMS = HINT_VERBS.map((v) => (/(sh|ch|x|ss|z|o)$/.test(v) ? `${v}es` : /[^aeiou]y$/.test(v) ? `${v.slice(0, -1)}ies` : `${v}s`));
-const GESTURE = new RegExp(`(^|[\\s(,;:])(\\S*[Cc]lick|Enter|Esc|Escape|Return|Space|Tab|Drag|Scroll|Backspace|Delete)\\s+(${VERB_FORMS.join("|")})\\b`);
+const GESTURE = new RegExp(`(^|[\\s(,;:])(\\S*[Cc]lick|Enter|Esc|Escape|Return|Space|Tab|Drag|Scroll|Backspace)\\s+(${VERB_FORMS.join("|")})\\b`);
 const ABBREVIATIONS = /\b(e\.g|i\.e|vs|etc|cf|approx|no)\.(?=\s)/gi;
 const SENTENCE_BREAK = /[.!?]\s+\S/;
 const INSTRUCTION = /^(\S*[Cc]lick|Press|Drag|Scroll|Hold)\b.*\bto\b/;

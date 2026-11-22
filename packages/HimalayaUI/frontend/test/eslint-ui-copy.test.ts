@@ -36,6 +36,10 @@ describe("ui-copy lint rule", () => {
     expect(messages('const a = <p>Enter values separated by commas.</p>;')).toEqual([]);
     expect(messages('const a = <p>Drag handles appear on hover.</p>;')).toEqual([]);
     expect(messages('const a = <p>Tab titles stay short.</p>;')).toEqual([]);
+    expect(messages('const a = <p>Delete calls you no longer need.</p>;')).toEqual([]);
+    expect(messages('const a = <p>Delete labels from this sample.</p>;')).toEqual([]);
+    expect(messages('const a = <input aria-label="Enter labels, comma separated" />;')).toEqual([]);
+    expect(messages('const a = <p>Tab stops skip the chips.</p>;')).toEqual([]);
     expect(messages('const a = <p>Esc closes it.</p>;')[0]).toMatch(/Press Esc to close/);
   });
 
