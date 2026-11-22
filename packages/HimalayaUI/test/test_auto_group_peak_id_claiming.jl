@@ -49,3 +49,33 @@ end
     scores = score.(group)
     @test issorted(scores; rev = true)
 end
+
+@testset "auto_group first pick contains the sharpest peak" begin
+    q  = 0.09789 .* [1, sqrt(3), 2, sqrt(7), 3, sqrt(12), sqrt(13)]
+    sh = [4.57, 0.747, 0.383, 0.111, 0.0543, 0.0205, 0.0397]
+    candidates = collect(indexpeaks(q, sh))
+    @test !isempty(candidates)
+
+    # Precondition: without the rule, an index that skips the sharpest peak wins on score.
+    top = candidates[argmax(score.(candidates))]
+    @test !(q[1] in peaks(top))
+
+    eff = (q = q, sharpness = sh, peak_id = collect(11:17),
+           peak_kind = fill(:auto, length(q)))
+    for group in (auto_group(candidates, eff), auto_group(candidates))
+        @test !isempty(group)
+        @test q[1] in peaks(first(group))
+        @test first(group) isa Himalaya.Index{Himalaya.Hexagonal}
+        @test !any(idx -> idx isa Himalaya.Index{Himalaya.Ia3d}, group)
+    end
+end
+
+@testset "auto_group unchanged when no candidate contains the sharpest peak" begin
+    q  = [0.1000, 0.1414, 0.2000]
+    sh = [0.2, 0.8, 0.6]
+    candidates = indexpeaks(q, sh)
+    eff = (q = q, sharpness = sh, peak_id = [1, 2, 3], peak_kind = fill(:auto, 3))
+    cands = [i for i in candidates if !(q[2] in peaks(i))]
+    isempty(cands) && return
+    @test auto_group(cands, eff) == auto_group(cands)
+end
