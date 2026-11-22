@@ -15,7 +15,6 @@ using DBInterface
     ui_pattern = HimalayaUI.integration_pattern_for(ui_setup)
     ui_subs = HimalayaUI.compares_for_experiment(uidb, ids.experiment_id)[:subtractions]
     ui_bridges = HimalayaUI.bridge_groups_for_experiment(uidb, ids.experiment_id)
-    ui_samples = HimalayaUI.labels_for_experiment(uidb, ids.experiment_id)
     close(uidb)
 
     db = HimalayaDB.connect(dbpath)
@@ -45,7 +44,7 @@ using DBInterface
     @test sort([(l.id, l.label, l.state, l.source) for l in db_labels]) ==
           sort([(l[:id], l[:label], l[:state], l[:source]) for l in ui_labels])
     @test db_setup.analysis_dir == ui_setup.analysis_dir
-    @test db_setup.integration_pattern == ui_pattern
+    @test HimalayaDB.integration_pattern_for(db_setup.integration_pattern) == ui_pattern
 
     @test sort([(sid, ref) for (sid, ref) in db_subs if ref !== nothing]) ==
           sort([(s[:sample_id], s[:ref_sample_id]) for s in ui_subs])
@@ -55,7 +54,7 @@ using DBInterface
             sort([b[:sample_id] for b in ui_bridges if b[:group_id] == ui_group[sid] && b[:sample_id] != sid]) : Int[]
         @test db_bridges[sid] == expected
     end
-    @test sort([l.id for l in db_all_labels]) == sort([l[:id] for l in ui_samples])
+    @test sort([l.id for l in db_all_labels]) == sort([l[:id] for l in ui_labels])
 
     @test HimalayaDB.DEFAULT_INTEGRATION_PATTERN == HimalayaUI.DEFAULT_INTEGRATION_PATTERN
     for column in (missing, nothing, "", "frames.dat", "{name}_tot.dat")

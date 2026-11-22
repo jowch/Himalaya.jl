@@ -604,8 +604,7 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
 
     # Auto-grouping is NOT a durable concept: a fresh analyze leaves the
     # assignment EMPTY (the sample reads as unindexed until a human checks a
-    # candidate). The auto selection still computes — it populates the auto
-    # `index_groups` row the legacy export reads, and it scores/orders the
+    # candidate). The auto selection still computes — it scores/orders the
     # candidate list — but it no longer SEEDS the durable assignment cart.
     # Earlier this seeded the cart with the whole non-overlapping auto group, so
     # every sample opened with phases already "in the call"; that machine guess

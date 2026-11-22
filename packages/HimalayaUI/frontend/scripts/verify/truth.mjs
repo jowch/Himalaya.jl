@@ -304,7 +304,10 @@ export async function collectApp(cfg, experimentId) {
     getJson(api, `/api/experiments/${experimentId}/export`),
   ]);
   const autoByFrame = new Map();
-  for (const s of exported) for (const e of s.exposures) autoByFrame.set(e.filename, e.indices.map((i) => i.phase));
+  for (const s of exported) for (const e of s.exposures) {
+    if (!Array.isArray(e.auto_phases)) throw new Error(`export frame ${e.filename} has no auto_phases array`);
+    autoByFrame.set(e.filename, e.auto_phases);
+  }
   return Promise.all(
     samples.map(async (s) => {
       const exposures = await getJson(api, `/api/samples/${s.id}/exposures`);
