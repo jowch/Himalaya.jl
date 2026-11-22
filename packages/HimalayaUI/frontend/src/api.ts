@@ -8,35 +8,44 @@ export interface User {
 export type GeometrySource = "prp" | "setup" | "user" | "default" | "computed";
 export type IngestStatus = "idle" | "scanning" | "analyzing" | "complete" | "failed";
 
-export interface Experiment {
+export interface Setup {
   id: number;
-  name: string | null;
-  description: string | null;     // Phase E1 additive column (Task 1c migration)
-  path: string;
+  experiment_id: number;
+  folder: string;
+  display_name: string | null;
+  name: string;
+  position: number;
+  included: boolean;
+  root_dir: string;
   data_dir: string;
   analysis_dir: string;
-  manifest_path: string | null;
-  created_at: string;
-  q_units: string | null;
+  image_pattern: string | null;
+  metadata_pattern: string | null;
+  integration_pattern: string | null;
+  q_units: string;
   beam_center_x: number | null;
   beam_center_y: number | null;
   pixel_size_um: number | null;
   energy_kev: number | null;
   flight_path_m: number | null;
-  // Phase A typed-geometry per-field provenance + scan bookkeeping.
   energy_kev_source: GeometrySource;
   flight_path_m_source: GeometrySource;
   beam_center_x_source: GeometrySource;
   beam_center_y_source: GeometrySource;
   pixel_size_um_source: GeometrySource;
   q_units_source: GeometrySource;
+}
+
+export interface Experiment {
+  id: number;
+  name: string | null;
+  description: string | null;
+  path: string;
+  created_at: string;
   last_scanned_at: string | null;
   ingest_status: IngestStatus;
   ingest_error?: string | null;
-  image_pattern: string | null;
-  metadata_pattern: string | null;
-  integration_pattern: string | null;
-  // Roll-up counts returned by both list and detail endpoints.
+  setups?: Setup[];
   stats?: { loads: number; samples: number; exposures: number; sessions: number; span_hours: number; started_at: string | null };
 }
 
@@ -282,6 +291,34 @@ export const bridgeSamples = (sampleId: number, toSampleId: number, opts?: AuthO
 export const unbridgeSample = (sampleId: number, opts?: AuthOpts): Promise<SampleBridge[]> =>
   request<SampleBridge[]>("DELETE", `/api/samples/${sampleId}/bridge`, undefined, opts);
 
+export interface SampleCompare {
+  sample_id: number;
+  ref_sample_id: number;
+  added_by: string | null;
+}
+
+export interface SampleSubtraction {
+  sample_id: number;
+  ref_sample_id: number;
+}
+
+export interface CompareState {
+  compares: SampleCompare[];
+  subtractions: SampleSubtraction[];
+}
+
+export interface CompareChange {
+  add?: number[];
+  remove?: number[];
+  subtraction?: number | null;
+}
+
+export const listCompares = (experimentId: number): Promise<CompareState> =>
+  request<CompareState>("GET", `/api/experiments/${experimentId}/compares`);
+
+export const patchCompares = (sampleId: number, change: CompareChange, opts?: AuthOpts): Promise<CompareState> =>
+  request<CompareState>("PATCH", `/api/samples/${sampleId}/compares`, change, opts);
+
 export type SampleLabelState = "suggested" | "confirmed";
 
 export interface SampleLabel {
@@ -344,6 +381,7 @@ export interface Exposure {
   beam_energy_ev: number | null;
   pipe_length_m: number | null;
   detector: string | null;
+  setup_id: number | null;
 }
 
 export const listExposures = (sample_id: number, opts?: { signal?: AbortSignal }) =>

@@ -51,7 +51,7 @@ function ingest_root(root, port, name)
     # Already there? Done if its scan finished; otherwise (a previous run was
     # interrupted mid-scan, or the scan failed) force a rescan and wait for it.
     for e in JSON3.read(HTTP.get("$base/experiments").body)
-        get(e, :data_dir, nothing) == rs.data_dir || continue
+        any(st -> get(st, :data_dir, nothing) == rs.data_dir, get(e, :setups, [])) || continue
         if get(e, :ingest_status, "") == "complete"
             println("$name already ingested (id $(e.id)); nothing to do.")
             return

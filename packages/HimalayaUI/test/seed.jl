@@ -17,7 +17,7 @@ using SQLite, DBInterface, Tables
 
 """
     seed_experiment!(db, exp_dir; name, analysis_dir, data_dir, sample_name, stems,
-                     integration_pattern=nothing, experiment_type=nothing) -> (exp_id, sample_id, exposure_ids)
+                     integration_pattern=nothing) -> (exp_id, sample_id, exposure_ids)
 
 Register one experiment (rooted at `exp_dir`) with a single sample owning one
 exposure per stem in `stems`. Each exposure's `filename` is the bare stem (no
@@ -34,15 +34,13 @@ function seed_experiment!(db::SQLite.DB, exp_dir::AbstractString;
         data_dir::AbstractString = joinpath(exp_dir, "data"),
         sample_name::AbstractString = "D1",
         stems::AbstractVector = String["ST001"],
-        integration_pattern = nothing,
-        experiment_type = nothing)
+        integration_pattern = nothing)
     exp_id = create_experiment!(db;
         name            = String(name),
         path            = String(exp_dir),
         data_dir        = String(data_dir),
         analysis_dir    = String(analysis_dir),
-        integration_pattern = integration_pattern,
-        experiment_type = experiment_type)
+        integration_pattern = integration_pattern)
     s_id = create_sample!(db; experiment_id = exp_id, name = String(sample_name))
     exposure_ids = Int[]
     for stem in stems

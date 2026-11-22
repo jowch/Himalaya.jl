@@ -26,7 +26,7 @@ function setup_clean_analyzed_exposure(tmp::String; name="FastSkipExp", stem="ST
     db = open_db(joinpath(tmp, "himalaya.db"))
     seeded = seed_experiment!(db, tmp;
         name = name, analysis_dir = analysis_dir,
-        stems = [stem], experiment_type = "simple")
+        stems = [stem])
     exposure_id = seeded.exposure_ids[1]
 
     dat_path = joinpath(analysis_dir, stem * ".dat")
@@ -266,7 +266,7 @@ function setup_flat_analyzed_exposure(tmp::String; name="FlatExp", stem="FLAT01"
     db = open_db(joinpath(tmp, "himalaya.db"))
     seeded = seed_experiment!(db, tmp;
         name = name, analysis_dir = analysis_dir,
-        stems = [stem], experiment_type = "simple")
+        stems = [stem])
     exposure_id = seeded.exposure_ids[1]
 
     # First analyze: findpeaks finds zero peaks; trace_hash + inputs_hash stamp.

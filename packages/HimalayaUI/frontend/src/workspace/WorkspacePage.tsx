@@ -34,24 +34,28 @@ import {
   useTriggerScan,
   useCheckForNewFilesOnOpen,
   useEditOps,
+  useCompares,
+  usePatchCompares,
 } from "../queries";
+import { comparesOf, EMPTY_COMPARES } from "../lib/compares";
+import { byRecent, recentRank, recordRecent } from "../lib/recents";
 import { useUndoHistory, type UndoEntry, type UndoStep } from "./undo";
 import {
   bridgeEntry, combinedEntry, customIndexEntry, dropEntry, excludeEntry, identify, labelEntry, noPhaseEntry, peakEntry,
-  experimentEntry, labelColorEntry, tickEntry, unbridgeEntry, untickEntry,
+  experimentEntry, labelColorEntry, tickEntry, unbridgeEntry, untickEntry, compareEntry,
 } from "./undoEntries";
 import { showToast } from "../lib/toast";
 import { useScanState } from "../hooks/useScanState";
 import { useMediaQuery } from "./useMediaQuery";
 import { isIngestStage, stageLabel } from "../lib/ingestStages";
 import { bridgeCounts, bridgedWith } from "../lib/bridges";
-import { bufferRole, buffersFirst, displayLabel, firstUnusedColor, labelColor, labelColorIsDefault, labelsFor, sameLabel, sampleMatchesFilter, labelVocabulary } from "../lib/labels";
+import { bufferRole, buffersFirst, displayLabel, firstUnusedColor, labelColor, labelColorIsDefault, labelsFor, sameLabel, sampleMatchesFilter, labelVocabulary, labelKey } from "../lib/labels";
 import { representativeExposure } from "../lib/exposure";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
 import { firstUnreviewed, i0BelowZero, traceIsDark, imageUrl, nearestKeptExposure, nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
 import { samePeak, type PeakRef } from "../lib/peakRef";
-import { addCompare, clampDomain, withoutRef, compareScale, scaledTrace, subtractTrace } from "./compare";
+import { clampDomain, compareScale, COMPARES_FULL, MAX_COMPARES, scaledTrace, subtractTrace } from "./compare";
 import type { CompareScale } from "./compare";
 import { useCompareTraces } from "./useCompareTraces";
 import { usePrefetchNeighbours } from "./prefetch";
@@ -142,6 +146,8 @@ function helpSections(mod: string): HelpSection[] {
 
 const HELP = helpSections(MOD_KEY);
 
+const RECENT_LABELS = "label";
+
 const EXPOSURE_LABELS = ["File", "Kind", "Acquired", "Exposure", "Flight tube", "Energy", "Detector", "I₀", "I signal"];
 
 function exposureRows(e: Exposure | undefined): [string, string][] {
@@ -208,7 +214,11 @@ export function WorkspacePage(): JSX.Element {
   );
   const labels = useLabels(experimentId);
   const labelList = useMemo(() => labels.data ?? [], [labels.data]);
-  const vocabulary = useMemo(() => labelVocabulary(labelList), [labelList]);
+  const [recentLabels, setRecentLabels] = useState(() => recentRank(RECENT_LABELS));
+  const vocabulary = useMemo(
+    () => byRecent(labelVocabulary(labelList), labelKey, recentLabels),
+    [labelList, recentLabels],
+  );
   const addLabel = useAddLabel(experimentId);
   const removeLabel = useRemoveLabel(experimentId);
   const [labeling, setLabeling] = useState(false);
@@ -305,10 +315,13 @@ export function WorkspacePage(): JSX.Element {
 
   const [xDomain, setXDomain] = useState<[number, number] | null>(null);
   const [view, setView] = usePlotView();
-  const [refs, setRefs] = useState<number[]>([]);
-  const [subChoice, setSubRef] = useState<number | undefined>(undefined);
+  const comparesQuery = useCompares(experimentId);
+  const patchCompares = usePatchCompares(experimentId);
+  const saved = useMemo(() => comparesOf(comparesQuery.data ?? EMPTY_COMPARES, sampleId ?? -1), [comparesQuery.data, sampleId]);
+  const refs = saved.refs;
+  const subChoice = saved.subtraction;
   const [refsOn, setRefsOn] = useState(true);
-  const [hiddenRefs, setHiddenRefs] = useState<ReadonlySet<number>>(() => new Set());
+  const [shownOverride, setShownOverride] = useState<ReadonlyMap<string, boolean>>(() => new Map());
   const [picking, setPicking] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [bigOpen, setBigOpen] = useState(false);
@@ -325,10 +338,24 @@ export function WorkspacePage(): JSX.Element {
   const unbridgeSample = useUnbridgeSample(experimentId);
   const shownRefs = useMemo(() => [...bridged, ...refs.filter((r) => !bridged.includes(r))], [bridged, refs]);
   const subRef = subChoice !== undefined && shownRefs.includes(subChoice) ? subChoice : undefined;
-  useEffect(() => {
-    setHiddenRefs((h) => ([...h].every((r) => shownRefs.includes(r)) ? h : new Set([...h].filter((r) => shownRefs.includes(r)))));
-  }, [shownRefs]);
-  const compareTraces = useCompareTraces(shownRefs);
+  const hiddenRefs = useMemo<ReadonlySet<number>>(
+    () =>
+      new Set(
+        shownRefs.filter((r) => {
+          const shown = shownOverride.get(`${sampleId}:${r}`);
+          if (shown !== undefined) return !shown;
+          const by = saved.addedBy.get(r);
+          return by !== undefined && by !== (username ?? null);
+        }),
+      ),
+    [shownRefs, shownOverride, sampleId, saved.addedBy, username],
+  );
+  const setShown = useCallback(
+    (rid: number, shown: boolean) => setShownOverride((m) => new Map(m).set(`${sampleId}:${rid}`, shown)),
+    [sampleId],
+  );
+  const fetchRefs = useMemo(() => shownRefs.filter((r) => !hiddenRefs.has(r) || r === subRef), [shownRefs, hiddenRefs, subRef]);
+  const compareTraces = useCompareTraces(fetchRefs);
 
   const onClickPeak = useCallback(
     (ref: PeakRef) => {
@@ -369,10 +396,6 @@ export function WorkspacePage(): JSX.Element {
     [exposure, sampleId, addPeak, history, ops, frameName],
   );
 
-  const removeCompare = useCallback((rid: number) => {
-    setRefs((r) => r.filter((x) => x !== rid));
-    setSubRef((cur) => (cur === rid ? undefined : cur));
-  }, []);
 
   const callEdit = useCallback(
     (ix: IndexEntry, wasFormFactor: boolean): UndoEntry | undefined => {
@@ -464,10 +487,23 @@ export function WorkspacePage(): JSX.Element {
   }, [candidates, hoverIds, draft, draftQs]);
 
   const sampleNames = useMemo(() => new Map(samples.map((s) => [s.id, s.name])), [samples]);
-  const activeRefs = shownRefs.filter((r) => r !== sampleId);
+  const nameOf = useCallback((rid: number) => sampleNames.get(rid) ?? `sample ${rid}`, [sampleNames]);
+  const removeCompare = useCallback(
+    (rid: number) => {
+      if (sampleId === undefined) return;
+      patchCompares.mutate({ sampleId, change: { remove: [rid] } });
+      history.record(compareEntry(ops, {
+        label: `stopped comparing ${sample?.name ?? "this sample"} with ${nameOf(rid)}`, sampleId, exposureId: undefined,
+        edit: { kind: "remove", ref: rid, subtracted: subChoice === rid },
+      }));
+    },
+    [sampleId, patchCompares, history, ops, sample?.name, nameOf, subChoice],
+  );
+  const activeRefs = useMemo(() => shownRefs.filter((r) => r !== sampleId), [shownRefs, sampleId]);
+  const comparesFull = activeRefs.length >= MAX_COMPARES;
   const compareColors = useMemo(
-    () => new Map(shownRefs.filter((r) => r !== sampleId).map((rid) => [rid, COMPARE_COLORS[shownRefs.indexOf(rid) % COMPARE_COLORS.length]!] as const)),
-    [shownRefs, sampleId],
+    () => new Map(activeRefs.map((rid, i) => [rid, COMPARE_COLORS[i % COMPARE_COLORS.length]!] as const)),
+    [activeRefs],
   );
   const mainTrace = trace.data;
   const peakQs = useMemo(() => (peaks.data ?? []).map((p) => p.q), [peaks.data]);
@@ -479,22 +515,34 @@ export function WorkspacePage(): JSX.Element {
   }, [mainTrace, compareTraces, peakQs]);
   const compares: CompareLine[] = useMemo(() => {
     if (!mainTrace || !refsOn) return [];
-    return shownRefs.flatMap((rid, i) => {
+    return activeRefs.flatMap((rid, i) => {
       const t = compareTraces.get(rid);
       const scale = scales.get(rid)?.scale;
       if (rid === sampleId || hiddenRefs.has(rid) || !t || scale === undefined) return [];
       const sc = scaledTrace(t, scale);
       return [{ id: rid, name: sampleNames.get(rid) ?? `Sample ${rid}`, q: sc.q, I: sc.I, color: COMPARE_COLORS[i % COMPARE_COLORS.length]!, emphasis: rid === subRef }];
     });
-  }, [mainTrace, refsOn, shownRefs, hiddenRefs, compareTraces, scales, sampleId, sampleNames, subRef]);
+  }, [mainTrace, refsOn, activeRefs, hiddenRefs, compareTraces, scales, sampleId, sampleNames, subRef]);
   const subTrace = subRef !== undefined && subRef !== sampleId && refsOn ? compareTraces.get(subRef) : undefined;
   const subScale = subRef !== undefined ? scales.get(subRef)?.scale : undefined;
   const difference = useMemo(
     () => (mainTrace && subTrace && subScale !== undefined ? subtractTrace(mainTrace, subTrace, subScale) : null),
     [mainTrace, subTrace, subScale],
   );
-  const [minusFor, setMinusFor] = useState<number | undefined>(undefined);
-  const minusOn = difference !== null && subRef !== undefined && minusFor === subRef;
+  const [minusSamples, setMinusSamples] = useState<ReadonlySet<number>>(() => new Set());
+  const setMinus = useCallback(
+    (on: boolean) => {
+      if (sampleId === undefined) return;
+      setMinusSamples((prev) => {
+        const next = new Set(prev);
+        if (on) next.add(sampleId);
+        else next.delete(sampleId);
+        return next;
+      });
+    },
+    [sampleId],
+  );
+  const minusOn = difference !== null && subRef !== undefined && sampleId !== undefined && minusSamples.has(sampleId);
   const subName = subRef !== undefined ? (sampleNames.get(subRef) ?? `Sample ${subRef}`) : "";
   const shownCompareSet = useMemo<ReadonlySet<number>>(
     () => (!refsOn ? new Set(shownRefs) : minusOn ? new Set(shownRefs.filter((r) => r !== subRef)) : hiddenRefs),
@@ -505,9 +553,11 @@ export function WorkspacePage(): JSX.Element {
     [mainTrace],
   );
   const shownDomain = clampDomain(xDomain, xExtent);
+  const recentKind = `comparison:${experimentId}`;
+  const [recentCompares, setRecentCompares] = useState<string[]>(() => recentRank(recentKind));
   const pickable = useMemo(
-    () => buffersFirst(samples.filter((s) => s.id !== sampleId && !shownRefs.includes(s.id)), labelList),
-    [samples, sampleId, shownRefs, labelList],
+    () => byRecent(buffersFirst(samples.filter((s) => s.id !== sampleId && !shownRefs.includes(s.id)), labelList), (s) => String(s.id), recentCompares),
+    [samples, sampleId, shownRefs, labelList, recentCompares],
   );
   const bufferNotes = useMemo(() => {
     const notes = new Map<number, string>();
@@ -580,6 +630,10 @@ export function WorkspacePage(): JSX.Element {
     (sid: number, tag: string, added: boolean) => {
       const prev = labelList.find((l) => l.sample_id === sid && sameLabel(l.label, tag))?.state;
       (added ? addLabel : removeLabel).mutate({ sampleId: sid, label: tag });
+      if (added) {
+        recordRecent(RECENT_LABELS, labelKey(tag));
+        setRecentLabels(recentRank(RECENT_LABELS));
+      }
       const verb = prev === "suggested" ? (added ? "confirmed the suggested" : "dismissed the suggested") : added ? "added the" : "removed the";
       return labelEntry(ops, {
         label: `${verb} label ${displayLabel(tag)} on ${sample?.name ?? "this sample"}`,
@@ -873,13 +927,31 @@ export function WorkspacePage(): JSX.Element {
         : "This sample is not in this experiment.";
 
   const addReference = (rid: number): void => {
-    setRefs((r) => addCompare(r, rid));
+    if (sampleId === undefined) return;
+    if (comparesFull) {
+      showToast(COMPARES_FULL);
+      return;
+    }
+    patchCompares.mutate({ sampleId, change: { add: [rid] } });
+    history.record(compareEntry(ops, {
+      label: `compared ${sample?.name ?? "this sample"} with ${nameOf(rid)}`, sampleId, exposureId: undefined,
+      edit: { kind: "add", ref: rid },
+    }));
+    recordRecent(recentKind, String(rid));
+    setRecentCompares(recentRank(recentKind));
+    setShown(rid, true);
     setRefsOn(true);
   };
   const toggleSubtract = (rid: number): void => {
+    if (sampleId === undefined) return;
     setRefsOn(true);
-    setMinusFor(subRef === rid ? undefined : rid);
-    setSubRef((cur) => (cur === rid ? undefined : rid));
+    setMinus(subRef !== rid);
+    const to = subRef === rid ? undefined : rid;
+    patchCompares.mutate({ sampleId, change: { subtraction: to ?? null } });
+    history.record(compareEntry(ops, {
+      label: to === undefined ? `stopped subtracting ${nameOf(rid)} from ${sample?.name ?? "this sample"}` : `subtracted ${nameOf(rid)} from ${sample?.name ?? "this sample"}`,
+      sampleId, exposureId: undefined, edit: { kind: "subtract", from: subChoice, to },
+    }));
   };
   const toggleCompare = (rid: number): void => {
     if (rid === sampleId || bridged.includes(rid)) return;
@@ -897,6 +969,7 @@ export function WorkspacePage(): JSX.Element {
       samples: pickable,
       notes: bufferNotes,
       pick: addReference,
+      full: comparesFull ? COMPARES_FULL : undefined,
       compared: refs.filter((r) => r !== sampleId && !bridged.includes(r)).flatMap((r) => samples.filter((x) => x.id === r)),
       remove: removeCompare,
       subtractable: activeRefs.flatMap((r) => samples.filter((x) => x.id === r)),
@@ -939,7 +1012,7 @@ export function WorkspacePage(): JSX.Element {
     views: { options: PLOT_VIEWS, current: view, set: setView },
     resetZoom: () => setXDomain(null),
     comparisons: { shown: refsOn, toggle: () => setRefsOn((v) => !v) },
-    ...(difference && subRef !== undefined ? { difference: { on: minusOn, name: subName, toggle: () => setMinusFor(minusOn ? undefined : subRef) } } : {}),
+    ...(difference && subRef !== undefined ? { difference: { on: minusOn, name: subName, toggle: () => setMinus(!minusOn) } } : {}),
     settings:
       username && experiment.data
         ? { name: experiment.data.name ?? "", description: experiment.data.description ?? "", save: editExperiment }
@@ -1055,7 +1128,7 @@ export function WorkspacePage(): JSX.Element {
                 chips={activeRefs.map((rid) => ({
                   id: rid,
                   name: sampleNames.get(rid) ?? `Sample ${rid}`,
-                  color: COMPARE_COLORS[shownRefs.indexOf(rid) % COMPARE_COLORS.length]!,
+                  color: COMPARE_COLORS[activeRefs.indexOf(rid) % COMPARE_COLORS.length]!,
                   scale: scales.get(rid),
                   bridged: bridged.includes(rid),
                   hidden: shownCompareSet.has(rid),
@@ -1065,22 +1138,23 @@ export function WorkspacePage(): JSX.Element {
                 modKey={MOD_KEY}
                 onToggleShown={(rid) => {
                   if (minusOn && rid !== subRef) {
-                    setMinusFor(undefined);
-                    setHiddenRefs((h) => withoutRef(h, rid));
+                    setMinus(false);
+                    setShown(rid, true);
                     return;
                   }
                   setRefsOn(true);
-                  setHiddenRefs((h) => (refsOn && !h.has(rid) ? new Set([...h, rid]) : withoutRef(h, rid)));
+                  setShown(rid, !(refsOn && !hiddenRefs.has(rid)));
                 }}
                 onSubtract={toggleSubtract}
                 onRemove={onRemoveChip}
                 onAdd={() => setPicking(true)}
-                trailing={difference && subRef !== undefined ? <SubtractToggle name={subName} on={minusOn} onChange={(on) => setMinusFor(on ? subRef : undefined)} /> : undefined}
+                trailing={difference && subRef !== undefined ? <SubtractToggle name={subName} on={minusOn} onChange={setMinus} /> : undefined}
               />
               {picking && (
                 <ComparePicker
                   samples={pickable}
                   notes={bufferNotes}
+                  full={comparesFull ? COMPARES_FULL : undefined}
                   onPick={addReference}
                   onClose={() => setPicking(false)}
                 />

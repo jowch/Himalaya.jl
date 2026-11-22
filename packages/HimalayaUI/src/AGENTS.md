@@ -72,7 +72,7 @@ Julia/Oxygen.jl REST backend, SQLite DB, event-log dispatcher, SSE multiplayer, 
 
 ## Experiment config
 
-The `experiments` row is the configuration: `data_dir`, `analysis_dir`, the three file patterns, and geometry with per-field `*_source`. The New-experiment funnel sets them (`/api/fs/preview`, which lists every setup under the picked folder, then one `POST /api/experiments` per setup; `/api/fs/manifest` recounts a setup the user corrected); `PATCH /api/experiments/:id` edits all but the path fields, though no page calls it any more. The `experiments.config` column holds legacy TOML that nothing reads or sends. There is no `experiment.toml`.
+The `setups` rows under an experiment are the configuration: `data_dir`, `analysis_dir`, the three file patterns, and geometry with per-field `*_source` (`setups.jl`). The experiment row keeps only `name`, `description`, `path` (the beamtime folder) and ingest status. Loads, samples and exposures carry `setup_id`; resolve a file's folder or pattern through the exposure's setup (`exposure_setup`, `integration_pattern_for_exposure`), never through the experiment. Dedup keys are per setup (`exposures(setup_id, filename)`). The New-experiment funnel sets them (`/api/fs/preview`, which lists every setup under the picked folder, then one `POST /api/experiments` per setup; `/api/fs/manifest` recounts a setup the user corrected); `PATCH /api/experiments/:id` edits only `name` and `description`. There is no `experiment.toml`.
 
 
 Read `docs/experiment-config.md` before touching the funnel (`routes_fs.jl`), experiment create/scan (`routes_experiments.jl`, `ingest.jl`), or `config.jl`.
@@ -81,7 +81,7 @@ Read `docs/experiment-config.md` before touching the funnel (`routes_fs.jl`), ex
 
 - **Read-only experiment directories at runtime.** Himalaya never creates, modifies, or deletes any file inside an experiment dir during ingestion (`scan_and_group!` / HTTP scan), `analyze`, or `serve`.
 - **Central DB.** All CLI commands open the same DB resolved by `default_db_path()` in `db.jl`: `HIMALAYA_DB_PATH` if set, else `~/.himalaya/himalaya.db` (parent auto-created). One DB stores every experiment; experiment dirs are pure read-only data sources. Tests pass an explicit file path (`open_db(joinpath(tmp, "himalaya.db"))`) for isolation.
-- **One exposure per image.** `scan_directory` enumerates images in `data_dir` by `image_pattern`, and builds each metadata and integration path by putting the stem into its pattern. When debugging "exposures missing" or "no peaks after a scan," run `GET /api/fs/manifest` with the experiment's `data_dir` as `path`, its `analysis_dir`, and its patterns (without `analysis_dir`, every stem is reported as missing its integration file): its `unmatched` list names each stem missing a sidecar, with near-miss filenames.
+- **One exposure per image.** `scan_directory` enumerates images in `data_dir` by `image_pattern`, and builds each metadata and integration path by putting the stem into its pattern. When debugging "exposures missing" or "no peaks after a scan," run `GET /api/fs/manifest` with the setup's `data_dir` as `path`, its `analysis_dir`, and its patterns (without `analysis_dir`, every stem is reported as missing its integration file): its `unmatched` list names each stem missing a sidecar, with near-miss filenames.
 
 ## Image route
 

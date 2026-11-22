@@ -70,7 +70,7 @@ _rows(db) = Set((Int(r.sample_id), String(r.label), String(r.state), String(r.so
         db = open_prepared_clone(mktempdir())
         (exp_id, (a,)) = _seed_named_samples(db, ["buffer_blank"])
         mkpath(joinpath(root, "data")); mkpath(joinpath(root, "analysis"))
-        DBInterface.execute(db, "UPDATE experiments SET data_dir = ?, analysis_dir = ? WHERE id = ?",
+        DBInterface.execute(db, "UPDATE setups SET data_dir = ?, analysis_dir = ? WHERE experiment_id = ?",
             [joinpath(root, "data"), joinpath(root, "analysis"), exp_id])
         @test HimalayaUI.run_ingest!(db, exp_id) === :ok
         HimalayaUI.wait_prewarm(exp_id)
@@ -82,7 +82,7 @@ _rows(db) = Set((Int(r.sample_id), String(r.label), String(r.state), String(r.so
         db = open_prepared_clone(mktempdir())
         (exp_id, _) = _seed_named_samples(db, ["buffer_blank"])
         mkpath(joinpath(root, "data")); mkpath(joinpath(root, "analysis"))
-        DBInterface.execute(db, "UPDATE experiments SET data_dir = ?, analysis_dir = ? WHERE id = ?",
+        DBInterface.execute(db, "UPDATE setups SET data_dir = ?, analysis_dir = ? WHERE experiment_id = ?",
             [joinpath(root, "data"), joinpath(root, "analysis"), exp_id])
         DBInterface.execute(db, "DROP TABLE sample_labels")
         @test (@test_logs (:warn, "label suggestions failed") match_mode=:any HimalayaUI.run_ingest!(db, exp_id)) === :ok
