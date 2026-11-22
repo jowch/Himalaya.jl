@@ -66,6 +66,7 @@ export interface Sample {
 // absent it shows the "Not indexed" affordance (M-6).
 export interface CorpusSample extends Sample {
   q_units: string;
+  setup_id?: number | null;
   phase?: string | null;
   /** The representative exposure's durable assignment state (`representative_exposure_id`:
    *  the selected frame if kept, else the newest kept frame). Drives the contact-sheet status: `form_factor` shows a
@@ -184,6 +185,9 @@ export const addSetups = (id: number, setups: CreateSetupBody[], opts?: AuthOpts
  *  scan — used when a pattern field edit changes what files are discovered. */
 export const deleteExperiment = (id: number, opts?: AuthOpts) =>
   request<{ id: number; deleted: boolean }>("DELETE", `/api/experiments/${id}`, undefined, opts);
+
+export const patchSetup = (id: number, patch: { name?: string | null; included?: boolean }, opts?: AuthOpts) =>
+  request<Setup>("PATCH", `/api/setups/${id}`, patch, opts);
 
 export const patchExperiment = (id: number, patch: { name?: string; description?: string | null }, opts?: AuthOpts) =>
   request<Experiment>("PATCH", `/api/experiments/${id}`, patch, opts);

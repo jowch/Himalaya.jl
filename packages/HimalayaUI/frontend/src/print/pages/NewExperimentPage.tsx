@@ -267,7 +267,8 @@ export function NewExperimentPage(): JSX.Element {
   const patternsOk = chosen.every((s) => patternsValid(edits[s.root]!));
   const current = path.trim() === picked && !preview.isFetching && preview.data !== undefined && setups.every((s) => edits[s.root] !== undefined);
   const canSubmit = current && chosen.length > 0 && patternsOk && !submitting && (existing !== undefined || name.trim() !== "");
-  const [submitWhenReady, setSubmitWhenReady] = useState<string | undefined>(undefined);
+  const [submitWhenReady, setSubmitWhenReady] = useState<{ path: string } | undefined>(undefined);
+  const firedFor = useRef<{ path: string } | undefined>(undefined);
   const inFlight = useRef(false);
 
   const submit = useCallback(async (): Promise<void> => {
@@ -317,8 +318,9 @@ export function NewExperimentPage(): JSX.Element {
 
   useEffect(() => {
     if (submitWhenReady === undefined) return;
-    if (submitWhenReady !== path.trim()) setSubmitWhenReady(undefined);
-    else if (current) {
+    if (submitWhenReady.path !== path.trim()) setSubmitWhenReady(undefined);
+    else if (current && firedFor.current !== submitWhenReady) {
+      firedFor.current = submitWhenReady;
       setSubmitWhenReady(undefined);
       if (canSubmit) void submit();
     }
@@ -359,7 +361,7 @@ export function NewExperimentPage(): JSX.Element {
         <Kicker tone="accent">New experiment</Kicker>
         <h1 className="text-display text-ink">Add a beamtime</h1>
         <div className="mt-6">
-          <DirectoryPickerField value={path} onChange={setPath} onSubmit={() => (canSubmit ? void submit() : setSubmitWhenReady(path.trim()))} suggestions={suggestions} autoFocus />
+          <DirectoryPickerField value={path} onChange={setPath} onSubmit={() => (canSubmit ? void submit() : setSubmitWhenReady({ path: path.trim() }))} suggestions={suggestions} autoFocus />
           <p data-testid="preview-status" role="status" className="text-meta text-ink-soft mt-2">{existing === undefined
             ? status
             : setups.some((s) => s.duplicate_of === null)
