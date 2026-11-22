@@ -8,6 +8,7 @@ import { DirectoryPickerField } from "../components/DirectoryPickerField";
 import { Button } from "../ui/Button";
 import { Checkbox } from "../ui/Checkbox";
 import { Input } from "../ui/Input";
+import { FieldError } from "../ui/FieldError";
 import { KbKey } from "../ui/KbKey";
 import { modCombo } from "../../lib/modKey";
 import { Kicker } from "../ui/Kicker";
@@ -47,6 +48,15 @@ function initialEdit(s: api.SetupPreview): RowEdit {
     geometry: {},
   };
 }
+
+function patternProblem(v: string): string | undefined {
+  return v.split("{name}").length === 2 ? undefined : "Use {name} exactly once, for example {name}.tif.";
+}
+
+const patternsValid = (e: RowEdit): boolean =>
+  patternProblem(e.patterns.image) === undefined
+  && patternProblem(e.patterns.metadata) === undefined
+  && patternProblem(e.patterns.integration) === undefined;
 
 function layoutEdited(s: api.SetupPreview, e: RowEdit): boolean {
   return e.data_dir !== s.data_dir
@@ -114,14 +124,15 @@ function manifestQuery(e: RowEdit) {
   };
 }
 
-function DetailsField({ label, value, onChange, placeholder, testId }: {
-  label: string; value: string; onChange: (v: string) => void; placeholder?: string; testId: string;
+function DetailsField({ label, value, onChange, placeholder, testId, error }: {
+  label: string; value: string; onChange: (v: string) => void; placeholder?: string; testId: string; error?: string | undefined;
 }): JSX.Element {
   return (
     <label className="flex flex-col gap-1">
       <span className="text-caption text-ink-soft">{label}</span>
-      <Input inputSize="sm" value={value} onValueChange={onChange} testId={testId}
+      <Input inputSize="sm" value={value} onValueChange={onChange} testId={testId} invalid={error !== undefined}
         {...(placeholder !== undefined ? { placeholder } : {})} />
+      {error !== undefined && <FieldError testId={`${testId}-error`}>{error}</FieldError>}
     </label>
   );
 }
@@ -136,7 +147,7 @@ function SetupRow({ setup, edit, onEdit }: {
   const edited = layoutEdited(setup, settled);
   const manifest = useQuery({
     ...manifestQuery(settled),
-    enabled: edited && settled.data_dir !== "",
+    enabled: edited && settled.data_dir !== "" && patternsValid(settled),
   });
   const sum: Summary = edited && manifest.data
     ? summaryFromManifest(manifest.data, setup.geometry)
@@ -175,10 +186,13 @@ function SetupRow({ setup, edit, onEdit }: {
           <DetailsField label="Setup file" value={edit.setup_file} testId="details-setup-file"
             onChange={(setup_file) => onEdit({ setup_file })} />
           <DetailsField label="Image files" value={edit.patterns.image} testId="details-image-pattern"
+            error={patternProblem(edit.patterns.image)}
             onChange={(image) => onEdit({ patterns: { ...edit.patterns, image } })} />
           <DetailsField label="Metadata files" value={edit.patterns.metadata} testId="details-metadata-pattern"
+            error={patternProblem(edit.patterns.metadata)}
             onChange={(metadata) => onEdit({ patterns: { ...edit.patterns, metadata } })} />
           <DetailsField label="Integration files" value={edit.patterns.integration} testId="details-integration-pattern"
+            error={patternProblem(edit.patterns.integration)}
             onChange={(integration) => onEdit({ patterns: { ...edit.patterns, integration } })} />
           {GEOMETRY_FIELDS.map(({ key, label }) => (
             <DetailsField key={key} label={label} value={edit.geometry[key] ?? ""} testId={`details-${key}`}
@@ -250,8 +264,9 @@ export function NewExperimentPage(): JSX.Element {
   const existing = preview.data?.existing ?? refused;
 
   const chosen = setups.filter((s) => edits[s.root]?.include === true);
+  const patternsOk = chosen.every((s) => patternsValid(edits[s.root]!));
   const current = path.trim() === picked && !preview.isFetching && preview.data !== undefined && setups.every((s) => edits[s.root] !== undefined);
-  const canSubmit = current && chosen.length > 0 && !submitting && (existing !== undefined || name.trim() !== "");
+  const canSubmit = current && chosen.length > 0 && patternsOk && !submitting && (existing !== undefined || name.trim() !== "");
   const [submitWhenReady, setSubmitWhenReady] = useState<string | undefined>(undefined);
   const inFlight = useRef(false);
 
@@ -280,7 +295,7 @@ export function NewExperimentPage(): JSX.Element {
           data_dir: e.data_dir,
           ...(e.analysis_dir !== "" ? { analysis_dir: e.analysis_dir } : {}),
           included: e.include,
-          patterns: e.patterns,
+          ...(patternsValid(e) ? { patterns: e.patterns } : {}),
           ...(geometry ? { geometry } : {}),
         });
       }

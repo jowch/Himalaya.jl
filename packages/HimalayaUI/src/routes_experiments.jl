@@ -100,9 +100,16 @@ function _malformed_setup(s)
         v = _body_get(s, k)
         v === nothing || _is_obj(v) || return "$k must be an object"
     end
-    pats = _body_get(s, :patterns)
-    pats === nothing || all(v -> v === nothing || v isa AbstractString, values(pats)) ||
-        return "patterns must be strings"
+    _patterns_problem(_body_get(s, :patterns))
+end
+
+function _patterns_problem(pats)
+    pats === nothing && return nothing
+    _is_obj(pats) || return "patterns must be an object"
+    for k in (:image, :metadata, :integration)
+        bad = pattern_problem(String(k), _body_get(pats, k))
+        bad === nothing || return bad
+    end
     nothing
 end
 
@@ -122,6 +129,8 @@ function _checked_data_dir(db, raw)
 end
 
 function _create_one_setup_experiment(db, body)
+    bad = _patterns_problem(_body_get(body, :patterns))
+    bad === nothing || return _json_error(400, Dict(:error => bad))
     data_dir = _checked_data_dir(db, something(_body_get(body, :data_dir), _body_get(body, :path), Some(nothing)))
     data_dir isa HTTP.Response && return data_dir
     name_val = _body_get(body, :name)

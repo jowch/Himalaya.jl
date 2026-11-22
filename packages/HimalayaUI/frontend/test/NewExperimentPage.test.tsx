@@ -421,4 +421,29 @@ describe("NewExperimentPage", () => {
     expect(screen.getByTestId("create-submit")).toHaveTextContent("Add setups");
     expect(screen.queryByRole("alert")).toBeNull();
   });
+  it("refuses a pattern without {name} and adds nothing until it is fixed", async () => {
+    vi.spyOn(api, "previewFolder").mockResolvedValue({
+      path: "/b/20261103", setups: [setup("/b/20261103/setup1"), setup("/b/20261103/setup2")],
+    });
+    const manifest = vi.spyOn(api, "fetchManifest");
+    const create = vi.spyOn(api, "createExperiment").mockResolvedValue({ id: 11 } as api.Experiment);
+    renderPage();
+    pick("/b/20261103");
+    const rows = await screen.findAllByTestId("setup-row");
+    fireEvent.click(within(rows[0]!).getByRole("button", { name: "Details" }));
+    const field = within(rows[0]!).getByTestId("details-integration-pattern").querySelector("input")!;
+    fireEvent.change(field, { target: { value: "{nam}_avg.dat" } });
+    expect(within(rows[0]!).getByTestId("details-integration-pattern-error")).toHaveTextContent("Use {name} exactly once");
+    expect(screen.getByTestId("create-submit")).toBeDisabled();
+    await new Promise((r) => setTimeout(r, 400));
+    expect(manifest).not.toHaveBeenCalled();
+    fireEvent.click(within(rows[0]!).getByRole("checkbox"));
+    expect(screen.getByTestId("create-submit")).toBeEnabled();
+    fireEvent.click(screen.getByTestId("create-submit"));
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+    const sent = create.mock.calls[0]![0].setups;
+    expect(sent[0]).toMatchObject({ root: "/b/20261103/setup1", included: false });
+    expect(sent[0]!.patterns).toBeUndefined();
+    expect(sent[1]!.patterns?.integration).toBe("{name}_tot.dat");
+  });
 });

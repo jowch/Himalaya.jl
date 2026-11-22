@@ -235,6 +235,19 @@ _post(call, body) = call("POST", "/api/experiments";
             @test call("POST", "/api/experiments/99999/setups";
                 headers = ["Content-Type" => "application/json"],
                 body = Vector{UInt8}(JSON3.write(Dict(:setups => [spec])))).status == 404
+            for typo in ("{nam}_avg.dat", "avg.dat", "{name}_{name}.dat")
+                bad = merge(spec, Dict(:patterns => Dict(:image => "{name}.tif", :integration => typo)))
+                r = add(Dict(:setups => [bad]))
+                @test r.status == 400
+                @test occursin("{name}", JSON3.read(String(r.body)).error)
+                @test _post(call, Dict(:path => mktempdir(), :setups => [bad])).status == 400
+                @test _post(call, Dict(:data_dir => d2, :patterns => Dict(:integration => typo))).status == 400
+                q = "path=$(HimalayaUI.HTTP.escapeuri(d2))&integration_pattern=$(HimalayaUI.HTTP.escapeuri(typo))"
+                @test call("GET", "/api/fs/manifest?$q").status == 400
+            end
+            @test !isempty(HimalayaUI.unrecognized_setup_roots(db, eid))
+            @test_throws ArgumentError HimalayaUI.create_setup!(db; experiment_id = eid,
+                data_dir = d2, analysis_dir = a2, integration_pattern = "{nam}_avg.dat")
             a = add(Dict(:setups => [spec]))
             @test a.status == 202
             sid = only(JSON3.read(String(a.body)).setup_ids)

@@ -22,6 +22,13 @@ end
 
 setup_folder(root_dir::AbstractString) = String(basename(rstrip(String(root_dir), '/')))
 
+function pattern_problem(label, v)
+    v === nothing && return nothing
+    v isa AbstractString || return "the $label pattern must be a string"
+    count("{name}", v) == 1 || return "the $label pattern must contain {name} exactly once, for example {name}.tif"
+    nothing
+end
+
 function create_setup!(db::SQLite.DB;
         experiment_id::Integer,
         data_dir::AbstractString,
@@ -38,6 +45,10 @@ function create_setup!(db::SQLite.DB;
         beam_center_y = nothing, beam_center_y_source = "default",
         pixel_size_um = nothing, pixel_size_um_source = "default",
         q_units = nothing, q_units_source = "default")
+    for (label, v) in (("image", image_pattern), ("metadata", metadata_pattern), ("integration", integration_pattern))
+        bad = pattern_problem(label, v)
+        bad === nothing || throw(ArgumentError(bad))
+    end
     res = DBInterface.execute(db, """
         INSERT INTO setups
             (experiment_id, folder, display_name, position, included, root_dir, data_dir, analysis_dir,

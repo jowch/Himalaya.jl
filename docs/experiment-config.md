@@ -195,7 +195,13 @@ before the first start of an upgraded build.
 
 ## File patterns
 
-Each pattern contains `{name}`, which stands for an exposure's stem.
+Each pattern contains `{name}` exactly once; it stands for an exposure's stem.
+A pattern without it would point every frame at the same file, so it is
+refused everywhere one is accepted: `400` from `POST /api/experiments`,
+`POST /api/experiments/:id/setups` and `GET /api/fs/manifest`, an
+`ArgumentError` from `create_setup!`, and an inline error in the funnel's
+Details that blocks adding a ticked setup (an unticked one is sent without
+patterns).
 
 | Pattern | Default when the column is `NULL` | Matched in |
 |---------|-----------------------------------|------------|

@@ -356,6 +356,10 @@ function register_fs_routes!()
         path = get(q, "path", "")
         isdir(path) || return _json(400, Dict(:error => "path is not a directory"))
         opt(k) = (v = get(q, k, ""); isempty(v) ? nothing : v)
+        for k in ("image", "metadata", "integration")
+            bad = pattern_problem(k, opt("$(k)_pattern"))
+            bad === nothing || return _json(400, Dict(:error => bad))
+        end
         m = fs_manifest(path;
             image_pattern       = get(q, "image_pattern", "{name}.tif"),
             metadata_pattern    = get(q, "metadata_pattern", "{name}.prp"),
