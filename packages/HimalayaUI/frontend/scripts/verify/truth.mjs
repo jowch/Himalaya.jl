@@ -133,7 +133,7 @@ export const INVARIANTS = {
   representative_kept: "The frame the sample status describes (corpus_api) or the workspace opens on (--ui) is never a dropped frame while the sample has a kept one.",
   views_agree: "The sample status (corpus_api) and the workspace describe the same frame of a sample (needs --ui).",
   workspace_status_matches: "The workspace sample list shows the same status as GET /api/samples (needs --ui).",
-  bridged_labels_match: "Samples bridged as the same sample carry the same confirmed labels, apart from flight-path labels such as \"1.7 m\", which stay with each setup.",
+  bridged_labels_match: "Samples bridged as the same sample carry the same confirmed labels, apart from flight-path labels such as \"1.7 m\", which stay with each setup. Unchecked while the experiment has no bridge.",
   plot_matches_trace: "The workspace plot of the opened frame says \"Waiting for this frame's trace.\" when its trace is held back in late/, and shows the trace otherwise (needs --ui).",
 };
 
@@ -146,6 +146,7 @@ function rollupInvariants(perSample, ui) {
     let checked = true;
     if (NEEDS_UI.has(name) && !ui.used) checked = false;
     if (NEEDS_VIEWS.has(name) && ui.unread) checked = false;
+    if (name === "bridged_labels_match" && !ui.bridged) checked = false;
     const violations = perSample
       .filter((s) => s.invariants && s.invariants[name])
       .flatMap((s) => s.invariants[name].map((v) => ({ sample: s.sample, ...v })));
@@ -290,7 +291,7 @@ export function compareTruth(truthRows, appSamples, { strict = false, expect = n
   });
 
   const failed = samples.filter((s) => !s.ok);
-  const ui = { used: appSamples.some((s) => s.views), unread: appSamples.some((s) => unreadViews(s).length) };
+  const ui = { used: appSamples.some((s) => s.views), unread: appSamples.some((s) => unreadViews(s).length), bridged: appSamples.some((s) => s.bridged) };
   const invariants = rollupInvariants(samples, ui);
   const brokenInvariants = Object.entries(invariants).filter(([, v]) => v.ok === false).map(([k]) => k);
   return {
@@ -332,6 +333,9 @@ export async function collectApp(cfg, experimentId) {
     getJson(api, `/api/experiments/${experimentId}/bridges`),
   ]);
   const drift = bridgeLabelDrift(samples, labels, bridges);
+  const groupSize = new Map();
+  for (const b of bridges) groupSize.set(b.group_id, (groupSize.get(b.group_id) ?? 0) + 1);
+  const bridged = new Set(bridges.filter((b) => groupSize.get(b.group_id) > 1).map((b) => b.sample_id));
   const autoByFrame = new Map();
   for (const s of exported) for (const e of s.exposures) {
     if (!Array.isArray(e.auto_phases)) throw new Error(`export frame ${e.filename} has no auto_phases array`);
@@ -351,6 +355,7 @@ export async function collectApp(cfg, experimentId) {
         shown: { phase: s.phase ?? null, state: s.assignment_state ?? null, representative_id: s.representative_exposure_id ?? null },
         frameOrder: exposures.map((e) => e.filename),
         frames,
+        bridged: bridged.has(s.id),
         ...(drift.has(s.id) ? { labelDrift: drift.get(s.id) } : {}),
       };
     }),

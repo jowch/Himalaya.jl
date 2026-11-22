@@ -104,6 +104,28 @@ step 11-peak-clicks log bash -c '
   bin/verify click --role button --name "$(get manual)" --exact
   node "$help" twin-state "$eid" "$id" removed' _ "$OUT" "$HELP"
 
+step 12-bridge-labels log bash -c '
+  set -e
+  out=$1
+  json() { node -e "let d=\"\";process.stdin.on(\"data\",c=>d+=c).on(\"end\",()=>process.stdout.write(String(($1)(JSON.parse(d)))))"; }
+  pair=$(bin/verify api GET "/api/samples?experiment_id=1" | json "r=>r.body.slice(0,2).map(s=>s.id).join(\" \")")
+  read -r a b <<< "$pair"
+  bin/verify api POST "/api/samples/$a/labels" --data "{\"label\":\"37C\"}" > /dev/null
+  bin/verify api POST "/api/samples/$a/bridge" --data "{\"to_sample_id\":$b}" > /dev/null
+  bin/verify api POST "/api/samples/$b/labels" --data "{\"label\":\"pH 7\"}" > /dev/null
+  bin/verify check-truth > "$out/12-bridged.json" || true
+  node -e "
+    const r = JSON.parse(require(\"fs\").readFileSync(process.argv[1], \"utf8\"));
+    const inv = r.invariants.bridged_labels_match;
+    if (!inv.checked) { console.log(\"bridged_labels_match did not run: check-truth saw no bridge\"); process.exit(1); }
+    if (!inv.ok) { console.log(JSON.stringify(inv.violations, null, 2)); process.exit(1); }
+    console.log(\"bridged_labels_match checked and held\");" "$out/12-bridged.json"
+  for s in $a $b; do
+    got=$(bin/verify api GET "/api/experiments/1/labels" | json "r=>r.body.filter(l=>l.sample_id===$s&&l.state===\"confirmed\").map(l=>l.label).sort().join(\",\")")
+    [[ $got == *37C* && $got == *"pH 7"* ]] || { echo "sample $s has labels [$got], not both 37C and pH 7"; exit 1; }
+  done
+  echo "both bridged samples carry 37C and pH 7"' _ "$OUT"
+
 if (( ${#failed[@]} )); then
   echo "verify-truth failed: ${failed[*]}"
   exit 1

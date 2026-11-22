@@ -333,10 +333,17 @@ test("bridgeLabelDrift compares confirmed labels across a bridge, ignoring case 
   assert.deepEqual(apart.get(2), [{ mate: "A", mine: [], theirs: ["buffer"] }]);
 });
 
-test("bridged_labels_match fails on a sample whose labels drifted from its bridge", () => {
-  const ok = compareTruth(TRUTH, app());
+test("bridged_labels_match is unchecked without a bridge, and fails on a sample whose labels drifted from its bridge", () => {
+  const none = compareTruth(TRUTH, app());
+  assert.equal(none.invariants.bridged_labels_match.checked, false);
+  assert.equal(none.invariants.bridged_labels_match.ok, null);
+  const bridged = app();
+  bridged[0].bridged = true;
+  const ok = compareTruth(TRUTH, bridged);
+  assert.equal(ok.invariants.bridged_labels_match.checked, true);
   assert.equal(ok.invariants.bridged_labels_match.ok, true);
   const drifted = app();
+  drifted[0].bridged = true;
   drifted[0].labelDrift = [{ mate: "MO_PEG5_S3 (S01P02)", mine: ["buffer"], theirs: [] }];
   const r = compareTruth(TRUTH, drifted);
   assert.deepEqual(r.summary.invariants_failed, ["bridged_labels_match"]);
