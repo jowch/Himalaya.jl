@@ -172,6 +172,16 @@ export function useExposures(sampleId: number | undefined) {
   });
 }
 
+export function useSamplesExposures(sampleIds: readonly number[]) {
+  return useQueries({
+    queries: sampleIds.map((id) => ({
+      queryKey: queryKeys.exposures(id),
+      queryFn: () => api.listExposures(id),
+    })),
+    combine: (results) => results.map((r) => r.data),
+  });
+}
+
 export function useTrace(exposureId: number | undefined) {
   return useQuery({
     queryKey: queryKeys.trace(exposureId),

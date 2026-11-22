@@ -12,6 +12,7 @@ import {
   useExperimentCorpusSamples,
   useExperiment,
   useExposures,
+  useSamplesExposures,
   useIndices,
   useLabels,
   useAddLabel,
@@ -54,6 +55,7 @@ import { callStatesSplit, keepChoices, type KeepCall } from "../lib/bridgeCall";
 import { bufferRole, buffersFirst, displayLabel, firstUnusedColor, labelColor, labelColorIsDefault, labelsFor, sameLabel, sampleMatchesFilter, labelVocabulary, labelKey } from "../lib/labels";
 import { representativeExposure } from "../lib/exposure";
 import { useCorpusPalette } from "../hooks/useCorpusPalette";
+import { allFrames, frameGroups, frameOf } from "./frameGroups";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
 import { firstUnreviewed, i0BelowZero, traceIsDark, imageUrl, nearestKeptExposure, nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
@@ -262,11 +264,32 @@ export function WorkspacePage(): JSX.Element {
     navigate(`/experiments/${experimentId}/workspace/${sampleId}${qs ? `?${qs}` : ""}`, { replace: true });
   }, [requested, sampleId, search, navigate, experimentId]);
 
+  const bridges = useBridges(experimentId);
+  const bridgeList = useMemo(() => bridges.data ?? [], [bridges.data]);
+  const bridged = useMemo(() => (sampleId === undefined ? [] : bridgedWith(bridgeList, sampleId)), [bridgeList, sampleId]);
   const exposures = useExposures(sampleId);
+  const mateExposures = useSamplesExposures(bridged);
   const [exposureId, setExposureId] = useState<number | undefined>(linkedExposure);
   useEffect(() => setExposureId(linkedExposure), [sampleId, linkedExposure]);
-  const exposureList: Exposure[] = useMemo(() => exposures.data ?? [], [exposures.data]);
-  const exposure = exposureList.find((e) => e.id === exposureId) ?? representativeExposure(exposureList);
+  const ownFrames: Exposure[] = useMemo(() => exposures.data ?? [], [exposures.data]);
+  const frameSetupName = useCallback(
+    (s: CorpusSample): string => {
+      const st = setups.length > 1 && s.setup_id != null ? setups.find((x) => x.id === s.setup_id)?.name : undefined;
+      return st ? `${s.name} in ${st}` : s.name;
+    },
+    [setups],
+  );
+  const groups = useMemo(() => {
+    if (!sample) return [];
+    const mates = bridged.flatMap((id, i) => {
+      const s = inExperiment.find((x) => x.id === id);
+      return s ? [{ sample: s, frames: mateExposures[i] ?? [] }] : [];
+    });
+    return frameGroups({ sample, frames: ownFrames }, mates, (s) => setupOrder.get(s.setup_id ?? -1) ?? 0, frameSetupName);
+  }, [sample, bridged, inExperiment, ownFrames, mateExposures, setupOrder, frameSetupName]);
+  const exposureList: Exposure[] = useMemo(() => allFrames(groups), [groups]);
+  const exposure = exposureList.find((e) => e.id === exposureId) ?? representativeExposure(ownFrames);
+  const shownFrame = frameOf(groups, exposure?.id);
 
   const trace = useTrace(exposure?.id);
   const noTrace = trace.error instanceof ApiError && trace.error.status === 404;
@@ -328,8 +351,12 @@ export function WorkspacePage(): JSX.Element {
   const ops = useEditOps(experimentId);
   const history = useUndoHistory(`${experimentId}:${username ?? ""}`, ops.whenSaved);
   const frameName = useCallback(
-    (eid: number) => `frame ${exposureList.findIndex((e) => e.id === eid) + 1} of ${sample?.name ?? "this sample"}`,
-    [exposureList, sample?.name],
+    (eid: number) => {
+      const at = frameOf(groups, eid);
+      const owner = at && at.group.sampleId !== sample?.id ? inExperiment.find((s) => s.id === at.group.sampleId)?.name : sample?.name;
+      return `frame ${(at?.index ?? -1) + 1} of ${owner ?? "this sample"}`;
+    },
+    [groups, sample?.name, sample?.id, inExperiment],
   );
 
   const [xDomain, setXDomain] = useState<[number, number] | null>(null);
@@ -357,9 +384,6 @@ export function WorkspacePage(): JSX.Element {
   const [draft, setDraft] = useState<CustomDraft | null>(null);
   useEffect(() => setDraft(null), [exposure?.id]);
   const commitCustom = useCommitCustomIndex(exposure?.id ?? 0);
-  const bridges = useBridges(experimentId);
-  const bridgeList = useMemo(() => bridges.data ?? [], [bridges.data]);
-  const bridged = useMemo(() => (sampleId === undefined ? [] : bridgedWith(bridgeList, sampleId)), [bridgeList, sampleId]);
   const bridgedNames = useMemo(() => {
     const names = new Map(inExperiment.map((s) => [s.id, s.name]));
     return bridged.map((r) => names.get(r) ?? `Sample ${r}`);
@@ -502,10 +526,12 @@ export function WorkspacePage(): JSX.Element {
       const next = prev === "rejected" ? null : "rejected";
       if (next === null) setExposureId(e.id);
       else if (e.id === exposure?.id) setExposureId(nearestKeptExposure(exposureList, e.id) ?? e.id);
-      setStatus.mutate({ exposureId: e.id, status: next });
       if (sampleId === undefined) return;
+      const owner = e.sample_id;
+      if (owner === sampleId) setStatus.mutate({ exposureId: e.id, status: next });
+      else ops.setStatus(owner, e.id, next);
       history.record(dropEntry(ops, {
-        label: `${next ? "dropped" : "restored"} ${frameName(e.id)}`, sampleId, exposureId: e.id, prev, next,
+        label: `${next ? "dropped" : "restored"} ${frameName(e.id)}`, sampleId, exposureId: e.id, owner, prev, next,
       }));
     },
     [setStatus, sampleId, history, ops, frameName, exposureList, exposure],
@@ -1028,7 +1054,8 @@ export function WorkspacePage(): JSX.Element {
   const droppedCount = exposureList.filter((e) => e.status === "rejected").length;
   const keptHint = droppedCount > 0 ? `${exposureList.length - droppedCount} of ${exposureList.length} kept` : undefined;
   const reviewed = samples.filter((s) => sampleStatus(s).kind !== "unreviewed").length;
-  const exposureIndex = exposure ? exposureList.findIndex((e) => e.id === exposure.id) + 1 : 0;
+  const exposureIndex = (shownFrame?.index ?? -1) + 1;
+  const groupSize = shownFrame?.group.exposures.length ?? 0;
   const emptyMessage = !Number.isInteger(experimentId)
     ? "This workspace link is not valid."
     : corpus.isLoading || !setupsKnown
@@ -1197,10 +1224,10 @@ export function WorkspacePage(): JSX.Element {
           )}
           {bigOpen && exposure && (
             <DetectorOverlay
-              exposures={exposureList}
+              exposures={shownFrame?.group.exposures ?? ownFrames}
               currentId={exposure.id}
               onStep={(dir) => {
-                const eid = stepExposure(exposureList, exposure.id, dir);
+                const eid = stepExposure(shownFrame?.group.exposures ?? ownFrames, exposure.id, dir);
                 if (eid !== undefined) setExposureId(eid);
               }}
               onToggleDrop={username ? () => toggleDrop(exposure) : undefined}
@@ -1224,10 +1251,10 @@ export function WorkspacePage(): JSX.Element {
           <>
             <SampleHeading
               name={sample.name}
-              meta={exposure ? `Frame ${exposureIndex} of ${exposureList.length}` : undefined}
+              meta={exposure && shownFrame ? `Frame ${exposureIndex} of ${groupSize}` : undefined}
               aside={
                 <LabelRow
-                  note={bridgedNames.length > 0 ? `Same sample as ${bridgedNames.join(", ")}` : undefined}
+                  note={bridgedNames.length > 0 ? `Same as ${bridgedNames.join(", ")}` : undefined}
                   labels={sampleLabels}
                   vocabulary={vocabulary}
                   editable={Boolean(username)}
@@ -1309,7 +1336,7 @@ export function WorkspacePage(): JSX.Element {
               </PlotCard>
             </div>
             <MainSection title="Frames" hint={keptHint}>
-              <ExposureStrip exposures={exposureList} currentId={exposure?.id} onPick={setExposureId} onToggleDrop={toggleDrop} />
+              <ExposureStrip groups={groups.map((g) => ({ key: g.sampleId, title: g.title, exposures: g.exposures }))} currentId={exposure?.id} onPick={setExposureId} onToggleDrop={toggleDrop} />
             </MainSection>
           </>
         ) : (

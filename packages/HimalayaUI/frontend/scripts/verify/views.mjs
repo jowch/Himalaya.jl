@@ -25,7 +25,7 @@ function failedRequests(settle, where, heldIds = new Set()) {
 }
 
 export function frameFromLabels(labels, frameOrder) {
-  const numbers = labels.map((l) => /^Frame (\d+)\b/.exec(l)).filter(Boolean).map((m) => Number(m[1]));
+  const numbers = labels.map((l) => /^Frame (\d+)(?:,|$)/.exec(l)).filter(Boolean).map((m) => Number(m[1]));
   if (numbers.length !== 1) return null;
   return frameOrder[numbers[0] - 1] ?? null;
 }
@@ -74,7 +74,7 @@ async function readWorkspaceRows(page) {
 }
 
 export function keptFromLabels(labels) {
-  const frames = labels.filter((l) => /^Frame \d+\b/.test(l));
+  const frames = labels.filter((l) => /^Frame \d+(?:,|$)/.test(l));
   if (!frames.length) return null;
   return `${frames.filter((l) => !/, dropped$/.test(l)).length}/${frames.length}`;
 }

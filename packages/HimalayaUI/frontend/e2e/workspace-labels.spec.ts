@@ -177,7 +177,7 @@ test("the same-sample note gets only the room the name and labels leave", async 
   await page.goto("/experiments/17/workspace/42");
   const title = page.getByRole("heading", { level: 2, name: names[0] });
   await expect(title).toBeVisible();
-  const note = page.getByTitle(`Same sample as ${names.slice(1).join(", ")}`);
+  const note = page.getByTitle(`Same as ${names.slice(1).join(", ")}`);
   await expect(note).toBeVisible();
   expect(await title.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
   await expect(page.getByTestId("workspace-labels-more")).toBeHidden();
