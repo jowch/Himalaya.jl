@@ -91,10 +91,10 @@ describe("LabelRow colours", () => {
 
   it("picking a label's default colour clears the override instead of storing it", () => {
     const onSetColor = vi.fn();
-    render(colorRow({ coloring: "buffer", colors: [{ label: "buffer", color: "teal" }], onSetColor }));
-    fireEvent.click(screen.getByRole("radio", { name: "Blue" }));
+    render(colorRow({ coloring: "heated", colors: [{ label: "heated", color: "teal" }], onSetColor }));
+    fireEvent.click(screen.getByRole("radio", { name: "Violet" }));
     fireEvent.click(screen.getByRole("radio", { name: "Rose" }));
-    expect(onSetColor.mock.calls).toEqual([["buffer", null], ["buffer", "rose"]]);
+    expect(onSetColor.mock.calls).toEqual([["heated", null], ["heated", "rose"]]);
   });
 
   it("closing hands focus back to what opened the menu, never to a label's remove button", () => {

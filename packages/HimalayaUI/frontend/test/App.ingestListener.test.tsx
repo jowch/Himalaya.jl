@@ -47,8 +47,8 @@ describe("App ingestInFlight SSE listener (Phase E1)", () => {
   });
 
   it("maps a rescan-phase frame to status=analyzing (the rescanning surface)", () => {
-    // A rescan (/{id}/scan) tags its frames phase:"rescan" → "analyzing" → the
-    // inline ProgressBar, since the experiment's table data is already present.
+    // A rescan (/{id}/scan) tags its frames phase:"rescan" → "analyzing", since
+    // the experiment's table data is already present.
     mount();
     FakeEventSource.current().emit("curation", {
       kind: "ingest_progress", entity_id: 7, entity_type: "experiment",

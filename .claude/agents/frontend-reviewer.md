@@ -28,24 +28,13 @@ You are the Himalaya frontend's specialized code reviewer. You know this codebas
 
 - **Mutations must invalidate scoped keys.** After a mutation, invalidate `queryKeys.peaks(id)`, `queryKeys.indices(id)`, etc. — not the root `queryKeys.experiments` unless the experiment itself changed. Over-broad invalidation causes unnecessary refetches. Cache reconciliation also flows through `lib/queue/applyRemoteToCache.ts`.
 
-### Canvas / ImageBitmap
-
-- **`ImageBitmap.close()` neuters `width`/`height` to 0** per the Web spec. Capture dims *before* closing:
-  ```ts
-  const { width, height } = bitmap;
-  bitmap.close();
-  ```
-  There is a regression test in `test/print-detector/DetectorImage.test.tsx` using getter-based mocks that simulates this neutering — keep it green.
-
-- **`DetectorImage` auto-rotate** is driven by a ResizeObserver on the wrapper div. When `containerAspect > imageAspect * 1.25`, the canvas gets `transform: rotate(90deg)` (with `transformOrigin: center`) plus JS-set `maxWidth`/`maxHeight` on the element. The threshold logic lives in `src/lib/detectorOrient.ts` (`ROTATE_THRESHOLD = 1.25`, `decideOrient`). Any change to the rotation logic must account for this.
-
 ### Effects and memoization
 
-- **Imperative render functions in effects: use `useCallback`.** Any function defined inside a component that is also used as a `useEffect` dependency must be wrapped in `useCallback` with its true deps. The effect depends on `[theCallback]` alone — no redundant dep list, no eslint-disable. `DetectorImage`'s `evaluateOrient` `useCallback` + `useEffect` (`src/print/detector/DetectorImage.tsx`) is the canonical example.
+- **Imperative render functions in effects: use `useCallback`.** Any function defined inside a component that is also used as a `useEffect` dependency must be wrapped in `useCallback` with its true deps. The effect depends on `[theCallback]` alone — no redundant dep list, no eslint-disable.
 
 ### Inputs
 
-- Text/numeric inputs are primitives under `src/print/ui/` (`Input.tsx`, `Field.tsx`, `SearchInput.tsx`). Appearance lives in the primitive; consumers pass placement-only `className`.
+- Text/numeric inputs are primitives under `src/print/ui/` (`Input.tsx`); the workspace keeps its own under `src/workspace/ui/`. Appearance lives in the primitive; consumers pass placement-only `className`.
 
 ### Plot interaction (d3)
 

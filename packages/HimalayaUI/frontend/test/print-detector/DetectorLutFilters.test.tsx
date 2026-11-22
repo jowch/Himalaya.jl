@@ -3,7 +3,7 @@ import { test, expect } from "vitest";
 import { DetectorLutFilters } from "../../src/print/detector/DetectorLutFilters";
 import { detectorLutFilterId, detectorLutTableValues } from "../../src/print/detector/detectorLut";
 
-// Guards the provider wiring DetectorImage references via `filter: url(#…)`. The
+// Guards the provider wiring the detector view references via `filter: url(#…)`. The
 // moved "LUT non-inverting" test covers the table MATH; this covers that the
 // filters actually exist, carry all three channel funcs, and feed each channel
 // its matching ramp (a swapped R/B or wrong #id would otherwise pass silently).
