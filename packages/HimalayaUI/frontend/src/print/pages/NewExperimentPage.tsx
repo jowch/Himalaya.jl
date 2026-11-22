@@ -9,7 +9,7 @@ import { Button } from "../ui/Button";
 import { Checkbox } from "../ui/Checkbox";
 import { Input } from "../ui/Input";
 import { FieldError } from "../ui/FieldError";
-import { KbKey } from "../ui/KbKey";
+import { Kbd } from "../../workspace/ui/Kbd";
 import { modCombo } from "../../lib/modKey";
 import { Kicker } from "../ui/Kicker";
 import { useFireOnce } from "../../hooks/useFireOnce";
@@ -392,7 +392,7 @@ export function NewExperimentPage(): JSX.Element {
         <Button variant="ghost" onClick={() => navigate("/experiments")}>Cancel</Button>
         <Button variant="accent" data-testid="create-submit" disabled={!canSubmit} onClick={() => { void submit(); }}>
           {existing !== undefined ? "Add setups" : "Add experiment"}
-          <KbKey variant="frost" className="ml-2">{modCombo("↵")}</KbKey>
+          <span className="ml-2"><Kbd onFill>{modCombo("↵")}</Kbd></span>
         </Button>
       </footer>
     </>
