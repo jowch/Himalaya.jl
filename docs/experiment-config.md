@@ -170,8 +170,8 @@ Everything else is a column on the experiment's `setups` rows.
 | Column | Set by | Editable later |
 |--------|--------|----------------|
 | `folder` | Create: the setup subfolder's name | No |
-| `display_name` | Not yet (planned palette rename) | Shown instead of `folder` when set |
-| `included` | Create (`1`), or the funnel's tick box | Not yet: a setup unticked in the funnel stays unticked until the palette's Settings can tick it (planned) |
+| `display_name` | `PATCH /api/setups/:id` (`name`) | Yes: shown instead of `folder`; an empty name or the folder name clears it |
+| `included` | Create (the funnel's tick box), or `PATCH /api/setups/:id` | Yes: a hidden setup's samples leave the workspace and the scan skips it; showing a hidden setup starts a rescan, so frames that arrived while it was hidden come in. The last shown setup cannot be hidden |
 | `root_dir`, `data_dir`, `analysis_dir` | Create | No |
 | `image_pattern`, `metadata_pattern`, `integration_pattern` | Create | Not yet (see [Rescans](#rescans)) |
 | `energy_kev`, `flight_path_m`, `beam_center_x`, `beam_center_y`, `pixel_size_um` | Create, or the scan's fill-only step | Not yet |
@@ -179,6 +179,14 @@ Everything else is a column on the experiment's `setups` rows.
 
 `GET /api/experiments` and `GET /api/experiments/:id` return the setups under
 `setups`, ordered by `position`, with `name` set to the display name.
+
+`PATCH /api/setups/:id` takes `name` (a string, or `null` to go back to the
+folder name) and `included`. Any other field is a `400`. It logs a
+`setup_updated` event and broadcasts it, and the palette's Settings page edits
+both (undoable). In the workspace, samples of hidden setups are left out of the
+list, Z, the progress count and every picker, and bridges or comparisons to them
+stay stored but are not drawn. With more than one shown setup, the sample list
+is grouped under a sticky header per setup.
 
 ### Migration from one experiment per setup
 
@@ -370,6 +378,18 @@ never picks a subtraction buffer by itself. It only puts tagged buffers first in
 the compare picker, where confirmed buffers come before suggested ones. Ranking
 buffers by their traces (no peaks, a flat trace, a low floor) is not built yet
 (#368).
+
+The same step suggests a flight-path label (`suggest_flight_path!`). Each
+exposure stores the `.prp` pipe length, which is the flight path, as
+`exposures.pipe_length_m` (read at scan time, or by the beam-monitor back-fill).
+When every exposure of a sample that has a pipe length rounds to the same
+tenth of a metre, the sample gets the suggested label `<n.n> m`, for example
+`1.7 m`, with source `ingest`. Frames that disagree, or no pipe length at all,
+suggest nothing. A sample that already has any `<number> m` label (lowercase
+m, matched case-sensitively, so a molar `1 M` doesn't count), in any state, is
+left alone, so removing or renaming it sticks. Databases from before
+this column re-read their `.prp` files once (`exposures_pipe_length_v1` resets
+`monitors_read`), and the start-up back-fill then suggests the labels.
 
 A new setup folder is any folder `setup_roots` finds under the experiment's
 `path` that is not one of its setups yet and whose data folder no other

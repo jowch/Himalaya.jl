@@ -73,11 +73,13 @@ function backfill_monitors!(db::SQLite.DB, experiment_id::Int)
                        SET transmitted_counts = COALESCE(transmitted_counts, ?),
                            incident_monitor   = COALESCE(incident_monitor, ?),
                            counting_time      = COALESCE(counting_time, ?),
+                           pipe_length_m      = COALESCE(pipe_length_m, ?),
                            monitors_read      = 1
                      WHERE id = ?
                 """, [_nothing_if_missing(m.transmitted_counts),
                       _nothing_if_missing(m.incident_monitor),
-                      _nothing_if_missing(m.counting_time_s), id])
+                      _nothing_if_missing(m.counting_time_s),
+                      _nothing_if_missing(m.pipe_length_m), id])
             end
         end
     end
@@ -233,7 +235,8 @@ function _scan_setup!(db::SQLite.DB, experiment_id::Int, setup;
                             load_id             = load_id,
                             transmitted_counts  = _nothing_if_missing(ge.transmitted_counts),
                             incident_monitor    = _nothing_if_missing(ge.incident_monitor),
-                            counting_time       = _nothing_if_missing(ge.counting_time_s))
+                            counting_time       = _nothing_if_missing(ge.counting_time_s),
+                            pipe_length_m       = _nothing_if_missing(ge.pipe_length_m))
                         push!(new_exposure_ids, eid)
                         push!(existing_filenames, ge.stem)
                     end

@@ -25,6 +25,7 @@ import { patchComparesMutator } from "./lib/queue/mutators/compares";
 import { addLabelMutator, removeLabelMutator, restoreLabelSuggestionMutator } from "./lib/queue/mutators/labels";
 import { setLabelColorMutator } from "./lib/queue/mutators/labelColors";
 import { patchExperimentMutator, type ExperimentPatch } from "./lib/queue/mutators/experiment";
+import { patchSetupMutator, type SetupPatch } from "./lib/queue/mutators/setup";
 import { authOpts as buildAuthOpts } from "./lib/authOpts";
 
 const CLIENT_ID = getClientId();
@@ -378,6 +379,7 @@ export interface EditOps {
   restoreLabelSuggestion: (sampleId: number, label: string) => void;
   setLabelColor: (label: string, color: api.LabelColor | null) => void;
   patchExperiment: (patch: ExperimentPatch) => void;
+  patchSetup: (setupId: number, patch: SetupPatch) => void;
   bridge: (sampleId: number, toSampleId: number) => void;
   unbridge: (sampleId: number) => void;
   patchCompares: (sampleId: number, change: api.CompareChange) => void;
@@ -421,6 +423,7 @@ export function useEditOps(experimentId: number): EditOps {
   const restoreSuggestion = useQueueMutation(restoreLabelSuggestionMutator, labelScope);
   const labelColor = useQueueMutation(setLabelColorMutator, who);
   const experiment = useQueueMutation(patchExperimentMutator, labelScope);
+  const setup = useQueueMutation(patchSetupMutator, labelScope);
   const bridge = useQueueMutation(bridgeSamplesMutator, labelScope);
   const unbridge = useQueueMutation(unbridgeSampleMutator, labelScope);
   const compares = useQueueMutation(patchComparesMutator, labelScope);
@@ -442,6 +445,7 @@ export function useEditOps(experimentId: number): EditOps {
     restoreLabelSuggestion: (sampleId, label) => restoreSuggestion.mutate({ sampleId, label }),
     setLabelColor: (label, color) => labelColor.mutate({ label, color }),
     patchExperiment: (patch) => experiment.mutate(patch),
+    patchSetup: (setupId, patch) => setup.mutate({ setupId, ...patch }),
     bridge: (sampleId, toSampleId) => bridge.mutate({ sampleId, toSampleId }),
     unbridge: (sampleId) => unbridge.mutate({ sampleId }),
     patchCompares: (sampleId, change) => compares.mutate({ sampleId, change }),

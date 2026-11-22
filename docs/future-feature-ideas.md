@@ -478,7 +478,7 @@ GOLD; these were the deliberately-deferred tail).
 
 ### Code splitting
 
-Vite warns the bundle is >500 kB. Probably split: NavModal +
+Vite warns the bundle is >500 kB. Probably split: the palette +
 OnboardingFlow as lazy chunks.
 
 ### Semantic spacing / density scale

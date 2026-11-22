@@ -80,6 +80,7 @@ const VALIDATION_COPY: Partial<Record<OpKind, string>> = {
   assignment_add: "Couldn't call phase",
   assignment_remove: "Couldn't remove phase",
   patch_experiment: "Couldn't save the experiment",
+  patch_setup: "Couldn't save the setup",
 };
 
 /**
