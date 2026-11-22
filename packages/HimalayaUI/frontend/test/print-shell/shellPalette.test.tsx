@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
+import { StrictMode } from "react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useAppState } from "../../src/state";
@@ -16,12 +17,14 @@ function Probe(): null {
 function renderAt(path: string) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[path]}>
-        <AppRoutes />
-        <Probe />
-      </MemoryRouter>
-    </QueryClientProvider>,
+    <StrictMode>
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={[path]}>
+          <AppRoutes />
+          <Probe />
+        </MemoryRouter>
+      </QueryClientProvider>
+    </StrictMode>,
   );
 }
 
@@ -86,6 +89,7 @@ describe("the palette on the pages outside the workspace", () => {
     const palette = await openPalette("/experiments");
     await within(palette).findByRole("option", { name: /Open Lipids/ });
     expect(within(palette).queryByRole("option", { name: /Go to MO_PEG5/ })).toBeNull();
+    expect(api.listCorpusSamples).not.toHaveBeenCalled();
     fireEvent.change(input(), { target: { value: "peg5" } });
     const hit = await within(palette).findByRole("option", { name: /Go to MO_PEG5/ });
     expect(hit).toHaveTextContent("Lipids");
@@ -121,4 +125,5 @@ describe("the palette on the pages outside the workspace", () => {
     expect(screen.queryByTestId("workspace-palette")).toBeNull();
     expect(useAppState.getState().paletteOpen).toBe(false);
   });
+
 });

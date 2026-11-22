@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAppState } from "../../state";
 import { useCorpusSamples, useExperiments } from "../../queries";
@@ -10,19 +10,21 @@ import { shellPalette } from "./shellPalette";
 
 export function ShellPalette({ openHelp }: { openHelp: () => void }): JSX.Element | null {
   const open = useAppState((s) => s.paletteOpen);
+  const close = useAppState((s) => s.closePalette);
+  useEffect(() => close, [close]);
   return open ? <OpenShellPalette openHelp={openHelp} /> : null;
 }
 
 function OpenShellPalette({ openHelp }: { openHelp: () => void }): JSX.Element {
   const close = useAppState((s) => s.closePalette);
-  useEffect(() => close, [close]);
   const username = useAppState((s) => s.username);
   const clearUsername = useAppState((s) => s.clearUsername);
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const theme = useAppTheme();
   const experimentsQ = useExperiments();
-  const corpusQ = useCorpusSamples();
+  const [searched, setSearched] = useState(false);
+  const corpusQ = useCorpusSamples({ enabled: searched });
   const experiments = useMemo(
     () => (experimentsQ.data ?? []).map((e) => ({ id: e.id, name: e.name ?? `Experiment ${e.id}` })),
     [experimentsQ.data],
@@ -45,5 +47,8 @@ function OpenShellPalette({ openHelp }: { openHelp: () => void }): JSX.Element {
     user: { name: username, switch: clearUsername },
     help: openHelp,
   });
-  return <Palette groups={palette.groups} pages={palette.pages} onClose={close} />;
+  const onType = (q: string): void => {
+    if (q.trim()) setSearched(true);
+  };
+  return <Palette groups={palette.groups} pages={palette.pages} onClose={close} onType={onType} />;
 }
