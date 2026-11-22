@@ -3,7 +3,6 @@ import { cx } from "../lib/cx";
 
 interface WordmarkProps {
   children: ReactNode;
-  /** Optional faint tail after a middle dot, e.g. "SAXS" -> "Himalaya · SAXS". */
   tail?: ReactNode;
   className?: string;
 }

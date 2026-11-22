@@ -2,17 +2,10 @@ import { cx } from "../lib/cx";
 
 interface CheckCircleProps {
   checked: boolean;
-  /** Accessible name override. Defaults to "Selected"/"Not selected"; a
-   *  screened-status use can pass label={done ? "Screened" : "Not screened"}. */
   label?: string;
-  /** When true, the badge is purely decorative: no `role`/`aria-label`, and
-   *  `aria-hidden`. Used when an interactive wrapper (e.g. the Checkbox
-   *  primitive) already provides the checkbox semantics — avoids doubling up
-   *  roles/labels on nested elements. */
   decorative?: boolean;
   className?: string;
 }
-
 export function CheckCircle({ checked, label, decorative, className }: CheckCircleProps): JSX.Element {
   return (
     <span
