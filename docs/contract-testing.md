@@ -29,8 +29,8 @@ one layer in isolation.
                                    Foreign-event path: turn an SSE frame back
                                    into a cache-row mutation per kind.
 4. Cache row shape               (the resulting Peak / Index / Exposure object)
-                                   What downstream consumers (TracePlate,
-                                   the workspace's Phase list and indexing plot) read.
+                                   What downstream consumers (the workspace's
+                                   plot, Phase list and indexing plot) read.
 5. Mutator onMutate              lib/queue/mutators/*.ts (optimistic write)
                                    Builds the optimistic placeholder row +
                                    returns the rollback closure.

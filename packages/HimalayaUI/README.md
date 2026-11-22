@@ -1,20 +1,14 @@
 # HimalayaUI
 
-A web application for semi-automatic indexing of SAXS diffraction patterns. Point it at a beamtime directory, and HimalayaUI will group the exposures into samples, auto-find peaks, index them against known lipid phases, and present the results in a browser for review and refinement.
+A web application for semi-automatic indexing of SAXS diffraction patterns. Point it at a beamtime directory, and HimalayaUI will group the frames into samples, auto-find peaks, index them against known lipid phases, and present the results in a browser for review and refinement.
 
 ---
 
 ## What you get
 
 - **Create experiments in the browser.** Run `himalaya serve`, choose New experiment, and pick a beamtime directory. HimalayaUI infers the layout, file patterns and geometry for you to confirm, then scans and analyzes the data.
-- **Browser UI** with:
-  - Sample list with tag-based filter
-  - Log-log trace viewer (I(q) with σ ribbon); click to add/remove peaks
-  - Active-group overlay (predicted q positions colored by phase) + hover preview of alternatives
-  - Miller-index scatter with linear fit per candidate index
-  - Phase panel with Active / Alternatives sections (confirm with `+`, exclude with `−`)
-  - Tabbed properties panel: Exposures · Peaks table · Sample tags · Notes
-- **Configurable file patterns.** Image, metadata and integration filenames are matched by `{name}` patterns that you can correct per experiment, so a different layout needs no code changes.
+- **A three-pane triage workspace** for reviewing one sample at a time: the sample list with review status, the trace plot (scroll to zoom, click to add or switch off peaks, Log, Linear, Log-log and q²I views), frame thumbnails with drop and restore, and the ranked phase candidates you tick into the sample's call. Comparisons with other samples, buffer subtraction, bridges between samples, labels and a custom index sit in the same screen. ⌘K opens a command palette and `?` lists the keys.
+- **Configurable file patterns.** Image, metadata and integration filenames are matched by `{name}` patterns that you confirm when you add a setup, so a different layout needs no code changes.
 - **One central database.** A single SQLite DB at `~/.himalaya/himalaya.db` (override with `HIMALAYA_DB_PATH`) holds every experiment ever registered. Experiment directories are read-only data sources.
 - **Additive rescans.** New files, and traces that land after their images, are picked up when the experiment is opened, on Rescan, and at server start. Rescans only add rows, so curation (rejections, renames, manual peaks, phase calls) is preserved.
 - **Multi-user by attribution.** Each browser session identifies as a username; every edit is logged to the `user_actions` audit table.
@@ -91,8 +85,8 @@ julia --threads=4,1 --project=/path/to/Himalaya.jl/packages/HimalayaUI \
 Start the server (`himalaya serve`), open the UI, and choose **New experiment**. Pick a beamtime date folder (it lists every setup under it, such as `setup1` and `setup2`) or a single setup folder. For each setup HimalayaUI:
 
 1. **Finds** the layout: the raw-image directory (`data/` if present), the directory holding the integration `.dat` files, the file patterns, and the `setup_info_*.txt` calibration file.
-2. **Previews** what a scan would find in one line: how many exposures, how many still lack a trace, and the flight path from the setup file. Open Details to correct a folder, a pattern or a geometry value.
-3. **Scans** when you add it (⌘/Ctrl+Enter): it creates one exposure per image, groups exposures into loads and samples by time and stage position, and runs peak-finding and indexing on each one. Adding one setup opens its workspace, which shows the scan's progress above the sample list.
+2. **Previews** what a scan would find in one line: how many frames, how many still lack a trace, and the flight path from the setup file. Open Details to correct a folder, a pattern or a geometry value.
+3. **Scans** when you add it (⌘/Ctrl+Enter): it creates one frame per image, groups frames into loads and samples by time and stage position, and runs peak-finding and indexing on each one. Adding one setup opens its workspace, which shows the scan's progress above the sample list.
 
 A typical SSRL directory looks like this:
 
@@ -130,7 +124,7 @@ Without `-e`, `analyze` and `show` use the only registered experiment and fail w
 
 ### `himalaya analyze [-e <experiment> | --all] [--sample <name>]`
 
-Runs peak-finding and indexing for every exposure that is not rejected (or only the matching sample). Idempotent: re-running replaces prior auto-picked peaks, but preserves manual peaks and phase calls. `--all` runs every registered experiment.
+Runs peak-finding and indexing for every frame that is not dropped (or only the matching sample). Idempotent: re-running replaces prior auto-picked peaks, but preserves manual peaks and phase calls. `--all` runs every registered experiment.
 
 ```bash
 himalaya analyze -e 1
@@ -139,7 +133,7 @@ himalaya analyze -e 1 --sample "HA_85_422 (S01P02)"
 
 ### `himalaya show [-e <experiment>] --sample <label>`
 
-Prints the stored analysis for one sample — exposures, peaks, candidate indices. Useful as a quick sanity check without opening the browser.
+Prints the stored analysis for one sample: frames, peaks, candidate indices. Useful as a quick sanity check without opening the browser.
 
 ### `himalaya serve [--port 8080] [--host 127.0.0.1]`
 
@@ -233,26 +227,15 @@ A few non-obvious things to know:
 
 ## Using the web UI
 
-On first visit you'll see a username prompt — enter a new name or pick from existing users. This name is stored in your browser (localStorage) and stamped on every edit you make.
+On first visit you'll see a username prompt. Enter a new name or pick an existing one. The name is stored in your browser (localStorage) and stamped on every edit you make.
 
-**Left column:** The sample list. Filter by any tag key or value. Click a sample to load it.
+The experiments home lists every experiment. Opening one goes straight to its workspace on the first unreviewed sample:
 
-**Center top:** The trace viewer (log-log). Auto peaks are filled triangles in ice-blue; manual peaks are magenta. A **track row** above the plot carries phase-colored ticks at every predicted-q position for the **active group** — this is the legend by position. Inside the plot area, predicted-q vertical lines stay neutral gray so they don't compete with the trace data; **hovering an index card** lights up that index's ticks in phase color (in both the track and the plot) and dims the others. A **legend strip** under the plot labels the peak triangle types and adds a "predicted {Phase}" entry while you hover.
-- **Click on the trace** → adds a manual peak, snapped to the nearest local maximum.
-- **Click on a peak marker** → removes that peak.
-- Any peak edit marks the affected indices stale; a banner above the trace offers a "Re-analyze" button.
+- **Left:** the sample list, grouped by setup when there are several, with each sample's call (a phase, "Form factor" or unreviewed) and "N of M reviewed". `/` filters it; `Z` jumps to the next unreviewed sample.
+- **Centre:** the trace plot and the frame thumbnails. Scroll zooms q. A click near a peak switches an auto peak off or removes a manual one, and a click elsewhere adds a manual peak. `X` drops the shown frame. `Space` enlarges its detector image. The compare bar above the plot holds up to five comparison samples (`C` adds one), and ⌘/Ctrl+click on a chip subtracts it.
+- **Right:** the Call list of ranked candidates (number keys tick them, `0` marks the frame form factor), the indexing plot, and the frame details. `I` opens a custom index.
 
-**Center bottom:** Tabbed properties panel:
-- **Exposures** — one row per `.dat` file; click to load it into the viewer.
-- **Peaks** — table with q, prominence, sharpness, source.
-- **Tags** — add or remove sample-level tags (key/value pairs).
-- **Notes** — free-text notes; saved on blur.
-
-**Right top:** Miller-index scatter. x = √(h²+k²+l²) (normalized), y = observed q. Each index contributes one point per matched peak; the linear fit's slope is the lattice parameter d.
-
-**Right bottom:** Phase panel.
-- **Active group** — the leading assignment. The first time you click `+` or `−`, a "custom" group is cloned from the auto group and becomes active; the auto group is preserved as an alternative.
-- **Alternatives** — other candidate indices ranked by score. Hovering an alternative speculatively draws its predicted positions on the trace. Click `+` to add to the active group.
+⌘Z undoes the last edit. The palette (⌘K) holds everything without a key: plot views, bridges, labels and their colours, rescans, settings and theme. The verify skill's [Feature Map](../../.claude/skills/verify-himalaya/references/features/README.md) describes every surface in detail.
 
 ---
 
@@ -260,24 +243,25 @@ On first visit you'll see a username prompt — enter a new name or pick from ex
 
 Everything is stored in a single SQLite DB at `default_db_path()` (env-resolved, defaults to `~/.himalaya/himalaya.db`). The schema is defined in [`packages/HimalayaUI/src/db.jl`](src/db.jl). Highlights:
 
-- `experiments` — one row per experiment: `data_dir`, `analysis_dir`, the image/metadata/integration patterns, and geometry with a `*_source` per field. `config` holds the TOML of legacy experiments and is `NULL` for new ones.
-- `loads` → `samples` → `exposures` — the auto-grouping: loads split by time gaps, samples by stage position within a load.
-- `peaks` — auto-picked and manually-added peaks. Auto peaks are replaced on re-analysis; manual peaks persist.
-- `indices` + `index_peaks` — candidate phase assignments with per-peak ratio positions and residuals. An index's `status` flips to `stale` when the user edits peaks that support it.
-- `index_groups` — one `auto` group per exposure always exists; a `custom` group is created on first manual add/remove. Custom wins once present.
-- `user_actions` — append-only audit trail keyed by `X-Username`. Use it to answer "who did what, when, and to which exposure".
+- `experiments` → `setups`: one experiment per beamtime folder, one setup per setup subfolder. A setup holds `data_dir`, `analysis_dir`, the image, metadata and integration patterns, and geometry with a `*_source` per field.
+- `loads` → `samples` → `exposures`: the auto-grouping. Loads split by time gaps, samples by stage position within a load. Each exposure row is one frame.
+- `auto_peaks` and `peak_curations`: peaks found by analysis, and the user's manual peaks and switched-off auto peaks. Re-analysis replaces auto peaks and keeps curations.
+- `indices` + `index_peaks`: candidate phase assignments with per-peak ratio positions and residuals.
+- `assignments` + `assignment_members` and `sample_calls`: the phases ticked on a frame, and the sample's call.
+- `sample_labels`, `label_colors`, `sample_compares`, `sample_subtractions`, `sample_bridges`: per-sample labels, comparisons, subtraction reference and bridges.
+- `user_actions`: append-only event log keyed by `X-Username`. Use it to answer "who did what, when, and to which frame".
 
 ---
 
 ## Troubleshooting
 
-**Exposures or peaks missing after a scan.** If the scan failed, the workspace notice says so; its Details button shows the error and every exposure still waiting for a trace or whose analysis failed. To find files that couldn't be paired, call `GET /api/fs/manifest?path=<data_dir>&analysis_dir=<analysis_dir>&image_pattern=…&metadata_pattern=…&integration_pattern=…` with the experiment's settings: its `unmatched` list names every image missing its metadata or integration file, with near-miss filenames (wrong case, `.tiff` vs `.tif`). Fix the pattern with `PATCH /api/experiments/:id`; a pattern edit forces a rescan. Also check that `analysis_dir` points at the directory that actually holds the `.dat` files.
+**Frames or peaks missing after a scan.** If the scan failed, the workspace notice says so; its Details button shows the error and every frame still waiting for a trace or whose analysis failed. To find files that couldn't be paired, call `GET /api/fs/manifest?path=<data_dir>&analysis_dir=<analysis_dir>&image_pattern=…&metadata_pattern=…&integration_pattern=…` with the setup's settings: its `unmatched` list names every image missing its metadata or integration file, with near-miss filenames (wrong case, `.tiff` vs `.tif`). Patterns can't be edited after a setup is added. The only fix is to remove the experiment from the palette and add the folder again with the right patterns. **Removing an experiment deletes every phase call, peak edit, label and bridge you made in it**, though nothing on disk. Do this before triage, not after. Also check that `analysis_dir` points at the directory that actually holds the `.dat` files.
 
-**`SKIP (...)` messages during `analyze`.** The analysis of that exposure raised an error (commonly: missing file, unreadable trace, no peaks). Other exposures continue; the error message indicates the cause.
+**`SKIP (...)` messages during `analyze`.** The analysis of that frame raised an error (commonly: missing file, unreadable trace, no peaks). Other frames continue; the error message indicates the cause.
 
 **Browser stays blank at `/`.** Either the frontend wasn't built (`cd packages/HimalayaUI/frontend && npm run build`) or `HIMALAYA_FRONTEND_DIST` points somewhere empty. `serve` prints the resolved DB path on startup; check the server logs for `dynamicfiles` mounting.
 
-**Pre-existing analyses "disappear" after re-running `analyze`.** Only **auto** peaks/indices/groups are replaced. Manual peaks and any custom group are preserved. If you see stale-index banners that won't clear, run `analyze` on that exposure (`POST /api/exposures/:id/analyze` from the UI) or globally (`himalaya analyze --sample <label>`).
+**Pre-existing analyses "disappear" after re-running `analyze`.** Only auto peaks and candidate indices are replaced. Manual peaks, switched-off peaks, phase calls and custom indices are kept.
 
 ---
 

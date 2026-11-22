@@ -28,7 +28,8 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test s.name == "D1"
         @test length(s.exposures) == 1
         @test s.exposures[1].filename == "example_tot"
-        @test length(s.exposures[1].indices) >= 1
+        @test isempty(s.exposures[1].indices)
+        @test length(s.exposures[1].candidates) >= 1
         @test collect(s.labels) == ["Buffer", "37C"]
         @test s.call_state == "uncalled"
         @test s.phase === nothing
@@ -41,8 +42,8 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test r.status == 200
         @test occursin("text/csv", HTTP.header(r, "Content-Type"))
         csv_body = String(r.body)
-        @test startswith(csv_body, "sample_name,exposure_filename,call_state,call_phases,phases")
-        @test occursin("D1,example_tot,uncalled,,", csv_body)
+        @test startswith(csv_body, "sample_name,exposure_filename,call_state,call_phases,auto_phases,phases")
+        @test occursin("D1,example_tot,uncalled,,$(join(s.exposures[1].auto_phases, ";")),,,,,Buffer;37C", csv_body)
         @test strip(last(split(first(split(csv_body, "\n")), ","))) == "labels"
         @test endswith(strip(split(csv_body, "\n")[2]), ",Buffer;37C")
 
@@ -82,8 +83,8 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test "Im3m" ∉ ex.auto_phases
 
         lines = split(strip(String(call("GET", "/api/experiments/$exp_id/export?format=csv").body)), "\n")
-        @test startswith(lines[1], "sample_name,exposure_filename,call_state,call_phases,phases,")
-        @test startswith(lines[2], "D1,example_tot,indexed,Im3m,Im3m,177.7,")
+        @test startswith(lines[1], "sample_name,exposure_filename,call_state,call_phases,auto_phases,phases,")
+        @test startswith(lines[2], "D1,example_tot,indexed,Im3m,$(join(auto_before, ";")),Im3m,177.7,")
     end
 
     DBInterface.execute(db, "UPDATE sample_calls SET state = 'form_factor' WHERE sample_id = ?", [s_id])
@@ -96,9 +97,17 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test isempty(s.call_phases)
         ex = s.exposures[1]
         @test !ex.called
-        @test sort([ix.phase for ix in ex.indices]) ==
+        @test isempty(ex.indices)
+        @test sort([ix.phase for ix in ex.candidates]) ==
               sort([String(r.phase) for r in Tables.rowtable(DBInterface.execute(db,
                   "SELECT phase FROM indices WHERE exposure_id = ?", [e_id]))])
-        @test length(ex.indices) == length(auto_ids) + 1
+        @test length(ex.candidates) == length(auto_ids) + 1
+    end
+
+    DBInterface.execute(db, "UPDATE sample_calls SET state = 'null' WHERE sample_id = ?", [s_id])
+    with_inproc_routes(db) do call
+        s = JSON3.read(String(call("GET", "/api/experiments/$exp_id/export").body))[1]
+        @test s.call_state == "uncalled"
+        @test isempty(s.exposures[1].indices)
     end
 end

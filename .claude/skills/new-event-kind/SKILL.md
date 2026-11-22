@@ -130,9 +130,7 @@ In `packages/HimalayaUI/test/test_routes_<resource>.jl`:
 
 ### 8. Frontend: extend `handleRemoteEvent` (skip if `--no-view`)
 
-In `packages/HimalayaUI/frontend/src/lib/queue/replayCoordinator.ts`, the existing handler invalidates `peaks(id)`, `indices(id)`, `groups(id)`, `exposure(id)` on every `entity_type === "exposure"` event. If the new kind affects a query key not in this list (e.g. a brand-new `tags(id)` resource), add it to the invalidation set.
-
-If the new kind is on a different entity type (`"sample"`, `"experiment"`), `handleRemoteEvent` currently early-returns — extend it with a parallel branch and add to `test/queue/replayCoordinator.test.ts`.
+`handleRemoteEvent` (`lib/queue/replayCoordinator.ts`) settles own-op frames and hands foreign ones to `applyRemoteToCache` (`lib/queue/applyRemoteToCache.ts`), which switches on `kind`. An unknown kind falls to the `default` branch, which only invalidates `peaks(id)` and `indices(id)`. Add a `case` that patches or invalidates every query key the new kind changes (for example `labels(experimentId)` or `assignment(exposureId)`), and cover it in `test/queue/replayCoordinator.test.ts` or the matching `test/queue/*.contract.test.ts`.
 
 ### 9. Verify
 
