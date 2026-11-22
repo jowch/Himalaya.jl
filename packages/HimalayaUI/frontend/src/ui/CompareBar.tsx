@@ -26,6 +26,10 @@ interface Props {
   trailing?: ReactNode;
 }
 
+function scaleNote(scale: CompareScale): string {
+  return scale.source === "monitor" ? "Scaled by the transmitted beam" : "No beam monitors, so matched at high q";
+}
+
 export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, onSubtract, onRemove, onAdd, full = false, trailing }: Props): JSX.Element {
   const perRow = Math.max(1, Math.ceil((chips.length + (full ? 0 : 1) + 1) / 2));
   const basis = `calc((100% - ${perRow - 1} * 0.5rem) / ${perRow})`;
@@ -53,7 +57,8 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
                 content={
                   <>
                     <span className="block font-semibold">{c.setup ? `${c.name} · ${c.setup}` : c.name}</span>
-                    <span className="block">{`Click to ${off ? "show" : "hide"}. ${modKey}-click to ${sub ? "stop subtracting" : "subtract from this sample"}.`}</span>
+                    <span className="block">{`Click to ${off ? "show" : "hide"}. ${modKey}-click to ${sub ? "stop subtracting" : "subtract it from the current trace"}.`}</span>
+                    {c.scale !== undefined && <span className="block">{scaleNote(c.scale)}</span>}
                   </>
                 }
               >
@@ -79,7 +84,7 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
                 </button>
               </Tooltip>
               {c.scale !== undefined && (
-                <Tooltip content={c.scale.source === "monitor" ? "Scaled by the transmitted beam" : "No beam monitors, so matched at high q"}>
+                <Tooltip content={scaleNote(c.scale)}>
                   <span
                     className={"grid min-w-min grid-cols-[auto_minmax(0,1fr)] items-baseline whitespace-nowrap text-ink-faint" + dim}
                     data-scale-source={c.scale.source}
