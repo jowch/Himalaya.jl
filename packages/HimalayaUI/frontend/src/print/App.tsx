@@ -20,6 +20,7 @@ import { useAppState } from "../state";
 import { forgetExperiment } from "../queries";
 import { getClientId } from "../lib/clientId";
 import type { SseEvent } from "../lib/queue/types";
+import { useDocumentTheme } from "../lib/theme";
 
 /**
  * PrintApp — root of "The Print", the sole production app
@@ -28,6 +29,7 @@ import type { SseEvent } from "../lib/queue/types";
  * unset), plus the app-wide SSE + mutation-queue wiring.
  */
 export function PrintApp(): JSX.Element {
+  useDocumentTheme();
   const qc = useQueryClient();
   const mc = qc.getMutationCache();
   const setIngestProgress = useAppState((s) => s.setIngestProgress);

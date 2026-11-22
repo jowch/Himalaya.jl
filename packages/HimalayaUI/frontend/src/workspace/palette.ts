@@ -1,8 +1,8 @@
-import { LABEL_COLORS, type CorpusSample, type IndexEntry, type LabelColor } from "../api";
-import { cleanLabel, sameLabel } from "../lib/labels";
+import { type CorpusSample, type IndexEntry, type LabelColor } from "../api";
+import { cleanLabel, labelColorIsFixed, sameLabel, USER_LABEL_COLORS } from "../lib/labels";
 import type { PlotView, PlotViewOption } from "./plotView";
 import { latticeParam } from "./indexing";
-import type { WorkspaceTheme } from "./theme";
+import type { AppTheme } from "../lib/theme";
 import { LABEL_SWATCH } from "./ui/labelSwatches";
 import type { FieldOption, PaletteForm, PaletteGroup, PaletteItem, PalettePage } from "./ui/palette/model";
 
@@ -18,7 +18,16 @@ export interface WorkspacePaletteInput {
   modKey: string;
   canEdit: boolean;
   nextUnreviewed: () => void;
-  compare: { samples: readonly CorpusSample[]; notes: ReadonlyMap<number, string>; pick: (id: number) => void };
+  compare: {
+    samples: readonly CorpusSample[];
+    notes: ReadonlyMap<number, string>;
+    pick: (id: number) => void;
+    compared: readonly CorpusSample[];
+    remove: (id: number) => void;
+    subtractable: readonly CorpusSample[];
+    subtracted: number | undefined;
+    subtract: (id: number) => void;
+  };
   bridge: { samples: readonly CorpusSample[]; pick: (id: number) => void; bridged: boolean; leave: () => void };
   candidates: { list: readonly IndexEntry[]; ticked: ReadonlySet<number>; tick: (ix: IndexEntry) => void };
   labels: {
@@ -33,12 +42,13 @@ export interface WorkspacePaletteInput {
   views: { options: readonly PlotViewOption[]; current: PlotView; set: (v: PlotView) => void };
   resetZoom: () => void;
   comparisons: { shown: boolean; toggle: () => void };
+  difference?: { on: boolean; name: string; toggle: () => void };
   settings: { name: string; description: string; save: (patch: { name?: string; description?: string | null }) => void } | undefined;
   rescan: (() => void) | undefined;
   problems: (() => void) | undefined;
   removeExperiment: (() => void) | undefined;
   home: () => void;
-  theme: { current: WorkspaceTheme; choose: (t: WorkspaceTheme) => void };
+  theme: { current: AppTheme; choose: (t: AppTheme) => void };
   user: { name: string | undefined; switch: () => void };
   help: () => void;
   history: { undo: string | undefined; redo: string | undefined; run: (dir: "undo" | "redo") => void };
@@ -46,7 +56,7 @@ export interface WorkspacePaletteInput {
   goSample: (id: number) => void;
 }
 
-const THEMES: readonly { theme: WorkspaceTheme; name: string }[] = [
+const THEMES: readonly { theme: AppTheme; name: string }[] = [
   { theme: "light", name: "Light" },
   { theme: "dark", name: "Dark" },
   { theme: "system", name: "Follow the system" },
@@ -56,8 +66,8 @@ export function candidateName(ix: Pick<IndexEntry, "phase" | "lattice_d">): stri
   return ix.lattice_d !== null ? `${ix.phase}, ${latticeParam(ix.phase)} ${ix.lattice_d.toFixed(1)} Å` : ix.phase;
 }
 
-const COLOR_OPTIONS: readonly FieldOption[] = LABEL_COLORS.map((c) => ({ value: c, label: LABEL_SWATCH[c].name, swatch: LABEL_SWATCH[c].solid }));
-const asColor = (v: string): LabelColor => LABEL_COLORS.find((c) => c === v) ?? LABEL_COLORS[0];
+const COLOR_OPTIONS: readonly FieldOption[] = USER_LABEL_COLORS.map((c) => ({ value: c, label: LABEL_SWATCH[c].name, swatch: LABEL_SWATCH[c].solid }));
+const asColor = (v: string): LabelColor => USER_LABEL_COLORS.find((c) => c === v) ?? USER_LABEL_COLORS[0]!;
 
 function newLabelForm(name: string, p: WorkspacePaletteInput): PaletteForm {
   return {
@@ -147,6 +157,27 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
       items: THEMES.map((t) => ({ id: `theme-${t.theme}`, label: t.name, hint: t.theme === p.theme.current ? "Current" : undefined, run: () => p.theme.choose(t.theme) })),
     },
   };
+  if (p.compare.subtractable.length > 0) {
+    pages.subtract = {
+      title: "Subtract",
+      arg: "Sample",
+      deep: true,
+      items: p.compare.subtractable.map((s) => ({
+        id: `subtract-${s.id}`,
+        label: s.name,
+        hint: s.id === p.compare.subtracted ? "Subtracted, Enter stops" : undefined,
+        run: () => p.compare.subtract(s.id),
+      })),
+    };
+  }
+  if (p.compare.compared.length > 0) {
+    pages.uncompare = {
+      title: "Stop comparing",
+      arg: "Sample",
+      deep: true,
+      items: p.compare.compared.map((s) => ({ id: `uncompare-${s.id}`, label: s.name, run: () => p.compare.remove(s.id) })),
+    };
+  }
   if (p.settings) pages.settings = settingsPage(p.settings);
   if (p.canEdit) {
     pages.bridge = {
@@ -193,7 +224,7 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
       title: "Label colour",
       arg: "Label",
       placeholder: "Pick a label",
-      items: p.labels.known.map((l) => ({
+      items: p.labels.known.filter((l) => !labelColorIsFixed(l.label)).map((l) => ({
         id: `colour-${l.label}`,
         label: l.name,
         swatch: LABEL_SWATCH[l.color].solid,
@@ -208,6 +239,8 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
     { id: "next-unreviewed", label: "Next unreviewed sample", shortcut: "Z", run: p.nextUnreviewed },
     ...(p.canEdit ? [{ id: "label", label: "Label", page: "label" }] : []),
     { id: "compare", label: "Compare with a sample", shortcut: "C", page: "compare" },
+    ...(pages.subtract ? [{ id: "subtract", label: "Subtract a comparison", page: "subtract" }] : []),
+    ...(pages.uncompare ? [{ id: "uncompare", label: "Stop comparing with a sample", page: "uncompare" }] : []),
     ...(p.canEdit ? [{ id: "bridge", label: "Bridge to a sample", page: "bridge" }] : []),
     ...(p.canEdit && p.bridge.bridged ? [{ id: "unbridge", label: "Take this sample out of its bridges", run: p.bridge.leave }] : []),
     ...(pages.tick ? [{ id: "tick", label: "Tick a candidate", hint: `${n} candidate${n === 1 ? "" : "s"}`, page: "tick" }] : []),
@@ -219,6 +252,7 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
     { id: "view", label: "Plot view", hint: current, page: "view" },
     { id: "zoom", label: "Reset zoom", shortcut: `${p.modKey} 0`, run: p.resetZoom },
     { id: "refs", label: p.comparisons.shown ? "Hide comparisons" : "Show comparisons", run: p.comparisons.toggle },
+    ...(p.difference ? [{ id: "difference", label: p.difference.on ? "Show the raw trace" : `Show minus ${p.difference.name}`, run: p.difference.toggle }] : []),
   ];
   const experiment: PaletteItem[] = [
     ...(pages.settings ? [{ id: "settings", label: "Settings", hint: "Name, description", page: "settings" }] : []),

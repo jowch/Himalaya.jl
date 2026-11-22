@@ -6,8 +6,6 @@ export type SampleStatus =
   | { kind: "form_factor" }
   | { kind: "phase"; phase: string };
 
-export const MAX_CANDIDATES = 9;
-
 export function sampleStatus(s: Pick<CorpusSample, "assignment_state" | "phase">): SampleStatus {
   if (s.assignment_state === "form_factor") return { kind: "form_factor" };
   if (s.assignment_state === "indexed" && s.phase) return { kind: "phase", phase: s.phase };
@@ -33,15 +31,14 @@ export function nextUnreviewed(
   return undefined;
 }
 
-export function rankCandidates(indices: readonly IndexEntry[] | undefined, limit = MAX_CANDIDATES): IndexEntry[] {
+export function rankCandidates(indices: readonly IndexEntry[] | undefined): IndexEntry[] {
   return (indices ?? [])
     .filter((ix) => ix.kind === "speculative" || ix.score !== null)
     .sort((a, b) => {
       const custom = Number(b.kind === "speculative") - Number(a.kind === "speculative");
       if (custom !== 0) return custom;
       return a.kind === "speculative" ? b.id - a.id : (b.score ?? 0) - (a.score ?? 0);
-    })
-    .slice(0, limit);
+    });
 }
 
 export function stepExposure(
@@ -52,6 +49,20 @@ export function stepExposure(
   const i = exposures.findIndex((e) => e.id === currentId);
   if (i < 0) return exposures[0]?.id;
   return exposures[Math.min(exposures.length - 1, Math.max(0, i + dir))]!.id;
+}
+
+export function nearestKeptExposure(
+  exposures: readonly Pick<Exposure, "id" | "status">[],
+  droppedId: number,
+): number | undefined {
+  const at = exposures.findIndex((e) => e.id === droppedId);
+  for (let d = 1; d < exposures.length; d++) {
+    for (const i of [at + d, at - d]) {
+      const e = exposures[i];
+      if (e && e.status !== "rejected") return e.id;
+    }
+  }
+  return undefined;
 }
 
 export function imageUrl(e: Pick<Exposure, "id" | "image_path" | "image_version">, thumb: boolean): string | null {

@@ -18,7 +18,7 @@ function input(over: Partial<WorkspacePaletteInput> = {}): WorkspacePaletteInput
     sampleName: "A1",
     canEdit: true,
     nextUnreviewed: noop,
-    compare: { samples: [], notes: new Map(), pick: noop },
+    compare: { samples: [], notes: new Map(), pick: noop, compared: [], remove: noop, subtractable: [], subtracted: undefined, subtract: noop },
     bridge: { samples: [], pick: noop, bridged: false, leave: noop },
     candidates: { list: [], ticked: new Set(), tick: noop },
     labels: { known: [], colorFor: () => "plum", toggle: noop, create: noop, recolour: noop },
@@ -101,13 +101,13 @@ describe("workspacePalette", () => {
     expect(row!.label).toBe("Create “dehydrated”");
     const form = row!.form!();
     expect(form.fields.map((f) => [f.label, f.value])).toEqual([["Name", "dehydrated"], ["Colour", "teal"]]);
-    expect(form.fields[1]!.options).toHaveLength(8);
+    expect(form.fields[1]!.options!.map((o) => o.value)).toEqual(["rose", "plum", "violet", "teal", "green"]);
     const name = form.fields[0]!;
     expect(name.check!("")).toBe("Type a name.");
     expect(name.check!("Retake")).toBe("That label exists. Pick it from the list.");
     expect(name.check!("dehydrated")).toBeUndefined();
-    form.submit({ name: "  dehydrated ", color: "ochre" });
-    expect(create).toHaveBeenCalledWith("dehydrated", "ochre");
+    form.submit({ name: "  dehydrated ", color: "green" });
+    expect(create).toHaveBeenCalledWith("dehydrated", "green");
   });
 
   it("labels rows say whether the label is on this sample, and Enter toggles it", () => {

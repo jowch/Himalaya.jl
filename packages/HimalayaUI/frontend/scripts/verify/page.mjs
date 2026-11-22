@@ -194,11 +194,26 @@ async function act(page, flags, action) {
   return { ...verdict(settle, flags), url: page.url(), settle };
 }
 
+const MODIFIERS = ["Alt", "Control", "ControlOrMeta", "Meta", "Shift"];
+
+export function parseModifiers(value) {
+  if (value === undefined) return [];
+  const mods = String(value).split(",").map((m) => m.trim()).filter(Boolean);
+  const bad = mods.filter((m) => !MODIFIERS.includes(m));
+  if (bad.length || mods.length === 0) throw new UsageError(`--modifiers takes a comma list of ${MODIFIERS.join(", ")}, got ${value}`);
+  return mods;
+}
+
 export async function click(cfg, flags) {
   checkHttpFlags(flags);
+  const modifiers = parseModifiers(flags.modifiers);
   return withPage(cfg, async (page) => {
     const target = await resolveOne(page, flags);
-    return { clicked: target.what, ...(await act(page, flags, () => target.loc.click({ timeout: 5000 }))) };
+    return {
+      clicked: target.what,
+      ...(modifiers.length ? { modifiers } : {}),
+      ...(await act(page, flags, () => target.loc.click({ timeout: 5000, modifiers }))),
+    };
   });
 }
 
