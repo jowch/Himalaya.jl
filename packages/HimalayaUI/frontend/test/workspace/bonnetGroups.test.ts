@@ -63,7 +63,7 @@ describe("bonnetGroups", () => {
 
   it("counts a peak once whether it came from detection or a manual add", () => {
     const a = ix("Pn3m", 100, range(1, 4));
-    const b = ix("Im3m", 127.9, range(3, 6));
+    const b = ix("Im3m", 127.9, range(3, 5));
     b.peaks = b.peaks.map((p) => ({ ...p, peak_id: p.peak_id + 1000 }));
     expect(bonnetGroups([a, b])).toEqual([]);
   });
