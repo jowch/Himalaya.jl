@@ -414,3 +414,96 @@ end
         @test all(hyb.sharpness .> 0)
     end
 end
+
+@testset "hybrid: a NaN beamstop adds no peak" begin
+    for L in (20, 40, 60), seed in 1:10
+        q, I, σ, _ = _hybrid_trace(; seed, peaks = false)
+        I[1:L] .= NaN
+        hyb = findpeaks(q, I, σ; method = :hybrid)
+        @test isempty(hyb.indices)
+        @test all(isnan, hyb.z[1:L])
+        @test isempty(findpeaks(q, I; method = :hybrid).indices)
+    end
+end
+
+# The standard strong peaks (Lorentzian, half-width γpts points) on the
+# standard background, sampled at n points.
+function _short_trace(seed, n; h = 2000.0, γpts = 3.0)
+    q = collect(range(0.01, 0.4; length = n))
+    dq = q[2] - q[1]
+    I = 6000.0 .* (q ./ 0.04) .^ (-4) .+ 30.0
+    for x in [0.07, 0.115, 0.16, 0.23, 0.3]
+        I .+= h ./ (1 .+ ((q .- x) ./ (γpts * dq)) .^ 2)
+    end
+    σ = sqrt.(I)
+    I .+= σ .* randn(MersenneTwister(seed), n)
+    q, I, σ
+end
+
+@testset "hybrid: strong peaks that cover much of a short trace are kept" begin
+    for n in (150, 160, 180, 200), seed in 1:5
+        q, I, σ = _short_trace(seed, n)
+        base = findpeaks(q, I, σ)
+        hyb  = findpeaks(q, I, σ; method = :hybrid)
+        @test issubset(base.indices, hyb.indices)
+    end
+end
+
+@testset "hybrid: a dense series of strong peaks is kept" begin
+    x = 1:HYB_N
+    centres = collect(60:35:(HYB_N - 100))
+    for seed in 1:5
+        I = fill(100.0, HYB_N)
+        for c in centres
+            I .+= 2000.0 .* exp.(-((x .- c) ./ 3.0) .^ 2 ./ 2)
+        end
+        σ = sqrt.(I)
+        I .+= σ .* randn(MersenneTwister(seed), HYB_N)
+        hyb = findpeaks(HYB_Q, I, σ; method = :hybrid)
+        @test all(c -> any(abs.(hyb.indices .- c) .<= 3), centres)
+    end
+end
+
+@testset "hybrid: no peak midway between two close peaks" begin
+    x = 1:HYB_N
+    for sep in (20, 24, 28), height in (300.0, 1000.0), seed in 1:5
+        centres = [400, 400 + sep]
+        I = 10.0 .* randn(MersenneTwister(seed), HYB_N)
+        for c in centres
+            I .+= height .* exp.(-((x .- c) ./ 3.0) .^ 2 ./ 2)
+        end
+        for hyb in (findpeaks(HYB_Q, I, fill(10.0, HYB_N); method = :hybrid),
+                    findpeaks(HYB_Q, I; method = :hybrid))
+            @test all(i -> any(abs.(i .- centres) .<= 3), hyb.indices)
+        end
+    end
+end
+
+# A broad Gaussian peak of `height` noise units at point 500 on the standard
+# background, with points `gap` set to `fillv`.
+function _gap_trace(seed, sd, height, gap, fillv)
+    x = 1:HYB_N
+    I = 6000.0 .* (HYB_Q ./ 0.04) .^ (-4) .+ 30.0
+    I .+= height * sqrt(I[500]) .* exp.(-((x .- 500) ./ sd) .^ 2 ./ 2)
+    σ = sqrt.(I)
+    I .+= σ .* randn(MersenneTwister(seed), HYB_N)
+    I[gap] .= fillv
+    I, σ
+end
+
+@testset "hybrid: a broad peak next to a masked run is kept where the default keeps it" begin
+    for sd in (8.0, 12.0), seed in 1:10
+        I, σ = _gap_trace(seed, sd, 30.0, 475:485, 0.0)
+        base = findpeaks(HYB_Q, I, σ)
+        hyb  = findpeaks(HYB_Q, I, σ; method = :hybrid)
+        @test issubset(base.indices, hyb.indices)
+    end
+end
+
+@testset "hybrid: no peak where a wide kernel's window clears a masked run" begin
+    for fillv in (NaN, 0.0), seed in 1:20
+        I, σ = _gap_trace(seed, 12.0, 30.0, 440:450, fillv)
+        hyb = findpeaks(HYB_Q, I, σ; method = :hybrid)
+        @test all(i -> abs(i - 500) <= 6, hyb.indices)
+    end
+end
