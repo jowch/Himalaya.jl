@@ -687,6 +687,17 @@ describe("WorkspacePage", () => {
     expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
   });
 
+  it("/ selects an earlier filter, so the next query replaces it", () => {
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "/" });
+    const filter = screen.getByRole("searchbox", { name: "Filter samples" }) as HTMLInputElement;
+    fireEvent.change(filter, { target: { value: "buffer" } });
+    filter.blur();
+    fireEvent.keyDown(window, { key: "/" });
+    expect(document.activeElement).toBe(filter);
+    expect([filter.selectionStart, filter.selectionEnd]).toEqual([0, "buffer".length]);
+  });
+
   it("Esc leaves a page field that has no Esc handling of its own", () => {
     renderAt("/experiments/1/workspace/10");
     const field = document.createElement("input");

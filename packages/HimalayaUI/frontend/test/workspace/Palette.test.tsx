@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { Palette } from "../../src/workspace/ui/palette/Palette";
 import { stepHighlight } from "../../src/workspace/ui/useListHighlight";
 import { DEEP_TITLE, cycleOption, rootRows, type PaletteForm, type PaletteGroup, type PalettePage } from "../../src/workspace/ui/palette/model";
@@ -400,5 +401,20 @@ describe("cycleOption", () => {
     fireEvent.keyDown(screen.getByRole("combobox"), { key: "Enter" });
     expect(screen.getAllByRole("option").map((o) => o.getAttribute("aria-label"))).toEqual(["Name, BL-19", "Description, None"]);
     expect(screen.getByRole("option", { name: "Description, None" })).toHaveTextContent("DescriptionNone");
+  });
+
+  it("opens a form with its current text selected, so typing replaces it", async () => {
+    const user = userEvent.setup();
+    submitted.length = 0;
+    const pages: Record<string, PalettePage> = {
+      settings: { title: "Settings", items: [{ id: "setup", label: "setup1", form: () => newLabel("setup1") }] },
+    };
+    render(<Palette groups={[{ title: "Experiment", items: [{ id: "settings", label: "Settings", page: "settings" }] }]} pages={pages} onClose={vi.fn()} />);
+    fireEvent.keyDown(screen.getByRole("combobox"), { key: "Enter" });
+    fireEvent.keyDown(screen.getByRole("combobox"), { key: "Enter" });
+    const name = screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement;
+    expect([name.selectionStart, name.selectionEnd]).toEqual([0, "setup1".length]);
+    await user.keyboard("Room temperature{Enter}");
+    expect(submitted).toEqual([{ name: "Room temperature", color: "teal" }]);
   });
 });

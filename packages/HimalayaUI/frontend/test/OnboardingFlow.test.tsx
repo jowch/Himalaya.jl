@@ -10,7 +10,7 @@ async function walkTutorial(): Promise<{ text: string; keys: string[] }> {
   const user = userEvent.setup();
   renderWithProviders(<OnboardingFlow />);
   await user.type(await screen.findByPlaceholderText("First name"), "Nora");
-  await user.type(screen.getByPlaceholderText("handle"), "nora");
+  await user.type(screen.getByTestId("onboarding-new-handle"), "nora");
   await user.click(screen.getByRole("button", { name: "Continue" }));
   const text: string[] = [];
   const keys: string[] = [];
@@ -51,7 +51,7 @@ describe("OnboardingFlow tutorial", () => {
     const user = userEvent.setup();
     const first = renderWithProviders(<OnboardingFlow />);
     await user.type(await screen.findByPlaceholderText("First name"), "Nora");
-    await user.type(screen.getByPlaceholderText("handle"), "nora");
+    await user.type(screen.getByTestId("onboarding-new-handle"), "nora");
     await user.click(screen.getByRole("button", { name: "Continue" }));
     await screen.findByTestId("onboarding-tutorial");
     first.unmount();
@@ -81,7 +81,7 @@ describe("OnboardingFlow tutorial", () => {
     const user = userEvent.setup();
     renderWithProviders(<OnboardingFlow />);
     await user.type(await screen.findByPlaceholderText("First name"), "Nora");
-    await user.type(screen.getByPlaceholderText("handle"), "nora");
+    await user.type(screen.getByTestId("onboarding-new-handle"), "nora");
     await user.click(screen.getByRole("button", { name: "Continue" }));
     await screen.findByTestId("onboarding-tutorial");
     await user.click(screen.getByRole("button", { name: "Next" }));
@@ -95,12 +95,45 @@ describe("OnboardingFlow tutorial", () => {
     const user = userEvent.setup();
     renderWithProviders(<OnboardingFlow />);
     await user.type(await screen.findByPlaceholderText("First name"), "Nora");
-    await user.type(screen.getByPlaceholderText("handle"), "nora");
+    await user.type(screen.getByTestId("onboarding-new-handle"), "nora");
     await user.click(screen.getByRole("button", { name: "Continue" }));
     await screen.findByTestId("onboarding-tutorial");
     await user.keyboard("{ArrowRight}");
     expect(screen.getByText(/2 of 3/)).toBeInTheDocument();
     await user.keyboard("{ArrowLeft}");
     expect(screen.getByText(/1 of 3/)).toBeInTheDocument();
+  });
+
+  it("derives the handle from the name when the handle is left empty", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<OnboardingFlow />);
+    await user.type(await screen.findByPlaceholderText("First name"), "José");
+    await user.type(screen.getByPlaceholderText("Last name"), "Ruiz");
+    const handle = screen.getByTestId("onboarding-new-handle");
+    expect(handle).toHaveValue("");
+    expect(handle).toHaveAttribute("placeholder", "jose");
+    expect(screen.getByTestId("onboarding-preview")).toHaveTextContent("José Ruiz @jose");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    expect(api.createUser).toHaveBeenCalledWith("jose", { first_name: "José", last_name: "Ruiz" }, { username: "jose" });
+    expect(screen.queryByText("Handle required")).toBeNull();
+  });
+
+  it("uses a typed handle instead of the derived one", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<OnboardingFlow />);
+    await user.type(await screen.findByPlaceholderText("First name"), "Nora");
+    await user.type(screen.getByTestId("onboarding-new-handle"), "nk");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    expect(api.createUser).toHaveBeenCalledWith("nk", { first_name: "Nora" }, { username: "nk" });
+  });
+
+  it("still asks for a handle when neither a name nor a handle is given", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<OnboardingFlow />);
+    await screen.findByPlaceholderText("First name");
+    expect(screen.getByTestId("onboarding-new-handle")).toHaveAttribute("placeholder", "handle");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    expect(await screen.findByText("Handle required")).toBeInTheDocument();
+    expect(api.createUser).not.toHaveBeenCalled();
   });
 });
