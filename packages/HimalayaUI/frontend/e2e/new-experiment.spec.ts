@@ -23,7 +23,10 @@ function setup(name: string, flight_path_m: number, exposures: number): object {
   };
 }
 
-async function mockFunnel(page: Page, created: unknown[]): Promise<void> {
+interface CreatedSetup { root: string; data_dir: string; included: boolean; geometry?: { flight_path_m?: number } }
+interface Created { name: string; path: string; setups: CreatedSetup[] }
+
+async function mockFunnel(page: Page, created: Created[]): Promise<void> {
   await page.addInitScript(() => {
     localStorage.setItem("himalaya-ui:state", JSON.stringify({ state: { username: "alice", tutorialSeen: true }, version: 5 }));
   });
@@ -38,21 +41,24 @@ async function mockFunnel(page: Page, created: unknown[]): Promise<void> {
   await page.route(/\/api\/fs\/preview\?/, (r) => {
     const path = new URL(r.request().url()).searchParams.get("path");
     return r.fulfill(json(path === "/lab/20261103"
-      ? { path, setups: [setup("setup1", 1.8095, 1220), setup("setup2", 0.5, 340)] }
-      : { path, setups: [] }));
+      ? { path, existing: null, setups: [setup("setup1", 1.8095, 1220), setup("setup2", 0.5, 340)] }
+      : { path, existing: null, setups: [] }));
   });
   await page.route((url) => url.pathname === "/api/experiments", (r) => {
     if (r.request().method() === "POST") {
-      const body = r.request().postDataJSON() as { name: string };
+      const body = r.request().postDataJSON() as Created;
       created.push(body);
-      return r.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ id: created.length, name: body.name, status: "scanning" }) });
+      return r.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ id: 1, name: body.name, status: "scanning" }) });
     }
     return r.fulfill(json([]));
   });
+  await page.route("**/api/experiments/1", (r) => r.fulfill(json({ id: 1, name: "20261103", path: "/lab/20261103", ingest_status: "scanning", setups: [] })));
+  await page.route("**/api/experiments/1/**", (r) => r.fulfill(json([])));
+  await page.route((url) => url.pathname === "/api/samples", (r) => r.fulfill(json([])));
 }
 
-test("a beamtime folder adds every setup as its own experiment", async ({ page }) => {
-  const created: { name: string; data_dir: string; geometry: { flight_path_m: number } }[] = [];
+test("a beamtime folder becomes one experiment holding every setup", async ({ page }) => {
+  const created: Created[] = [];
   await mockFunnel(page, created);
   await page.goto("/experiments/new");
   await page.getByTestId("dirpicker-input").locator("input").fill("/lab/20261103");
@@ -61,19 +67,19 @@ test("a beamtime folder adds every setup as its own experiment", async ({ page }
   await expect(rows.nth(0).getByTestId("setup-summary")).toHaveText("1,220 frames · flight path 1.81 m");
   await expect(rows.nth(1).getByTestId("setup-summary")).toHaveText("340 frames · flight path 0.50 m");
   await page.getByTestId("dirpicker-input").locator("input").press("ControlOrMeta+Enter");
-  await expect(page).toHaveURL(/\/experiments$/);
-  expect(created.map((c) => [c.name, c.data_dir, c.geometry.flight_path_m])).toEqual([
-    ["20261103/setup1", "/lab/20261103/setup1/data", 1.8095],
-    ["20261103/setup2", "/lab/20261103/setup2/data", 0.5],
+  await expect(page).toHaveURL(/\/experiments\/1/);
+  expect(created).toHaveLength(1);
+  expect(created[0]!.name).toBe("20261103");
+  expect(created[0]!.path).toBe("/lab/20261103");
+  expect(created[0]!.setups.map((s) => [s.data_dir, s.included, s.geometry?.flight_path_m])).toEqual([
+    ["/lab/20261103/setup1/data", true, 1.8095],
+    ["/lab/20261103/setup2/data", true, 0.5],
   ]);
 });
 
-test("⌘/Ctrl+Enter on a just-unticked setup adds only the ticked one and opens it", async ({ page }) => {
-  const created: { name: string }[] = [];
+test("⌘/Ctrl+Enter on a just-unticked setup sends it unticked and opens the experiment", async ({ page }) => {
+  const created: Created[] = [];
   await mockFunnel(page, created);
-  await page.route("**/api/experiments/1", (r) => r.fulfill(json({ id: 1, name: "20261103/setup1", ingest_status: "scanning" })));
-  await page.route("**/api/experiments/1/**", (r) => r.fulfill(json([])));
-  await page.route((url) => url.pathname === "/api/samples", (r) => r.fulfill(json([])));
   await page.goto("/experiments/new");
   await page.getByTestId("dirpicker-input").locator("input").fill("/lab/20261103");
   const second = page.getByTestId("setup-row").nth(1).getByRole("checkbox");
@@ -81,5 +87,9 @@ test("⌘/Ctrl+Enter on a just-unticked setup adds only the ticked one and opens
   await expect(second).toHaveAttribute("aria-checked", "false");
   await page.keyboard.press("ControlOrMeta+Enter");
   await expect(page).toHaveURL(/\/experiments\/1/);
-  expect(created.map((c) => c.name)).toEqual(["20261103/setup1"]);
+  expect(created).toHaveLength(1);
+  expect(created[0]!.setups.map((s) => [s.root, s.included])).toEqual([
+    ["/lab/20261103/setup1", true],
+    ["/lab/20261103/setup2", false],
+  ]);
 });

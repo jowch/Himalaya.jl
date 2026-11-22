@@ -112,6 +112,7 @@ make sysimage          # creates build/himalaya.so
 # creating an empty one if none exists. Create experiments in the UI (New experiment).
 bin/himalaya serve --port 8080
 bin/himalaya analyze -e <id|name|path>       # or --all; show takes -e too
+bin/himalaya merge <exp> <exp>... [--apply]   # one-time: fold per-setup experiments into one beamtime (dry run without --apply)
 
 # Without sysimage (slower cold start, no build required):
 julia --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARGS)' -- \

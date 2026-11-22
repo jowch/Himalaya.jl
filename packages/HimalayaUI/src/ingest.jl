@@ -417,7 +417,8 @@ returns. A few directory reads plus a stat per failed exposure, so it is cheap
 enough to run inside a request.
 """
 function ingest_has_work(db::SQLite.DB, experiment_id::Int)::Bool
-    !isempty(_insertable_stems(db, experiment_id)) || !isempty(pending_analysis_ids(db, experiment_id))
+    !isempty(_insertable_stems(db, experiment_id)) || !isempty(pending_analysis_ids(db, experiment_id)) ||
+        !isempty(new_setup_roots(db, experiment_id))
 end
 
 """

@@ -232,6 +232,7 @@ function run_ingest!(db::SQLite.DB, experiment_id::Int; phase::Union{String,Noth
             broadcast_progress!(experiment_id; kind = "ingest_started", processed = 0, total = 0, extra...)
             try
                 try_backfill_monitors!(db, experiment_id)
+                add_new_setups!(db, experiment_id)
                 scan_and_group!(db, experiment_id; retry_failed = force,
                     on_progress = (p, t, stage) -> broadcast_progress!(experiment_id;
                         kind = "ingest_progress", processed = p, total = t, stage = stage, extra...))

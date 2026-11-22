@@ -837,7 +837,7 @@ end
 
         bad_db = fresh_db()
         bad_id = HimalayaUI.create_experiment!(bad_db;
-            name = "missing-dir", path = dir,
+            name = "missing-dir", path = joinpath(dir, "does_not_exist"),
             data_dir = joinpath(dir, "does_not_exist"),
             analysis_dir = analysis_dir)
         @test HimalayaUI.ingest_has_work(bad_db, bad_id) == false
