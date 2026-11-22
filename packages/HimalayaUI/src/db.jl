@@ -226,6 +226,7 @@ CREATE TABLE IF NOT EXISTS peak_reviews (
     shown_detector TEXT NOT NULL,
     shown_model_id INTEGER,
     backfilled     INTEGER NOT NULL DEFAULT 0,
+    direct         INTEGER NOT NULL DEFAULT 0,
     peaks_json     TEXT NOT NULL
 );
 

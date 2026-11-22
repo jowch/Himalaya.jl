@@ -1,5 +1,5 @@
 """
-One reviewed exposure with the user's curation reduced to q values.
+One labelled exposure with the user's curation reduced to q values.
 
 - `adds`: peaks the user added by hand.
 - `kept`: peaks the user saw, left alone and the hybrid detector found
@@ -7,8 +7,9 @@ One reviewed exposure with the user's curation reduced to q values.
   and superseded ones.
 - `excluded`: q of every exclude the user recorded, whether or not a stored
   auto peak still matches it.
-- `reviewed`: an event pinned the exposure. `kept` is trusted as "the user
-  looked and accepted" on reviewed exposures.
+- `labelled`: the user acted on this exposure's own peaks or indexing (a direct
+  review snapshot). `kept` is trusted as "the user looked and accepted" on
+  labelled exposures.
 - `form_factor`: the sample was called form factor (no Bragg peaks expected).
 - `group`: cross-validation fold key, an experiment id by default.
 - `kept_model`: like `kept`, for peaks only a model found. They are not
@@ -24,13 +25,13 @@ struct LabeledExposure
     adds::Vector{Float64}
     kept::Vector{Float64}
     excluded::Vector{Float64}
-    reviewed::Bool
+    labelled::Bool
     form_factor::Bool
     kept_model::Vector{Float64}
 end
 
-LabeledExposure(id, group, q, I, σ, adds, kept, excluded, reviewed, form_factor) =
-    LabeledExposure(id, group, q, I, σ, adds, kept, excluded, reviewed, form_factor, Float64[])
+LabeledExposure(id, group, q, I, σ, adds, kept, excluded, labelled, form_factor) =
+    LabeledExposure(id, group, q, I, σ, adds, kept, excluded, labelled, form_factor, Float64[])
 
 match_tol(q, q_step) = peak_match_tol(q, q_step)
 
@@ -38,7 +39,7 @@ match_tol(q, q_step) = peak_match_tol(q, q_step)
 const POS, NEG, WEAK, DROP = 1, 0, -1, -2
 
 """
-    label_candidates(q, idx, adds, kept, excluded, reviewed, form_factor; kept_model = Float64[])
+    label_candidates(q, idx, adds, kept, excluded, labelled, form_factor; kept_model = Float64[])
         -> Vector{Int}
 
 Rules apply in order, first match wins:
@@ -51,14 +52,14 @@ Rules apply in order, first match wins:
 4. candidates within the tolerance of an exclude are strong negatives, whether
    or not a stored auto peak matches the exclude;
 5. remaining candidates on a form-factor exposure are strong negatives;
-6. remaining candidates on a reviewed exposure are weak negatives: the user
+6. remaining candidates on a labelled exposure are weak negatives: the user
    looked at the exposure and did not add them, but users do not add every
    faint peak.
 
 Other candidates are dropped. On a form-factor exposure only adds count as
 positives, and `kept_model` is ignored.
 """
-function label_candidates(q, idx, adds, kept, excluded, reviewed::Bool, form_factor::Bool;
+function label_candidates(q, idx, adds, kept, excluded, labelled::Bool, form_factor::Bool;
                           kept_model = Float64[])
     q_step = grid_step(q)
     lab = fill(DROP, length(idx))
@@ -80,7 +81,7 @@ function label_candidates(q, idx, adds, kept, excluded, reviewed::Bool, form_fac
             lab[m] = DROP
         elseif form_factor || near(x, excluded)
             lab[m] = NEG
-        elseif reviewed
+        elseif labelled
             lab[m] = WEAK
         end
     end
@@ -105,7 +106,7 @@ function build_dataset(exps::AbstractVector{LabeledExposure}; verbose::Bool = fa
     Threads.@threads for k in eachindex(exps)
         e = exps[k]
         idx, X, hyb = candidate_features(e.q, e.I, e.σ)
-        lab = label_candidates(e.q, idx, e.adds, e.kept, e.excluded, e.reviewed, e.form_factor;
+        lab = label_candidates(e.q, idx, e.adds, e.kept, e.excluded, e.labelled, e.form_factor;
                               kept_model = e.kept_model)
         parts[k] = (idx, X, lab, hyb)
     end

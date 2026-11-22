@@ -60,7 +60,7 @@ function build_loader_db(tmp)
     e_id = HimalayaUI.create_exposure!(db; experiment_id = exp_id, sample_id = s_id, filename = "ex_tot")
     HimalayaUI.analyze_exposure!(db, e_id, adir)
     DBInterface.execute(db, "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'add', 0.4)", [e_id])
-    HimalayaUI.record_review!(db, e_id)
+    HimalayaUI.record_review!(db, e_id; direct = true)
     (; db, path = db.file, e_id)
 end
 
@@ -86,7 +86,7 @@ end
     w = HimalayaUI.open_db(b.path)
     DBInterface.execute(w, "PRAGMA wal_autocheckpoint = 0")
     DBInterface.execute(w, "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'add', 0.45)", [b.e_id])
-    HimalayaUI.record_review!(w, b.e_id)
+    HimalayaUI.record_review!(w, b.e_id; direct = true)
     @test filesize(b.path * "-wal") > 0
     copy = joinpath(dst, "copy.db")
     cp(b.path, copy); cp(b.path * "-wal", copy * "-wal")

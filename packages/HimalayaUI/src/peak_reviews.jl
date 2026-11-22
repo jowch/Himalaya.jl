@@ -1,6 +1,7 @@
 const REVIEW_EXPOSURE_KINDS = ("peak_added", "peak_removed", "peak_excluded", "peak_unexcluded",
-    "assignment_add", "assignment_remove", "assignment_set_state",
-    "index_confirmed", "index_unconfirmed", "set_exposure_status")
+    "assignment_add", "assignment_remove", "assignment_set_state", "set_exposure_status")
+const DIRECT_REVIEW_KINDS = ("peak_added", "peak_removed", "peak_excluded", "peak_unexcluded",
+    "assignment_add", "assignment_remove", "assignment_set_state")
 const REVIEW_SAMPLE_KINDS = ("sample_call_set_state",)
 
 function review_exposure_ids(db::SQLite.DB, kind::AbstractString,
@@ -26,23 +27,25 @@ end
 function record_review!(db::SQLite.DB, exposure_id::Integer;
                         event_id::Union{Int,Nothing} = nothing,
                         at::AbstractString = now_iso(),
-                        backfilled::Bool = false)
+                        backfilled::Bool = false,
+                        direct::Bool = false)
     DBInterface.execute(db,
         "UPDATE exposures SET reviewed_at = ? WHERE id = ? AND reviewed_at IS NULL",
         [String(at), Int(exposure_id)])
     DBInterface.execute(db,
         """INSERT INTO peak_reviews
-               (exposure_id, event_id, created_at, shown_detector, shown_model_id, backfilled, peaks_json)
-           VALUES (?, ?, ?, ?, NULL, ?, ?)""",
+               (exposure_id, event_id, created_at, shown_detector, shown_model_id, backfilled, direct, peaks_json)
+           VALUES (?, ?, ?, ?, NULL, ?, ?, ?)""",
         [Int(exposure_id), event_id, String(at), ANALYSIS_VERSION, backfilled ? 1 : 0,
-         _snapshot_peaks_json(db, exposure_id)])
+         direct ? 1 : 0, _snapshot_peaks_json(db, exposure_id)])
     nothing
 end
 
 function record_event_reviews!(db::SQLite.DB, kind::AbstractString,
                                entity_type::AbstractString, entity_id::Integer, event_id::Integer)
+    direct = kind in DIRECT_REVIEW_KINDS && entity_type == "exposure"
     for id in review_exposure_ids(db, kind, entity_type, entity_id)
-        record_review!(db, id; event_id = Int(event_id))
+        record_review!(db, id; event_id = Int(event_id), direct)
     end
     nothing
 end
@@ -59,9 +62,13 @@ function migrate_peak_provenance!(db::SQLite.DB)
             DBInterface.execute(db, "ALTER TABLE auto_peaks ADD COLUMN model_id INTEGER")
         "reviewed_at" in cols_of(db, "exposures") ||
             DBInterface.execute(db, "ALTER TABLE exposures ADD COLUMN reviewed_at TEXT")
+        "direct" in cols_of(db, "peak_reviews") ||
+            DBInterface.execute(db, "ALTER TABLE peak_reviews ADD COLUMN direct INTEGER NOT NULL DEFAULT 0")
         migrated_at = now_iso()
         rows = Tables.rowtable(DBInterface.execute(db, """
             SELECT e.id,
+                   (EXISTS (SELECT 1 FROM peak_curations c WHERE c.exposure_id = e.id)
+                    OR EXISTS (SELECT 1 FROM assignment_members m WHERE m.exposure_id = e.id)) AS direct,
                    (SELECT strftime('%Y-%m-%dT%H:%M:%fZ', MIN(ua.timestamp)) FROM user_actions ua
                      WHERE ua.action IN ($_REVIEW_EVENT_KIND_SQL)
                        AND ((ua.entity_type = 'exposure' AND ua.entity_id = e.id)
@@ -76,7 +83,7 @@ function migrate_peak_provenance!(db::SQLite.DB)
         for r in rows
             record_review!(db, Int(r.id);
                            at = ismissing(r.first_event) ? migrated_at : String(r.first_event),
-                           backfilled = true)
+                           backfilled = true, direct = r.direct == 1)
         end
         _record_migration!(db, MIGRATION_PEAK_PROVENANCE)
     end

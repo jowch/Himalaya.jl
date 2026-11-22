@@ -36,12 +36,12 @@ function labeled_exposures(db::SQLite.DB; group_by::Symbol = :experiment,
     skips = Dict{Symbol, Int}()
     rows = Tables.rowtable(DBInterface.execute(db, """
         SELECT e.id, e.filename, e.sample_id, e.experiment_id,
-               e.reviewed_at IS NOT NULL AS reviewed,
+               EXISTS (SELECT 1 FROM peak_reviews r WHERE r.exposure_id = e.id AND r.direct = 1) AS labelled,
                COALESCE((SELECT sc.state = 'form_factor' FROM sample_calls sc
                           WHERE sc.sample_id = e.sample_id), 0) AS ff
           FROM exposures e
          WHERE e.status IS NOT 'rejected' AND e.kind = 'file'
-           AND (reviewed OR ($(include_form_factor ? 1 : 0) AND ff))
+           AND (labelled OR ($(include_form_factor ? 1 : 0) AND ff))
          ORDER BY e.id"""))
     for r in rows
         try
@@ -60,7 +60,7 @@ function labeled_exposures(db::SQLite.DB; group_by::Symbol = :experiment,
             excl = Float64[x.q for x in Tables.rowtable(DBInterface.execute(db,
                 "SELECT q FROM peak_curations WHERE exposure_id = ? AND kind = 'exclude' ORDER BY id", [r.id]))]
             push!(out, HimalayaPeakModel.LabeledExposure(r.id, Int(key), q, I, σ,
-                Float64[a.q for a in fl.adds], kept, excl, r.reviewed == 1, r.ff == 1, kept_model))
+                Float64[a.q for a in fl.adds], kept, excl, r.labelled == 1, r.ff == 1, kept_model))
         catch err
             err isa SkipExposure || rethrow()
             skips[err.reason] = get(skips, err.reason, 0) + 1

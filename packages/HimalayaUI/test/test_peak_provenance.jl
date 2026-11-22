@@ -36,8 +36,6 @@ _n_events(db) = only(Tables.rowtable(DBInterface.execute(db, "SELECT COUNT(*) AS
         ("assignment_add",       "exposure", fx -> Dict(:index_id => fx.ix)),
         ("assignment_remove",    "exposure", fx -> Dict(:index_id => fx.ix)),
         ("assignment_set_state", "exposure", fx -> Dict(:state => "null")),
-        ("index_confirmed",      "exposure", fx -> Dict(:index_id => fx.ix)),
-        ("index_unconfirmed",    "exposure", fx -> Dict(:index_id => fx.ix)),
         ("set_exposure_status",  "exposure", fx -> Dict(:status => "rejected")),
     ]
     for (kind, etype, payload) in cases
@@ -52,6 +50,7 @@ _n_events(db) = only(Tables.rowtable(DBInterface.execute(db, "SELECT COUNT(*) AS
             snap = only(_reviews(fx.db, e))
             @test snap.event_id == r.event_id
             @test snap.backfilled == 0
+            @test snap.direct == (kind == "set_exposure_status" ? 0 : 1)
             @test snap.shown_detector == HimalayaUI.ANALYSIS_VERSION
             @test ismissing(snap.shown_model_id)
             peaks = JSON3.read(snap.peaks_json)
@@ -138,6 +137,7 @@ end
         for e in fx.eids
             @test _reviewed(fx.db, e)
             @test only(_reviews(fx.db, e)).event_id == r.event_id
+            @test only(_reviews(fx.db, e)).direct == 0
         end
         @test !_reviewed(fx.db, fx.oid)
         @test isempty(_reviews(fx.db, fx.oid))
@@ -231,6 +231,7 @@ end
             @test _reviewed(db, id)
             snap = only(_reviews(db, id))
             @test snap.backfilled == 1 && ismissing(snap.event_id)
+            @test snap.direct == (id in (e.cur, e.asg) ? 1 : 0)
             @test snap.shown_detector == HimalayaUI.ANALYSIS_VERSION
             @test [p.found_by for p in JSON3.read(snap.peaks_json)] == ["hybrid"]
         end
