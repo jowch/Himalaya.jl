@@ -107,7 +107,7 @@ function createGeometry(g: api.ManifestGeometry, edits: Partial<Record<GeometryK
 }
 
 function summaryLine(s: api.SetupPreview, sum: Summary, setupFile: string): string {
-  const parts = [`${count(sum.exposures)} ${sum.exposures === 1 ? "exposure" : "exposures"}`];
+  const parts = [`${count(sum.exposures)} ${sum.exposures === 1 ? "frame" : "frames"}`];
   const fp = sum.geometry.flight_path_m;
   if (fp != null) parts.push(`flight path ${fp.toFixed(2)} m`);
   if (!s.layout_detected) parts.push("integration layout not recognised");

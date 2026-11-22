@@ -30,11 +30,9 @@ export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
   invalid?: boolean;
   /** Renders the inner input in monospace — for lattice/numeric fields. */
   mono?: boolean;
-  /** Overrides the wrapper's `data-testid`, default `"input"`; lets SearchInput
-   *  etc. keep their contract. */
+  /** Overrides the wrapper's `data-testid`, default `"input"`. */
   testId?: string;
-  /** Ref to the inner <input> — lets composers (e.g. SearchInput's clear
-   *  affordance) return focus to the field after acting on it. */
+  /** Ref to the inner <input>, so a composer can return focus to the field. */
   inputRef?: Ref<HTMLInputElement>;
 }
 
@@ -46,8 +44,7 @@ const sizeClass: Record<"sm" | "md", string> = {
 /** Base recessed text field (DESIGN.md §5 Inputs): a `plate` well with a
  *  `hair-strong` hairline and 5px radius. The accent ring lands on the whole
  *  field via `focus-within:border-accent` (the rationed accent-as-focus-mark,
- *  applied to the field rather than the bare input). The shared base for
- *  SearchInput, the scoping order-field, note entry, and the tag editor.
+ *  applied to the field rather than the bare input).
  *
  *  C — focus is the `focus-within:border-accent` ring; hover N/A (a field, not a
  *  button); disabled flows through `...rest`. Invalid = `border-error`, to be

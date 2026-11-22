@@ -20,13 +20,13 @@ export function DetectorOverlay({ exposures, currentId, onStep, onToggleDrop, on
   const index = exposures.findIndex((e) => e.id === currentId);
   const current = exposures[index];
   const dropped = current?.status === "rejected";
-  const onKey = (key: string): boolean => {
+  const onKey = (key: string, repeat: boolean): boolean => {
     if (key === "ArrowRight" || key === "ArrowLeft") {
       onStep(key === "ArrowRight" ? 1 : -1);
       return true;
     }
     if ((key === "x" || key === "X") && onToggleDrop) {
-      onToggleDrop();
+      if (!repeat) onToggleDrop();
       return true;
     }
     return false;
@@ -58,7 +58,7 @@ export function DetectorOverlay({ exposures, currentId, onStep, onToggleDrop, on
         <p className="m-0 flex w-full items-baseline justify-between gap-3 text-sm text-ink-soft" data-testid="workspace-detector-caption">
           <span>
             Frame {index + 1} of {exposures.length}
-            <span className="text-ink-faint"> · {current?.filename ?? `Exposure ${currentId}`}</span>
+            <span className="text-ink-faint"> · {current?.filename ?? "Unnamed frame"}</span>
           </span>
           {dropped && <span className="font-semibold text-ink line-through">dropped</span>}
         </p>
