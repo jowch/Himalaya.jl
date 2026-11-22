@@ -16,7 +16,7 @@ React 18 + Vite + TypeScript strict + TailwindCSS 4. TanStack Query for server s
 | App shell + routing | `print/shell/` | `AppShell`, `TopNav`, `AppRoutes`, `IndexSlugRedirect`, `StaleUrlPage`, `ResolvingFallback`, `OnboardingFlow`, `NavModal`, `InfrastructureBanner`. See [print/shell/AGENTS.md](print/shell/AGENTS.md) |
 | Composites | `print/components/` | Page-composing components (rails, plates, panels, rows, modals) built from the `ui/` primitives |
 | Triage workspace | `workspace/` | The three-pane workspace (`WorkspacePage` at `/experiments/:id/workspace/:sampleId?`, outside `AppShell`; pure `model.ts`). Its primitives live in `workspace/ui/`, which is appearance-exempt like `print/ui/`; `WorkspacePage` stays placement-only. The plot (`ui/WorkspacePlot.tsx`) draws the approved mock-up directly on `print/plot/PlotFrame` + `projection.ts`; there is no shared trace-plot engine any more. |
-| UI primitives | `print/ui/` | Closed-look design-system primitives (Button, Card, SegmentedControl, PhaseChip, PhaseStrip, ModalShell, Kicker, IconButton, ScoreBar, Dot, ToastContainer, HintText, …). Appearance lives here; consumer `className` is placement-only. See "Design system" below. |
+| UI primitives | `print/ui/` | Closed-look design-system primitives (Button, Card, PhaseChip, ModalShell, Kicker, IconButton, Dot, ToastContainer, …). Appearance lives here; consumer `className` is placement-only. See "Design system" below. |
 | Render layers | `print/{plot,detector}/` | Appearance-authoring render layers (plot frame and projection, detector image). The `lint:design` appearance guard excludes them |
 | Pages | `print/pages/` | `ExperimentsHomePage`, `NewExperimentPage` (under the single `AppShell`) |
 | Hooks | `hooks/` | `useFocusTrap`, `useStateFromUrl`, … |
@@ -61,7 +61,7 @@ Wrap any function that is both defined inside a component AND used as a `useEffe
 
 ## Design system — closed-look primitives + the design guard (ENFORCED)
 
-The Print's recurring patterns live as **closed-look** primitives in `print/ui/` (Button, Card, SegmentedControl, PhaseChip, PhaseStrip, ModalShell, Kicker, IconButton, ScoreBar, Dot, ToastContainer, HintText). They own their appearance via semantic props (`variant` / `size` / `tone` / domain props); a consumer's `className` is **placement-only** (margins, position, grid). To change how a primitive looks, build a variant *into the primitive* — the idiom is a `Record<Variant,string>` map + a tiny local `cx()` join helper (no cva/clsx/tailwind-merge). Don't restyle from the outside.
+The Print's recurring patterns live as **closed-look** primitives in `print/ui/` (Button, Card, PhaseChip, ModalShell, Kicker, IconButton, Dot, ToastContainer). They own their appearance via semantic props (`variant` / `size` / `tone` / domain props); a consumer's `className` is **placement-only** (margins, position, grid). To change how a primitive looks, build a variant *into the primitive* — the idiom is a `Record<Variant,string>` map + a tiny local `cx()` join helper (no cva/clsx/tailwind-merge). Don't restyle from the outside.
 
 **Ratchets (2026-11-19).** `npm run lint:ratchet` (`scripts/check-ratchets.mjs`, also in `npm run build`) counts two things per file against `scripts/ratchet-baseline.json` and fails if any count grows:
 
