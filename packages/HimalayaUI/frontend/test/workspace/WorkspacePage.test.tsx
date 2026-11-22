@@ -1517,7 +1517,7 @@ describe("WorkspacePage", () => {
     runFromPalette("label");
     const page = screen.getByRole("dialog", { name: "Label" });
     expect(within(page).getAllByRole("option").map((o) => o.getAttribute("aria-label"))).toEqual([
-      "37C, On this sample, Enter removes it",
+      "37C, On this sample. Press Enter to remove it.",
       "retake",
       "Buffer",
       "Calibrant",

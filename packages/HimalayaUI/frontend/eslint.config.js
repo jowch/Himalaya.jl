@@ -1,5 +1,6 @@
 import tseslint from "typescript-eslint";
 import reactHooks from "eslint-plugin-react-hooks";
+import uiCopy from "./scripts/eslint-ui-copy.mjs";
 
 export default tseslint.config(
   { ignores: ["dist/**", "dist-e2e/**", "storybook-static/**", "node_modules/**"] },
@@ -13,6 +14,12 @@ export default tseslint.config(
       "react-hooks/exhaustive-deps": "error",
       "no-console": ["error", { allow: ["warn", "error"] }],
     },
+  },
+  {
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: ["src/**/*.stories.tsx"],
+    plugins: { copy: uiCopy },
+    rules: { "copy/ui-copy": "error" },
   },
   {
     files: ["src/**/*.stories.tsx"],

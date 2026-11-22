@@ -54,6 +54,13 @@ describe("ui-copy lint rule", () => {
     expect(messages('const a = <div data-testid="frame-strip" className="frame" />;')).toEqual([]);
   });
 
+  it("checks prose-shaped strings anywhere, but not identifiers or paths", () => {
+    expect(messages('notify("This frame is dropped.");')[0]).toMatch(/image/);
+    expect(messages('const err = new Error(`Enter adds ${n} labels`);')[0]).toMatch(/telegraphic/);
+    expect(messages('fetch("/api/frames"); const k = ["exposure", id];')).toEqual([]);
+    expect(messages('const a = <input placeholder="Type to filter" />;')).toEqual([]);
+  });
+
   it("flags title case", () => {
     expect(messages('const a = <h2>Keyboard Shortcut Help</h2>;')[0]).toMatch(/sentence case/);
     expect(messages('const a = <h2>Keyboard shortcuts</h2>;')).toEqual([]);
