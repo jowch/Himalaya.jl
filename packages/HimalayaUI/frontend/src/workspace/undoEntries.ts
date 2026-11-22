@@ -117,16 +117,16 @@ export function dropEntry(
   ops: EditOps,
   at: Where & { exposureId: number; prev: Exposure["status"]; next: Exposure["status"] },
 ): UndoEntry {
+  const set = async (from: Exposure["status"], to: Exposure["status"]): Promise<number> => {
+    const hit = (await ops.read.exposures(at.sampleId)).find((e) => e.id === at.exposureId);
+    if (!hit || (hit.status ?? null) !== (from ?? null)) return 0;
+    ops.setStatus(at.sampleId, at.exposureId, to);
+    return 1;
+  };
   return {
     ...at,
-    undo: async () => {
-      ops.setStatus(at.sampleId, at.exposureId, at.prev);
-      return 1;
-    },
-    redo: async () => {
-      ops.setStatus(at.sampleId, at.exposureId, at.next);
-      return 1;
-    },
+    undo: () => set(at.next, at.prev),
+    redo: () => set(at.prev, at.next),
   };
 }
 
@@ -226,16 +226,16 @@ export function labelColorEntry(
   ops: EditOps,
   at: Where & { tag: string; prev: LabelColor | null; next: LabelColor | null },
 ): UndoEntry {
+  const set = async (from: LabelColor | null, to: LabelColor | null): Promise<number> => {
+    const stored = (await ops.read.labelColors()).find((e) => sameLabel(e.label, at.tag))?.color ?? null;
+    if (stored !== from) return 0;
+    ops.setLabelColor(at.tag, to);
+    return 1;
+  };
   return {
     ...at,
-    undo: async () => {
-      ops.setLabelColor(at.tag, at.prev);
-      return 1;
-    },
-    redo: async () => {
-      ops.setLabelColor(at.tag, at.next);
-      return 1;
-    },
+    undo: () => set(at.next, at.prev),
+    redo: () => set(at.prev, at.next),
   };
 }
 

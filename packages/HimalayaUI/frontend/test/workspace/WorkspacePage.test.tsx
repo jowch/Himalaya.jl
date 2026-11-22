@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, render, screen, fireEvent, within } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
-import type { CorpusSample, Exposure, IndexEntry, Assignment, Peak, ProblemExposure, SampleBridge, SampleCall, SampleLabel, LabelColorEntry, Trace } from "../../src/api";
+import type { CorpusSample, Exposure, IndexEntry, Assignment, Peak, ProblemExposure, SampleBridge, SampleCall, SampleLabel, LabelColorEntry, LabelColor, Trace } from "../../src/api";
 import { ApiError } from "../../src/api";
 import { WorkspacePage } from "../../src/workspace/WorkspacePage";
 import type { PrefetchTarget } from "../../src/workspace/prefetch";
@@ -69,14 +69,24 @@ const server = {
   assignments: new Map<number, Assignment>(),
   saving: false,
   saved: undefined as (() => void) | undefined,
+  status: new Map<number, Exposure["status"]>(),
+  colors: new Map<string, LabelColor | null>(),
   experiment: { name: "BL-19", description: null as string | null },
+};
+const serverStatus = (sid: number, eid: number, status: Exposure["status"]) => {
+  server.status.set(eid, status);
+  calls.push({ hook: "op:setStatus", boundTo: 0, arg: [sid, eid, status] });
+};
+const serverColor = (label: string, color: LabelColor | null) => {
+  server.colors.set(label.toLowerCase(), color);
+  calls.push({ hook: "op:setLabelColor", boundTo: 0, arg: [label, color] });
 };
 const editOp = (name: string) => (...args: unknown[]) => calls.push({ hook: `op:${name}`, boundTo: 0, arg: args });
 const editOps = {
   addPhase: editOp("addPhase"),
   removePhase: editOp("removePhase"),
   setCallState: editOp("setCallState"),
-  setStatus: editOp("setStatus"),
+  setStatus: serverStatus,
   addPeak: editOp("addPeak"),
   removePeak: editOp("removePeak"),
   setPeakExcluded: editOp("setPeakExcluded"),
@@ -85,7 +95,7 @@ const editOps = {
   addLabel: editOp("addLabel"),
   removeLabel: editOp("removeLabel"),
   restoreLabelSuggestion: editOp("restoreLabelSuggestion"),
-  setLabelColor: editOp("setLabelColor"),
+  setLabelColor: serverColor,
   patchExperiment: editOp("patchExperiment"),
   bridge: editOp("bridge"),
   unbridge: editOp("unbridge"),
@@ -103,6 +113,15 @@ const editOps = {
       ?? { exposure_id: eid, state: "null" as const, members: [] },
     labels: async () => state.labels,
     bridges: async () => state.bridges,
+    exposures: async () => state.exposures.map((e) => (server.status.has(e.id) ? { ...e, status: server.status.get(e.id)! } : e)),
+    labelColors: async () => {
+      const merged = new Map(state.labelColors.map((e) => [e.label.toLowerCase(), e]));
+      for (const [k, color] of server.colors) {
+        if (color === null) merged.delete(k);
+        else merged.set(k, { label: merged.get(k)?.label ?? k, color });
+      }
+      return [...merged.values()];
+    },
     experiment: async () => ({ id: 1, ...server.experiment }),
     compares: async () => compareStore.data,
   },
@@ -151,11 +170,21 @@ vi.mock("../../src/queries", () => ({
   useAddLabel: recorder("addLabel"),
   useRemoveLabel: recorder("removeLabel"),
   useLabelColors: () => ({ data: state.labelColors }),
-  useSetLabelColor: () => ({ mutate: (arg: unknown) => calls.push({ hook: "setLabelColor", boundTo: 0, arg }) }),
+  useSetLabelColor: () => ({
+    mutate: (arg: { label: string; color: LabelColor | null }) => {
+      server.colors.set(arg.label.toLowerCase(), arg.color);
+      calls.push({ hook: "setLabelColor", boundTo: 0, arg });
+    },
+  }),
   useAddAssignmentPhase: recorder("add"),
   useRemoveAssignmentPhase: recorder("remove"),
   useSetSampleCallState: recorder("state"),
-  useSetExposureStatus: recorder("status"),
+  useSetExposureStatus: (boundTo: number) => ({
+    mutate: (arg: { exposureId: number; status: Exposure["status"] }, callbacks?: Callbacks) => {
+      server.status.set(arg.exposureId, arg.status);
+      calls.push({ hook: "status", boundTo, arg, ...(callbacks ? { callbacks } : {}) });
+    },
+  }),
   useAddPeak: recorder("addPeak"),
   useRemovePeak: recorder("removePeak"),
   useSetPeakExcluded: recorder("excludePeak"),
@@ -259,7 +288,7 @@ function currentFrame(): string | null {
 }
 
 afterEach(() => {
-  window.localStorage.removeItem("himalaya-ui:workspace-theme");
+  window.localStorage.removeItem("himalaya-ui:theme");
   window.localStorage.removeItem("himalaya-ui:workspace-plot-view");
 });
 
@@ -300,6 +329,8 @@ beforeEach(() => {
   server.assignments = new Map();
   server.saving = false;
   server.saved = undefined;
+  server.status = new Map();
+  server.colors = new Map();
   server.experiment = { name: "BL-19", description: null };
   rescans.length = 0;
   removals.length = 0;
@@ -381,7 +412,7 @@ describe("WorkspacePage", () => {
     expect(screen.queryByRole("dialog", { name: "Detector image" })).toBeNull();
   });
 
-  it("flips through frames inside the enlarged view and drops one without closing it", () => {
+  it("flips through frames inside the enlarged view, and dropping one moves to the nearest kept frame without closing it", () => {
     state.exposures = [
       exposure(100, { image_path: "/a.tif" }),
       exposure(101, { selected: true, image_path: "/b.tif" }),
@@ -400,9 +431,11 @@ describe("WorkspacePage", () => {
     fireEvent.keyDown(dialog, { key: "ArrowLeft" });
     expect(caption).toHaveTextContent("Frame 1 of 3");
     fireEvent.keyDown(dialog, { key: "x" });
+    fireEvent.keyDown(dialog, { key: "x", repeat: true });
     expect(calls.filter((c) => c.hook === "status").map((c) => c.arg)).toEqual([{ exposureId: 100, status: "rejected" }]);
     expect(screen.getByRole("dialog", { name: "Detector image" })).toBeInTheDocument();
-    expect(currentFrame()).toBe("Frame 1");
+    expect(caption).toHaveTextContent("Frame 2 of 3");
+    expect(currentFrame()).toBe("Frame 2");
   });
 
   it("does not drop from the enlarged view before a user is set", () => {
@@ -513,7 +546,7 @@ describe("WorkspacePage", () => {
     expect(screen.queryByTestId("workspace-notice")).toBeNull();
   });
 
-  it("counts exposures waiting for a trace and failed analyses, and a problem opens its sample", () => {
+  it("counts frames waiting for a trace and failed analyses, and a problem opens its sample", () => {
     state.problems = {
       ingest_error: null,
       exposures: [
@@ -524,7 +557,7 @@ describe("WorkspacePage", () => {
     };
     renderAt("/experiments/1/workspace/10");
     const notice = screen.getByTestId("workspace-notice");
-    expect(within(notice).getByTestId("workspace-ingest-status")).toHaveTextContent("2 exposures waiting for a trace · 1 analysis failed");
+    expect(within(notice).getByTestId("workspace-ingest-status")).toHaveTextContent("2 frames waiting for a trace · 1 analysis failed");
     fireEvent.click(within(notice).getByRole("button", { name: "Details" }));
     const rows = screen.getAllByTestId("problem-row");
     expect(rows).toHaveLength(3);
@@ -670,7 +703,7 @@ describe("WorkspacePage", () => {
     ] };
     renderAt("/experiments/1/workspace/10");
     expect(screen.getByTestId("workspace-trace-empty").textContent).toBe("Waiting for this frame's trace.");
-    expect(screen.getByTestId("workspace-ingest-status")).toHaveTextContent("1 exposure waiting for a trace");
+    expect(screen.getByTestId("workspace-ingest-status")).toHaveTextContent("1 frame waiting for a trace");
   });
 
   it("keeps saying no integrated trace when only another frame is pending", () => {
@@ -709,23 +742,62 @@ describe("WorkspacePage", () => {
     expect(calls).toEqual([{ hook: "add", boundTo: 100, arg: 1 }]);
   });
 
-  it("X drops the shown frame and keeps it in view, so a second X restores it", () => {
+  it("X drops the shown frame and shows the nearest kept frame, so a phase key calls there", () => {
     const { rerender } = renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "x" });
     expect(calls[0]).toEqual({ hook: "status", boundTo: 10, arg: { exposureId: 101, status: "rejected" } });
     state.exposures = [exposure(100), exposure(101, { selected: true, status: "rejected" })];
     rerender(page("/experiments/1/workspace/10"));
-    expect(currentFrame()).toBe("Frame 2, dropped");
-    fireEvent.keyDown(window, { key: "x" });
-    expect(calls[1]).toEqual({ hook: "status", boundTo: 10, arg: { exposureId: 101, status: null } });
+    expect(currentFrame()).toBe("Frame 1");
+    fireEvent.keyDown(window, { key: "2" });
+    expect(calls[1]).toEqual({ hook: "add", boundTo: 100, arg: 1 });
   });
 
-  it("every exposure card has its own Drop button, which drops that frame and shows it", () => {
+  it("X on a dropped frame restores it and keeps it in view", () => {
+    state.exposures = [exposure(100), exposure(101, { selected: true, status: "rejected" })];
     renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(currentFrame()).toBe("Frame 2, dropped");
+    fireEvent.keyDown(window, { key: "x" });
+    expect(calls[0]).toEqual({ hook: "status", boundTo: 10, arg: { exposureId: 101, status: null } });
+    expect(currentFrame()).toBe("Frame 2, dropped");
+  });
+
+  it("X keeps the dropped frame in view when no other frame is kept", () => {
+    state.exposures = [exposure(100, { status: "rejected" }), exposure(101, { selected: true })];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "x" });
+    expect(calls[0]).toEqual({ hook: "status", boundTo: 10, arg: { exposureId: 101, status: "rejected" } });
+    expect(currentFrame()).toBe("Frame 2");
+  });
+
+  it("a card's Drop button drops that frame and leaves the view on the shown one", () => {
+    state.exposures = [exposure(100), exposure(101), exposure(102, { selected: true })];
+    renderAt("/experiments/1/workspace/10");
+    expect(currentFrame()).toBe("Frame 3");
     const cards = within(screen.getByTestId("workspace-exposures")).getAllByRole("listitem");
     fireEvent.click(within(cards[0]!).getByRole("button", { name: "Drop" }));
     expect(calls[0]).toEqual({ hook: "status", boundTo: 10, arg: { exposureId: 100, status: "rejected" } });
-    expect(currentFrame()).toBe("Frame 1");
+    expect(currentFrame()).toBe("Frame 3");
+  });
+
+  it("the shown frame's own Drop button moves to the nearest kept frame", () => {
+    state.exposures = [exposure(100), exposure(101), exposure(102, { selected: true })];
+    renderAt("/experiments/1/workspace/10");
+    const cards = within(screen.getByTestId("workspace-exposures")).getAllByRole("listitem");
+    fireEvent.click(within(cards[2]!).getByRole("button", { name: "Drop" }));
+    expect(calls[0]).toEqual({ hook: "status", boundTo: 10, arg: { exposureId: 102, status: "rejected" } });
+    expect(currentFrame()).toBe("Frame 2");
+  });
+
+  it("holding X drops only the shown frame, not a run of frames", () => {
+    state.exposures = [exposure(100), exposure(101), exposure(102, { selected: true })];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "x" });
+    fireEvent.keyDown(window, { key: "x", repeat: true });
+    fireEvent.keyDown(window, { key: "x", repeat: true });
+    expect(calls.filter((c) => c.hook === "status")).toHaveLength(1);
+    expect(currentFrame()).toBe("Frame 2");
   });
 
   describe("undo and redo", () => {
@@ -809,6 +881,75 @@ describe("WorkspacePage", () => {
       await press({ key: "z", metaKey: true });
       expect(ops()).toEqual([["setStatus", 10, 101, null]]);
       expect(toasts.at(-1)).toBe("Undone: dropped frame 2 of A1");
+    });
+
+    it("leaves a frame alone when someone else restored it before the undo", async () => {
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "x" });
+      server.status.set(101, null);
+      await undo();
+      expect(ops()).toEqual([]);
+      expect(toasts.at(-1)).toBe("Already that way, nothing to undo: dropped frame 2 of A1");
+    });
+
+    it("leaves a label's colour alone when someone else recoloured it before the undo", async () => {
+      state.labels = [{ id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" }];
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.contextMenu(screen.getByTestId("workspace-label-chips").querySelector("[data-label='37C']")!);
+      fireEvent.click(within(screen.getByRole("dialog", { name: "Colour of label 37C" })).getByRole("radio", { name: "Teal" }));
+      server.colors.set("37c", "green");
+      await undo();
+      expect(ops()).toEqual([]);
+      expect(toasts.at(-1)).toBe("Already that way, nothing to undo: recoloured the label 37C");
+    });
+
+    it("redoes a drop only while the frame is still how the undo left it", async () => {
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "x" });
+      await undo();
+      server.status.set(101, "rejected");
+      calls.length = 0;
+      await redo();
+      expect(ops()).toEqual([]);
+      expect(toasts.at(-1)).toBe("Already that way, nothing to redo: dropped frame 2 of A1");
+    });
+
+    it("redoes a label recolour only while the label still has the colour the undo restored", async () => {
+      state.labels = [{ id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" }];
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.contextMenu(screen.getByTestId("workspace-label-chips").querySelector("[data-label='37C']")!);
+      fireEvent.click(within(screen.getByRole("dialog", { name: "Colour of label 37C" })).getByRole("radio", { name: "Teal" }));
+      await undo();
+      server.colors.set("37c", "green");
+      calls.length = 0;
+      await redo();
+      expect(ops()).toEqual([]);
+      expect(toasts.at(-1)).toBe("Already that way, nothing to redo: recoloured the label 37C");
+    });
+
+    it("redoes a rename only while the server still holds the name the undo restored", async () => {
+      renderAt("/experiments/1/workspace/10");
+      runFromPalette("settings", "name");
+      const name = within(screen.getByRole("dialog", { name: "Name" })).getByRole("textbox", { name: "Name" });
+      fireEvent.change(name, { target: { value: "BL-20" } });
+      fireEvent.keyDown(name, { key: "Enter" });
+      server.experiment = { name: "BL-20", description: null };
+      await undo();
+      server.experiment = { name: "BL-21", description: null };
+      calls.length = 0;
+      await redo();
+      expect(ops()).toEqual([]);
+      expect(toasts.at(-1)).toBe("Already that way, nothing to redo: renamed the experiment to BL-20");
+    });
+
+    it("undoes recolouring a label while it still has the colour this edit set", async () => {
+      state.labels = [{ id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" }];
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.contextMenu(screen.getByTestId("workspace-label-chips").querySelector("[data-label='37C']")!);
+      fireEvent.click(within(screen.getByRole("dialog", { name: "Colour of label 37C" })).getByRole("radio", { name: "Teal" }));
+      await undo();
+      expect(ops()).toEqual([["setLabelColor", "37C", null]]);
+      expect(toasts.at(-1)).toBe("Undone: recoloured the label 37C");
     });
 
     it("ignores a held-down Ctrl+Z", async () => {
@@ -1277,7 +1418,7 @@ describe("WorkspacePage", () => {
     expect(row.querySelector("[data-testid='workspace-label-chips'] [data-label]")).toBeNull();
   });
 
-  it("colours each label from the shared map, built-ins blue and other labels violet by default", () => {
+  it("colours each label from the shared map, system labels their system colour and other labels violet by default", () => {
     state.labels = [
       { id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" },
       { id: 2, sample_id: 10, label: "buffer", state: "confirmed", source: "user" },
@@ -1320,6 +1461,24 @@ describe("WorkspacePage", () => {
     fireEvent.click(within(form).getByRole("option", { name: "Green" }));
     fireEvent.keyDown(colour, { key: "Enter" });
     expect(calls).toEqual([{ hook: "setLabelColor", boundTo: 0, arg: { label: "retake", color: "green" } }]);
+  });
+
+  it("system labels keep their own colours: no colour menu, and no row on the palette's colour page", () => {
+    state.labels = [
+      { id: 1, sample_id: 10, label: "buffer", state: "confirmed", source: "user" },
+      { id: 2, sample_id: 10, label: "Calibrant", state: "confirmed", source: "user" },
+      { id: 3, sample_id: 10, label: "retake", state: "confirmed", source: "user" },
+    ];
+    state.labelColors = [{ label: "buffer", color: "rose" }];
+    renderAt("/experiments/1/workspace/10");
+    const chips = screen.getByTestId("workspace-label-chips");
+    expect(chips.querySelector("[data-label='buffer']")).toHaveAttribute("data-label-color", "blue");
+    expect(chips.querySelector("[data-label='Calibrant']")).toHaveAttribute("data-label-color", "ochre");
+    fireEvent.contextMenu(chips.querySelector("[data-label='buffer']")!);
+    expect(screen.queryByRole("dialog", { name: /^Colour of label/ })).toBeNull();
+    runFromPalette("label colour");
+    const page = screen.getByRole("dialog", { name: "Label colour" });
+    expect(within(page).getAllByRole("option").map((o) => o.getAttribute("aria-label"))).toEqual(["retake, 1 sample"]);
   });
 
   it("the palette's Settings page renames the experiment and sets its description", () => {
@@ -2028,21 +2187,21 @@ describe("WorkspacePage", () => {
   it("the palette's theme page switches the workspace to dark and back, remembers it, and can follow the system again", () => {
     const { unmount } = renderAt("/experiments/1/workspace/10");
     const root = screen.getByTestId("workspace");
-    expect(root).toHaveAttribute("data-workspace-theme", "system");
+    expect(root).toHaveAttribute("data-theme", "system");
     runFromPalette("theme", "dark");
-    expect(root).toHaveAttribute("data-workspace-theme", "dark");
+    expect(root).toHaveAttribute("data-theme", "dark");
     unmount();
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByTestId("workspace")).toHaveAttribute("data-workspace-theme", "dark");
+    expect(screen.getByTestId("workspace")).toHaveAttribute("data-theme", "dark");
     runFromPalette("theme");
     expect(screen.getByRole("option", { name: "Dark, Current" })).toBeInTheDocument();
     const input = screen.getByRole("combobox", { name: "Theme" });
     fireEvent.change(input, { target: { value: "light" } });
     fireEvent.keyDown(input, { key: "Enter" });
-    expect(screen.getByTestId("workspace")).toHaveAttribute("data-workspace-theme", "light");
+    expect(screen.getByTestId("workspace")).toHaveAttribute("data-theme", "light");
     runFromPalette("theme", "system");
-    expect(screen.getByTestId("workspace")).toHaveAttribute("data-workspace-theme", "system");
-    expect(window.localStorage.getItem("himalaya-ui:workspace-theme")).toBeNull();
+    expect(screen.getByTestId("workspace")).toHaveAttribute("data-theme", "system");
+    expect(window.localStorage.getItem("himalaya-ui:theme")).toBeNull();
     runFromPalette("theme");
     expect(screen.getByRole("option", { name: "Follow the system, Current" })).toBeInTheDocument();
   });
@@ -2147,16 +2306,16 @@ describe("WorkspacePage", () => {
   it("titles the phase list Call and the exposure details Exposure", () => {
     renderAt("/experiments/1/workspace/10");
     expect(screen.getByRole("heading", { name: "Call" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Exposure" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Frame" })).toBeInTheDocument();
   });
 
-  it("folds Call and Exposure as an accordion on a short window, and opening a custom index shows it in place of Call", () => {
+  it("folds Call and Frame as an accordion on a short window, and opening a custom index shows it in place of Call", () => {
     vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(max-height: 860px)", media: query, addEventListener: () => {}, removeEventListener: () => {} }));
     try {
       renderAt("/experiments/1/workspace/10");
       const tools = screen.getByRole("complementary", { name: "Tools" });
       const call = within(tools).getByRole("button", { name: /Call/ });
-      const exposure = within(tools).getByRole("button", { name: /Exposure/ });
+      const exposure = within(tools).getByRole("button", { name: /^Frame/ });
       expect(call).toHaveAttribute("aria-expanded", "true");
       expect(exposure).toHaveAttribute("aria-expanded", "false");
       expect(within(tools).queryByText("File")).toBeNull();
@@ -2166,19 +2325,19 @@ describe("WorkspacePage", () => {
       expect(within(tools).getByText("File")).toBeInTheDocument();
       fireEvent.click(screen.getByRole("button", { name: /Custom index/ }));
       expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
-      expect(within(tools).queryByRole("button", { name: /Exposure/ })).toBeNull();
-      expect(within(tools).getByRole("heading", { name: /Exposure/ })).toBeInTheDocument();
+      expect(within(tools).queryByRole("button", { name: /^Frame/ })).toBeNull();
+      expect(within(tools).getByRole("heading", { name: /^Frame/ })).toBeInTheDocument();
       expect(within(tools).queryByText("File")).toBeNull();
     } finally {
       vi.unstubAllGlobals();
     }
   });
 
-  it("puts the indexing plot first in the tools column, above the phase list", () => {
+  it("puts the Call list first in the tools column, then the indexing plot, then the exposure", () => {
     renderAt("/experiments/1/workspace/10");
     const tools = screen.getByRole("complementary", { name: "Tools" });
     const headings = within(tools).getAllByRole("heading").map((h) => h.textContent);
-    expect(headings).toEqual(["Indexing", "Call", "Exposure"]);
+    expect(headings).toEqual(["Call", "Indexing", "Frame"]);
   });
 
   it("the Custom index button in the indexing section opens a custom index", () => {
@@ -2200,7 +2359,7 @@ describe("WorkspacePage", () => {
   it("lists every exposure field, with a dash for the ones the frame lacks, so the section keeps its height", () => {
     state.exposures = [exposure(100), exposure(101, { selected: true })];
     renderAt("/experiments/1/workspace/10");
-    const section = screen.getByRole("heading", { name: "Exposure" }).closest("section")!;
+    const section = screen.getByRole("heading", { name: "Frame" }).closest("section")!;
     const text = section.textContent ?? "";
     expect(text).toContain("KindSingle");
     expect(text).toContain("Exposure—");
@@ -2211,7 +2370,7 @@ describe("WorkspacePage", () => {
   it("lists the shown exposure's time, I₀ and I signal under the .prp names", () => {
     state.exposures = [exposure(100), exposure(101, { selected: true, exposure_time: 10, incident_monitor: 1.5007, transmitted_counts: 7798.4 })];
     renderAt("/experiments/1/workspace/10");
-    const section = screen.getByRole("heading", { name: "Exposure" }).closest("section")!;
+    const section = screen.getByRole("heading", { name: "Frame" }).closest("section")!;
     const text = section.textContent ?? "";
     expect(text).toContain("Exposure10.0 s");
     expect(text).toContain("I₀1.501");
@@ -2223,7 +2382,7 @@ describe("WorkspacePage", () => {
       selected: true, timestamp: "2026-04-26T18:20:27", pipe_length_m: 0.7, beam_energy_ev: 11000.2, detector: "Area detector",
     })];
     renderAt("/experiments/1/workspace/10");
-    const section = screen.getByRole("heading", { name: "Exposure" }).closest("section")!;
+    const section = screen.getByRole("heading", { name: "Frame" }).closest("section")!;
     const text = section.textContent ?? "";
     expect(text).toContain("Acquired2026-04-26 18:20:27");
     expect(text).toContain("Flight tube700 mm");
@@ -2233,7 +2392,7 @@ describe("WorkspacePage", () => {
 
   it("keeps the new .prp rows with a dash when the frame has no .prp", () => {
     renderAt("/experiments/1/workspace/10");
-    const text = screen.getByRole("heading", { name: "Exposure" }).closest("section")!.textContent ?? "";
+    const text = screen.getByRole("heading", { name: "Frame" }).closest("section")!.textContent ?? "";
     for (const k of ["Acquired", "Flight tube", "Energy", "Detector"]) expect(text).toContain(`${k}—`);
   });
 

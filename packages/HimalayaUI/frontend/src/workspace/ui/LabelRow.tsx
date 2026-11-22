@@ -48,7 +48,7 @@ function Chip({ entry, editable, color, measure = false, onAdd, onRemove, onOpen
       data-label-standard={standard && !measure ? "true" : undefined}
       data-label-color={measure ? undefined : color}
       onContextMenu={
-        editable && onOpenColor
+        editable && onOpenColor && !standard
           ? (e) => {
               e.preventDefault();
               onOpenColor(entry.label);

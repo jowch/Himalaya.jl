@@ -16,7 +16,7 @@ interface Props {
 export function CandidateList({ candidates, assigned, disabled, formFactor, onToggle, onFormFactor, onHover }: Props): JSX.Element {
   return (
     <div className="flex flex-col gap-1">
-      {candidates.length === 0 && <Note>No candidate indices for this exposure.</Note>}
+      {candidates.length === 0 && <Note>No candidate indices for this frame.</Note>}
       {candidates.length > 0 && <Rows candidates={candidates} assigned={assigned} disabled={disabled} onToggle={onToggle} onHover={onHover} />}
       <button
         type="button"
@@ -55,7 +55,7 @@ function Rows({ candidates, assigned, disabled, onToggle, onHover }: Omit<Props,
                 (on ? "border-ink-soft bg-paper-sunk" : "border-transparent hover:border-hair-strong")
               }
             >
-              <Kbd>{i + 1}</Kbd>
+              {i < 9 ? <Kbd>{i + 1}</Kbd> : <span aria-hidden="true" className="invisible"><Kbd>9</Kbd></span>}
               <PhaseChip phase={c.phase} variant="solid" />
               <span className="text-ink-soft">{c.lattice_d !== null ? `${c.lattice_d.toFixed(1)} Å` : ""}</span>
               <span className="text-right text-ink-faint">{c.kind === "speculative" ? "Custom" : c.score !== null ? c.score.toFixed(2) : ""}</span>

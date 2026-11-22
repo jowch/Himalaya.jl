@@ -11,18 +11,18 @@ const TUTORIAL_SLIDES: readonly { title: string; body: readonly Segment[] }[] = 
     title: "Add a beamtime",
     body: [
       "Point Himalaya at a beamtime or setup folder. It finds each setup, reads the " +
-        "exposures and groups them into samples. New files are picked up whenever you " +
+        "frames and groups them into samples. New files are picked up whenever you " +
         "open the experiment.",
     ],
   },
   {
     title: "One sample at a time",
     body: [
-      "An experiment opens on the first unreviewed sample: its trace, its exposures " +
+      "An experiment opens on the first unreviewed sample: its trace, its frames " +
         "and the ranked phase candidates. Move between samples with ",
-      { key: "↑" }, " ", { key: "↓" }, ", step through exposures with ",
+      { key: "↑" }, " ", { key: "↓" }, ", step through frames with ",
       { key: "←" }, " ", { key: "→" }, ", enlarge a detector image with ", { key: "Space" },
-      " and drop a bad exposure with ", { key: "X" }, ".",
+      " and drop a bad frame with ", { key: "X" }, ".",
     ],
   },
   {

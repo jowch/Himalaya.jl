@@ -28,7 +28,7 @@ export function NoticePill({
   className = "",
 }: NoticePillProps): JSX.Element {
   const baseClasses =
-    "inline-flex items-center rounded-full font-bold tracking-wide whitespace-nowrap";
+    "inline-flex items-center rounded-full font-semibold whitespace-nowrap";
 
   if (tone === "new") {
     return (
