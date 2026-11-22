@@ -99,10 +99,11 @@ guard for the same reason. Their `user_actions` rows stay in the log, and
 
 **Pure log events — use `log_action!`** (no view side effect, no
 broadcast routing through the dispatcher):
-`set_exposure_status`, `select_exposure`, `update_sample`, `analyze`,
+`set_exposure_status`, `update_sample`, `analyze`,
 `scan`, `experiment_created`, `setups_added`. The dispatcher carries explicit no-op
 `return nothing` guards for the view-less kinds (`set_exposure_status`,
-`select_exposure`, …).
+`update_sample`, …). Old `select_exposure` rows are a retired kind: frame
+selection was removed, and the representative is always the newest kept frame.
 
 `set_exposure_status` is audit-only: it records a Drop action but
 produces no view. There is a single screening verb — **Drop** (the X key) —
@@ -311,7 +312,7 @@ commits. Implications:
 - Subscribers never see an event that was rolled back.
 - Process death between commit and broadcast loses the frame, but the
   event is durable in `user_actions`. Clients reconcile on reconnect by
-  refetching: `PrintApp` opens the stream through `lib/liveStream.ts`, and
+  refetching: `App` opens the stream through `lib/liveStream.ts`, and
   every `open` after the first runs `lib/queue/reconnectRefresh.ts`. That
   invalidates every query except raw exposure traces, and it waits until no
   mutation is pending, so a refetch can't overwrite an optimistic edit that
@@ -361,30 +362,16 @@ intake; cache folding lives in `applyRemoteToCache(remote, qc)`
    kinds are forwarded. Unknown kinds fall through to a default
    invalidate-by-entity-id fallback.
 
-The EventSource connection is bound to `src/print/App.tsx` (`PrintApp`)'s
+The EventSource connection is bound to `src/App.tsx` (`App`)'s
 mount/unmount only; `clientId` is stable for the lifetime of the tab, so
 no listener recycling is needed.
 
 ### Conflict resolution
 
-> **⚠ Superseded — decided 2026-06-03 (greenfield "The Print" rebuild).** The
-> optimistic-concurrency model described below (`If-Match` + 409-retry, Plan 7
-> R5b) is **cancelled, not deferred.** The product decision is that commit
-> conflicts should not surface as friction: multiplayer stays last-write-wins
-> permanently, and the positive replacement is **edit-tracking → undo/redo →
-> versioning**, designed during Layer 4. Do **not** build the `409`/`If-Match`
-> conflict UI from this section. See `docs/future-feature-ideas.md`
-> §"Multi-user / review" and `docs/himalayaui-design.md` §2.10. The original
-> deferral note is retained below for historical context only.
-
-Optimistic concurrency via `If-Match` headers + 409-retry on the
-frontend (R5b in Plan 7) was originally **deferred**. The gate was R4
-instrumentation showing real contention: ≥2% delta-event collision rate over
-≥4 weeks / ≥500 events. Until then, multiplayer is last-write-wins, which the
-event log makes auditable after the fact.
-
-`exposures.selected` is intentionally LWW — see the note in `CLAUDE.md`. (Under
-the 2026-06-03 decision above, *all* entities follow this LWW grain.)
+Multiplayer is last-write-wins, with no `If-Match`/409 path and no conflict UI
+(decided 2026-06-03). Undo in the workspace reads the server before it restores
+anything, so it never overwrites another user's newer edit. Versioning is still
+open; see `docs/future-feature-ideas.md` §"Multi-user / review".
 
 ---
 
@@ -485,8 +472,7 @@ this doc:
 
 ## See also
 
-- [`docs/himalayaui-design.md`](himalayaui-design.md) §2.6, §2.9, §2.10 —
-  design principles and the active-set preservation story.
+- [`PRODUCT.md`](../PRODUCT.md) and [`DESIGN.md`](../DESIGN.md) — product principles and the design system.
 - `packages/HimalayaUI/src/{events,hash,server,pipeline}.jl` and
   `packages/HimalayaUI/frontend/src/lib/queue/{replayCoordinator,applyRemoteToCache}.ts`
   — the code.

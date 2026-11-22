@@ -1,10 +1,11 @@
 import { type CorpusSample, type IndexEntry, type LabelColor } from "../api";
+import type { CorpusExperiment, CorpusSampleRow } from "../hooks/useCorpusPalette";
 import { cleanLabel, labelColorIsFixed, sameLabel, USER_LABEL_COLORS } from "../lib/labels";
 import type { PlotView, PlotViewOption } from "./plotView";
 import { latticeParam } from "./indexing";
 import type { AppTheme } from "../lib/theme";
-import { LABEL_SWATCH } from "./ui/labelSwatches";
-import type { FieldOption, PaletteForm, PaletteGroup, PaletteItem, PalettePage } from "./ui/palette/model";
+import { LABEL_SWATCH } from "../ui/labelSwatches";
+import type { FieldOption, PaletteForm, PaletteGroup, PaletteItem, PalettePage } from "../ui/palette/model";
 
 export interface PaletteLabel {
   label: string;
@@ -36,7 +37,7 @@ export interface WorkspacePaletteInput extends AppActions {
     subtracted: number | undefined;
     subtract: (id: number) => void;
   };
-  bridge: { samples: readonly CorpusSample[]; pick: (id: number) => void; bridged: boolean; leave: () => void };
+  bridge: { samples: readonly CorpusSample[]; pick: (id: number) => void; bridged: readonly string[]; leave: () => void };
   candidates: { list: readonly IndexEntry[]; ticked: ReadonlySet<number>; tick: (ix: IndexEntry) => void };
   labels: {
     known: readonly PaletteLabel[];
@@ -67,6 +68,11 @@ export interface WorkspacePaletteInput extends AppActions {
   history: { undo: string | undefined; redo: string | undefined; run: (dir: "undo" | "redo") => void };
   samples: readonly CorpusSample[];
   goSample: (id: number) => void;
+  elsewhere?: {
+    experiments: readonly CorpusExperiment[];
+    samples: readonly CorpusSampleRow[];
+    go: (path: string) => void;
+  };
 }
 
 const THEMES: readonly { theme: AppTheme; name: string }[] = [
@@ -87,6 +93,14 @@ export function themePage(theme: AppActions["theme"]): PalettePage {
     arg: "Theme",
     items: THEMES.map((t) => ({ id: `theme-${t.theme}`, label: t.name, hint: t.theme === theme.current ? "Current" : undefined, run: () => theme.choose(t.theme) })),
   };
+}
+
+export function openExperimentItem(e: CorpusExperiment, go: (path: string) => void): PaletteItem {
+  return { id: `open-${e.id}`, label: `Open ${e.name}`, name: e.name, run: () => go(`/experiments/${e.id}`) };
+}
+
+export function goToSampleItem(s: CorpusSampleRow, go: (path: string) => void): PaletteItem {
+  return { id: `go-${s.id}`, label: `Go to ${s.name}`, name: s.name, hint: s.experiment, run: () => go(s.href) };
 }
 
 export function appItems(p: AppActions): PaletteItem[] {
@@ -114,6 +128,7 @@ function newLabelForm(name: string, p: WorkspacePaletteInput): PaletteForm {
         label: "Name",
         kind: "text",
         value: name,
+        typed: true,
         check: (v) => {
           const clean = cleanLabel(v);
           if (clean === undefined) return v.trim() === "" ? "Type a name." : "A label is one line of at most 64 characters.";
@@ -250,10 +265,10 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
   if (p.settings) pages.settings = settingsPage(p.settings);
   if (p.canEdit) {
     pages.bridge = {
-      title: "Bridge to",
+      title: "Same sample as",
       arg: "Sample",
       deep: true,
-      empty: "No samples left to bridge to.",
+      empty: "No other samples.",
       items: p.bridge.samples.map((s) => ({ id: `bridge-${s.id}`, label: s.name, run: () => p.bridge.pick(s.id) })),
     };
     if (p.candidates.list.length > 0) {
@@ -310,8 +325,8 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
     { id: "compare", label: "Compare with a sample", shortcut: "C", page: "compare" },
     ...(pages.subtract ? [{ id: "subtract", label: "Subtract a comparison", page: "subtract" }] : []),
     ...(pages.uncompare ? [{ id: "uncompare", label: "Stop comparing with a sample", page: "uncompare" }] : []),
-    ...(p.canEdit ? [{ id: "bridge", label: "Bridge to a sample", page: "bridge" }] : []),
-    ...(p.canEdit && p.bridge.bridged ? [{ id: "unbridge", label: "Take this sample out of its bridges", run: p.bridge.leave }] : []),
+    ...(p.canEdit ? [{ id: "bridge", label: "Same sample as…", page: "bridge" }] : []),
+    ...(p.canEdit && p.bridge.bridged.length > 0 ? [{ id: "unbridge", label: `Not the same sample as ${p.bridge.bridged.join(", ")}`, run: p.bridge.leave }] : []),
     ...(pages.tick ? [{ id: "tick", label: "Tick a candidate", hint: `${n} candidate${n === 1 ? "" : "s"}`, page: "tick" }] : []),
     { id: "custom", label: "Custom index", shortcut: "I", run: p.customIndex },
     ...(p.canEdit ? [{ id: "form-factor", label: p.formFactor.on ? "Clear no phase (form factor)" : "Mark no phase (form factor)", shortcut: "0", run: p.formFactor.toggle }] : []),
@@ -328,6 +343,7 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
     ...(p.rescan ? [{ id: "rescan", label: "Rescan the data folder", run: p.rescan }] : []),
     ...(p.problems ? [{ id: "problems", label: "Show ingest problems", run: p.problems }] : []),
     { id: "home", label: "Back to all experiments", run: p.home },
+    ...(p.elsewhere?.experiments ?? []).map((e) => ({ ...openExperimentItem(e, p.elsewhere!.go), typeOnly: true })),
     ...(p.removeExperiment ? [{ id: "remove-experiment", label: "Remove this experiment", danger: true, typeOnly: true, run: p.removeExperiment }] : []),
   ];
   const app: PaletteItem[] = [
@@ -341,7 +357,14 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
     { title: "Plot", items: plot },
     { title: "Experiment", items: experiment },
     { title: "App", items: app },
-    { title: "Samples", searchOnly: true, items: p.samples.map((s) => ({ id: `go-${s.id}`, label: `Go to ${s.name}`, name: s.name, run: () => p.goSample(s.id) })) },
+    {
+      title: "Samples",
+      searchOnly: true,
+      items: [
+        ...p.samples.map((s) => ({ id: `go-${s.id}`, label: `Go to ${s.name}`, name: s.name, run: () => p.goSample(s.id) })),
+        ...(p.elsewhere?.samples ?? []).map((s) => goToSampleItem(s, p.elsewhere!.go)),
+      ],
+    },
   ];
   return { groups, pages };
 }

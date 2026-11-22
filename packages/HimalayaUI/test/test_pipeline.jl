@@ -527,6 +527,36 @@ let
         end
     end
 
+    @testset "cli_show prints the sample's phase call, not the retired active group" begin
+        db_file = joinpath(mktempdir(), "himalaya.db")
+        dir     = mktempdir()
+        withenv("HIMALAYA_DB_PATH" => db_file) do
+            db = open_db(db_file)
+            setup_exp_dir(db, dir; name="ExpCall", stems=["ST001"])
+            cli_analyze(["-e", dir])
+            show_out() = mktemp() do path, io
+                redirect_stdout(io) do
+                    cli_show(["-e", dir, "-s", "ExpCall"])
+                end
+                close(io)
+                read(path, String)
+            end
+            out = show_out()
+            @test occursin("Call: uncalled", out)
+            @test !occursin("Active group", out)
+
+            ix = first(Tables.rowtable(DBInterface.execute(db,
+                "SELECT i.id, i.exposure_id, i.phase, e.sample_id FROM indices i JOIN exposures e ON e.id = i.exposure_id ORDER BY i.score DESC LIMIT 1")))
+            DBInterface.execute(db, "INSERT INTO assignment_members (exposure_id, index_id) VALUES (?, ?)", [ix.exposure_id, ix.id])
+            DBInterface.execute(db, "INSERT INTO sample_calls (sample_id, state) VALUES (?, 'indexed')", [ix.sample_id])
+            @test occursin("Call: indexed ($(ix.phase))", show_out())
+
+            DBInterface.execute(db, "UPDATE sample_calls SET state = 'form_factor' WHERE sample_id = ?", [ix.sample_id])
+            DBInterface.execute(db, "DELETE FROM assignment_members")
+            @test occursin("Call: form_factor", show_out())
+        end
+    end
+
     @testset "cli_analyze --experiment selects the right experiment" begin
         db_file = joinpath(mktempdir(), "himalaya.db")
         dir1    = mktempdir()
@@ -548,21 +578,6 @@ let
         end
     end
 
-    @testset "cli_analyze leaves the representative pick alone" begin
-        db_file = joinpath(mktempdir(), "himalaya.db")
-        dir     = mktempdir()
-        withenv("HIMALAYA_DB_PATH" => db_file) do
-            db = open_db(db_file)
-            seeded = setup_exp_dir(db, dir; name="ExpSel", stems=["ST001", "ST002"])
-            DBInterface.execute(db, "UPDATE exposures SET status='rejected' WHERE id=?",
-                                [seeded.exposure_ids[1]])
-            cli_analyze(["-e", dir])
-            selected = [Int(r.id) for r in DBInterface.execute(db,
-                "SELECT id FROM exposures WHERE selected=1")]
-            @test isempty(selected)
-        end
-    end
-
     @testset "cli_analyze fails after the batch when an exposure was skipped" begin
         db_file = joinpath(mktempdir(), "himalaya.db")
         dir     = mktempdir()
@@ -579,7 +594,7 @@ let
                 e
             end
             @test err isa ErrorException
-            @test err !== nothing && occursin("1 exposure", err.msg)
+            @test err !== nothing && occursin("1 frame", err.msg)
             hashed = [Int(r.id) for r in DBInterface.execute(db,
                 "SELECT id FROM exposures WHERE analysis_inputs_hash IS NOT NULL")]
             @test hashed == [seeded.exposure_ids[2]]

@@ -4,7 +4,7 @@ description: Project-specific code reviewer for the HimalayaUI mutation queue fr
 tools: Bash, Read, Grep, Glob
 ---
 
-You are the HimalayaUI mutation queue's specialized code reviewer. The queue framework is documented in `docs/mutation-queue.md` and `docs/event-log.md` §3a, with the Plan 8 entries in `CLAUDE.md`. Your job is to review queue-touching diffs specifically against the queue's invariants — not generic code review, not code style.
+You are the HimalayaUI mutation queue's specialized code reviewer. The queue framework is documented in `docs/mutation-queue.md` and `docs/event-log.md` §3a. Your job is to review queue-touching diffs specifically against the queue's invariants — not generic code review, not code style.
 
 The framework's correctness is invariant-driven: a one-line diff that violates one of these invariants compiles, passes type-check, often passes unit tests, but produces user-visible breakage (cache flicker, duplicate rows on retry, SSE-driven cross-tab divergence). Your job is to catch those.
 
@@ -34,8 +34,8 @@ Frontend (TS):
 - `packages/HimalayaUI/frontend/src/lib/queue/mutators/*.ts` — each mutator file
 - `packages/HimalayaUI/frontend/src/lib/queue/mutatorRegistry.ts` — rehydrate dispatch
 - `packages/HimalayaUI/frontend/src/lib/{clientOpId,toast,authOpts}.ts`, `lib/queue/{peakQTol,optimisticId}.ts`
-- `packages/HimalayaUI/frontend/src/print/shell/InfrastructureBanner.tsx`, `print/ui/Toast.tsx`
-- `packages/HimalayaUI/frontend/src/print/App.tsx` — SSE wiring, `attachPersistence`, `rehydrate` invocation
+- `packages/HimalayaUI/frontend/src/shell/InfrastructureBanner.tsx`, `ui/Toast.tsx`
+- `packages/HimalayaUI/frontend/src/App.tsx` — SSE wiring, `attachPersistence`, `rehydrate` invocation
 
 ## Invariant checklist
 
@@ -89,7 +89,7 @@ Frontend (TS):
 
 ### App-level wiring
 
-- **`print/App.tsx` wires `attachPersistence(mc)` AND calls `rehydrate(qc, resolveMutator)` once.** Both are required for the persistence half-shipping issue (writing-without-reading) found in the M3 review.
+- **`App.tsx` wires `attachPersistence(mc)` AND calls `rehydrate(qc, resolveMutator)` once.** Both are required for the persistence half-shipping issue (writing-without-reading) found in the M3 review.
 
 ## Common diff patterns to watch for
 

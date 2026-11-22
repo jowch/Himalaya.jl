@@ -299,6 +299,7 @@ const RETIRED_EVENT_KINDS = (
     "post_message",
     "sample_renamed", "sample_created", "sample_split", "grouping_flag_dismissed",
     "add_tag", "remove_tag", "edit_tag",
+    "select_exposure",
 )
 
 """
@@ -443,7 +444,6 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
     kind == "experiment_updated" && return nothing
     kind == "setup_updated" && return nothing
     kind == "set_exposure_status" && return nothing
-    kind == "select_exposure" && return nothing
 
     if kind == "sample_bridged"
         DBInterface.execute(db,

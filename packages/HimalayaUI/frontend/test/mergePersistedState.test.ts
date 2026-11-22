@@ -25,7 +25,7 @@ describe("mergePersistedState (persist merge)", () => {
     const current = useAppState.getState();
     const merged = mergePersistedState({ tutorialSeen: true }, current);
     expect(typeof merged.setTutorialSeen).toBe("function");
-    expect(typeof merged.recoverFromStaleUrl).toBe("function");
+    expect(typeof merged.openPalette).toBe("function");
   });
 
   it("handles undefined persisted state (first run) without dropping defaults", () => {

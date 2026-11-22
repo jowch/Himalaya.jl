@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { ExperimentNotice } from "../../src/workspace/ui/ExperimentNotice";
-import { ProblemList } from "../../src/workspace/ui/ProblemList";
+import { ExperimentNotice } from "../../src/ui/ExperimentNotice";
+import { ProblemList } from "../../src/ui/ProblemList";
 
 describe("setup folders a rescan skips", () => {
   it("are counted in the notice, which offers the details", () => {

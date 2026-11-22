@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { LabelColorMenu } from "../../src/workspace/ui/LabelColorMenu";
+import { LabelColorMenu } from "../../src/ui/LabelColorMenu";
 
 function menu(onPick = vi.fn(), onClose = vi.fn()) {
   return <LabelColorMenu name="37C" current="violet" isDefault left={0} onPick={onPick} onClose={onClose} />;

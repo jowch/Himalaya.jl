@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { IndexEntry } from "../../src/api";
 import { workspacePalette, type PaletteLabel, type WorkspacePaletteInput } from "../../src/workspace/palette";
 import { PLOT_VIEWS } from "../../src/workspace/plotView";
+import { rootRows } from "../../src/ui/palette/model";
 
 function candidate(id: number, lattice: number): IndexEntry {
   return { id, exposure_id: 1, phase: "Ia3d", basis: 0, score: 1, r_squared: null, lattice_d: lattice, status: "candidate", kind: "auto", inputs_hash: null, peaks: [], predicted_q: [] };
@@ -18,7 +19,7 @@ function input(over: Partial<WorkspacePaletteInput> = {}): WorkspacePaletteInput
     canEdit: true,
     nextUnreviewed: noop,
     compare: { samples: [], notes: new Map(), pick: noop, compared: [], remove: noop, subtractable: [], subtracted: undefined, subtract: noop },
-    bridge: { samples: [], pick: noop, bridged: false, leave: noop },
+    bridge: { samples: [], pick: noop, bridged: [], leave: noop },
     candidates: { list: [], ticked: new Set(), tick: noop },
     labels: { known: [], colorFor: () => "plum", toggle: noop, create: noop, recolour: noop },
     customIndex: noop,
@@ -195,5 +196,34 @@ describe("workspacePalette", () => {
     expect(saveSetup).toHaveBeenLastCalledWith(3, { name: null });
     pages.settings!.items[3]!.form!().submit({ name: "Short pipe", shown: "shown" });
     expect(saveSetup).toHaveBeenLastCalledWith(4, { name: "Short pipe", included: true });
+  });
+
+  it("opens another experiment and goes to its samples, but only once typed", () => {
+    const go = vi.fn();
+    const elsewhere = {
+      experiments: [{ id: 2, name: "Beamtime 12" }],
+      samples: [{ id: 40, name: "lipid_A", experimentId: 2, experiment: "Beamtime 12", href: "/experiments/2/workspace/40" }],
+      go,
+    };
+    const { groups, pages } = workspacePalette(input({ elsewhere }));
+    const labels = (q: string) => rootRows(groups, pages, q).flatMap((r) => (r.kind === "item" ? [r.item.label] : []));
+    expect(labels("")).not.toContain("Open Beamtime 12");
+    expect(labels("beamtime 12")).toContain("Open Beamtime 12");
+    const open = rootRows(groups, pages, "beamtime 12").find((r) => r.kind === "item" && r.item.label === "Open Beamtime 12");
+    if (open?.kind === "item") open.item.run!();
+    expect(go).toHaveBeenCalledWith("/experiments/2");
+    const sample = rootRows(groups, pages, "lipid").find((r) => r.kind === "item" && r.item.label === "Go to lipid_A");
+    expect(sample?.kind === "item" && sample.item.hint).toBe("Beamtime 12");
+    if (sample?.kind === "item") sample.item.run!();
+    expect(go).toHaveBeenCalledWith("/experiments/2/workspace/40");
+  });
+
+  it("goes to this experiment's samples in place and keeps them ahead of other experiments' samples", () => {
+    const goSample = vi.fn();
+    const here = { id: 5, name: "lipid_B" } as unknown as WorkspacePaletteInput["samples"][number];
+    const elsewhere = { experiments: [], samples: [{ id: 40, name: "lipid_A", experimentId: 2, experiment: "Beamtime 12", href: "/experiments/2/workspace/40" }], go: vi.fn() };
+    const { groups, pages } = workspacePalette(input({ samples: [here], goSample, elsewhere }));
+    const found = rootRows(groups, pages, "lipid").flatMap((r) => (r.kind === "item" ? [r.item.label] : []));
+    expect(found.indexOf("Go to lipid_B")).toBeLessThan(found.indexOf("Go to lipid_A"));
   });
 });

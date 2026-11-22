@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { NewExperimentPage } from "../src/print/pages/NewExperimentPage";
+import { NewExperimentPage } from "../src/pages/NewExperimentPage";
 import * as api from "../src/api";
 
 const navigate = vi.fn();
@@ -39,6 +39,9 @@ function setup(root: string, overrides: Partial<api.SetupPreview> = {}): api.Set
   };
 }
 
+const folders = (paths: string[]): api.FolderSuggestions =>
+  ({ folders: paths.map((path) => ({ path, kind: null, setups: null, added: null, described: true })), more: false });
+
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
@@ -55,9 +58,28 @@ function pick(path: string): void {
 describe("NewExperimentPage", () => {
   beforeEach(() => {
     navigate.mockClear();
-    vi.spyOn(api, "suggestPaths").mockResolvedValue({ suggestions: [] });
+    vi.spyOn(api, "suggestFolders").mockResolvedValue({ folders: [], more: false });
   });
   afterEach(() => vi.restoreAllMocks());
+
+  it("the data and integration folder fields under Details complete folders too", async () => {
+    vi.spyOn(api, "previewFolder").mockResolvedValue({ path: "/b/day1", setups: [setup("/b/day1/setup1")] });
+    renderPage();
+    pick("/b/day1");
+    const row = await screen.findByTestId("setup-row");
+    fireEvent.click(within(row).getByRole("button", { name: "Details" }));
+    vi.mocked(api.suggestFolders).mockImplementation(async (p) =>
+      folders(p === "/b/day1/setup1/d" ? ["/b/day1/setup1/data", "/b/day1/setup1/data_old"] : []));
+    const field = within(row).getByRole("combobox", { name: "Data folder" });
+    fireEvent.focus(field);
+    fireEvent.change(field, { target: { value: "/b/day1/setup1/d" } });
+    await within(row).findByRole("option", { name: "data_old" });
+    fireEvent.keyDown(field, { key: "Tab" });
+    fireEvent.keyDown(field, { key: "Tab" });
+    fireEvent.keyDown(field, { key: "Enter" });
+    expect(field).toHaveValue("/b/day1/setup1/data_old/");
+    expect(within(row).getByRole("combobox", { name: "Integration folder" })).toBeInTheDocument();
+  });
 
   it("starts on the folder a link passes in", async () => {
     vi.spyOn(api, "previewFolder").mockResolvedValue({ path: "/b/20261103", setups: [setup("/b/20261103/setup1")] });
@@ -138,7 +160,7 @@ describe("NewExperimentPage", () => {
   });
 
   it("⌘/Ctrl+Enter from a focused checkbox or the path field adds the ticked setups and nothing else", async () => {
-    vi.mocked(api.suggestPaths).mockResolvedValue({ suggestions: ["/b/20261103/notes"] });
+    vi.mocked(api.suggestFolders).mockResolvedValue(folders(["/b/20261103/notes"]));
     vi.spyOn(api, "previewFolder").mockResolvedValue({
       path: "/b/20261103",
       setups: [setup("/b/20261103/setup1"), setup("/b/20261103/setup2")],
@@ -157,29 +179,31 @@ describe("NewExperimentPage", () => {
   });
 
   it("⌘/Ctrl+Enter in the path field does not pick a suggestion", async () => {
-    vi.mocked(api.suggestPaths).mockResolvedValue({ suggestions: ["/b/20261103/notes"] });
+    vi.mocked(api.suggestFolders).mockResolvedValue(folders(["/b/20261103/notes"]));
     vi.spyOn(api, "previewFolder").mockResolvedValue({ path: "/b/20261103", setups: [setup("/b/20261103/setup1")] });
     vi.spyOn(api, "createExperiment").mockResolvedValue({ id: 11 } as api.Experiment);
     renderPage();
     pick("/b/20261103");
     await screen.findAllByTestId("setup-row");
     const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
-    fireEvent.click(input);
+    fireEvent.focus(input);
     await screen.findByRole("option", { name: "notes" });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(screen.getByRole("option", { name: "notes" })).toHaveAttribute("aria-selected", "true");
     fireEvent.keyDown(input, { key: "Enter", metaKey: true });
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/experiments/11"));
     expect(input).toHaveValue("/b/20261103");
   });
 
   it("plain Enter in the path field adds the found setup rather than entering its first subfolder", async () => {
-    vi.mocked(api.suggestPaths).mockResolvedValue({ suggestions: ["/b/20261103/setup1/analysis", "/b/20261103/setup1/data"] });
+    vi.mocked(api.suggestFolders).mockResolvedValue(folders(["/b/20261103/setup1/analysis", "/b/20261103/setup1/data"]));
     vi.spyOn(api, "previewFolder").mockResolvedValue({ path: "/b/20261103/setup1", setups: [setup("/b/20261103/setup1")] });
     const create = vi.spyOn(api, "createExperiment").mockResolvedValue({ id: 11 } as api.Experiment);
     renderPage();
     pick("/b/20261103/setup1");
     await screen.findAllByTestId("setup-row");
     const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
-    fireEvent.click(input);
+    fireEvent.focus(input);
     await screen.findByRole("option", { name: "analysis" });
     fireEvent.keyDown(input, { key: "Enter" });
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/experiments/11"));
@@ -188,9 +212,8 @@ describe("NewExperimentPage", () => {
   });
 
   it("Enter right after picking a subfolder adds only that subfolder's setup, once its own preview has arrived", async () => {
-    vi.mocked(api.suggestPaths).mockImplementation(async (p) => ({
-      suggestions: p.includes("setup1") ? ["/b/day1/setup1/analysis"] : ["/b/day1/setup1", "/b/day1/setup2"],
-    }));
+    vi.mocked(api.suggestFolders).mockImplementation(async (p) =>
+      folders(p.includes("setup1") ? ["/b/day1/setup1/analysis"] : ["/b/day1/setup1", "/b/day1/setup2"]));
     vi.spyOn(api, "previewFolder").mockImplementation(async (p) =>
       p.includes("setup1")
         ? { path: p, setups: [setup("/b/day1/setup1")] }
@@ -201,7 +224,7 @@ describe("NewExperimentPage", () => {
     pick("/b/day1/");
     await waitFor(() => expect(screen.getAllByTestId("setup-row")).toHaveLength(2));
     const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
-    fireEvent.click(input);
+    fireEvent.focus(input);
     await screen.findByRole("option", { name: "setup1" });
     fireEvent.keyDown(input, { key: "ArrowDown" });
     fireEvent.keyDown(input, { key: "Enter" });

@@ -26,7 +26,7 @@ The default fixture for route tests is `with_inproc_routes` (`test_inproc.jl`), 
 
 ```julia
 with_inproc_routes(db) do call
-    r = call("GET", "/api/experiments/$exp_id/samples")
+    r = call("GET", "/api/samples?experiment_id=$exp_id")
     @test r.status == 200
     list = JSON3.read(String(r.body))
     # POST/PATCH/DELETE: headers + a Vector{UInt8} body
@@ -59,7 +59,7 @@ end
 
 ## Shared cross-file helpers live in `test_fixtures.jl`
 
-Helpers used by more than one file (`_setup_analyzed_exposure`, `_setup_for_resolve`, `align_next_curation_id!`) have a single definition in `test_fixtures.jl`, included via `test_http.jl`. Don't redefine them per file — under GROUP bucketing a helper defined in file A is not in scope for file B unless it's in `test_fixtures.jl`. **No `@testset` in the include-only files** (`test_http.jl`, `test_fixtures.jl`, `test_inproc.jl`, `test_template_db.jl`) — they're included once per bucket, so a testset there would multiply Pass counts across buckets.
+Helpers used by more than one file (`_setup_analyzed_exposure`, `align_next_curation_id!`) have a single definition in `test_fixtures.jl`, included via `test_http.jl`. Don't redefine them per file — under GROUP bucketing a helper defined in file A is not in scope for file B unless it's in `test_fixtures.jl`. **No `@testset` in the include-only files** (`test_http.jl`, `test_fixtures.jl`, `test_inproc.jl`, `test_template_db.jl`) — they're included once per bucket, so a testset there would multiply Pass counts across buckets.
 
 ## Oxygen is a process-global singleton
 

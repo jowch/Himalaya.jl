@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { scanContent, scanLegacyImports, scanUnpairedFontSize } from "../scripts/check-design.mjs";
+import { scanContent, scanUnpairedFontSize } from "../scripts/check-design.mjs";
 
 // Helper: collect the set of rule ids a single line trips (outside ui/).
 function rulesFor(line: string): string[] {
@@ -77,95 +77,51 @@ describe("check-design guard — ban rules (spec §4)", () => {
     expect(rulesFor(line)).not.toContain("no-raw-color-literal");
   });
 
-  // Scope exclusion — src/print/ui/** is never scanned
-  it("excludes src/print/ui/** entirely", () => {
-    expect(scanContent("print/ui/Toast.tsx", '<div className="border-l-4 text-[10px]" />')).toHaveLength(0);
+  it("excludes src/ui/** entirely", () => {
+    expect(scanContent("ui/Toast.tsx", '<div className="border-l-4 text-[10px]" />')).toHaveLength(0);
   });
 });
 
-describe("scanLegacyImports", () => {
-  it("flags a print/ file importing old components (one level up to src)", () => {
-    const v = scanLegacyImports("print/App.tsx", `import { X } from "../components/X";`);
-    expect(v).toEqual([
-      { rule: "no-legacy-import", file: "print/App.tsx", line: 1, text: "../components/X" },
-    ]);
+describe("isExcluded via scanContent — ui authoring", () => {
+  it("excludes src/ui from appearance rules", () => {
+    expect(scanContent("ui/PhaseChip.tsx", `<span className="text-[11px]" />`)).toEqual([]);
   });
-
-  it("flags a print/ui file importing old components (two levels up to src)", () => {
-    const v = scanLegacyImports("print/ui/Button.tsx", `import { X } from "../../components/X";`);
-    expect(v.map((h) => h.text)).toEqual(["../../components/X"]);
-  });
-
-  it("flags importing old pages", () => {
-    const v = scanLegacyImports("print/pages/P.tsx", `import P from "../../pages/Old";`);
-    expect(v.map((h) => h.rule)).toEqual(["no-legacy-import"]);
-  });
-
-  it("flags any import from the old components/ tree (the import boundary)", () => {
-    const v = scanLegacyImports("print/ui/Card.tsx", `import { Dot } from "../../components/Foo";`);
-    expect(v).toHaveLength(1);
-  });
-
-  it("allows importing the shared core", () => {
-    const src = [
-      `import { api } from "../api";`,
-      `import { phaseColor } from "../phases";`,
-      `import { foo } from "../lib/queue/types";`,
-      `import { useFocusTrap } from "../hooks/useFocusTrap";`,
-    ].join("\n");
-    expect(scanLegacyImports("print/App.tsx", src)).toEqual([]);
-  });
-
-  it("allows print-internal imports (its own components/pages)", () => {
-    const v = scanLegacyImports("print/App.tsx", `import { Page } from "./pages/ContactSheet";\nimport { C } from "./components/C";`);
-    expect(v).toEqual([]);
-  });
-
-  it("ignores non-print files entirely", () => {
-    expect(scanLegacyImports("components/Foo.tsx", `import x from "../pages/Bar";`)).toEqual([]);
-  });
-});
-
-describe("isExcluded via scanContent — print/ui authoring", () => {
-  it("excludes src/print/ui from appearance rules", () => {
-    expect(scanContent("print/ui/PhaseChip.tsx", `<span className="text-[11px]" />`)).toEqual([]);
-  });
-  it("still enforces appearance rules on print/ consumers", () => {
-    const v = scanContent("print/components/Foo.tsx", `<span className="text-[11px]" />`);
+  it("still enforces appearance rules on consumers", () => {
+    const v = scanContent("components/Foo.tsx", `<span className="text-[11px]" />`);
     expect(v.map((h) => h.rule)).toContain("no-arbitrary-text");
   });
 });
 
-describe("isExcluded via scanContent — print/detector authoring", () => {
-  it("excludes src/print/detector from appearance rules", () => {
-    expect(scanContent("print/detector/DetectorLutFilters.tsx", `<circle stroke="oklch(0.9 0.045 80)" />`)).toEqual([]);
-    expect(scanContent("print/detector/detectorLut.ts", `const stop = "oklch(0.55 0.12 45)";`)).toEqual([]);
+describe("isExcluded via scanContent — detector authoring", () => {
+  it("excludes src/detector from appearance rules", () => {
+    expect(scanContent("detector/DetectorLutFilters.tsx", `<circle stroke="oklch(0.9 0.045 80)" />`)).toEqual([]);
+    expect(scanContent("detector/detectorLut.ts", `const stop = "oklch(0.55 0.12 45)";`)).toEqual([]);
   });
-  it("still ENFORCES print/components (placement-only composites)", () => {
-    expect(scanContent("print/components/Foo.tsx", `<span className="text-[11px]" />`).length).toBeGreaterThan(0);
+  it("still ENFORCES components (placement-only composites)", () => {
+    expect(scanContent("components/Foo.tsx", `<span className="text-[11px]" />`).length).toBeGreaterThan(0);
   });
 });
 
 
 describe("scanUnpairedFontSize", () => {
-  it("flags a pixel font size with no line height in the same class string, even in src/print/ui", () => {
-    const v = scanUnpairedFontSize("print/ui/Chip.tsx", `const c = "font-mono text-[11px] font-bold";`);
-    expect(v).toEqual([{ rule: "font-size-needs-line-height", file: "print/ui/Chip.tsx", line: 1, text: "text-[11px]" }]);
+  it("flags a pixel font size with no line height in the same class string, even in src/ui", () => {
+    const v = scanUnpairedFontSize("ui/Chip.tsx", `const c = "font-mono text-[11px] font-bold";`);
+    expect(v).toEqual([{ rule: "font-size-needs-line-height", file: "ui/Chip.tsx", line: 1, text: "text-[11px]" }]);
   });
 
   it("accepts a pixel font size paired with a leading utility", () => {
-    expect(scanUnpairedFontSize("print/ui/Chip.tsx", `const c = "text-[11px] leading-[16px]";`)).toEqual([]);
+    expect(scanUnpairedFontSize("ui/Chip.tsx", `const c = "text-[11px] leading-[16px]";`)).toEqual([]);
   });
 
   it("flags an inline fontSize without lineHeight on the line of fontSize", () => {
     const src = `<span\n  style={{\n    padding: "2px",\n    fontSize: "10px",\n  }}\n/>`;
-    expect(scanUnpairedFontSize("print/ui/Pill.tsx", src)).toEqual([
-      { rule: "font-size-needs-line-height", file: "print/ui/Pill.tsx", line: 4, text: "fontSize" },
+    expect(scanUnpairedFontSize("ui/Pill.tsx", src)).toEqual([
+      { rule: "font-size-needs-line-height", file: "ui/Pill.tsx", line: 4, text: "fontSize" },
     ]);
   });
 
   it("accepts an inline fontSize with lineHeight, and SVG fontSize attributes", () => {
     const src = `<span style={{ fontSize: "10px", lineHeight: "15px" }} /><text fontSize={10} />`;
-    expect(scanUnpairedFontSize("print/plot/Chart.tsx", src)).toEqual([]);
+    expect(scanUnpairedFontSize("plot/Chart.tsx", src)).toEqual([]);
   });
 });

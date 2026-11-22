@@ -14,34 +14,34 @@ describe("countAppearance", () => {
       '<div className="mt-2 flex gap-1" />',
       '<p className={`text-meta ${x}`} />',
     ].join("\n");
-    expect(countAppearance("print/pages/X.tsx", src)).toBe(4);
+    expect(countAppearance("pages/X.tsx", src)).toBe(4);
   });
 
   it("reads every literal inside cx() calls, ternaries and template expressions", () => {
-    expect(countAppearance("print/pages/X.tsx", '<i className={cx("mt-2", on && "text-ink-soft font-mono")} />')).toBe(2);
-    expect(countAppearance("print/pages/X.tsx", '<i className={x ? "mt-1" : "bg-paper"} />')).toBe(1);
-    expect(countAppearance("print/pages/X.tsx", '<i className={`mt-1 ${on ? "uppercase" : ""}`} />')).toBe(1);
+    expect(countAppearance("pages/X.tsx", '<i className={cx("mt-2", on && "text-ink-soft font-mono")} />')).toBe(2);
+    expect(countAppearance("pages/X.tsx", '<i className={x ? "mt-1" : "bg-paper"} />')).toBe(1);
+    expect(countAppearance("pages/X.tsx", '<i className={`mt-1 ${on ? "uppercase" : ""}`} />')).toBe(1);
   });
 
   it("grows when a token is added to an already styled className", () => {
-    const before = countAppearance("print/pages/X.tsx", '<i className="text-ink" />');
-    const after = countAppearance("print/pages/X.tsx", '<i className="text-ink font-mono" />');
+    const before = countAppearance("pages/X.tsx", '<i className="text-ink" />');
+    const after = countAppearance("pages/X.tsx", '<i className="text-ink font-mono" />');
     expect(after).toBeGreaterThan(before);
   });
 
   it("ignores primitives, render layers and stories", () => {
     const src = '<span className="text-caption text-ink" />';
-    expect(countAppearance("print/ui/Text.tsx", src)).toBe(0);
-    expect(countAppearance("print/plot/TracePlot.tsx", src)).toBe(0);
-    expect(countAppearance("print/pages/X.stories.tsx", src)).toBe(0);
+    expect(countAppearance("ui/Text.tsx", src)).toBe(0);
+    expect(countAppearance("plot/TracePlot.tsx", src)).toBe(0);
+    expect(countAppearance("pages/X.stories.tsx", src)).toBe(0);
   });
 
   it("counts opacity-slash and important forms", () => {
-    expect(countAppearance("print/pages/X.tsx", '<i className="bg-ink/50 !font-mono hover:!text-ink/70" />')).toBe(3);
+    expect(countAppearance("pages/X.tsx", '<i className="bg-ink/50 !font-mono hover:!text-ink/70" />')).toBe(3);
   });
 
   it("treats text alignment and wrapping as placement", () => {
-    expect(countAppearance("print/pages/X.tsx", '<p className="text-center text-nowrap" />')).toBe(0);
+    expect(countAppearance("pages/X.tsx", '<p className="text-center text-nowrap" />')).toBe(0);
   });
 });
 
@@ -65,6 +65,10 @@ describe("countTsComments", () => {
 
   it("does not count comment-like text inside strings", () => {
     expect(countTsComments('const url = "http://example.com"; const g = "/* no */";')).toBe(0);
+  });
+
+  it("exempts triple-slash reference directives", () => {
+    expect(countTsComments('/// <reference types="vite/client" />')).toBe(0);
   });
 
   it("exempts directives with a reason and leading physics tags", () => {

@@ -21,7 +21,7 @@ live in `routes_fs.jl` and never write to the DB; the create and scan live in
 
 | Step | Route | What it does |
 |------|-------|--------------|
-| Pick a folder | `GET /api/fs/suggest?prefix=` | Directory autocomplete (at most 20 subdirectories). |
+| Pick a folder | `GET /api/fs/suggest?prefix=` | Folder autocomplete: up to 20 folders whose names start with the last path segment (case-insensitive, natural order, `~` expanded, hidden folders only when the segment starts with `.`), `more` when others match. Each is marked `beamtime` (with its setup count) or `setup` and with the experiment it was added as, within a 0.5 s budget. Relative paths get nothing; `/api/fs/preview` refuses them. |
 | Preview | `GET /api/fs/preview?path=` | Lists the setups under the folder, each with its layout, counts and geometry (see [Preview](#preview)). `400` when the path is not a directory. |
 | Correct a setup | `GET /api/fs/manifest?path=&analysis_dir=&setup_file=&{image,metadata,integration}_pattern=` | Recounts one setup after the user edits its layout in Details (see [File manifest](#file-manifest)). |
 | Add | `POST /api/experiments` | One call for the folder. Creates the experiment and its setups, returns `202`, and starts the first scan in the background. |
@@ -185,7 +185,7 @@ folder name) and `included`. Any other field is a `400`. It logs a
 `setup_updated` event and broadcasts it, and the palette's Settings page edits
 both (undoable). In the workspace, samples of hidden setups are left out of the
 list, Z, the progress count and every picker, and bridges or comparisons to them
-stay stored but are not drawn. With more than one shown setup, the sample list
+stay stored but are not shown. With more than one shown setup, the sample list
 is grouped under a sticky header per setup.
 
 ### Migration from one experiment per setup
@@ -261,7 +261,7 @@ re-derives geometry that create committed or that the user edited.
 
 Beam-centred q-rings on the detector image need `energy_kev`,
 `flight_path_m`, `beam_center_x`, `beam_center_y` and `pixel_size_um` all set.
-No view draws them since the Focus page was deleted (2026-11-20).
+No view draws them yet.
 
 ## Scan and grouping
 
@@ -445,14 +445,6 @@ to the images. No code path writes into an experiment directory.
 
 This rule is kept by code review. No test checks it for the scan path.
 
-## Legacy: experiment.toml
-
-Before the funnel, each experiment directory carried an `experiment.toml` and a
-lab-notebook CSV, and the CLI ingested them. That path, the `upgrade-grouping`
-command that retrofitted those experiments to the current grouping, and every
-reader of the TOML text kept in `experiments.config` have been deleted. The
-column is left in place and never read or sent.
-
 ## CLI reference
 
 The CLI does not create experiments. It works on experiments already in the
@@ -460,7 +452,7 @@ central DB (`HIMALAYA_DB_PATH`, else `~/.himalaya/himalaya.db`).
 
 ```
 himalaya analyze [-e <experiment> | --all] [-s <sample>]
-    Run peak-finding and indexing for every exposure that is not rejected.
+    Run peak-finding and indexing for every frame that is not dropped.
 
 himalaya show [-e <experiment>] -s <sample>
     Print the stored peaks, indices and active group for one sample.

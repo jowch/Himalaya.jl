@@ -1,0 +1,110 @@
+import type { ReactNode } from "react";
+import { cx } from "../lib/cx";
+
+export type NoticePillTone = "new" | "draft" | "success" | "warning" | "scanning";
+
+interface NoticePillProps {
+  tone: NoticePillTone;
+  children: ReactNode;
+  className?: string;
+}
+
+export function NoticePill({
+  tone,
+  children,
+  className = "",
+}: NoticePillProps): JSX.Element {
+  const baseClasses =
+    "inline-flex items-center rounded-full font-semibold whitespace-nowrap";
+
+  if (tone === "new") {
+    return (
+      <span
+        data-testid="notice-pill"
+        data-tone="new"
+        className={cx(baseClasses, "text-print-accent", className)}
+        style={{
+          fontSize: "12px",
+          lineHeight: "17px",
+          padding: "2px 8px",
+          background: "color-mix(in oklab, var(--color-accent) 14%, transparent)",
+        }}
+      >
+        {children}
+      </span>
+    );
+  }
+
+  if (tone === "success") {
+    return (
+      <span
+        data-testid="notice-pill"
+        data-tone="success"
+        className={cx(baseClasses, "text-success border border-success", className)}
+        style={{
+          fontSize: "12px",
+          lineHeight: "17px",
+          padding: "2px 8px",
+          background: "color-mix(in oklab, var(--color-success) 10%, transparent)",
+        }}
+      >
+        {children}
+      </span>
+    );
+  }
+
+  if (tone === "warning") {
+    return (
+      <span
+        data-testid="notice-pill"
+        data-tone="warning"
+        className={cx(baseClasses, "text-warning border border-warning", className)}
+        style={{
+          fontSize: "12px",
+          lineHeight: "17px",
+          padding: "2px 8px",
+          background: "color-mix(in oklab, var(--color-warning) 10%, transparent)",
+        }}
+      >
+        {children}
+      </span>
+    );
+  }
+
+  if (tone === "scanning") {
+    return (
+      <span
+        data-testid="notice-pill"
+        data-tone="scanning"
+        className={cx(baseClasses, "text-print-accent border border-accent", className)}
+        style={{
+          fontSize: "12px",
+          lineHeight: "17px",
+          padding: "2px 8px",
+          background: "color-mix(in oklab, var(--color-accent) 10%, transparent)",
+        }}
+      >
+        {children}
+      </span>
+    );
+  }
+
+  return (
+    <span
+      data-testid="notice-pill"
+      data-tone="draft"
+      className={cx(
+        baseClasses,
+        "text-ink-soft bg-paper-sunk border border-dashed border-hair-strong",
+        className,
+      )}
+      style={{
+        fontSize: "12px",
+        lineHeight: "17px",
+        padding: "2px 8px",
+      }}
+    >
+      {children}
+    </span>
+  );
+}

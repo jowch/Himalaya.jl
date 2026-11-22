@@ -33,21 +33,36 @@ function _emit_label_event!(db, req, kind::String, sample_id::Int, label::String
     _enqueue_broadcast_from_result!(result, kind, "sample", sample_id)
 end
 
-function add_label!(db, req, sample_id::Int, label::String, exp_id::Int)
+shared_label(label::AbstractString) = !occursin(DISTANCE_LABEL, label)
+
+_label_targets(db, sample_id::Int, label::String) =
+    shared_label(label) ? vcat(sample_id, bridge_mates(db, sample_id)) : [sample_id]
+
+function _add_label_one!(db, req, sample_id::Int, label::String, exp_id::Int)
     _label_state(db, sample_id, label) == "confirmed" && return
     _emit_label_event!(db, req, "label_added", sample_id, label, exp_id)
 end
 
+function add_label!(db, req, sample_id::Int, label::String, exp_id::Int)
+    for sid in _label_targets(db, sample_id, label)
+        _add_label_one!(db, req, sid, label, exp_id)
+    end
+end
+
 function remove_label!(db, req, sample_id::Int, label::String, exp_id::Int)
-    state = _label_state(db, sample_id, label)
-    (state === nothing || state == "removed") && return
-    _emit_label_event!(db, req, "label_removed", sample_id, label, exp_id)
+    for sid in _label_targets(db, sample_id, label)
+        state = _label_state(db, sid, label)
+        (state === nothing || state == "removed") && continue
+        _emit_label_event!(db, req, "label_removed", sid, label, exp_id)
+    end
 end
 
 function restore_label_suggestion!(db, req, sample_id::Int, label::String, exp_id::Int)
-    state = _label_state(db, sample_id, label)
-    (state === nothing || state == "suggested") && return
-    _emit_label_event!(db, req, "label_suggestion_restored", sample_id, label, exp_id)
+    for sid in _label_targets(db, sample_id, label)
+        state = _label_state(db, sid, label)
+        (state === nothing || state == "suggested") && continue
+        _emit_label_event!(db, req, "label_suggestion_restored", sid, label, exp_id)
+    end
 end
 
 function _live_sample_experiment(db, sample_id::Int)

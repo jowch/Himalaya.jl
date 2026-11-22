@@ -1,10 +1,10 @@
-import type { Exposure, IndexEntry, Peak, SampleBridge, SampleLabelState, LabelColor } from "../api";
+import type { Exposure, IndexEntry, Peak, SampleBridge, SampleLabel, SampleLabelState, LabelColor } from "../api";
 import type { EditOps } from "../queries";
 import type { SetupPatch } from "../lib/queue/mutators/setup";
 import type { ExperimentPatch } from "../lib/queue/mutators/experiment";
 import { bridgedWith } from "../lib/bridges";
 import { comparesOf } from "../lib/compares";
-import { sameLabel } from "../lib/labels";
+import { labelKey, sameLabel, sharedAcrossBridge } from "../lib/labels";
 import { peakQTol } from "../lib/queue/peakQTol";
 import type { UndoEntry } from "./undo";
 
@@ -291,20 +291,46 @@ function together(list: readonly SampleBridge[], a: number, b: number): boolean 
   return bridgedWith(list, a).includes(b);
 }
 
+function bridgeGains(members: readonly number[], labels: readonly SampleLabel[]): Map<number, Map<string, SampleLabelState | undefined>> {
+  const mine = (sid: number): SampleLabel[] => labels.filter((l) => l.sample_id === sid && sharedAcrossBridge(l.label));
+  const union = new Map<string, string>();
+  for (const sid of members) for (const l of mine(sid)) if (l.state === "confirmed" && !union.has(labelKey(l.label))) union.set(labelKey(l.label), l.label);
+  return new Map(members.map((sid) => {
+    const had = new Map(mine(sid).map((l) => [labelKey(l.label), l.state] as const));
+    return [sid, new Map([...union.keys()].filter((k) => had.get(k) !== "confirmed").map((k) => [k, had.get(k)] as const))];
+  }));
+}
+
 export function bridgeEntry(
   ops: EditOps,
-  at: Where & { from: number; to: number; bridges: readonly SampleBridge[] },
+  at: Where & { from: number; to: number; bridges: readonly SampleBridge[]; labels: readonly SampleLabel[] },
 ): UndoEntry {
   const sideA = [at.from, ...bridgedWith(at.bridges, at.from)];
   const sideB = [at.to, ...bridgedWith(at.bridges, at.to)];
   const split = sideA.length <= sideB.length ? sideA : sideB;
+  const gains = bridgeGains([...sideA, ...sideB], at.labels);
   return {
     ...at,
     undo: async () => {
       if (!together(await ops.read.bridges(), at.from, at.to)) return 0;
+      const now = await ops.read.labels();
       for (const s of split) ops.unbridge(s);
       for (const s of split.slice(1)) ops.bridge(split[0]!, s);
-      return split.length * 2 - 1;
+      let sent = split.length * 2 - 1;
+      const undone = new Set<string>();
+      for (const side of [sideA, sideB]) {
+        for (const sid of side) {
+          for (const [key, prev] of gains.get(sid) ?? []) {
+            const hit = now.find((l) => l.sample_id === sid && labelKey(l.label) === key && l.state === "confirmed");
+            if (!hit || undone.has(`${side[0]}:${key}`)) continue;
+            undone.add(`${side[0]}:${key}`);
+            if (prev === "suggested") ops.restoreLabelSuggestion(sid, hit.label);
+            else ops.removeLabel(sid, hit.label);
+            sent += 1;
+          }
+        }
+      }
+      return sent;
     },
     redo: async () => {
       if (together(await ops.read.bridges(), at.from, at.to)) return 0;

@@ -288,12 +288,28 @@ describe("undo against the server", () => {
       { sample_id: 4, group_id: 2 }, { sample_id: 5, group_id: 2 },
     ];
     act(() => result.current.history.record(bridgeEntry(result.current.ops, {
-      label: "bridged", sampleId: 1, exposureId: undefined, from: 1, to: 4, bridges: before,
+      label: "bridged", sampleId: 1, exposureId: undefined, from: 1, to: 4, bridges: before, labels: [],
     })));
     server.bridges = before.map((b) => ({ ...b, group_id: 1 }));
     await act(async () => { await result.current.history.undo()!.done; });
     expect(firstArgs(api.unbridgeSample).map((c) => c[0])).toEqual([4, 5]);
     expect(firstArgs(api.bridgeSamples)).toEqual([[4, 5]]);
+  });
+
+  it("undoing a bridge takes back only the labels the bridge shared, and leaves flight paths and later labels", async () => {
+    const { result } = setup();
+    const l = (id: number, sample_id: number, label: string, state: SampleLabel["state"] = "confirmed"): SampleLabel =>
+      ({ id, sample_id, label, state, source: state === "suggested" ? "ingest" : "user" });
+    const before = [l(1, 1, "Buffer"), l(2, 2, "37C"), l(3, 2, "buffer", "suggested"), l(4, 2, "1.7 m")];
+    act(() => result.current.history.record(bridgeEntry(result.current.ops, {
+      label: "bridged", sampleId: 1, exposureId: undefined, from: 1, to: 2, bridges: [], labels: before,
+    })));
+    server.bridges = [{ sample_id: 1, group_id: 1 }, { sample_id: 2, group_id: 1 }];
+    server.labels = [l(1, 1, "Buffer"), l(6, 1, "37C"), l(7, 1, "later"), l(2, 2, "37C"), l(3, 2, "buffer"), l(4, 2, "1.7 m"), l(8, 2, "later")];
+    await act(async () => { await result.current.history.undo()!.done; });
+    expect(firstArgs(api.unbridgeSample).map((c) => c[0])).toEqual([1]);
+    expect(firstArgs(api.removeLabel)).toEqual([[1, "37C"]]);
+    expect(firstArgs(api.restoreLabelSuggestion)).toEqual([[2, "buffer"]]);
   });
 
   it("undoes and redoes a comparison only while the server still matches what the edit left", async () => {

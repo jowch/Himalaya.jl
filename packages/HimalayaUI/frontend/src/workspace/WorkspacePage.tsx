@@ -52,6 +52,7 @@ import { isIngestStage, stageLabel } from "../lib/ingestStages";
 import { bridgeCounts, bridgedWith } from "../lib/bridges";
 import { bufferRole, buffersFirst, displayLabel, firstUnusedColor, labelColor, labelColorIsDefault, labelsFor, sameLabel, sampleMatchesFilter, labelVocabulary, labelKey } from "../lib/labels";
 import { representativeExposure } from "../lib/exposure";
+import { useCorpusPalette } from "../hooks/useCorpusPalette";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
 import { firstUnreviewed, i0BelowZero, traceIsDark, imageUrl, nearestKeptExposure, nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
@@ -60,38 +61,39 @@ import { clampDomain, compareScale, COMPARES_FULL, MAX_COMPARES, scaledTrace, su
 import type { CompareScale } from "./compare";
 import { useCompareTraces } from "./useCompareTraces";
 import { usePrefetchNeighbours } from "./prefetch";
-import { CompareBar } from "./ui/CompareBar";
-import { ComparePicker } from "./ui/ComparePicker";
-import { SubtractToggle } from "./ui/SubtractToggle";
-import { PlotCard } from "./ui/PlotCard";
-import { HelpOverlay, type HelpSection } from "./ui/HelpOverlay";
+import { CompareBar } from "../ui/CompareBar";
+import { ComparePicker } from "../ui/ComparePicker";
+import { SubtractToggle } from "../ui/SubtractToggle";
+import { PlotCard } from "../ui/PlotCard";
+import { HelpOverlay, type HelpSection } from "../ui/HelpOverlay";
 import { MOD_KEY } from "../lib/modKey";
-import { DetectorOverlay } from "./ui/DetectorOverlay";
-import { Palette } from "./ui/palette/Palette";
+import { DetectorOverlay } from "../ui/DetectorOverlay";
+import { Palette } from "../ui/palette/Palette";
 import { workspacePalette, type PaletteSetup } from "./palette";
 import { useAppTheme } from "../lib/theme";
 import { PLOT_VIEWS, usePlotView } from "./plotView";
-import { positiveExtent } from "../print/plot/projection";
-import { CustomIndexPanel, NUDGE_STEP, NUDGE_STEP_LARGE } from "./ui/CustomIndexPanel";
-import { IndexingPlot, type IndexSeries } from "./ui/IndexingPlot";
+import { positiveExtent } from "../plot/projection";
+import { CustomIndexPanel, NUDGE_STEP, NUDGE_STEP_LARGE } from "../ui/CustomIndexPanel";
+import { IndexingPlot, type IndexSeries } from "../ui/IndexingPlot";
 import { clampLattice, draftCommit, draftPrediction, indexFit, initialDraft, latticeParam, storedFit, type CustomDraft } from "./indexing";
 import { latticeBounds, latticeForFirstOrderOnPeak } from "../lib/customIndex";
 
-import { WorkspaceHeader } from "./ui/WorkspaceHeader";
-import { Note } from "./ui/Note";
-import { WorkspaceLayout } from "./ui/WorkspaceLayout";
-import { SampleList } from "./ui/SampleList";
-import { ExperimentNotice } from "./ui/ExperimentNotice";
-import { ProblemList } from "./ui/ProblemList";
-import { RemoveExperimentDialog } from "./ui/RemoveExperimentDialog";
-import { COMPARE_COLORS, WorkspacePlot, type CombLine, type CompareLine } from "./ui/WorkspacePlot";
-import { ExposureStrip } from "./ui/ExposureStrip";
-import { CandidateList } from "./ui/CandidateList";
+import { WorkspaceHeader } from "../ui/WorkspaceHeader";
+import { Note } from "../ui/Note";
+import { WorkspaceLayout } from "../ui/WorkspaceLayout";
+import { SampleList } from "../ui/SampleList";
+import { ExperimentNotice } from "../ui/ExperimentNotice";
+import { ProblemList } from "../ui/ProblemList";
+import { RemoveExperimentDialog } from "../ui/RemoveExperimentDialog";
+import { COMPARE_COLORS, WorkspacePlot, type CombLine, type CompareLine } from "../ui/WorkspacePlot";
+import { ExposureStrip } from "../ui/ExposureStrip";
+import { CandidateList } from "../ui/CandidateList";
 import { callRows, keyedRows } from "./bonnetGroups";
-import { MetaList } from "./ui/MetaList";
-import { MainSection, SampleHeading, Section } from "./ui/Section";
-import { CustomIndexButton } from "./ui/CustomIndexButton";
-import { LabelRow } from "./ui/LabelRow";
+import { MetaList } from "../ui/MetaList";
+import { MainSection, SampleHeading, Section } from "../ui/Section";
+import { claimedPeaks } from "./claimedPeaks";
+import { CustomIndexButton } from "../ui/CustomIndexButton";
+import { LabelRow } from "../ui/LabelRow";
 import type { ExperimentPatch } from "../lib/queue/mutators/experiment";
 import type { SetupPatch } from "../lib/queue/mutators/setup";
 
@@ -341,23 +343,29 @@ export function WorkspacePage(): JSX.Element {
   const [helpOpen, setHelpOpen] = useState(false);
   const [bigOpen, setBigOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const paletteCorpus = useCorpusPalette();
+  const elsewhere = useMemo(
+    () => ({
+      experiments: paletteCorpus.experiments.filter((e) => e.id !== experimentId),
+      samples: paletteCorpus.samples.filter((s) => s.experimentId !== experimentId),
+    }),
+    [paletteCorpus.experiments, paletteCorpus.samples, experimentId],
+  );
   const theme = useAppTheme();
   const [draft, setDraft] = useState<CustomDraft | null>(null);
   useEffect(() => setDraft(null), [exposure?.id]);
   const commitCustom = useCommitCustomIndex(exposure?.id ?? 0);
   const bridges = useBridges(experimentId);
   const bridgeList = useMemo(() => bridges.data ?? [], [bridges.data]);
-  const bridged = useMemo(
-    () => (sampleId === undefined ? [] : bridgedWith(bridgeList, sampleId).filter((r) => !hiddenSamples.has(r))),
-    [bridgeList, sampleId, hiddenSamples],
-  );
+  const bridged = useMemo(() => (sampleId === undefined ? [] : bridgedWith(bridgeList, sampleId)), [bridgeList, sampleId]);
+  const bridgedNames = useMemo(() => {
+    const names = new Map(inExperiment.map((s) => [s.id, s.name]));
+    return bridged.map((r) => names.get(r) ?? `Sample ${r}`);
+  }, [bridged, inExperiment]);
   const counts = useMemo(() => bridgeCounts(bridgeList), [bridgeList]);
   const bridgeSamples = useBridgeSamples(experimentId);
   const unbridgeSample = useUnbridgeSample(experimentId);
-  const shownRefs = useMemo(
-    () => [...bridged, ...refs.filter((r) => !bridged.includes(r) && !hiddenSamples.has(r))],
-    [bridged, refs, hiddenSamples],
-  );
+  const shownRefs = useMemo(() => refs.filter((r) => !hiddenSamples.has(r)), [refs, hiddenSamples]);
   const subRef = subChoice !== undefined && shownRefs.includes(subChoice) ? subChoice : undefined;
   const hiddenRefs = useMemo<ReadonlySet<number>>(
     () =>
@@ -507,6 +515,11 @@ export function WorkspacePage(): JSX.Element {
     return candidates.filter((c) => hoverIds?.includes(c.id)).map((c) => ({ id: c.id, qs: c.predicted_q, color: phaseColor(c.phase) }));
   }, [candidates, hoverIds, draft, draftQs]);
 
+  const highlight = useMemo(
+    () => (draft ? null : claimedPeaks(candidates.filter((c) => hoverIds?.includes(c.id)), peaks.data ?? [])),
+    [draft, candidates, hoverIds, peaks.data],
+  );
+
   const sampleNames = useMemo(() => new Map(samples.map((s) => [s.id, s.name])), [samples]);
   const nameOf = useCallback((rid: number) => sampleNames.get(rid) ?? `sample ${rid}`, [sampleNames]);
   const removeCompare = useCallback(
@@ -618,7 +631,7 @@ export function WorkspacePage(): JSX.Element {
       if (!username || sampleId === undefined) return;
       unbridgeSample.mutate({ sampleId: target });
       history.record(unbridgeEntry(ops, {
-        label: `unbridged ${sampleNames.get(target) ?? "a sample"}`, sampleId, exposureId: undefined, target, bridges: bridgeList,
+        label: `marked ${sampleNames.get(target) ?? "a sample"} as not the same sample`, sampleId, exposureId: undefined, target, bridges: bridgeList,
       }));
     },
     [username, sampleId, unbridgeSample, history, ops, sampleNames, bridgeList],
@@ -626,26 +639,16 @@ export function WorkspacePage(): JSX.Element {
   const leaveBridges = useCallback(() => {
     if (sampleId !== undefined && bridged.length > 0) unbridgeOne(sampleId);
   }, [sampleId, bridged, unbridgeOne]);
-  const onRemoveChip = useCallback(
-    (rid: number) => {
-      if (!bridged.includes(rid)) {
-        removeCompare(rid);
-        return;
-      }
-      unbridgeOne(rid);
-    },
-    [bridged, removeCompare, unbridgeOne],
-  );
   const bridgeTo = useCallback(
     (rid: number) => {
       if (sampleId === undefined) return;
       bridgeSamples.mutate({ sampleId, toSampleId: rid });
       history.record(bridgeEntry(ops, {
-        label: `bridged ${sample?.name ?? "this sample"} to ${sampleNames.get(rid) ?? "a sample"}`, sampleId, exposureId: undefined,
-        from: sampleId, to: rid, bridges: bridgeList,
+        label: `marked ${sample?.name ?? "this sample"} as the same sample as ${sampleNames.get(rid) ?? "a sample"}`, sampleId, exposureId: undefined,
+        from: sampleId, to: rid, bridges: bridgeList, labels: labelList,
       }));
     },
-    [sampleId, sample?.name, bridgeSamples, history, ops, sampleNames, bridgeList],
+    [sampleId, sample?.name, bridgeSamples, history, ops, sampleNames, bridgeList, labelList],
   );
   const labelEdit = useCallback(
     (sid: number, tag: string, added: boolean) => {
@@ -867,7 +870,9 @@ export function WorkspacePage(): JSX.Element {
       }
       if (ev.key === "/") {
         ev.preventDefault();
-        document.getElementById("workspace-filter")?.focus();
+        const filter = document.getElementById("workspace-filter");
+        filter?.focus();
+        if (filter instanceof HTMLInputElement) filter.select();
         return;
       }
       if (draft) {
@@ -1003,7 +1008,7 @@ export function WorkspacePage(): JSX.Element {
     }));
   };
   const toggleCompare = (rid: number): void => {
-    if (rid === sampleId || bridged.includes(rid)) return;
+    if (rid === sampleId) return;
     if (refs.includes(rid)) removeCompare(rid);
     else addReference(rid);
   };
@@ -1019,7 +1024,7 @@ export function WorkspacePage(): JSX.Element {
       notes: bufferNotes,
       pick: addReference,
       full: comparesFull ? COMPARES_FULL : undefined,
-      compared: refs.filter((r) => r !== sampleId && !bridged.includes(r)).flatMap((r) => samples.filter((x) => x.id === r)),
+      compared: refs.filter((r) => r !== sampleId).flatMap((r) => samples.filter((x) => x.id === r)),
       remove: removeCompare,
       subtractable: activeRefs.flatMap((r) => samples.filter((x) => x.id === r)),
       subtracted: subRef,
@@ -1030,9 +1035,8 @@ export function WorkspacePage(): JSX.Element {
       pick: (rid) => {
         if (sampleId === undefined) return;
         bridgeTo(rid);
-        setRefsOn(true);
       },
-      bridged: bridged.length > 0,
+      bridged: bridgedNames,
       leave: leaveBridges,
     },
     candidates: {
@@ -1092,6 +1096,7 @@ export function WorkspacePage(): JSX.Element {
     },
     samples,
     goSample,
+    elsewhere: { ...elsewhere, go: (path) => navigate(path) },
   });
 
   const indexingSection = (
@@ -1140,7 +1145,7 @@ export function WorkspacePage(): JSX.Element {
               onClose={() => setBigOpen(false)}
             />
           )}
-          {paletteOpen && <Palette groups={palette.groups} pages={palette.pages} onClose={() => setPaletteOpen(false)} />}
+          {paletteOpen && <Palette groups={palette.groups} pages={palette.pages} onClose={() => setPaletteOpen(false)} onType={paletteCorpus.onType} />}
         </>
       }
       header={
@@ -1160,6 +1165,7 @@ export function WorkspacePage(): JSX.Element {
               meta={exposure ? `Frame ${exposureIndex} of ${exposureList.length}` : undefined}
               aside={
                 <LabelRow
+                  note={bridgedNames.length > 0 ? `Same sample as ${bridgedNames.join(", ")}` : undefined}
                   labels={sampleLabels}
                   vocabulary={vocabulary}
                   editable={Boolean(username)}
@@ -1186,7 +1192,6 @@ export function WorkspacePage(): JSX.Element {
                   name: sampleNames.get(rid) ?? `Sample ${rid}`,
                   color: COMPARE_COLORS[activeRefs.indexOf(rid) % COMPARE_COLORS.length]!,
                   scale: scales.get(rid),
-                  bridged: bridged.includes(rid),
                   hidden: shownCompareSet.has(rid),
                 }))}
                 subtractId={subRef}
@@ -1202,7 +1207,7 @@ export function WorkspacePage(): JSX.Element {
                   setShown(rid, !(refsOn && !hiddenRefs.has(rid)));
                 }}
                 onSubtract={toggleSubtract}
-                onRemove={onRemoveChip}
+                onRemove={removeCompare}
                 onAdd={() => setPicking(true)}
                 trailing={difference && subRef !== undefined ? <SubtractToggle name={subName} on={minusOn} onChange={setMinus} /> : undefined}
               />
@@ -1227,6 +1232,7 @@ export function WorkspacePage(): JSX.Element {
                       : {})}
                   peaks={peaks.data ?? []}
                   combs={combs}
+                  highlight={highlight}
                   compares={compares}
                   {...(minusOn && difference ? { difference } : {})}
                   xDomain={shownDomain}

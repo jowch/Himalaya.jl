@@ -12,14 +12,12 @@
           var v = localStorage.getItem("himalaya-ui:theme") || localStorage.getItem("himalaya-ui:workspace-theme");
           if (v === "light" || v === "dark") theme = v;
         } catch (e) {}
-        var dark = theme === "dark" || (theme === "system" && !!window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
         document.documentElement.setAttribute("data-theme", theme);
-        if (dark) document.documentElement.classList.add("dark");
       })();
     </script>
   </head>
   <body>
     <div id="app"></div>
-    <script type="module" src="/src/print/main.tsx"></script>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
