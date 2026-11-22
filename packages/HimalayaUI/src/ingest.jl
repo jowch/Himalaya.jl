@@ -1,44 +1,13 @@
-# packages/HimalayaUI/src/ingest.jl
-#
-# scan_and_group!: the transactional ingest orchestrator (spec §9.1).
-#
-# Discipline cloned from _reingest_inner! (cli.jl) + analyze_exposure! (pipeline.jl):
-#   - Insert-only for loads/samples/exposures (no clobber on rescan).
-#   - Geometry is FILL-ONLY: it writes a field only when still unset ('default');
-#     any established source (setup/prp/computed, or 'user') is left untouched, so
-#     geometry derived once (at the funnel preview) is never re-derived (spec §4).
-#   - Every DB write is wrapped in `_DB_WRITE_LOCK` (server.jl) + a SQLite.transaction
-#     so a mid-scan failure rolls back the whole insert batch (no partial write).
-#   - analyze_exposure! is called OUTSIDE the write transaction (same contract as
-#     cli_init_with_db!): an analysis crash must not roll back the ingested rows.
-#
-# Note: `_reingest_inner!` is not called through; scan_and_group! is net-new and
-# clones the discipline because _reingest_inner! requires a manifest (returns
-# :no_manifest early) and clobbers sample fields, neither of which fits the
-# manifest-free, never-clobber ingest path.
-
-"""
-    _find_setup_files(analysis_dir) -> Vector{String}
-
-Locate the experiment's `setup_info_*.txt` (AgBe calibration: beam center +
-flight distance). The configured `analysis_dir` is frequently a leaf such as
-`.../analysis/automatic_analysis/tot_files`, while `setup_info` lives in the
-analysis root, so search `analysis_dir` and walk up its ancestors, returning the
-matches from the first directory that has any.
-
-# ponytail: cap the ascent at 3 ancestors — covers `analysis/automatic_analysis/
-# tot_files`. Widen the bound if a deeper analysis layout ever appears.
-"""
 function _find_setup_files(analysis_dir::AbstractString)
     dir = analysis_dir
-    for _ in 1:4   # analysis_dir + 3 ancestors
+    for _ in 1:4
         if isdir(dir)
             hits = String[joinpath(dir, f) for f in readdir(dir)
                           if startswith(f, "setup_info_") && endswith(f, ".txt")]
             isempty(hits) || return hits
         end
         parent = dirname(dir)
-        parent == dir && break   # reached the filesystem root
+        parent == dir && break
         dir = parent
     end
     return String[]
@@ -86,14 +55,6 @@ function backfill_monitors!(db::SQLite.DB, experiment_id::Int)
     length(parsed)
 end
 
-"""
-    scan_and_group!(db, experiment_id; analyze=true, on_progress=nothing)
-
-Full ingest of every included setup of `experiment_id`, in setup order. Each
-setup is scanned, grouped, persisted and analyzed on its own (`_scan_setup!`).
-Returns a NamedTuple summary `(status, added_loads, added_samples, added_exposures)`;
-`status` is `:empty` only when no setup found any image.
-"""
 function scan_and_group!(
     db           ::SQLite.DB,
     experiment_id::Int;
@@ -120,14 +81,6 @@ function _scan_setup!(db::SQLite.DB, experiment_id::Int, setup;
     prp_pattern = coalesce(setup.metadata_pattern,    "{name}.prp")
     dat_pattern = coalesce(setup.integration_pattern, "{name}.dat")
 
-    # -----------------------------------------------------------------------
-    # 1. Scan: enumerate TIF+PRP+DAT triplets
-    # -----------------------------------------------------------------------
-    # `on_progress(processed, total, stage)` — stage names the segment the UI
-    # should be filling ("discovery" / "analyzing"). Discovery is
-    # the expensive silent half (two stats + a PRP parse per exposure over SMB),
-    # so it reports from inside scan_directory rather than only announcing its
-    # total afterwards.
     metas = scan_directory(data_dir, analysis_dir;
         tif_pattern = tif_pattern,
         prp_pattern = prp_pattern,
@@ -139,37 +92,18 @@ function _scan_setup!(db::SQLite.DB, experiment_id::Int, setup;
 
     setup_files = _find_setup_files(analysis_dir)
 
-    # Reuse the PRPs scan_directory already parsed. The path-based
-    # derive_geometry re-reads and re-parses every one of them — a second full
-    # pass over every PRP in the experiment, per ingest.
-    # NamedTuple[...] required: ExposureMeta.prp is Union{NamedTuple,Nothing}, so
-    # when NO exposure has a PRP (tif-without-prp layouts, or a misconfigured
-    # prp_pattern) the filtered comprehension collects to Vector{Any} and
-    # derive_geometry MethodErrors -- turning "geometry falls back to defaults"
-    # into "the ingest crashes". Same trap as geometry.jl's delegation.
     parsed_prps = NamedTuple[m.prp for m in metas if m.prp !== nothing]
 
     geo, _disc = derive_geometry(parsed_prps, setup_files)
 
-    # FILL-ONLY: write only geometry fields still unset ('default' source). Fields
-    # already established at create (committed from the funnel preview, which
-    # derived them with the confirmed setup file) or manually edited ('user') are
-    # left untouched — geometry is derived once, not re-derived on every scan.
     lock(_DB_WRITE_LOCK) do
         SQLite.transaction(db) do
             _fill_unset_geometry!(db, setup_id, geo)
         end
     end
 
-    # -----------------------------------------------------------------------
-    # 3. Group: loads / samples / slots
-    # -----------------------------------------------------------------------
     grouping = group_into_samples(metas)
 
-    # -----------------------------------------------------------------------
-    # 4. Persist: loads → samples → exposures (all inside ONE write transaction
-    #    so a mid-scan failure rolls back the whole batch — no partial write).
-    # -----------------------------------------------------------------------
     new_exposure_ids = Int[]
 
     lock(_DB_WRITE_LOCK) do
@@ -222,8 +156,6 @@ function _scan_setup!(db::SQLite.DB, experiment_id::Int, setup;
                             setup_id            = setup_id,
                             sample_id           = sample_id,
                             filename            = ge.stem,
-                            # image_path is required by the image route + prewarm_thumbnails!
-                            # (both filter WHERE image_path IS NOT NULL).
                             image_path          = ge.tif_path,
                             prp_path            = ge.prp_path,
                             timestamp           = ismissing(ge.timestamp) ? nothing :
@@ -245,36 +177,17 @@ function _scan_setup!(db::SQLite.DB, experiment_id::Int, setup;
         end
     end
 
-    # -----------------------------------------------------------------------
-    # 5. Analyze new exposures OUTSIDE the write transaction (same contract
-    #    as cli_init_with_db!: a crash mid-analyze must not roll back ingest).
-    # -----------------------------------------------------------------------
     if analyze
         to_analyze = vcat(new_exposure_ids,
             setdiff(_pending_setup_ids(db, setup; retry_failed), new_exposure_ids))
         n_new = length(to_analyze)
-        # The "analyzing" segment reports against n_new, its OWN denominator — the
-        # segmented bar gives each stage its own track, so stages no longer have to
-        # share one scale (which is what forced the old cross-stage bookkeeping here).
-        #
-        # Cap the frame count at ~100 per stage. One frame per exposure meant a
-        # 600-exposure scan fired 600 frames into a 64-slot channel, and each
-        # frame costs the client a cache invalidation. NOTE this only thins large
-        # scans: below n_new = 100 the step is 1, i.e. still one frame per
-        # exposure, and 65..100 exposures still exceeds the 64-slot channel.
-        # Saturation is reduced, not eliminated — correctness under saturation
-        # rests on _fanout_frame! (events.jl) closing an evicted subscriber.
         step = max(1, n_new ÷ 100)
         for (i, eid) in enumerate(to_analyze)
             analyze_or_record!(db, eid, analysis_dir)
-            # Progress fires OUTSIDE the structural txn (already committed above).
             if on_progress !== nothing && (i % step == 0 || i == n_new)
                 on_progress(i, n_new, "analyzing")
             end
         end
-        # Always land the segment full, including the clean rescan where n_new == 0
-        # and the loop above never runs (a 0/0 segment reads as complete, not as a
-        # stalled bar).
         on_progress === nothing || on_progress(n_new, n_new, "analyzing")
     end
 
@@ -411,35 +324,11 @@ function _insertable_setup_stems(db::SQLite.DB, r)
     String[stem for stem in stems if !(stem in known) && (!any_prp || has_prp(stem))]
 end
 
-"""
-    ingest_has_work(db, experiment_id) -> Bool
-
-True when a pass would change something: a tif (with its prp, when the folder
-has prps) that has no exposure row yet, or an exposure `pending_analysis_ids`
-returns. A few directory reads plus a stat per failed exposure, so it is cheap
-enough to run inside a request.
-"""
 function ingest_has_work(db::SQLite.DB, experiment_id::Int)::Bool
     !isempty(_insertable_stems(db, experiment_id)) || !isempty(pending_analysis_ids(db, experiment_id)) ||
         !isempty(new_setup_roots(db, experiment_id))
 end
 
-"""
-    _fill_unset_geometry!(db, setup_id, geo)
-
-FILL-ONLY geometry write: write a derived field to the `setups` row ONLY when
-that field is still UNSET (its current `*_source` is `'default'`). Any field that
-already has an established source — `'setup'`/`'prp'`/`'computed'` (derived once,
-e.g. committed from the funnel preview) or `'user'` (a manual override) — is left
-untouched. Also skips a field whose derived value is `missing`. Called inside a
-write transaction.
-
-Geometry is derived ONCE, at the funnel preview (with the confirmed setup file),
-and committed at create; this scan step is the fallback that fills geometry for
-callers that did not supply it, and it never silently re-derives over an
-established value (so a rescan presents what was committed, not a fresh — and
-possibly worse — re-derivation). The user can always re-edit in Configuration.
-"""
 function _fill_unset_geometry!(db::SQLite.DB, setup_id::Int, geo::NamedTuple)
     current = first(Tables.rowtable(DBInterface.execute(db,
         """SELECT energy_kev_source, flight_path_m_source,
@@ -450,8 +339,6 @@ function _fill_unset_geometry!(db::SQLite.DB, setup_id::Int, geo::NamedTuple)
 
     function maybe!(field, source_field, val, source)
         curr_src = getproperty(current, Symbol(source_field))
-        # Only fill a field that is still unset ('default'); never overwrite an
-        # established source (setup/prp/computed/user).
         if !ismissing(curr_src) && String(curr_src) != "default"
             return
         end
