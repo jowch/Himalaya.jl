@@ -10,7 +10,9 @@ using HTTP: HTTP, Request
 
 Greedily select a non-overlapping set of indices by descending score.
 An index is added to the group only if none of its peaks are already
-claimed by a previously selected index.
+claimed by a previously selected index. The first pick is the
+highest-scoring index that contains the sharpest peak (`docs/scoring.md`);
+if no index contains it, the order is plain descending score.
 
 The two-arg form claims by `eff.peak_id` (Int) — the membership test is
 on integer identity instead of `Float64` equality, so two indices whose
@@ -27,6 +29,13 @@ the contract holds by construction.
 The one-arg form falls back to q-value equality (`Set{Float64}`) and is
 retained for test fixtures that don't materialize an `eff` tuple.
 """
+# Moves the first element satisfying `has_sharpest` to the front; the rest keep their order.
+function sharpest_first(sorted, has_sharpest)
+    k = findfirst(has_sharpest, sorted)
+    (k === nothing || k == 1) && return sorted
+    vcat(sorted[k:k], sorted[1:k-1], sorted[k+1:end])
+end
+
 function auto_group(indices::Vector{<:Himalaya.Index},
                     eff::NamedTuple)::Vector{<:Himalaya.Index}
     isempty(indices) && return indices
@@ -43,15 +52,18 @@ function auto_group(indices::Vector{<:Himalaya.Index},
         q_to_id[Float64(eff.q[i])] = Int(eff.peak_id[i])
     end
 
+    ids_of(idx) = Set{Int}(pid for q in Himalaya.peaks(idx)
+                           for pid in (get(q_to_id, Float64(q), nothing),)
+                           if pid !== nothing)  # arithmetically-derived q — won't claim
+    if !isempty(eff.q)
+        sharpest = Int(eff.peak_id[argmax(eff.sharpness)])
+        sorted = sharpest_first(sorted, idx -> sharpest in ids_of(idx))
+    end
+
     claimed = Set{Int}()
     group   = eltype(indices)[]
     for idx in sorted
-        idx_ids = Set{Int}()
-        for q in Himalaya.peaks(idx)
-            pid = get(q_to_id, Float64(q), nothing)
-            pid === nothing && continue  # arithmetically-derived q — won't claim
-            push!(idx_ids, pid)
-        end
+        idx_ids = ids_of(idx)
         isempty(intersect(idx_ids, claimed)) || continue
         push!(group, idx)
         union!(claimed, idx_ids)
@@ -64,6 +76,15 @@ function auto_group(indices::Vector{<:Himalaya.Index})::Vector{<:Himalaya.Index}
     scores  = Himalaya.score.(indices)
     perm    = sortperm(scores; rev = true)
     sorted  = indices[perm]
+
+    sharpest_q, best = 0.0, -Inf
+    for idx in sorted
+        for (q, sh) in zip(Himalaya.peaks(idx), nonzeros(idx.sharpness))
+            sh > best && ((sharpest_q, best) = (Float64(q), Float64(sh)))
+        end
+    end
+    sorted = sharpest_first(sorted, idx -> sharpest_q in Himalaya.peaks(idx))
+
     claimed = Set{Float64}()
     group   = eltype(indices)[]
     for idx in sorted
@@ -835,7 +856,7 @@ end
 # obviously file-I/O-free).
 # ──────────────────────────────────────────────────────────────────────────────
 
-const ANALYSIS_VERSION = string(pkgversion(Himalaya), "+1")
+const ANALYSIS_VERSION = string(pkgversion(Himalaya), "+2")
 
 function read_analysis_version(db::SQLite.DB, exposure_id::Int)::Union{String, Nothing}
     rows = Tables.rowtable(DBInterface.execute(db,

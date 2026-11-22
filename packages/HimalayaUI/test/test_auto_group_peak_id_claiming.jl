@@ -71,11 +71,12 @@ end
 end
 
 @testset "auto_group unchanged when no candidate contains the sharpest peak" begin
-    q  = [0.1000, 0.1414, 0.2000]
-    sh = [0.2, 0.8, 0.6]
-    candidates = indexpeaks(q, sh)
-    eff = (q = q, sharpness = sh, peak_id = [1, 2, 3], peak_kind = fill(:auto, 3))
-    cands = [i for i in candidates if !(q[2] in peaks(i))]
-    isempty(cands) && return
-    @test auto_group(cands, eff) == auto_group(cands)
+    q  = 0.09789 .* [1, sqrt(3), 2, sqrt(7), 3, sqrt(12), sqrt(13)]
+    sh = [4.57, 0.747, 0.383, 0.111, 0.0543, 0.0205, 0.0397]
+    cands = [i for i in indexpeaks(q, sh) if !(q[1] in peaks(i))]
+    @test !isempty(cands)
+    eff = (q = q, sharpness = sh, peak_id = collect(1:7), peak_kind = fill(:auto, 7))
+    expected = first(sort(cands; by = score, rev = true))
+    @test first(auto_group(cands, eff)) === expected
+    @test first(auto_group(cands)) === expected
 end
