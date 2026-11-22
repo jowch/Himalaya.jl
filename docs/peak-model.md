@@ -1,0 +1,287 @@
+# Per-database peak model
+
+Status: design. Step 1 (packaging) is implemented: the features, labels,
+model and cross-validation live in `packages/HimalayaPeakModel`, the database
+loader is `HimalayaUI.labeled_exposures`, and `tools/peak-classifier/` (#486)
+is the command-line tool on top of both. This document describes how HimalayaUI trains such a model for its own
+database, keeps it up to date as users curate, and uses it.
+
+## Goal
+
+Each HimalayaUI database learns from its own curations which candidate peaks
+are real, without data or models leaving the machine. Training, evaluation and
+updates run in the background with no user action, and the user experience
+does not change: users see better auto peaks, not a model. A database with too few
+curations, or a model that does not beat the hybrid detector on that
+database's own held-out data, falls back to the hybrid.
+
+## Constraints from the current backend
+
+- `serve` serves one database, so "per database" means per server process.
+- Background work: `start_background!` spawns one task at boot
+  (`backfill_all_monitors!`, then `resume_ingests!`). The only periodic work is
+  the idempotency GC timer. There is no job queue. Writes serialise on
+  `_DB_WRITE_LOCK`; GET requests read from pooled read-only connections.
+- Analysis memoisation: `ANALYSIS_VERSION` is a constant. An exposure whose
+  stored `analysis_version` differs is re-analysed by the next ingest pass,
+  and a curation route on such an exposure runs a full `findpeaks` inside the
+  request until that happens.
+- Curations are stored by q and re-attached to auto peaks by
+  `peak_matching.jl`, so they survive a change of peak set. Auto peak ids are
+  kept across re-detection when q matches (`diff_update_auto_peaks!`).
+- There is no settings or key-value table, and the schema avoids BLOBs. Files
+  next to the database have a precedent (`thumb_cache_dir`), and `open_db`
+  makes the database group-writable for shared deployments.
+- The tool depends on HimalayaUI by path, so HimalayaUI cannot depend on the
+  tool as it stands.
+
+## The model's role
+
+The active model writes `auto_peaks` for exposures nobody has reviewed yet.
+`analyze_exposure!` runs the hybrid detector as before, then the model over the
+candidate pool, and stores the model's peaks. Users see the same workspace and
+the same peak marks, and curate exactly as today: add peaks, remove added
+peaks, exclude and un-exclude auto peaks. Curations are stored and matched the
+same way whichever detector produced the auto peaks. Only which auto peaks
+appear changes, and those same curations are the labels the next training run
+learns from.
+
+Measured basis: see "Evidence". The model ties the hybrid on phase calls and
+finds markedly more of the peaks users otherwise add by hand, so the gain is
+less manual peak work.
+
+## Reviewed exposures are pinned
+
+An exposure is **reviewed** once one of these events touches it: a peak add,
+remove, exclude or un-exclude; an assignment add, remove or state change; an
+index confirm or un-confirm; a sample call (which pins every exposure of that
+sample); or an exposure accept or reject. The event sets
+`exposures.reviewed_at` in the same transaction, so the flag cannot lag the
+event. The same list is the training trigger's label kinds.
+
+A model promotion never re-detects a reviewed exposure. `persist_analysis!`
+re-attaches assignment members by phase and basis, so a changed peak set can
+drop a user's assignment, and open clients would get the assignment-dropped
+toast. Pinning prevents both. Curation routes never re-detect because of the
+model either: the curation itself pins the exposure with the peaks the user
+saw.
+
+A core `ANALYSIS_VERSION` bump re-detects every exposure, pinned or not, as
+today, with whatever detector is in production at that moment; assignments
+can be dropped exactly as on any release today. Labels are unaffected, because
+training reads review snapshots, not live auto peaks (below).
+
+## Provenance bookkeeping
+
+Each auto peak records where it came from, set by `diff_update_auto_peaks!`:
+
+- `auto_peaks.found_by`: `hybrid`, `model` or `both`;
+- `auto_peaks.model_id` (NULL when no model was active).
+
+Labels do not come from live `auto_peaks`, which a release can re-detect. Each
+reviewing event instead writes a **review snapshot** in the same transaction:
+the exposure's auto peaks at that moment (q, `found_by`, `model_id`), the
+detector on screen (`ANALYSIS_VERSION` plus model id), and the curation.
+Training reads only snapshots, using each exposure's latest one for the peaks
+the user saw and all its curations as they stand now.
+
+Labels for training (all by q, matched with the app's tolerance):
+
+| Evidence | Label |
+|---|---|
+| `add` curation | positive |
+| `exclude` curation, whether or not an auto peak still matches it | strong negative |
+| snapshot peak left alone, `found_by` = `hybrid` or `both` | positive (as today) |
+| snapshot peak left alone, `found_by` = `model` | dropped, with candidates within tolerance of it |
+| every candidate on a form-factor exposure | strong negative |
+| other candidates on a reviewed exposure | weak negative |
+
+Excludes are labelled at their own q (every candidate within the match
+tolerance of an exclude is a strong negative): after a re-analysis many excludes match
+no auto peak (the current detector does not find those peaks), and dropping
+them would lose real negatives. A model-only peak the user left alone is
+dropped rather than left to the weak-negative rule, which would otherwise
+make it, and its neighbours, a negative. Exposures reviewed before snapshots
+existed get one snapshot from their current auto peaks when the migration
+runs, all `found_by = hybrid`.
+
+## Training
+
+- **In a child process.** DecisionTree's `build_forest` and the feature
+  extraction use `Threads.@threads` over every default thread, and their
+  allocations trigger stop-the-world collections that would stall requests.
+  Training therefore runs in a separate `julia` process, started with the
+  server's sysimage so it does not spend minutes compiling, that opens the
+  database read-only (`mode=ro`), trains and cross-validates, and prints the
+  forest and metrics as JSON. The server writes the result under
+  `_DB_WRITE_LOCK`.
+- **Trigger.** A watermark: the largest `user_actions.id` among the label
+  kinds (the reviewing events above). Training is due when at
+  least N new label events have arrived since the last run and no label event
+  has arrived for T minutes. Proposed N = 20, T = 10.
+- **Single flight.** One training process per server. A trigger during a run
+  marks the next run due instead of starting another.
+- **Feature cache.** Features depend only on the trace, the feature version
+  and the core version, so they are cached per trace hash as raw Float32
+  arrays in files next to the database (derived data, safe to delete; a raw
+  array runs no code when read). Whoever can write that directory can alter
+  training inputs, which is the same trust as write access to the database. About 7k exposures × 30 candidates × 28
+  features is on the order of 25 MB as Float32, against roughly 100 MB as JSON
+  inside the database.
+- **Cold start.** No model is trained until the database has at least 100
+  add and exclude curations across at least 30 curated exposures, in at least
+  3 experiments (or 5 samples, grouping by sample, when it has fewer
+  experiments). Kept hybrid peaks are plentiful and say little, so they do not
+  count towards this. Until then the hybrid alone is used, and the run's row
+  records why.
+
+## Evaluation and promotion
+
+A label is biased against the detector that was on screen when it was made:
+an add exists because that detector missed the peak, and an exclude because it
+showed one. While only the hybrid has been shown, every label is biased
+against the hybrid, so add recall and excludes-detected favour any candidate
+by construction. The binding checks are therefore the ones that do not depend
+on who was shown:
+
+- **Peaks per exposure**, over all exposures with a trace, must stay within
+  the hybrid's plus 0.5, and peaks per form-factor exposure within the
+  hybrid's plus 0.1. These cap how many extra peaks a model may add for its
+  higher recall. The values are starting points to set from the first local
+  runs.
+- **Phase calls**: top-1 calls (first pick of `auto_group`) on exposures with
+  a confirmed call, with excludes applied and adds not applied, must not fall
+  below the hybrid's. Applying adds would hand both detectors the user's
+  final peak set and hide any difference.
+- **Add recall and excludes-detected** are reported, with each label's shown
+  detector, so labels made under the current hybrid, older detectors and
+  models can be told apart. They must not be worse than the hybrid's on labels
+  made while the hybrid or an older detector was shown.
+
+Every comparison is against the hybrid, scored out of fold (leave one
+experiment out). There is no model-against-model test: two runs of the same
+recipe differ only in data, threshold and seed, which the hybrid comparison
+already covers. A new model replaces an active one only when labels have grown
+by at least 25% in adds and excludes since the active model's watermark and
+the new one passes the hybrid comparison, so models do not churn.
+
+The threshold is the one that maximises add recall within the peaks caps. Adds
+in the high-q band the detectors trim (top 7% of the q range) are reported
+separately and left out of add recall. A run that fails is recorded and
+production stays.
+
+## Storage
+
+- Table `peak_models` (migration): id, created_at, status (`active`,
+  `pending`, `rejected`, `retired`), label watermark, counts, threshold,
+  metrics JSON (the cross-validated tables and the production comparison),
+  feature version, core version, and the forest.
+- The forest is stored as JSON (each tree as nested split and leaf nodes) in
+  a TEXT column, only for the active and a pending model; it is set to NULL on
+  rejected and retired rows. JSON trees load without running code (a
+  `Serialization` file runs code when loaded, and the directory next to the
+  database is group-writable) and do not depend on the Julia or DecisionTree
+  version. Prediction walks the JSON trees with the same split comparison as
+  DecisionTree, and a test checks that its probabilities equal DecisionTree's
+  on the same forest.
+- The feature version includes `pkgversion(Himalaya)`, because candidates and
+  the detector-agreement features come from `findpeaks`. After a core upgrade
+  the server retrains from the stored labels at boot and runs the gate, so a
+  release re-analyses unpinned exposures once, not model → hybrid → model.
+- Rebuild migrations that list `auto_peaks` columns explicitly must carry
+  `found_by` and `model_id`.
+
+## Analysis with a model
+
+- `exposures.peak_model_version` records which model produced an exposure's
+  peaks. `analysis_version` stays equal to `ANALYSIS_VERSION`, so the ingest
+  queries, `ingest_has_work` and the experiment-open scan never see a
+  promotion: no "Analyzing" badge and no ingest notice.
+- One function resolves the production detector for a database (the active
+  model, or the hybrid), and every caller that detects peaks uses it:
+  `analyze_exposure!`, the CLI's `analyze` and `merge`, and the migration that
+  backfills versions.
+- A promotion starts a **model pass** over unreviewed exposures whose
+  `peak_model_version` differs, one at a time, newest experiments first, after
+  any previous pass has finished. It calls `analyze_exposure!` with a
+  `force_detect` flag, because the trace hash and analysis version are
+  unchanged and would otherwise skip detection. Inside the write lock and
+  transaction it re-checks `reviewed_at` and leaves the exposure alone if a
+  curation landed meanwhile.
+- The pass writes no `user_actions` rows but still sends each exposure's
+  `analyze_run` frame. That frame is a cache update, not a notice: open
+  clients replace stale auto peak ids, so a later exclude does not hit a
+  deleted row. No assignment-dropped toast can follow, since reviewed
+  exposures are never in the pass.
+- After a core version bump, boot re-analysis of unreviewed exposures waits
+  for the boot retrain (and its gate) to finish, so they go to the new model,
+  or to the hybrid, once instead of hybrid then model. Reviewed exposures are
+  re-analysed straight away with the hybrid.
+- The model's output uses the pipeline's peak shape: indices on the trace
+  grid, sharpness from `sharpness_full` with the hybrid's fallback (the median
+  positive value for sharpness ≤ 0), prominence from persistence or 0 when the
+  point is not a local maximum, and `found_by` passed to
+  `diff_update_auto_peaks!`. If prediction fails the exposure gets the
+  hybrid's peaks, not an analysis error.
+- Prediction reuses the hybrid result (including `z`) that
+  `analyze_exposure!` already computed instead of rerunning `findpeaks`.
+
+## No model UI
+
+The model has no status view, controls or notices in the app. Each run's
+outcome (promoted or not, and why, or the cold-start reason) is recorded in
+its `peak_models` row and logged by the server, for whoever runs the
+deployment.
+
+## Packaging
+
+HimalayaUI cannot depend on the tool while the tool depends on HimalayaUI.
+The features, model and cross-validation code move into a package that
+depends only on Himalaya (for example `packages/HimalayaPeakModel`). The
+database loader moves into HimalayaUI and takes an open database handle. The
+command-line tool keeps working on top of both, with its read-only open. Adding
+DecisionTree.jl to HimalayaUI's dependencies adds it to the sysimage; training
+and prediction go into the precompile workload.
+
+## Privacy
+
+Nothing leaves the machine: the model is trained from the local database and
+trace files and stored in that database. The forest, metadata and feature
+cache are lab data like the rest of the database and are never exported.
+
+## Delivery
+
+1. Packaging: move features, model and cross-validation into the new package;
+   loader takes a database handle; tool unchanged for users.
+2. Provenance and pinning: `found_by`, `model_id`, `reviewed_at`, review
+   snapshots and the snapshot-based labels. No peak changes.
+3. Training service: `peak_models` table, feature cache, child-process
+   training, watermark trigger and the gate. Runs are recorded but nothing is
+   promoted, so peaks do not change.
+4. Model-written auto peaks: `peak_model_version`, JSON forest prediction,
+   the model pass with `force_detect`, boot ordering after a core bump, and
+   the one detector resolver for server and CLI.
+
+## Evidence
+
+Local measurements on a curated real database (leave-one-experiment-out, out
+of fold), reported here in aggregate terms only.
+
+- **Phase calls.** With classifier peaks scored through the same
+  `auto_group` rule and sharpness as the hybrid's, top-1 phase calls on
+  confirmed exposures tie the hybrid at the default threshold (within one
+  call, with roughly equal paired wins and losses) and are worse at a stricter
+  threshold. The gate therefore requires calls not to fall rather than to
+  improve.
+- **Missed peaks.** The classifier recovers markedly more of the peaks users
+  added by hand than the hybrid does, with a few more peaks per exposure.
+  Those adds were selected by what the older detector missed, so this measures
+  recovery of that detector's misses. That is the expected gain: less manual
+  peak work.
+- **Detector dependence.** After the database is re-analysed with the hybrid,
+  the hybrid scores perfectly on kept and excluded-detected by construction,
+  and a large share of excludes no longer match any auto peak. Hence the
+  hybrid-only comparison and the exclude labelling above.
+- **Label era.** The labels behind these measurements were made while an older
+  detector was on screen, neither the hybrid nor the classifier, so the
+  comparison between those two is not biased by which one users saw.
