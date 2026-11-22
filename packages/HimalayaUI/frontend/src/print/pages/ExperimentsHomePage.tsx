@@ -129,7 +129,7 @@ export function ExperimentsHomePage(): JSX.Element {
             // the font size instead of stretching the full page width (note 3).
             <span className="block max-w-[34ch] mx-auto">
               Point Himalaya to your experiment directory. It will discover your
-              setup, scan your exposures, group them into samples. Easy.
+              setup, scan your frames, group them into samples. Easy.
             </span>
           }
           action={
@@ -214,7 +214,7 @@ export function ExperimentsHomePage(): JSX.Element {
                             <span className="text-ink">{stats.samples}</span>
                             {" samples · "}
                             <span className="text-ink">{stats.exposures}</span>
-                            {" exposures · "}
+                            {" frames · "}
                             <span className="text-ink">{stats.loads}</span>
                             {" loads"}
                           </div>

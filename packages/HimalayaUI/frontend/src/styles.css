@@ -122,7 +122,7 @@
   --color-frame-edge:   oklch(0.150 0.010 55);
   --color-frame-tag:    oklch(0.82 0.01 80);
   /* Bright signal endpoint for the detector-image LUT (U-1, #255). The
-     in-browser LUT in DetectorImage.tsx maps grayscale intensity t=0..1 onto
+     in-browser LUT in print/detector/detectorLut.ts maps grayscale intensity t=0..1 onto
      frame-edge (window backing) -> frame-signal (bright signal). A warm
      off-white (hue ~80, same family as paper) so bright Bragg rings read as
      "ink on dark paper" inside the warm dark window, bridging to the
@@ -416,17 +416,6 @@
    children of <Skeleton> behave as if they were direct children of its outer
    wrapper. The outer wrapper still positions the bones overlay via position:relative. */
 [data-boneyard-content] { display: contents; }
-
-/* SegmentedControl — fold in the 44px touch target only on coarse pointers
-   (DESIGN.md sign-off §8) so dense desktop toolbars keep compact density. */
-@media (pointer: coarse) {
-  .seg-segment {
-    min-height: 44px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-}
 
 /* Respect prefers-reduced-motion (impeccable checklist G). Unlayered + !important
    so it overrides the layered global transition rule AND the keyframe animations

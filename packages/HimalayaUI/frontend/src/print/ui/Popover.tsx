@@ -35,7 +35,7 @@ export interface PopoverProps {
  * carry focusable controls (the whole point), so it opens on click and stays
  * open until Escape / outside-pointerdown / re-click.
  *
- * Surface mirrors {@link Menu} — the `.card` Plate-Lift plate, absolutely
+ * Surface is the `.card` Plate-Lift plate, absolutely
  * positioned, anchored by a `relative` wrapper, with the `.anim-pal-scale`
  * popover entry. It is NOT the dark Tooltip exception.
  *

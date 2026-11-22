@@ -58,8 +58,8 @@ test("a beamtime folder adds every setup as its own experiment", async ({ page }
   await page.getByTestId("dirpicker-input").locator("input").fill("/lab/20261103");
   const rows = page.getByTestId("setup-row");
   await expect(rows).toHaveCount(2);
-  await expect(rows.nth(0).getByTestId("setup-summary")).toHaveText("1,220 exposures · flight path 1.81 m");
-  await expect(rows.nth(1).getByTestId("setup-summary")).toHaveText("340 exposures · flight path 0.50 m");
+  await expect(rows.nth(0).getByTestId("setup-summary")).toHaveText("1,220 frames · flight path 1.81 m");
+  await expect(rows.nth(1).getByTestId("setup-summary")).toHaveText("340 frames · flight path 0.50 m");
   await page.getByTestId("dirpicker-input").locator("input").press("ControlOrMeta+Enter");
   await expect(page).toHaveURL(/\/experiments$/);
   expect(created.map((c) => [c.name, c.data_dir, c.geometry.flight_path_m])).toEqual([

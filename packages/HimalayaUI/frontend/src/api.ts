@@ -291,6 +291,34 @@ export const bridgeSamples = (sampleId: number, toSampleId: number, opts?: AuthO
 export const unbridgeSample = (sampleId: number, opts?: AuthOpts): Promise<SampleBridge[]> =>
   request<SampleBridge[]>("DELETE", `/api/samples/${sampleId}/bridge`, undefined, opts);
 
+export interface SampleCompare {
+  sample_id: number;
+  ref_sample_id: number;
+  added_by: string | null;
+}
+
+export interface SampleSubtraction {
+  sample_id: number;
+  ref_sample_id: number;
+}
+
+export interface CompareState {
+  compares: SampleCompare[];
+  subtractions: SampleSubtraction[];
+}
+
+export interface CompareChange {
+  add?: number[];
+  remove?: number[];
+  subtraction?: number | null;
+}
+
+export const listCompares = (experimentId: number): Promise<CompareState> =>
+  request<CompareState>("GET", `/api/experiments/${experimentId}/compares`);
+
+export const patchCompares = (sampleId: number, change: CompareChange, opts?: AuthOpts): Promise<CompareState> =>
+  request<CompareState>("PATCH", `/api/samples/${sampleId}/compares`, change, opts);
+
 export type SampleLabelState = "suggested" | "confirmed";
 
 export interface SampleLabel {

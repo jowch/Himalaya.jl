@@ -7,6 +7,7 @@ interface Props {
   onPick: (id: number) => void;
   onClose: () => void;
   notes?: ReadonlyMap<number, string>;
+  full?: string | undefined;
 }
 
 export function ComparePicker({
@@ -14,6 +15,7 @@ export function ComparePicker({
   onPick,
   onClose,
   notes,
+  full,
 }: Props): JSX.Element {
   const [q, setQ] = useState("");
   const input = useRef<HTMLInputElement | null>(null);
@@ -27,9 +29,10 @@ export function ComparePicker({
     return () => document.removeEventListener("mousedown", onDown, true);
   }, [onClose]);
   const shown = useMemo(() => {
+    if (full) return [];
     const f = q.trim().toLowerCase();
     return f ? samples.filter((s) => s.name.toLowerCase().includes(f)) : samples;
-  }, [samples, q]);
+  }, [samples, q, full]);
   const pick = (s: CorpusSample | undefined): void => {
     if (!s) return;
     onPick(s.id);
@@ -76,7 +79,7 @@ export function ComparePicker({
             </button>
           </li>
         ))}
-        {shown.length === 0 && <li className="px-3 py-2 text-caption">No samples match.</li>}
+        {shown.length === 0 && <li className="px-3 py-2 text-caption">{full ?? "No samples match."}</li>}
       </ul>
     </div>
   );
