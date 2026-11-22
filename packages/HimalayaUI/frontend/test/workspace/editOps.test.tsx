@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import type { Assignment, CompareState, IndexEntry, Peak, SampleBridge, SampleLabel } from "../../src/api";
+import type { Assignment, CompareState, IndexEntry, Peak, SampleBridge, SampleCall, SampleLabel } from "../../src/api";
 import { queryKeys, useAddPeak, useEditOps } from "../../src/queries";
 import { useUndoHistory, type UndoEntry } from "../../src/workspace/undo";
 import { bridgeEntry, compareEntry, combinedEntry, customIndexEntry, labelEntry, peakEntry, tickEntry, unbridgeEntry } from "../../src/workspace/undoEntries";
@@ -14,6 +14,7 @@ const server = {
   assignments: new Map<number, Assignment>(),
   labels: [] as SampleLabel[],
   bridges: [] as SampleBridge[],
+  calls: new Map<number, SampleCall>(),
   compares: { compares: [], subtractions: [] } as CompareState,
 };
 
@@ -50,6 +51,7 @@ vi.mock("../../src/api", async (importOriginal) => {
     getAssignment: vi.fn(async (eid: number) => server.assignments.get(eid) ?? { exposure_id: eid, state: "null", members: [] }),
     listLabels: vi.fn(async () => server.labels),
     listBridges: vi.fn(async () => server.bridges),
+    getSampleCall: vi.fn(async (sid: number) => server.calls.get(sid) ?? { sample_id: sid, state: "indexed", phase: null, call_phases: [], members: [] }),
     patchCompares: vi.fn(async () => server.compares),
     listCompares: vi.fn(async () => server.compares),
   };
@@ -83,6 +85,7 @@ beforeEach(() => {
   server.assignments = new Map();
   server.labels = [];
   server.bridges = [];
+  server.calls = new Map();
   server.compares = { compares: [], subtractions: [] };
 });
 
@@ -288,12 +291,61 @@ describe("undo against the server", () => {
       { sample_id: 4, group_id: 2 }, { sample_id: 5, group_id: 2 },
     ];
     act(() => result.current.history.record(bridgeEntry(result.current.ops, {
-      label: "bridged", sampleId: 1, exposureId: undefined, from: 1, to: 4, bridges: before,
+      label: "bridged", sampleId: 1, exposureId: undefined, from: 1, to: 4, bridges: before, labels: [],
+      keep: undefined, states: { from: "indexed", to: "indexed" }, lost: [],
     })));
     server.bridges = before.map((b) => ({ ...b, group_id: 1 }));
     await act(async () => { await result.current.history.undo()!.done; });
     expect(firstArgs(api.unbridgeSample).map((c) => c[0])).toEqual([4, 5]);
     expect(firstArgs(api.bridgeSamples)).toEqual([[4, 5]]);
+    expect(mocked(api.bridgeSamples).mock.calls[0]![2]).toBe("both");
+  });
+
+  it("undoing a bridge that kept one call brings back the other side's call state and frames' phases", async () => {
+    const { result } = setup();
+    const lost = [{ index_id: 21, exposure_id: 201, phase: "Im3m" }];
+    act(() => result.current.history.record(bridgeEntry(result.current.ops, {
+      label: "bridged", sampleId: 1, exposureId: undefined, from: 1, to: 2, bridges: [], labels: [],
+      keep: 1, states: { from: "form_factor", to: "indexed" }, lost,
+    })));
+    server.bridges = [{ sample_id: 1, group_id: 1 }, { sample_id: 2, group_id: 1 }];
+    server.calls.set(1, { sample_id: 1, state: "form_factor", phase: null, call_phases: [], members: [] });
+    await act(async () => { await result.current.history.undo()!.done; });
+    expect(firstArgs(api.unbridgeSample).map((c) => c[0])).toEqual([1]);
+    expect(firstArgs(api.setSampleCallState)).toEqual([[2, "indexed"]]);
+    expect(firstArgs(api.addAssignmentPhase)).toEqual([[201, 21]]);
+    server.bridges = [];
+    await act(async () => { await result.current.history.redo()!.done; });
+    expect(mocked(api.bridgeSamples).mock.calls.at(-1)!.slice(0, 3)).toEqual([1, 2, 1]);
+  });
+
+  it("undoing a bridge takes back only the labels the bridge shared, and leaves flight paths and later labels", async () => {
+    const { result } = setup();
+    const l = (id: number, sample_id: number, label: string, state: SampleLabel["state"] = "confirmed"): SampleLabel =>
+      ({ id, sample_id, label, state, source: state === "suggested" ? "ingest" : "user" });
+    const before = [l(1, 1, "Buffer"), l(2, 2, "37C"), l(3, 2, "buffer", "suggested"), l(4, 2, "1.7 m")];
+    act(() => result.current.history.record(bridgeEntry(result.current.ops, {
+      label: "bridged", sampleId: 1, exposureId: undefined, from: 1, to: 2, bridges: [], labels: before,
+      keep: undefined, states: { from: "indexed", to: "indexed" }, lost: [],
+    })));
+    server.bridges = [{ sample_id: 1, group_id: 1 }, { sample_id: 2, group_id: 1 }];
+    server.labels = [l(1, 1, "Buffer"), l(6, 1, "37C"), l(7, 1, "later"), l(2, 2, "37C"), l(3, 2, "buffer"), l(4, 2, "1.7 m"), l(8, 2, "later")];
+    await act(async () => { await result.current.history.undo()!.done; });
+    expect(firstArgs(api.unbridgeSample).map((c) => c[0])).toEqual([1]);
+    expect(firstArgs(api.removeLabel)).toEqual([[1, "37C"]]);
+    expect(firstArgs(api.restoreLabelSuggestion)).toEqual([[2, "buffer"]]);
+  });
+
+  it("undoing a bridge brings back a cleared call that the other side's form factor replaced", async () => {
+    const { result } = setup();
+    act(() => result.current.history.record(bridgeEntry(result.current.ops, {
+      label: "bridged", sampleId: 1, exposureId: undefined, from: 1, to: 2, bridges: [], labels: [],
+      keep: undefined, states: { from: "null", to: "form_factor" }, lost: [],
+    })));
+    server.bridges = [{ sample_id: 1, group_id: 1 }, { sample_id: 2, group_id: 1 }];
+    server.calls.set(1, { sample_id: 1, state: "form_factor", phase: null, call_phases: [], members: [] });
+    await act(async () => { await result.current.history.undo()!.done; });
+    expect(firstArgs(api.setSampleCallState)).toEqual([[1, "null"]]);
   });
 
   it("undoes and redoes a comparison only while the server still matches what the edit left", async () => {
@@ -354,5 +406,6 @@ describe("undo against the server", () => {
     })));
     await act(async () => { await result.current.history.undo()!.done; });
     expect(firstArgs(api.bridgeSamples)).toEqual([[2, 1]]);
+    expect(mocked(api.bridgeSamples).mock.calls[0]![2]).toBe("both");
   });
 });

@@ -4,8 +4,8 @@ Ideas that are intentionally out of scope for current development but worth
 preserving for later planning. Each entry says *what* and *why later* — not
 a full design.
 
-For the design philosophy and the current iteration's choices, see
-[`himalayaui-design.md`](himalayaui-design.md).
+For the product principles and design system, see [`PRODUCT.md`](../PRODUCT.md)
+and [`DESIGN.md`](../DESIGN.md).
 
 ---
 
@@ -23,9 +23,9 @@ starting point for that work.
 load-bearing assumption: a phase is a 1D ratio series scaled by a single
 scalar `basis`. Cubic, hexagonal, square, and lamellar all have one free
 lattice parameter, so peak ratios are constants stored in
-[src/phase.jl:62-75](src/phase.jl:62). Tetragonal ratios depend on `c/a`;
+[src/phase.jl](../src/phase.jl). Tetragonal ratios depend on `c/a`;
 monoclinic ratios depend on three ratios and an angle. The vectorized
-matcher at [src/index.jl:134-148](src/index.jl:134) — `observed_ratios = X * (1 ./ B)` —
+matcher at [src/index.jl](../src/index.jl) — `observed_ratios = X * (1 ./ B)` —
 collapses search to 1D *only* because the basis is a scalar. With two
 parameters, no scalar division turns a peak into a comparable ratio.
 
@@ -61,26 +61,26 @@ function indexpeaks(::Type{P}, peaks, sharpness, domain, tol, requiremin) where 
 end
 ```
 
-The top-level enumerator at [src/index.jl:98-100](src/index.jl:98) just adds
+The top-level enumerator at [src/index.jl](../src/index.jl) just adds
 the new phases to the loop — each phase routes itself to the correct method
 via dispatch. Cubic/hex/lamellar pay zero added cost.
 
 The same pattern applies to `predictpeaks`, `fit`, `score`'s coverage weights,
 `remove_subsets`, and `==` — one method per parameter-count class instead of
 runtime branches. The hexagonal `λ = 2/√3` special case at
-[src/index.jl:238](src/index.jl:238) is a foreshadowing of this exact pattern.
+[src/index.jl](../src/index.jl) is a foreshadowing of this exact pattern.
 
 **The `Index` struct change is unavoidable.**
-[src/index.jl:7-11](src/index.jl:7) declares `basis::Real` concretely.
+[src/index.jl](../src/index.jl) declares `basis::Real` concretely.
 Generalize once: `basis::Real` → `params::Tuple` (or `NTuple{N,Real}` keyed
 on phase). Provide `basis(idx) = idx.params[1]` as a back-compat accessor —
 the codebase already uses `basis(index)` everywhere it reads the value
-([src/index.jl:23](src/index.jl:23)), so most call sites are insulated.
+([src/index.jl](../src/index.jl)), so most call sites are insulated.
 
 **DB schema bump.** `indices.basis FLOAT` → either `indices.params TEXT`
 (JSON tuple) or split into typed columns (`lattice_a`, `lattice_b`,
 `lattice_c`, `lattice_beta`). One-time migration: scalar → `[scalar]`.
-Schema lives in [packages/HimalayaUI/src/db.jl](packages/HimalayaUI/src/db.jl).
+Schema lives in [packages/HimalayaUI/src/db.jl](../packages/HimalayaUI/src/db.jl).
 
 **Prerequisite: predicate-based selection rules.** Both the one-param and
 multi-param matchers need to enumerate allowed `(hkl)` per phase. Today's
@@ -114,7 +114,7 @@ parameter-count class.
 
 Today `phaseratios(P)` returns a hardcoded `Vector{Float64}` truncated by hand
 at the practical detection ceiling for each phase
-([src/phase.jl:62-75](src/phase.jl:62)). Proposed shape: a new method
+([src/phase.jl](../src/phase.jl)). Proposed shape: a new method
 `phaseratios(P, n)` that returns the first `n` allowed ratios — slicing the
 hardcoded prefix when `n` is small, generating additional ratios from
 selection-rule predicates when `n` exceeds the prefix.
@@ -145,8 +145,8 @@ Currently peaks are returned at grid positions.
 
 Automated SNIP or asymmetric least-squares background subtraction as a
 pre-processing step, particularly useful for traces with steeply falling
-backgrounds. Currently handled manually (background-subtracted exposures are
-ingested as derived exposures in the DB).
+backgrounds. Today the workspace subtracts a chosen buffer sample for display
+only, scaled by beam monitors; nothing is subtracted in the pipeline.
 
 ### Auto-best-exposure selection
 
@@ -163,7 +163,7 @@ index. Known pre-existing gap.
 
 ---
 
-## Index page — annotation depth
+## Workspace — annotation depth
 
 ### Peak classification on ticks
 
@@ -178,71 +178,21 @@ Render the Miller indices `(hkl)` next to each predicted-q tick on the trace.
 Useful for publication figures and for users learning the indexing. Visual
 budget is tight, so probably hover-revealed rather than always-on.
 
-### Manual index entry modal
-
-Currently an indexing must come from `indexpeaks`. A scientist who knows
-the answer should be able to enter `Pn3m, basis 0.523` directly and have
-it scored against the current peaks without going through candidate
-generation.
-
 ### Color-blind accessibility on phase hues
 
 Eight earthy phases at similar chroma are not distinguishable under all
 forms of color vision. Add a redundant channel — dash patterns on ticks,
 shape on Miller dots — so phase identity doesn't depend on hue alone.
 
-### Multi-exposure overlay on the trace
-
-Overlay multiple exposures (or derived exposures) on the same plot with
-configurable I-offsets. Lets the user see flares and cross-exposure
-consistency at a glance.
-
 ---
 
-## Trace plot card — interaction grammar redesign (incl. peak-move)
+## Peak move on the trace plot
 
-The single-sample focus trace editor (`src/print/components/TracePlate.tsx`,
-used by `src/print/pages/FocusPage.tsx`) needs a holistic redesign, not a patch. This was Movement 4 ("redesign the
-trace grammar") of the 2026-05-29 functional-traversal remediation; M1–M3
-shipped, M4 was **deferred here** by owner decision because the headline
-verb (peak-move) is a backend data-model problem, not a plot interaction.
-
-**What's wrong with the current grammar (verified against live source).**
-- **One click verb, three blind outcomes** decided only by what's under the
-  cursor (live grammar in `src/print/components/TracePlate.tsx` /
-  `src/print/pages/FocusPage.tsx`): empty area → add manual peak; on a
-  manual peak → delete; on an auto peak → toggle exclusion. No mode, no
-  modifier, no cursor change to say which.
-- **Two conflicting "reset" verbs** — double-click does a true full reset
-  (`onReset`, x+y → null), while the "Auto-fit" button (`onAutoFit`, sets
-  `xDomain` to null to fit features) is a different verb wearing similar
-  affordance.
-- **No peak-move at all** — q is immutable; only add / remove(manual) /
-  exclude(auto) exist.
-
-**Design direction (canon-derived, ready to build from).** Grounded in
-PRODUCT.md principle 4 ("recede so the data leads") + the "confident expert
-who is quiet" voice + the legacy-scientific-software anti-reference, and
-DESIGN.md's "The Print":
-- **Hover-reveals-the-action direct manipulation**, not a Select/Add mode
-  toolbar (the toolbar-soup reflex). Affordances appear *at the mark* on
-  approach (exclude/restore on an auto peak, delete on a manual peak, a
-  drag handle for move) and vanish otherwise. The verb is never blind.
-- **Terracotta stays rationed** — the grease-pencil mark is reserved for the
-  genuine edit acts (delete ✕, the live-move mark); hover controls are
-  otherwise ghost/ink, inline and hairline (flat-except-the-plate), never
-  floating cards.
-- **Provenance via color, per the Semantic Colour Rule** — a *moved* auto
-  peak is a hand-edit, so it reads as manual (peak-manual magenta). The color
-  is the audit trail of "you touched this."
-- **Reconcile the resets** — relabel the fit verb "fit"; reserve "reset" for
-  true full-range. (The `+ Peak` mode is now a real armed mode with an Escape
-  disarm handler — `addArmed` in `FocusPage.tsx` — so it no longer needs killing.)
-- Motion per canon: 120ms ease-out, no bounce; the drag is a quiet snap, with
-  an optional subtle snap-to-local-max assist.
+The workspace plot lets a click add a manual peak, switch an auto peak off or
+remove a manual one. There is no way to move a peak: q is immutable.
 
 **Why later — the hard backend blocker.** Peaks are stored as two tables
-([db.jl:100-122](packages/HimalayaUI/src/db.jl:100)): `auto_peaks` (analysis
+([db.jl](../packages/HimalayaUI/src/db.jl)): `auto_peaks` (analysis
 output, **regenerated on every reanalysis**) and `peak_curations` (the manual
 delta layer, `kind IN ('exclude','add')`). Critically, **curations are
 keyed by q, not by a stable peak identity**: an exclude curation suppresses
@@ -262,35 +212,6 @@ that reanalysis honors. That backend design is the real prerequisite, and is
 why this is one redesign (plot card + curation model), not a `PATCH /peaks/:id
 {q}` bolt-on. Pick it up when the curation/reanalysis model is on the table.
 
-**Folded into this redesign (deferred here 2026-05-29).** A smaller item
-was intentionally deferred to this redesign rather than done piecemeal, because
-it sits in its blast radius and a pre-redesign change would just be redone:
-
-- **Gate the "Track reflections" cross-trace toggle.** The checkbox
-  (`src/print/components/BuilderRail.tsx`) is a no-op when no member has a
-  confirmed phase (the cross-trace tracking layer self-empties). Disable/hint
-  the control when there's nothing to connect. It lives on the multi-trace
-  plot's rail, so it rides with the redesign of that surface. (Re-verify the
-  member-snapshot predicate against the current snapshot shape — the
-  `confirmed_index` semantics shifted in the plotting redesign, PR #280.)
-
----
-
-## Index page — data triage
-
-### Exposure-triage page
-
-Lightroom-style filmstrip of all exposures in a sample. Keyboard-driven
-good / bad / maybe rating. The current Index page auto-picks the first
-exposure by id; this page would let the user curate which exposure the
-analysis runs on.
-
-### Stale-indices banner
-
-Detect when peak edits have happened since the last reanalysis and surface
-a banner offering to re-run. The auto-reanalysis chain in `queries.ts`
-covers most cases now, but a manual fallback is useful for batch edits.
-
 ---
 
 ## Cross-sample comparison
@@ -301,71 +222,27 @@ fresh design; the old code is only in git history.)
 ### Summary table
 
 Full-screen tabular view of all samples in an experiment: confirmed phases,
-lattice parameters, R², score. Sortable, filterable by tag. Export to
+lattice parameters, R², score. Sortable, filterable by label. Export to
 CSV/JSON.
 
 ### Cross-experiment sample comparison
 
-Query sample labels and analysis results across multiple experiment
-databases to compare samples with similar compositions (e.g., same
-lipid/peptide system across beamtimes). The SQLite-per-experiment schema
-is migration-friendly: a thin aggregation layer can open multiple DBs and
-JOIN across them via SQLite's `ATTACH` mechanism.
+Query sample labels and analysis results across experiments to compare
+samples with similar compositions (e.g., same lipid/peptide system across
+beamtimes). Every experiment already lives in the one central DB, so this
+is a query and a UI, not an aggregation layer.
 
 ---
 
 ## Multi-user / review
 
-### Edit-tracking → undo/redo → versioning (the conflict-model replacement)
+### Versioning and a durable history
 
-**Decided 2026-06-03 (greenfield rebuild):** there is **no conflict modal** and
-no optimistic-concurrency conflict UI — the `If-Match` + `409`-retry model
-(Plan 7 R5b) is **cancelled**, not deferred (see `docs/event-log.md`
-§"Conflict resolution"). Commit
-conflicts should never surface as friction. Multiplayer stays last-write-wins.
-
-The positive replacement, to design during **Layer 4** (where the real commit
-path / mutation queue / SSE wiring lives): track multiplayer edits as a durable
-sequence and expose **undo/redo + versioning** instead of asking a user to
-reconcile a divergent draft. Open questions for that spec — scope of undo
-(per-entity vs per-session), whether versioning is automatic snapshots vs named
-saves, how the existing `user_actions` event log seeds the history, and what
-this means for the backend commit contract (the `expected_content_hash` gate
-likely relaxes). This is its own sub-project: spec → plan → implementation, not
-part of the figure-export build.
-
-**Shipped 2026-11-21 (PR #403): per-tab undo/redo in the workspace.** ⌘Z keeps
-an in-memory history of this tab's edits (calls, drops, peaks, custom index,
-labels, label colours, bridges). An entry stores what the edit touched by a
-stable identity (a phase and its lattice basis, a peak's q, a sample pair), not
-by server ids, because a peak edit re-numbers the auto indices. Undo waits for
-the queue to finish saving, reads the server fresh, and queues only the edits
-needed to put that state back. Undoing a confirmed or dismissed label suggestion
-puts it back to suggested (`label_suggestion_restored`), never deletes it, and
-one gesture that writes several things (Create a label with a colour) is one
-undo step. Other users' edits are never
-undone, and a reload clears the history. Versioning and a durable history built
-from `user_actions` are still open.
-
-### Cross-tab SSE URL invalidation — live integration coverage
-
-The greenfield cutover simplified URL state to numeric IDs — `useStateFromUrl.ts`
-no longer resolves slugs, and no current hook carries the old
-"slug going `defined → undefined` because the entity was deleted from cache"
-branch. The broader end-to-end SSE → cache update → URL invalidation contract
-is still *not* pinned by an integration test. A live-integration spec was scaffolded during the
-permalinks PR and removed as placeholder code; re-introducing it requires:
-
-- A `DELETE /api/samples/{id}` route (and matching event-log/SSE wiring).
-- Seed-script entries in `e2e/live/README.md` for `SeedSample` /
-  `AlreadyDeletedSample` / experiment `E2ETest`, plus concrete ids the
-  spec can reference.
-- A two-tab Playwright spec asserting tab A's URL → StaleUrlPage transition
-  after tab B's delete.
-
-Pick this up when cross-tab delete becomes a real UX surface. The current
-multiplayer model treats deletes as low-volume; the unit-level coverage
-of the URL invalidation logic is sufficient for now.
+Multiplayer is last-write-wins with no conflict UI (see `docs/event-log.md`
+§"Conflict resolution"). Per-tab undo/redo shipped in the workspace (PR #403):
+undo reads the server first and restores only what the edit changed. Still
+open: versioning (automatic snapshots or named saves) and a durable,
+cross-session history built from `user_actions`.
 
 ### Reviewer workflow
 
@@ -376,37 +253,23 @@ does not.
 ### Per-user audit view
 
 `user_actions` rows already record who did what. A view that shows a
-user's recent actions (peak edits, group changes, message posts) would
+user's recent actions (peak edits, calls, drops, labels) would
 support both review and onboarding ("show me what alice has been doing").
-
-### Chat: mentions, threads, reactions
-
-The chat card presentation was retired 2026-05-29 and its data plane was
-deleted 2026-11-21. If chat is revived, it gets a fresh design, likely a
-flat per-sample list; wait for usage data before adding `@user`, threading,
-or emoji reactions — these are expensive to design well and easy to design
-badly.
-
-### Avatars
-
-Currently a 2-letter initials chip in the utility cluster. If multi-user
-becomes more central, real avatars (uploaded or Gravatar-style) could
-distinguish authors in chat and audit views.
 
 ---
 
 ## Onboarding & docs
 
-### Tutorial content beyond the four intro slides
+### Tutorial: the ⌘K palette
 
-Current tutorial covers title-button, three-card layout, sample stepping,
-and active-set editing. Add slides for keyboard shortcuts, the chat card,
-and theme toggle as those features grow more load-bearing.
+The three intro slides ("Add a beamtime", "One sample at a time", "Call it
+and move on") cover the workspace keys and comparisons. They don't mention
+the ⌘K palette, which now holds Rescan, settings, bridges and plot views.
 
 ### Empty / error state mock-ups
 
 Default Hint/Loading text is fine for development. Real empty states ("no
-exposures yet — drop a `.dat` here") and error states ("analysis failed;
+frames yet — drop a `.dat` here") and error states ("analysis failed;
 click to see traceback") need design.
 
 ---
@@ -415,26 +278,26 @@ click to see traceback") need design.
 
 ### Beamline-config editor
 
-Each experiment has parameters (wavelength, sample-detector distance,
-calibrant) that currently live outside the DB. Expose these in the
-experiment metadata and add an editor UI.
-
-### Manifest editor
-
-Manifest CSV is currently edited externally and re-imported. An in-app
-editor (with sample-name validation against the data dir) would close
-the loop.
+Each setup stores its geometry (energy, flight path, beam centre, pixel
+size) on the `setups` row, set when the setup is added. There is no UI to
+edit it afterwards, and no calibrant record.
 
 ### Export UI
 
-Backend has `routes_export.jl` (JSON / CSV). No UI surface yet — add a
-download button in the Compare or summary-table page when those exist.
+Backend has `routes_export.jl` (JSON / CSV), which `bin/verify` uses. No UI
+surface yet; a summary table (above) is the natural home for a download.
+
+### Multi-frame overlay on the trace
+
+Overlay several frames of one sample on the same plot with configurable
+I-offsets, to see flares and frame-to-frame consistency at a glance. Compare
+overlays other samples' representative frames only.
 
 ### Derived-exposure construction
 
 The schema supports derived exposures (e.g. background-subtracted) but
-there's no UI to create them. Probably belongs on the exposure-triage
-page when that lands.
+there's no UI to create them. It fits with combining frames in the workspace
+(per-frame include toggles, time-weighted sum or median).
 
 ### Reshoot grouping for new scans
 
@@ -446,8 +309,7 @@ production migration applies the same `(load, slot)` partition a fresh scan
 would, so a reshot specimen splits into per-load samples there as well (it
 reuses the old row for the earliest cell to keep the human name, and mints
 a new sample for the later cell). Re-uniting a reshoot's cells into one
-specimen is the deferred capability, and it is the *same* `merged_into_id`
-action for migrated and new data. The hard part is **detecting** which
+specimen is the deferred capability, for migrated and new data alike. The hard part is **detecting** which
 cells to suggest merging: PRP files carry no specimen name/barcode, and
 filenames don't reliably share a specimen token across a reshoot's frame
 ranges — the only in-data signal is same-`horizontal_position`-across-loads,
@@ -455,9 +317,8 @@ which is weak (a holder gets reloaded with different specimens at the same
 slots). So this can't be auto-derived reliably; it needs careful design.
 
 Realistic directions, cheapest first: (1) manual merge with good UX
-(`merged_into_id` exists; the grouping-review merge route was deleted 2026-11-21, so this needs a fresh design); (2)
-*suggested* merges flagged in the grouping-review surface from
-position-coincidence, human-confirmed, never auto-applied (a wrong
+(today a bridge marks the two samples as the same sample and shares their call and labels; the old `merged_into_id` column was dropped 2026-11-22); (2)
+*suggested* merges from position-coincidence, human-confirmed, never auto-applied (a wrong
 auto-merge fuses distinct specimens — worse than a missed one); (3) capture
 specimen identity at acquisition time (an optional label/barcode), which
 recovers the capability deterministically but re-adds a manifest-ish input
@@ -469,11 +330,6 @@ acquisition never wrote down.
 
 ---
 
-## Interaction & accessibility residuals
-
-Open gaps surfaced by the greenfield holistic audit (work itself shipped to
-GOLD; these were the deliberately-deferred tail).
-
 ## Frontend infrastructure
 
 ### Code splitting
@@ -483,24 +339,9 @@ OnboardingFlow as lazy chunks.
 
 ### Semantic spacing / density scale
 
-There's no `@theme` spacing-token system — the named grid constants
-(`LOUPE_BODY_GRID`, `FOCUS_PAGE_GRID`, `FOCUS_SPLIT_GRID`) are single-sourced
-but still literal Tailwind class strings. A semantic spacing scale would let
-density be tuned coherently app-wide rather than per-surface.
-
-### `ResizeObserver` on the trace plot
-
-The live trace surface is `src/print/components/TracePlate.tsx` over the d3
-plot under `src/print/plot`. Currently the plot's container width is read at render time. Window
-resizes don't re-run the effect unless data changes. Add a `ResizeObserver`
-when this becomes a noticeable problem.
-
-### Light theme rebalancing
-
-The OKLCH palette is dark-tuned. The light theme inherits the same chroma
-values but at lower lightness, which is too saturated for paper-white
-surfaces. Re-tune chroma per theme when light becomes more than a
-curiosity.
+There's no `@theme` spacing-token system; layouts use literal Tailwind class
+strings. A semantic spacing scale would let density be tuned coherently
+app-wide rather than per-surface.
 
 ---
 
@@ -511,9 +352,3 @@ curiosity.
 A dedicated, chrome-free layout for screen capture or PDF export of a
 single plot card with annotations baked in. Useful for putting a figure
 into a paper or talk.
-
-### Per-sample cover image
-
-A thumbnail of the trace plot, used in the nav modal's sample list and
-(eventually) the Compare page. Generated server-side or rendered to
-canvas client-side and cached.

@@ -16,7 +16,7 @@ const trace = { q, I: q.map((x) => 1 / (x * x) + 50 * Math.exp(-(((x - 0.1) / 0.
 function exposureOf(sampleId: number, monitors: boolean, frame = 0, averaged = false) {
   return {
     id: sampleId * 10 + frame, sample_id: sampleId, filename: `JC_S${sampleId}_0_00${frame + 1}`,
-    kind: averaged ? "averaged" : "file", selected: true, status: null,
+    kind: averaged ? "averaged" : "file", status: null,
     image_path: null, image_version: "", sources: averaged ? [sampleId * 10] : [], trace_hash: null, analysis_inputs_hash: null,
     exposure_time: monitors ? 15 : null, counting_time: monitors ? 15 : null,
     transmitted_counts: monitors ? 7000 : null, incident_monitor: monitors ? 1.5 : null,
@@ -48,7 +48,7 @@ const VIEWPORTS = [
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.clear();
-    localStorage.setItem("himalaya-ui:state", JSON.stringify({ state: { username: "alice", tutorialSeen: true }, version: 5 }));
+    localStorage.setItem("himalaya-ui:state", JSON.stringify({ state: { username: "alice", tutorialSeen: true }, version: 6 }));
   });
   const json = (body: unknown) => ({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
   const experiment = { id: 17, name: "lipid", path: "", data_dir: "", analysis_dir: "", manifest_path: null, created_at: "", q_units: null };
@@ -150,7 +150,7 @@ async function openSample(page: Page, id: number): Promise<void> {
     await expect(page.locator("[data-testid=workspace-candidates] li")).toHaveCount(CANDIDATES[id] || 0);
     if (!CANDIDATES[id]) await expect(page.getByText("No candidate indices for this frame.")).toBeVisible();
   }
-  await expect(page.locator("[data-testid=workspace-exposures] > li")).toHaveCount(FRAMES[id] ?? 1);
+  await expect(page.locator("[data-testid=workspace-exposures] li")).toHaveCount(FRAMES[id] ?? 1);
   const file = `JC_S${id}_0_00${FRAMES[id] ?? 1}`;
   if (await exposureOpen(page)) await expect(page.locator("aside").getByText(file)).toBeVisible();
   else await expect(page.locator("[data-testid=workspace-exposures] [aria-current='true']")).toBeVisible();
@@ -189,7 +189,7 @@ test("stepping between frames and hovering frames in another row keeps everythin
   await page.goto("/experiments/17/workspace/44");
   await openSample(page, 44);
   const first = await measured(page);
-  const cards = page.locator("[data-testid=workspace-exposures] > li");
+  const cards = page.locator("[data-testid=workspace-exposures] li");
   await expect(page.locator("aside").getByText("Averaged")).toBeVisible();
   await cards.nth(0).hover();
   expect(await measured(page), "hovering a frame in the other row").toEqual(first);
@@ -470,7 +470,7 @@ for (const viewport of [...VIEWPORTS, { width: 1024, height: 700 }]) {
       body: JSON.stringify(Array.from({ length: 7 }, (_, f) => ({ ...exposureOf(44, true, f, f === 6), status: f % 2 === 0 ? "rejected" : null }))),
     }));
     await page.goto("/experiments/17/workspace/44");
-    const frames = page.locator("[data-testid=workspace-exposures] > li");
+    const frames = page.locator("[data-testid=workspace-exposures] li");
     await expect(frames).toHaveCount(7);
     for (let i = 0; i < 7; i++) {
       await frames.nth(i).hover();
@@ -493,7 +493,7 @@ for (const width of [1024, 1280]) {
           r.fulfill(json([{ id, experiment_id: 17, display_name: name, name, notes: null, q_units: "A-1" }])));
         await page.goto(`/experiments/17/workspace/${id}`);
         const title = page.getByRole("heading", { level: 2, name });
-        await expect(page.locator("[data-testid=workspace-exposures] > li").first()).toBeVisible();
+        await expect(page.locator("[data-testid=workspace-exposures] li").first()).toBeVisible();
         const meta = page.getByText("Frame 1 of 1", { exact: true });
         if (width === 1280) await expect(meta).toBeVisible();
         expect(await title.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);

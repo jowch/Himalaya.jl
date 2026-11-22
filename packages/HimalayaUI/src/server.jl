@@ -6,32 +6,8 @@ import Sockets
 
 const _DB_REF = Ref{Union{SQLite.DB, Nothing}}(nothing)
 
-# Issue #122. Serializes every `SQLite.transaction(db)` call that targets the
-# singleton `_DB_REF` connection. Without this, two concurrent writers race on
-# `SQLite.transaction`'s TOCTOU: both can pass `intransaction(db) == false`
-# and attempt `BEGIN` (loud 500), or one passes false/the other true and
-# silently nests a SAVEPOINT inside the other's tx (silent corruption —
-# Failure mode B in #122). The lock also serializes `db.stmt_wrappers` Dict
-# mutation between concurrent writers (Race 2 writer-vs-writer).
-#
-# ReentrantLock so nested write paths in the SAME task — e.g. a route body
-# inside `with_idempotency` that calls `analyze_exposure!` which opens its
-# own tx — don't self-deadlock.
-#
-# Lock-ordering invariant: `OP_LOCKS_MU` (idempotency.jl) is never held
-# across a `_DB_WRITE_LOCK` acquisition. Every non-GET request already holds
-# _DB_WRITE_LOCK (db_connection_middleware) when `with_idempotency` briefly
-# takes OP_LOCKS_MU to `get!` its `_op_lock`, so the per-op lock is redundant
-# for HTTP callers. `gc_idempotent_responses!` does _DB_WRITE_LOCK → release
-# → OP_LOCKS_MU. Future code added under OP_LOCKS_MU must not call into
-# anything that may acquire _DB_WRITE_LOCK, or the orderings will diverge
-# into a deadlock.
 const _DB_WRITE_LOCK = ReentrantLock()
 
-# SSE subscribers. Each entry has a `pending::Channel{String}` queue. The
-# handler loop blocks on `take!(pending)`; broadcast_event! `put!`s frames
-# directly onto every subscriber's queue (no shared Condition needed —
-# eliminates the TOCTOU race that an isready/wait combo would introduce).
 const SSE_SUBSCRIBERS = Ref{Vector{Any}}([])
 const SSE_LOCK        = ReentrantLock()
 const SSE_OPENING_FRAME   = "retry: 3000\n\n"
@@ -58,19 +34,11 @@ function unbind_db!()
 end
 
 function register_routes!()
-    # Static frontend assets — only mounted if dist directory exists with content.
-    # HIMALAYA_FRONTEND_DIST overrides the package-bundled location, supporting
-    # /opt-style deployments where the build artefacts ship separately from src.
     dist_dir = get(ENV, "HIMALAYA_FRONTEND_DIST",
                    joinpath(pkgdir(HimalayaUI), "frontend", "dist"))
     if isdir(dist_dir)
         Oxygen.dynamicfiles(dist_dir, "/")
 
-        # SPA catch-all (spec §3.2). Doublestar `/**` is HTTP.jl's multi-
-        # segment wildcard (Handlers.jl:174,219–227); single-conditional
-        # captures like `{rest:.*}` only match one segment. The `api/`
-        # guard is critical — without it an unregistered API route would
-        # fall through to index.html and mask 404s as 200s.
         @get "/**" function(req::HTTP.Request)
             path = HTTP.URI(req.target).path
             rest = lstrip(path, '/')
@@ -86,10 +54,6 @@ function register_routes!()
         Dict("status" => "ok")
     end
 
-    # Plan A: Oxygen 1.10.x @stream macro — receives an HTTP.Stream directly.
-    # This is the cleanest path: no forked HTTP.serve, no response-body callback
-    # gymnastics. The handler runs in its own task; we block on take!(pending)
-    # so there's no busy-poll. On disconnect the write throws and we prune.
     @stream "/api/events" function(stream::HTTP.Stream)
         HTTP.setheader(stream, "Content-Type"      => "text/event-stream")
         HTTP.setheader(stream, "Cache-Control"     => "no-cache")
@@ -104,12 +68,6 @@ function register_routes!()
             push!(SSE_SUBSCRIBERS[], sub)
         end
 
-        # Per-subscriber heartbeat: keeps the TCP connection alive through
-        # reverse proxies that close idle connections after ~60 s. Uses
-        # _try_put! (same helper as broadcast_event!) so a saturated
-        # subscriber drops the heartbeat frame instead of blocking the
-        # Timer task — a slow client must not be able to leak heartbeat
-        # tasks at one-per-15s.
         heartbeat = Timer(15; interval = 15) do _
             _try_put!(pending, SSE_HEARTBEAT_FRAME)
         end
@@ -139,7 +97,6 @@ function register_routes!()
     register_trace_routes!()
     register_analysis_routes!()
     register_export_routes!()
-    register_resolve_routes!()
     register_bridge_routes!()
     register_compare_routes!()
     register_label_routes!()
@@ -149,14 +106,6 @@ end
 
 const GC_TIMER = Ref{Union{Timer, Nothing}}(nothing)
 
-"""
-    start_gc_timer!(db; interval_seconds = 1800, ttl_seconds = 3600)
-
-Schedule periodic invocations of `gc_idempotent_responses!`. The first
-invocation fires immediately on the timer thread; subsequent invocations
-fire every `interval_seconds`. Idempotent: calling twice closes the
-previous timer before installing a new one.
-"""
 function start_gc_timer!(db::SQLite.DB; interval_seconds::Real = 30 * 60,
                                         ttl_seconds::Int = 3600)
     GC_TIMER[] !== nothing && (close(GC_TIMER[]); GC_TIMER[] = nothing)
@@ -170,11 +119,6 @@ function start_gc_timer!(db::SQLite.DB; interval_seconds::Real = 30 * 60,
     nothing
 end
 
-"""
-    stop_gc_timer!()
-
-Close the active GC timer if any. No-op when no timer was started.
-"""
 function stop_gc_timer!()
     if GC_TIMER[] !== nothing
         close(GC_TIMER[])
@@ -211,18 +155,6 @@ function _set_ingest_status!(db::SQLite.DB, experiment_id::Int, status::Abstract
     end
 end
 
-"""
-    run_ingest!(db, experiment_id; phase=nothing) -> Symbol
-
-Bring one experiment up to date with its folder: back-fill beam monitors, then
-`scan_and_group!`, which inserts new exposures and analyzes every exposure that
-is new, never analyzed, whose trace has since appeared, or whose analysis is from
-an older `ANALYSIS_VERSION`. Every trigger (create, Rescan, opening the
-experiment, boot) goes through here, so one experiment never has two passes at
-once: a second caller waits, then runs its own pass, which is a cheap no-op when
-nothing changed in between. Returns `:ok` or `:failed`. Streams the ingest SSE frames; `phase`
-is `"rescan"` for every pass after the first.
-"""
 function run_ingest!(db::SQLite.DB, experiment_id::Int; phase::Union{String,Nothing} = nothing, force::Bool = false)
     lk = _ingest_lock(experiment_id)
     lock(lk)
@@ -270,7 +202,7 @@ function prewarm_after_ingest!(db::SQLite.DB, experiment_id::Int)
             previous === nothing || wait(previous)
             gate === nothing || take!(gate)
             with_background_db(db) do bg
-                prewarm_thumbnails!(bg; threads = false, overwrite = false, experiment_id)
+                prewarm_thumbnails!(bg; threads = false, experiment_id)
             end
         catch e
             @warn "thumbnail prewarm failed" experiment_id exception = e
@@ -291,14 +223,6 @@ function _ingest_phase(db::SQLite.DB, experiment_id::Int)
     (isempty(rows) || ismissing(first(rows).last_scanned_at)) ? nothing : "rescan"
 end
 
-"""
-    resume_ingests!(db)
-
-Finish whatever a restart or an upgrade left undone: every experiment still
-marked `scanning`, or with work by `ingest_has_work` (new files, traces that
-have appeared, exposures never analyzed or analyzed by an older version), gets
-one `run_ingest!` pass. Called from `start_background!` on a spawned task.
-"""
 function resume_ingests!(db::SQLite.DB)
     rows = Tables.rowtable(DBInterface.execute(db, "SELECT id, ingest_status FROM experiments ORDER BY id"))
     for r in rows
@@ -362,24 +286,12 @@ end
 function serve(db::SQLite.DB; host::String = "127.0.0.1", port::Int = 8080)
     warn_if_single_threaded()
     boot!(db)
-    # parallel = true wraps each request in `Threads.@spawn`, dispatching
-    # handlers across the default thread pool. Without it, every handler
-    # runs cooperatively on HTTP.jl's single interactive thread — even with
-    # JULIA_NUM_THREADS > 1 — so concurrent requests serialize. See #115.
-    #
-    # `db_connection_middleware` (db_connections.jl) gives GET/HEAD a pooled
-    # reader with one snapshot each, runs the event stream with neither, and
-    # holds `_DB_WRITE_LOCK` around every other request, so only one task at
-    # a time uses the `_DB_REF` singleton (#122 Races 1 and 2).
     Oxygen.serve(; host, port, show_banner = false, docs = false, metrics = false,
                  parallel = true, middleware = [db_connection_middleware])
 end
 
 function start_test_server!(db::SQLite.DB, port::Int)
     boot!(db; resume = false)
-    # Match production's threading model so the test suite exercises the
-    # same scheduling as `serve`. Any test that depends on single-threaded
-    # request ordering is a bug.
     Oxygen.serve(; host = "127.0.0.1", port, async = true,
                  show_banner = false, docs = false, metrics = false,
                  parallel = true, middleware = [db_connection_middleware])

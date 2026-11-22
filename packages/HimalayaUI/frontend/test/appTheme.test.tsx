@@ -26,18 +26,15 @@ describe("the theme picked in the workspace", () => {
     window.localStorage.removeItem(KEY);
     window.localStorage.removeItem("himalaya-ui:workspace-theme");
     document.documentElement.removeAttribute("data-theme");
-    document.documentElement.classList.remove("dark");
   });
 
   it("applies to the whole app, so pages outside the workspace follow it", () => {
     window.localStorage.setItem(KEY, "dark");
     const { rerender } = render(<App withWorkspace={false} />);
     expect(document.documentElement).toHaveAttribute("data-theme", "dark");
-    expect(document.documentElement).toHaveClass("dark");
     rerender(<App withWorkspace />);
     act(() => choose("light"));
     expect(document.documentElement).toHaveAttribute("data-theme", "light");
-    expect(document.documentElement).not.toHaveClass("dark");
   });
 
   it("follows the system setting when nothing was picked", () => {

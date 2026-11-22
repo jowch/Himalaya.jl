@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { Palette } from "../../src/workspace/ui/palette/Palette";
-import { stepHighlight } from "../../src/workspace/ui/useListHighlight";
-import { DEEP_TITLE, cycleOption, rootRows, type PaletteForm, type PaletteGroup, type PalettePage } from "../../src/workspace/ui/palette/model";
+import userEvent from "@testing-library/user-event";
+import { Palette } from "../../src/ui/palette/Palette";
+import { stepHighlight } from "../../src/ui/useListHighlight";
+import { DEEP_TITLE, cycleOption, rootRows, type PaletteForm, type PaletteGroup, type PalettePage } from "../../src/ui/palette/model";
 
 const ran: string[] = [];
 const run = (id: string) => () => ran.push(id);
@@ -400,5 +401,51 @@ describe("cycleOption", () => {
     fireEvent.keyDown(screen.getByRole("combobox"), { key: "Enter" });
     expect(screen.getAllByRole("option").map((o) => o.getAttribute("aria-label"))).toEqual(["Name, BL-19", "Description, None"]);
     expect(screen.getByRole("option", { name: "Description, None" })).toHaveTextContent("DescriptionNone");
+  });
+
+  it("opens a form with its current text selected, so typing replaces it", async () => {
+    const user = userEvent.setup();
+    submitted.length = 0;
+    const pages: Record<string, PalettePage> = {
+      settings: { title: "Settings", items: [{ id: "setup", label: "setup1", form: () => newLabel("setup1") }] },
+    };
+    render(<Palette groups={[{ title: "Experiment", items: [{ id: "settings", label: "Settings", page: "settings" }] }]} pages={pages} onClose={vi.fn()} />);
+    fireEvent.keyDown(screen.getByRole("combobox"), { key: "Enter" });
+    fireEvent.keyDown(screen.getByRole("combobox"), { key: "Enter" });
+    const name = screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement;
+    expect([name.selectionStart, name.selectionEnd]).toEqual([0, "setup1".length]);
+    await user.keyboard("Room temperature{Enter}");
+    expect(submitted).toEqual([{ name: "Room temperature", color: "teal" }]);
+  });
+
+  it("selects only on opening: Backspace back from a choice field deletes one character", async () => {
+    const user = userEvent.setup();
+    submitted.length = 0;
+    const pages: Record<string, PalettePage> = {
+      settings: { title: "Settings", items: [{ id: "setup", label: "setup1", form: () => newLabel("setup1") }] },
+    };
+    render(<Palette groups={[{ title: "Experiment", items: [{ id: "settings", label: "Settings", page: "settings" }] }]} pages={pages} onClose={vi.fn()} />);
+    fireEvent.keyDown(screen.getByRole("combobox"), { key: "Enter" });
+    fireEvent.keyDown(screen.getByRole("combobox"), { key: "Enter" });
+    await user.keyboard("Room Temp{Tab}{Backspace}");
+    const name = screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement;
+    expect([name.selectionStart, name.selectionEnd]).toEqual(["Room Temp".length, "Room Temp".length]);
+    await user.keyboard("{Backspace}{Enter}");
+    expect(submitted).toEqual([{ name: "Room Tem", color: "teal" }]);
+  });
+
+  it("leaves the caret after a value the person just typed, so typing adds to it", async () => {
+    const user = userEvent.setup();
+    submitted.length = 0;
+    const typed = (): PaletteForm => {
+      const f = newLabel("buf");
+      return { ...f, fields: f.fields.map((x) => (x.id === "name" ? { ...x, typed: true } : x)) };
+    };
+    render(<Palette groups={[{ title: "Labels", items: [{ id: "new", label: "New label", form: typed }] }]} pages={{}} onClose={vi.fn()} />);
+    fireEvent.keyDown(screen.getByRole("combobox"), { key: "Enter" });
+    const name = screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement;
+    expect([name.selectionStart, name.selectionEnd]).toEqual([3, 3]);
+    await user.keyboard("fer{Enter}");
+    expect(submitted).toEqual([{ name: "buffer", color: "teal" }]);
   });
 });

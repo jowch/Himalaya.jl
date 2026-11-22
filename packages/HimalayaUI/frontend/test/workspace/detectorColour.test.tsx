@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
-import { ExposureStrip } from "../../src/workspace/ui/ExposureStrip";
-import { DetectorOverlay } from "../../src/workspace/ui/DetectorOverlay";
-import { DetectorLutFilters } from "../../src/print/detector/DetectorLutFilters";
-import { buildPrintDetectorLut } from "../../src/print/detector/detectorLut";
+import { ExposureStrip } from "../../src/ui/ExposureStrip";
+import { DetectorOverlay } from "../../src/ui/DetectorOverlay";
+import { DetectorLutFilters } from "../../src/detector/DetectorLutFilters";
+import { buildPrintDetectorLut } from "../../src/detector/detectorLut";
 import type { Exposure } from "../../src/api";
 
 const exp = (id: number) => ({ id, status: "kept", image_path: `/x/${id}.tif`, image_version: "v1", filename: `f${id}` } as unknown as Exposure);
@@ -29,7 +29,7 @@ describe("workspace detector images", () => {
     const { container } = render(
       <>
         <DetectorLutFilters />
-        <ExposureStrip exposures={[exp(1), exp(2)]} currentId={1} onPick={() => {}} onToggleDrop={() => {}} />
+        <ExposureStrip groups={[{ key: 1, title: undefined, exposures: [exp(1), exp(2)] }]} currentId={1} onPick={() => {}} onToggleDrop={() => {}} />
       </>,
     );
     expectMagma([...container.querySelectorAll("img")]);

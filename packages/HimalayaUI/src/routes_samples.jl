@@ -1,21 +1,10 @@
 using HTTP, JSON3, DBInterface, Tables, Oxygen
 
 function register_samples_routes!()
-    @get "/api/experiments/{id}/samples" function(req::HTTP.Request, id::Int)
-        db      = current_db()
-        samples = Tables.rowtable(DBInterface.execute(db,
-            "SELECT * FROM samples WHERE experiment_id = ? ORDER BY id", [id]))
-        out = [row_to_json(sm) for sm in samples]
-        HTTP.Response(200, ["Content-Type" => "application/json"],
-            JSON3.write(out))
-    end
-
     @get "/api/samples" function(req::HTTP.Request)
         db     = current_db()
         params = HTTP.queryparams(HTTP.URI(req.target))
 
-        # Optional ?experiment_id= filter. A non-integer value is a client
-        # error, not something to silently ignore.
         exp_filter = nothing
         if haskey(params, "experiment_id")
             exp_filter = tryparse(Int, params["experiment_id"])
@@ -43,7 +32,7 @@ function register_samples_routes!()
             ph   = join(fill("?", length(sids)), ",")
             grouped_exps = Dict{Int, Vector{NamedTuple}}()
             for e in Tables.rowtable(DBInterface.execute(db,
-                    "SELECT id, sample_id, selected, status FROM exposures
+                    "SELECT id, sample_id, status FROM exposures
                      WHERE sample_id IN ($ph) ORDER BY sample_id ASC, id ASC", sids))
                 push!(get!(grouped_exps, Int(e.sample_id), NamedTuple[]), e)
             end
@@ -78,7 +67,6 @@ function register_samples_routes!()
         for k in (:name, :notes)
             if haskey(body, k)
                 v = body[k]
-                # Trim leading/trailing whitespace on name only.
                 v isa AbstractString && k === :name && (v = strip(String(v)))
                 push!(fields, k); push!(vals, v)
             end
@@ -96,8 +84,6 @@ function register_samples_routes!()
             DBInterface.execute(db,
                 "UPDATE samples SET $sets WHERE id = ?", vcat(vals, [id]))
 
-            # Structured payload: the patched fields directly. Frontend
-            # applyRemoteToCache spreads this onto the cached sample.
             update_payload = Dict{Symbol, Any}(zip(fields, vals))
             result = apply_event!(InTransaction(), db, req;
                 kind = "update_sample",

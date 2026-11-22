@@ -2,7 +2,7 @@ import { UsageError } from "./args.mjs";
 import { ensureBrowser, connect } from "./browser.mjs";
 import { armSettle } from "./settle.mjs";
 import { reachable } from "./http.mjs";
-import { prepareUser, routeUrl } from "./page.mjs";
+import { leavePage, prepareUser, routeUrl } from "./page.mjs";
 
 export function statusFromText(text) {
   const t = String(text ?? "").replace(/\s+/g, " ").trim();
@@ -25,7 +25,7 @@ function failedRequests(settle, where, heldIds = new Set()) {
 }
 
 export function frameFromLabels(labels, frameOrder) {
-  const numbers = labels.map((l) => /^Frame (\d+)\b/.exec(l)).filter(Boolean).map((m) => Number(m[1]));
+  const numbers = labels.map((l) => /^Frame (\d+)(?:,|$)/.exec(l)).filter(Boolean).map((m) => Number(m[1]));
   if (numbers.length !== 1) return null;
   return frameOrder[numbers[0] - 1] ?? null;
 }
@@ -33,6 +33,7 @@ export function frameFromLabels(labels, frameOrder) {
 export const WORKSPACE_ROUTE = (experimentId, id) => `/experiments/${experimentId}/workspace/${id}`;
 
 async function settledGoto(page, cfg, route) {
+  await leavePage(page);
   const tracker = armSettle(page);
   try {
     await page.goto(routeUrl(cfg, route), { waitUntil: "domcontentloaded" });
@@ -73,7 +74,7 @@ async function readWorkspaceRows(page) {
 }
 
 export function keptFromLabels(labels) {
-  const frames = labels.filter((l) => /^Frame \d+\b/.test(l));
+  const frames = labels.filter((l) => /^Frame \d+(?:,|$)/.test(l));
   if (!frames.length) return null;
   return `${frames.filter((l) => !/, dropped$/.test(l)).length}/${frames.length}`;
 }

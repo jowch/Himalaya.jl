@@ -294,7 +294,7 @@
      refiners redeclare `focus-visible:outline-offset-0` explicitly (the shipped
      ghost look is 1px at offset 0). Deliberate suppressions win via
      @layer components ([data-observed-hit], .print-range) or focus:outline-none
-     utilities (Popover container, Input inner). Mouse clicks never show a ring. */
+     utilities (Input inner). Mouse clicks never show a ring. */
   button:focus-visible,
   a:focus-visible {
     outline: 2px solid var(--color-accent);
@@ -407,20 +407,6 @@
 
 }
 
-/* Boneyard skeleton: slow pulse keeps the loading state subtle */
-.bone { animation-duration: 1.8s; }
-
-/* Boneyard wraps children in two extra divs which would otherwise break flex/grid
-   chains (e.g. flex-1 on a grandchild of a flex container does nothing).
-   The inner content wrapper uses display: contents to be transparent to layout —
-   children of <Skeleton> behave as if they were direct children of its outer
-   wrapper. The outer wrapper still positions the bones overlay via position:relative. */
-[data-boneyard-content] { display: contents; }
-
-/* Respect prefers-reduced-motion (impeccable checklist G). Unlayered + !important
-   so it overrides the layered global transition rule AND the keyframe animations
-   (.anim-*, .bone skeleton pulse). We near-zero rather than fully
-   remove durations so any transitionend/animationend listeners still fire. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     transition-duration: 0.01ms !important;
@@ -443,6 +429,8 @@
     --color-accent:      oklch(0.700 0.130 42);
     --color-print-accent: oklch(0.700 0.130 42);
     --color-accent-wash: oklch(0.270 0.022 38);
+    --color-accent-soft: color-mix(in oklch, var(--color-accent) 40%, var(--color-paper));
+    --color-success-soft: color-mix(in oklch, var(--color-success) 40%, var(--color-paper));
     --color-row-cursor:  oklch(0.245 0.013 280);
     --color-success:     oklch(0.740 0.080 162);
     --color-warning:     oklch(0.780 0.110 70);
@@ -487,6 +475,8 @@
   --color-accent:      oklch(0.700 0.130 42);
   --color-print-accent: oklch(0.700 0.130 42);
   --color-accent-wash: oklch(0.270 0.022 38);
+  --color-accent-soft: color-mix(in oklch, var(--color-accent) 40%, var(--color-paper));
+  --color-success-soft: color-mix(in oklch, var(--color-success) 40%, var(--color-paper));
   --color-row-cursor:  oklch(0.245 0.013 280);
   --color-success:     oklch(0.740 0.080 162);
   --color-warning:     oklch(0.780 0.110 70);

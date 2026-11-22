@@ -56,13 +56,12 @@ _rows(db) = Set((Int(r.sample_id), String(r.label), String(r.state), String(r.so
         ])
     end
 
-    @testset "is idempotent and leaves merged samples alone" begin
+    @testset "is idempotent" begin
         db = open_prepared_clone(mktempdir())
         (exp_id, (a, b)) = _seed_named_samples(db, ["buffer_A", "buffer_B"])
-        DBInterface.execute(db, "UPDATE samples SET merged_into_id = ? WHERE id = ?", [a, b])
         HimalayaUI.suggest_labels_for_experiment!(db, exp_id)
         HimalayaUI.suggest_labels_for_experiment!(db, exp_id)
-        @test _rows(db) == Set([(a, "Buffer", "suggested", "ingest")])
+        @test _rows(db) == Set([(a, "Buffer", "suggested", "ingest"), (b, "Buffer", "suggested", "ingest")])
     end
 
     @testset "an ingest pass suggests roles for the experiment" begin

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { useEffect } from "react";
 import { act, render, screen, fireEvent } from "@testing-library/react";
-import { ToastContainer } from "../src/print/ui/Toast";
+import { ToastContainer } from "../src/ui/Toast";
 import { showToast, setToastImpl } from "../src/lib/toast";
 
 describe("Toast", () => {
@@ -10,6 +11,15 @@ describe("Toast", () => {
   afterEach(() => {
     vi.useRealTimers();
     setToastImpl(null);
+  });
+
+  it("shows a toast fired before the container mounts in the same commit", () => {
+    function Early(): null {
+      useEffect(() => showToast("early", "warning"), []);
+      return null;
+    }
+    render(<><Early /><ToastContainer /></>);
+    expect(screen.getByTestId("toast")).toHaveTextContent("early");
   });
 
   it("renders a toast when showToast is called", () => {
@@ -166,11 +176,12 @@ describe("Toast", () => {
     expect(screen.queryByTestId("toast")).not.toBeInTheDocument();
   });
 
-  it("falls back to console.warn after unmount", () => {
+  it("falls back to console.warn after unmount", async () => {
     const { unmount } = render(<ToastContainer />);
     unmount();
     const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
     showToast("after unmount", "error");
+    await Promise.resolve();
     expect(spy).toHaveBeenCalledWith("[toast:error] after unmount");
     spy.mockRestore();
   });
@@ -178,7 +189,7 @@ describe("Toast", () => {
 
 describe("Toast barrel export", () => {
   it("ToastContainer is exported from the ui barrel", async () => {
-    const mod = await import("../src/print/ui");
+    const mod = await import("../src/ui");
     expect(typeof mod.ToastContainer).toBe("function");
   });
 });

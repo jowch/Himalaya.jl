@@ -1,30 +1,5 @@
-# packages/HimalayaUI/src/prp.jl
-#
-# PRP file parser (§9.1 shared ingest core).
-# Format: "Key=Value" lines with optional trailing unit tokens (mm, eV, etc.).
-# Confirmed against the real SSRL 2026-04 PRP: HA_85_422_S2404_0_001.prp.
-#
-# Returned NamedTuple fields:
-#   timestamp              :: Union{DateTime, Missing}   — "Time this file was written:"
-#   beam_energy_ev         :: Union{Float64, Missing}    — raw eV value
-#   energy_kev             :: Union{Float64, Missing}    — beam_energy_ev / 1000
-#   pipe_length_m          :: Union{Float64, Missing}    — "Pipe length" converted m
-#   detector               :: Union{String, Missing}     — e.g. "Pilatus 1M"
-#   exposure_time_s        :: Union{Float64, Missing}    — "Exposure time"
-#   horizontal_position_mm :: Union{Float64, Missing}    — "Horizontal position"
-#   transmitted_counts     :: Union{Float64, Missing}    — "I_signal" (any case)
-#   incident_monitor       :: Union{Float64, Missing}    — "I_0(<channel>)"
-#   counting_time_s        :: Union{Float64, Missing}    — "Counting time"
-
 using Dates
 
-"""
-    parse_prp(path) -> NamedTuple
-
-Parse one SSRL PRP file at `path` and return the fields the ingest system uses.
-Unparseable or absent fields are `missing`. Never throws on malformed lines;
-a `@warn` is emitted instead so batch ingestion can proceed.
-"""
 function parse_prp(path::AbstractString)
     isfile(path) || error("PRP file not found: $path")
 
@@ -40,7 +15,6 @@ function parse_prp(path::AbstractString)
     counting_time_s        = missing
 
     for line in eachline(path)
-        # Timestamp line has a different format: "Time this file was written: DD Mon YYYY HH:MM:SS"
         if startswith(line, "Time this file was written:")
             raw = strip(line[length("Time this file was written:") + 1:end])
             try
@@ -56,8 +30,6 @@ function parse_prp(path::AbstractString)
         key = strip(line[1:idx-1])
         val_raw = strip(line[idx+1:end])
 
-        # Strip trailing unit token (first non-numeric, non-dot, non-sign char onward).
-        # E.g. "9000.03 eV" → 9000.03; "1700 mm" → 1700; "15" → 15.
         val_str = let s = val_raw
             m = match(r"^[+-]?[0-9]*\.?[0-9]+([eE][+-]?[0-9]+)?", s)
             m === nothing ? nothing : m.match
@@ -79,7 +51,6 @@ function parse_prp(path::AbstractString)
             end
 
         elseif key == "Detector"
-            # e.g. "Pilatus 1M" — string, no numeric conversion needed
             detector = val_raw
 
         elseif key == "Exposure time" && val_str !== nothing

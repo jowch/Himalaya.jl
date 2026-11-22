@@ -6,7 +6,6 @@ import { getClientId } from "./lib/clientId";
 import { useQueueMutation } from "./lib/queue/useQueueMutation";
 import {
   setExposureStatusMutator,
-  selectExposureMutator,
 } from "./lib/queue/mutators/trivial";
 import { peakAddMutator } from "./lib/queue/mutators/peakAdd";
 import { peakRemoveMutator } from "./lib/queue/mutators/peakRemove";
@@ -21,6 +20,7 @@ import {
 import { customIndexMutator } from "./lib/queue/mutators/customIndex";
 import { deleteIndexMutator } from "./lib/queue/mutators/indexGroup";
 import { bridgeSamplesMutator, unbridgeSampleMutator } from "./lib/queue/mutators/bridges";
+import type { KeepCall } from "./lib/bridgeCall";
 import { patchComparesMutator } from "./lib/queue/mutators/compares";
 import { addLabelMutator, removeLabelMutator, restoreLabelSuggestionMutator } from "./lib/queue/mutators/labels";
 import { setLabelColorMutator } from "./lib/queue/mutators/labelColors";
@@ -30,10 +30,6 @@ import { authOpts as buildAuthOpts } from "./lib/authOpts";
 
 const CLIENT_ID = getClientId();
 
-// Nullable id slots emit `"none"` instead of the id so prefix invalidations
-// (e.g. ["exposure", id]) never accidentally match a disabled query's key.
-// Centralising means the "build the key inline" gotcha is mechanically gone:
-// every hook + mutator goes through these helpers.
 export const queryKeys = {
   experiments: ["experiments"] as const,
   experiment: (id: number) => ["experiment", id] as const,
@@ -78,15 +74,7 @@ export function useExperiment(id: number) {
   return useQuery({
     queryKey: queryKeys.experiment(id),
     queryFn: () => api.getExperiment(id),
-    // Callers pass `id ?? 0` when no experiment is active; gate the fetch so
-    // we don't hit GET /api/experiments/0 → 404 (and retries) on every chip
-    // mount before the user picks an experiment.
     enabled: id > 0,
-    // Self-heal a stuck scan (8c): if the SSE `ingest_complete` frame is dropped
-    // (EventSource reconnect mid-scan), poll the resting `ingest_status` so the
-    // surface flips to the post-scan review without a manual reload. Polls ONLY
-    // while a scan/analyze is in flight — idle/complete/failed rows don't poll.
-    // react-query dedupes by query key, so N mounted observers share one poll.
     refetchInterval: (q) => {
       const s = q.state.data?.ingest_status;
       return s === "scanning" || s === "analyzing" ? 2500 : false;
@@ -160,14 +148,6 @@ export function useSetLabelColor() {
   return useQueueMutation(setLabelColorMutator, { username, clientId: CLIENT_ID });
 }
 
-export function useSamples(experimentId: number) {
-  return useQuery({
-    queryKey: queryKeys.samples(experimentId),
-    queryFn: () => api.listSamples(experimentId),
-    enabled: experimentId > 0,
-  });
-}
-
 export function useCorpusSamples({ enabled = true }: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: queryKeys.corpusSamples,
@@ -189,6 +169,16 @@ export function useExposures(sampleId: number | undefined) {
     queryKey: queryKeys.exposures(sampleId),
     queryFn: () => api.listExposures(sampleId as number),
     enabled: sampleId !== undefined,
+  });
+}
+
+export function useSamplesExposures(sampleIds: readonly number[]) {
+  return useQueries({
+    queries: sampleIds.map((id) => ({
+      queryKey: queryKeys.exposures(id),
+      queryFn: () => api.listExposures(id),
+    })),
+    combine: (results) => results.map((r) => r.data),
   });
 }
 
@@ -245,10 +235,6 @@ export function useRemovePeak(exposureId: number) {
   };
 }
 
-// `useSetPeakExcluded` decomposes into two mutators because the backend uses
-// distinct event kinds (`peak_excluded`, `peak_unexcluded`). The hook routes
-// the call to the correct mutator based on `excluded` and presents a unified
-// `mutate({ peakId, excluded })` surface so existing consumers stay unchanged.
 export function useSetPeakExcluded(exposureId: number) {
   const username = useAppState((s) => s.username);
   const exclude = useQueueMutation(
@@ -270,8 +256,6 @@ export function useSetPeakExcluded(exposureId: number) {
   };
 }
 
-// Plan D: the assignment cart data layer. The source of the active phase set;
-// deriveActiveIndices(assignment, indices) yields the active indices.
 export function useAssignment(exposureId: number | undefined) {
   return useQuery({
     queryKey: queryKeys.assignment(exposureId),
@@ -350,7 +334,6 @@ export function useCommitCustomIndex(exposureId: number) {
   };
 }
 
-
 export interface EditReads {
   peaks: (exposureId: number) => Promise<api.Peak[]>;
   indices: (exposureId: number) => Promise<api.IndexEntry[]>;
@@ -358,6 +341,7 @@ export interface EditReads {
   assignment: (exposureId: number) => Promise<api.Assignment>;
   labels: () => Promise<api.SampleLabel[]>;
   bridges: () => Promise<api.SampleBridge[]>;
+  call: (sampleId: number) => Promise<api.SampleCall>;
   exposures: (sampleId: number) => Promise<api.Exposure[]>;
   labelColors: () => Promise<api.LabelColorEntry[]>;
   experiment: () => Promise<api.Experiment>;
@@ -380,7 +364,7 @@ export interface EditOps {
   setLabelColor: (label: string, color: api.LabelColor | null) => void;
   patchExperiment: (patch: ExperimentPatch) => void;
   patchSetup: (setupId: number, patch: SetupPatch) => void;
-  bridge: (sampleId: number, toSampleId: number) => void;
+  bridge: (sampleId: number, toSampleId: number, keepCall?: KeepCall) => void;
   unbridge: (sampleId: number) => void;
   patchCompares: (sampleId: number, change: api.CompareChange) => void;
   read: EditReads;
@@ -446,7 +430,7 @@ export function useEditOps(experimentId: number): EditOps {
     setLabelColor: (label, color) => labelColor.mutate({ label, color }),
     patchExperiment: (patch) => experiment.mutate(patch),
     patchSetup: (setupId, patch) => setup.mutate({ setupId, ...patch }),
-    bridge: (sampleId, toSampleId) => bridge.mutate({ sampleId, toSampleId }),
+    bridge: (sampleId, toSampleId, keepCall) => bridge.mutate(keepCall === undefined ? { sampleId, toSampleId } : { sampleId, toSampleId, keepCall }),
     unbridge: (sampleId) => unbridge.mutate({ sampleId }),
     patchCompares: (sampleId, change) => compares.mutate({ sampleId, change }),
     read: {
@@ -457,6 +441,7 @@ export function useEditOps(experimentId: number): EditOps {
       assignment: (exposureId) => fresh(queryKeys.assignment(exposureId), () => api.getAssignment(exposureId)),
       labels: () => fresh(queryKeys.labels(experimentId), () => api.listLabels(experimentId)),
       bridges: () => fresh(queryKeys.bridges(experimentId), () => api.listBridges(experimentId)),
+      call: (sampleId) => fresh(queryKeys.sampleCall(sampleId), () => api.getSampleCall(sampleId)),
       exposures: (sampleId) => fresh(queryKeys.exposures(sampleId), () => api.listExposures(sampleId)),
       labelColors: () => fresh(queryKeys.labelColors(), () => api.listLabelColors()),
       compares: () => fresh(queryKeys.compares(experimentId), () => api.listCompares(experimentId)),
@@ -472,25 +457,6 @@ export function useSetExposureStatus(sampleId: number) {
   return useQueueMutation(setExposureStatusMutator, { sampleId, username, clientId: CLIENT_ID });
 }
 
-export function useSelectExposure(sampleId: number) {
-  const username = useAppState((s) => s.username);
-  const inner = useQueueMutation(selectExposureMutator, { sampleId, username, clientId: CLIENT_ID });
-  return {
-    ...inner,
-    // Threads the optional per-call callbacks through so consumers can toast
-    // on confirmation / terminal failure (see MutateCallbacks).
-    mutate: (exposureId: number, callbacks?: Parameters<typeof inner.mutate>[1]) =>
-      inner.mutate({ exposureId }, callbacks),
-  };
-}
-
-/** Trigger a rescan of a single experiment (cheap change-check then additive
- *  ingest of new files). Plain TanStack mutation — not a queue mutator because
- *  the scan is idempotent and emits its own SSE progress frames. Invalidates
- *  the experiment detail on success so the header stats / status chip refresh.
- *
- *  `mutate(true)` bypasses the cheap change-check (force flag) — used when a
- *  pattern field edit changes which files the scan discovers. */
 export function useTriggerScan(experimentId: number) {
   const username = useAppState((s) => s.username);
   const qc = useQueryClient();
@@ -507,7 +473,6 @@ export function useTriggerScan(experimentId: number) {
     mutate: (force = false) => inner.mutate(force),
   };
 }
-
 export function useDeleteExperiment(experimentId: number) {
   const username = useAppState((s) => s.username);
   const qc = useQueryClient();
@@ -516,7 +481,6 @@ export function useDeleteExperiment(experimentId: number) {
     onSuccess: () => forgetExperiment(qc, experimentId),
   });
 }
-
 export function forgetExperiment(qc: QueryClient, experimentId: number): void {
   qc.removeQueries({ queryKey: queryKeys.experiment(experimentId) });
   void qc.invalidateQueries({ queryKey: queryKeys.experiments });
@@ -537,4 +501,3 @@ export function useCheckForNewFilesOnOpen(experimentId: number): void {
     if (experimentId > 0) mutate();
   }, [experimentId, mutate]);
 }
-

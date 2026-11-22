@@ -128,7 +128,27 @@ async function twinState(exposureId, id, want) {
   report({ ok, rule: `clicking a peak acts on that peak alone, when an auto and a manual peak share id ${id} (${want})`, exposure_id: Number(exposureId), with_id: same });
 }
 
+async function bridgeCall() {
+  const api = loadConfig().apiBase;
+  const listed = async () => getJson(api, "/api/samples?experiment_id=1");
+  const bridged = new Set((await getJson(api, "/api/experiments/1/bridges")).map((b) => b.sample_id));
+  const [c, d] = (await listed()).filter((s) => !bridged.has(s.id));
+  if (!d) report({ ok: false, error: "fewer than two unbridged demo samples" });
+  const ff = await request(api, "POST", `/api/samples/${c.id}/call/state`, { data: { state: "form_factor" } });
+  const exposure = (await getJson(api, `/api/samples/${d.id}/exposures`)).find((e) => e.status !== "rejected");
+  const index = exposure && (await getJson(api, `/api/exposures/${exposure.id}/indices`))[0];
+  if (!ff.ok || !index) report({ ok: false, error: `could not give ${c.name} and ${d.name} different calls`, form_factor: ff.status });
+  await request(api, "POST", `/api/exposures/${exposure.id}/assignment/members`, { data: { index_id: index.id } });
+  const refused = await request(api, "POST", `/api/samples/${c.id}/bridge`, { data: { to_sample_id: d.id } });
+  const stillApart = !(await getJson(api, "/api/experiments/1/bridges")).some((b) => b.sample_id === d.id);
+  const kept = await request(api, "POST", `/api/samples/${c.id}/bridge`, { data: { to_sample_id: d.id, keep_call: c.id } });
+  const after = (await listed()).filter((s) => s.id === c.id || s.id === d.id).map((s) => ({ name: s.name, state: s.assignment_state, phases: s.call_phases }));
+  const ok = refused.status === 409 && refused.body?.calls?.length === 2 && stillApart && kept.ok
+    && after.length === 2 && after.every((s) => s.state === "form_factor" && s.phases.length === 0);
+  report({ ok, rule: `bridging ${c.name} (form factor) to ${d.name} (${index.phase}) is refused until the request says which call to keep, then both show the kept call`, refused: refused.status, still_apart: stillApart, kept: kept.status, after });
+}
+
 const [cmd, ...args] = process.argv.slice(2);
-const commands = { confirm, confirmed, unchanged, target, custom, twin, "twin-state": twinState };
+const commands = { confirm, confirmed, unchanged, target, custom, twin, "twin-state": twinState, "bridge-call": bridgeCall };
 if (!commands[cmd]) report({ ok: false, error: `usage: verify_truth.mjs ${Object.keys(commands).join("|")} ...` });
 await commands[cmd](...args);

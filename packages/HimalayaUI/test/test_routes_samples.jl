@@ -1,22 +1,12 @@
 using Test, HTTP, JSON3, SQLite, DBInterface, Tables
 
 @testset "samples routes" begin
-    db = SQLite.DB()
-    HimalayaUI.create_schema!(db)
+    db = open_prepared_clone(mktempdir())
     exp_id = HimalayaUI.init_experiment!(db; path="/t", data_dir="/t/d",
                                              analysis_dir="/t/a")
     s1 = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    s2 = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D2")
 
     with_inproc_routes(db) do call
-        # List
-        r = call("GET", "/api/experiments/$exp_id/samples")
-        @test r.status == 200
-        list = JSON3.read(String(r.body))
-        @test length(list) == 2
-        @test list[1].name == "D1"
-        @test !haskey(list[1], :tags)
-
         # PATCH
         r = call("PATCH", "/api/samples/$s1";
             headers = ["Content-Type" => "application/json",
@@ -29,17 +19,14 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
 end
 
 @testset "GET /api/samples: per-sample phase-call rollup" begin
-    db = SQLite.DB()
-    HimalayaUI.create_schema!(db)
+    db = open_prepared_clone(mktempdir())
     exp_id = HimalayaUI.init_experiment!(db; path="/t", data_dir="/t/d", analysis_dir="/t/a")
 
-    # Sample A — INDEXED. Two exposures; the LOWER-id one is selected=1, so it is
-    # the representative (proves selected wins over highest-id). Its assignment
-    # carries Pn3m (score 0.9) + Lamellar (0.4) → dominant phase = Pn3m.
+    # Sample A — INDEXED. Two exposures; the newer one is the representative.
+    # Its assignment carries Pn3m (score 0.9) + Lamellar (0.4) → dominant phase = Pn3m.
     sA  = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="A")
+    HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=sA, filename="a0")
     eA1 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=sA, filename="a1")
-    HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=sA, filename="a2")   # higher id, NOT selected
-    DBInterface.execute(db, "UPDATE exposures SET selected = 1 WHERE id = ?", [eA1])
     rPn = DBInterface.execute(db,
         "INSERT INTO indices (exposure_id, phase, basis, score) VALUES (?, 'Pn3m', 0.1, 0.9)", [eA1])
     idPn = Int(DBInterface.lastrowid(rPn))
@@ -76,8 +63,7 @@ end
 end
 
 @testset "PATCH /api/samples/:id accepts name, leading/trailing whitespace trimmed" begin
-    db = SQLite.DB()
-    HimalayaUI.create_schema!(db)
+    db = open_prepared_clone(mktempdir())
     exp_id = HimalayaUI.init_experiment!(db; path="/t3", data_dir="/t3/d",
                                              analysis_dir="/t3/a")
     sid = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
@@ -95,8 +81,7 @@ end
 end
 
 @testset "corpus samples route" begin
-    db = SQLite.DB()
-    HimalayaUI.create_schema!(db)
+    db = open_prepared_clone(mktempdir())
 
     e1 = HimalayaUI.init_experiment!(db; name="E1", path="/e1",
         data_dir="/e1/d", analysis_dir="/e1/a")
@@ -146,8 +131,7 @@ end
 end
 
 @testset "corpus samples route reads q_units from the sample's setup" begin
-    db = SQLite.DB()
-    HimalayaUI.create_schema!(db)
+    db = open_prepared_clone(mktempdir())
 
     e_typed = HimalayaUI.create_experiment!(db; name="ET", path="/et",
         data_dir="/et/d", analysis_dir="/et/a", q_units="nm^-1")
@@ -171,8 +155,7 @@ end
 end
 
 @testset "corpus samples route tolerates NULL experiment_id" begin
-    db = SQLite.DB()
-    HimalayaUI.create_schema!(db)
+    db = open_prepared_clone(mktempdir())
 
     # `samples.experiment_id` is a nullable FK. A sample with no owning
     # experiment (a SQL NULL) must not 500 the corpus route — its q_units
@@ -201,22 +184,18 @@ end
 end
 
 @testset "GET /api/samples: the representative is never a dropped frame" begin
-    db = SQLite.DB()
-    HimalayaUI.create_schema!(db)
+    db = open_prepared_clone(mktempdir())
     exp_id = HimalayaUI.init_experiment!(db; path="/t", data_dir="/t/d", analysis_dir="/t/a")
     frames(name, n) = (s = HimalayaUI.create_sample!(db; experiment_id=exp_id, name=name);
         [HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s, filename="$(name)$(i)") for i in 1:n])
     drop(e) = DBInterface.execute(db, "UPDATE exposures SET status = 'rejected' WHERE id = ?", [e])
 
     newest = frames("newest_dropped", 3); drop(newest[3])
-    picked = frames("selected_dropped", 3); drop(picked[1])
-    DBInterface.execute(db, "UPDATE exposures SET selected = 1 WHERE id = ?", [picked[1]])
     gone = frames("all_dropped", 2); drop.(gone)
 
     with_inproc_routes(db) do call
         byname = Dict(String(s.name) => s for s in JSON3.read(String(call("GET", "/api/samples").body)))
         @test byname["newest_dropped"].representative_exposure_id == newest[2]
-        @test byname["selected_dropped"].representative_exposure_id == picked[3]
         @test byname["all_dropped"].representative_exposure_id === nothing
         @test byname["all_dropped"].assignment_state == "indexed"
         @test byname["all_dropped"].phase === nothing

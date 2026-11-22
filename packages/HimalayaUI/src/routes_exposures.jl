@@ -33,7 +33,8 @@ function register_exposures_routes!()
             srcs = Tables.rowtable(DBInterface.execute(db,
                 "SELECT source_exposure_id, role FROM exposure_sources
                  WHERE averaged_exposure_id = ?", [Int(e.id)]))
-            d = row_to_json(e; bool_keys = (:selected,))
+            d = row_to_json(e)
+            delete!(d, :q_step)
             d[:sources]       = rows_to_json(srcs)
             d[:image_version] = image_version_token(e.image_path)
             merge!(d, prp_details(e.prp_path))
@@ -49,12 +50,12 @@ function register_exposures_routes!()
             "SELECT image_path FROM exposures WHERE id = ?", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "exposure not found")))
+            JSON3.write(Dict(:error => "frame not found")))
 
         ip = rows[1].image_path
         (ip === nothing || ip isa Missing) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "no image for this exposure")))
+            JSON3.write(Dict(:error => "no image for this frame")))
 
         # The DB stores image_path at ingest, but the source TIFF may have been
         # moved or deleted since. Guard before load_and_lognormalize, which
@@ -131,7 +132,7 @@ function register_exposures_routes!()
             "SELECT id FROM exposures WHERE id = ?", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "exposure not found")))
+            JSON3.write(Dict(:error => "frame not found")))
 
         return with_idempotency(db, req) do
             DBInterface.execute(db,
@@ -148,40 +149,6 @@ function register_exposures_routes!()
         end
     end
 
-    # `selected` is sample-scoped client state — exactly one exposure per sample is
-    # marked selected at a time. Under multiplayer this is intentionally LWW: if Alice
-    # and Bob click different exposures within the same sample, the later click wins
-    # and SSE broadcasts the resulting state. This route does NOT participate in
-    # If-Match conflict resolution (see specs/2026-05-01-multiplayer-instrumentation-design.md).
-    @patch "/api/exposures/{id}/select" function(req::HTTP.Request, id::Int)
-        db   = current_db()
-        rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT sample_id, status FROM exposures WHERE id = ?", [id]))
-        isempty(rows) && return HTTP.Response(404,
-            ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "exposure not found")))
-        is_kept_exposure(rows[1]) || return HTTP.Response(422,
-            ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "a dropped exposure can't be the representative")))
-        sample_id = Int(rows[1].sample_id)
-
-        return with_idempotency(db, req) do
-            DBInterface.execute(db,
-                "UPDATE exposures SET selected = 0 WHERE sample_id = ?", [sample_id])
-            DBInterface.execute(db,
-                "UPDATE exposures SET selected = 1 WHERE id = ?", [id])
-
-            result = apply_event!(InTransaction(), db, req;
-                kind = "select_exposure",
-                entity_type = "exposure", entity_id = id,
-                payload = Dict(:sample_id => sample_id))
-            _enqueue_broadcast_from_result!(result, "select_exposure", "exposure", id)
-
-            HTTP.Response(200, ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:id => id, :selected => true)))
-        end
-    end
-
     @post "/api/exposures/{id}/analyze" function(req::HTTP.Request, id::Int)
         db   = current_db()
         rows = Tables.rowtable(DBInterface.execute(db,
@@ -191,7 +158,7 @@ function register_exposures_routes!()
              WHERE e.id = ?", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "exposure not found")))
+            JSON3.write(Dict(:error => "frame not found")))
         analysis_dir = String(rows[1].analysis_dir)
 
         # Issue #9: route is now queue-shaped — `with_idempotency` honors the

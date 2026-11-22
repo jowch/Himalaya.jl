@@ -33,7 +33,6 @@ function makeLoads(sampleCount: number): object[] {
     slot_index: i + 1,
     grouping_source: "auto_position",
     name_source: "auto",
-    merged_into_id: null,
     exposures: [
       {
         id: 200 + i,
@@ -64,7 +63,7 @@ async function seedState(page: Page): Promise<void> {
   await page.addInitScript(() => {
     localStorage.setItem(
       "himalaya-ui:state",
-      JSON.stringify({ state: { username: "alice", tutorialSeen: true, theme: "dark" }, version: 5 }),
+      JSON.stringify({ state: { username: "alice", tutorialSeen: true }, version: 6 }),
     );
   });
 }
@@ -84,8 +83,6 @@ async function mockExperiment(
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([exp]) }));
   await page.route(`**/api/experiments/${opts.id}`, (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(exp) }));
-  await page.route(`**/api/experiments/${opts.id}/samples`, (r) =>
-    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(samples) }));
   await page.route(`**/api/experiments/${opts.id}/problems`, (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(problems) }));
   await page.route((url) => url.pathname === "/api/samples", (r) =>
@@ -93,7 +90,7 @@ async function mockExperiment(
   for (const sample of loads.flatMap((l) => (l as { samples: { sample_id: number; exposures: { id: number; filename: string }[] }[] }).samples)) {
     const exposures = sample.exposures.map((e) => ({
       id: e.id, sample_id: sample.sample_id, filename: e.filename, kind: "file",
-      selected: false, status: e.id === 300 ? "rejected" : null, image_path: null,
+      status: e.id === 300 ? "rejected" : null, image_path: null,
     }));
     await page.route(`**/api/samples/${sample.sample_id}/exposures`, (r) =>
       r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(exposures) }));
@@ -136,12 +133,6 @@ test("opening a scanned experiment lands on its first sample in the workspace", 
   await expect(page).toHaveURL(/\/experiments\/7\/workspace/);
   await expect(page.getByRole("heading", { level: 2, name: "Sample 1" })).toBeVisible();
   await expect(page.getByTestId("workspace-notice")).toHaveCount(0);
-});
-
-test("an old corpus link opens the workspace", async ({ page }) => {
-  await mockExperiment(page, { id: 7, ingest_status: "complete", samples: 2 });
-  await page.goto("/experiments/7/corpus");
-  await expect(page).toHaveURL(/\/experiments\/7\/workspace/);
 });
 
 test("problem exposures show in the sample pane and open their sample", async ({ page }) => {

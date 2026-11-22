@@ -43,7 +43,7 @@ round-trip test in `test_events.jl`.
 |---|---|
 | `peak_added` | `INSERT INTO peak_curations(kind='add', q=…)` |
 | `peak_excluded` | `INSERT INTO peak_curations(kind='exclude', q=…)` |
-| `peak_unexcluded` | `DELETE FROM peak_curations WHERE kind='exclude' AND q≈payload.q` (the route stamps `undoes_event_id` onto the `user_actions` row when resolvable — see Atomicity note) |
+| `peak_unexcluded` | delete the `exclude` rows listed in `payload.curation_qs` (see Un-exclude and replay) (the route stamps `undoes_event_id` onto the `user_actions` row when resolvable — see Atomicity note) |
 | `assignment_add` | UPSERT `assignments` → `indexed`; `INSERT OR IGNORE INTO assignment_members(exposure_id, index_id)` (entity_type=`exposure`, payload `{index_id}`) |
 | `assignment_remove` | `DELETE FROM assignment_members WHERE exposure_id=… AND index_id=…` (entity_type=`exposure`, payload `{index_id}`) |
 | `sample_call_set_state` | UPSERT `sample_calls.state`; clears `assignment_members` on every frame of the sample when state ≠ `indexed` (entity_type=`sample`, payload `{state}`) |
@@ -53,6 +53,12 @@ round-trip test in `test_events.jl`.
 | `label_suggestion_restored` | UPSERT `sample_labels` → `state='suggested', source='ingest'`; undo of confirming or dismissing a suggestion. The route skips it when the sample has no such label or it is already suggested. It cannot tell a former suggestion from a label a user typed (`label_added` sets `source='user'`), so the caller must only send it for a row it saw as suggested; the workspace's undo is the only caller (entity_type=`sample`, payload `{label, experiment_id}`) |
 | `tag_color_set` | UPSERT `label_colors` (unique per label ignoring case) to the colour, or DELETE the row when `color` is null so the label falls back to its default (blue for a built-in, violet otherwise). One colour per label name for the whole app (entity_type=`tag`, entity_id=0 `LABEL_COLOR_ENTITY_ID`, payload `{label, color}`). The kind and entity_type keep the old "tag" name because log rows are history; the table was `tag_colors` before `migrate_label_colors!` renamed it. |
 | `compares_changed` | Applies one change to a sample's saved comparisons: DELETE the `remove` refs from `sample_compares`, `INSERT OR IGNORE` the `add` refs with `added_by` from the event's user, then, only when the payload has the `subtraction` key, UPSERT `sample_subtractions` or DELETE it for null. The route sends only real changes, and when it removes the subtracted ref without naming a new one it adds `subtraction: null` (entity_type=`sample`, payload `{add?, remove?, subtraction?, experiment_id}`). |
+
+**Curation matching.** Curations keep the `q` the user recorded; replay never rewrites them. They attach to auto peaks at read time, in `peak_matching.jl`. Each curation looks at its nearest auto peak within `peak_match_tol(q, q_step)` and attaches only to that one (ties go to the lower `auto_peaks.id`). An `exclude` hides that peak; if several excludes share a nearest peak, the closest one owns it and the rest do nothing. An `add` replaces its nearest auto peak, so a user peak never sits beside an auto peak as a doublet, unless that nearest peak is excluded, in which case the add replaces nothing (the usual correction is "exclude the misplaced peak, add one at the right spot"). The tolerance is `max(1e-6, 0.001·|q|, 6·q_step)`. `q_step` is `exposures.q_step`, the median spacing of the trace's q grid, written by `analyze_exposure!` whenever it reads the trace. With `q_step` NULL the tolerance is the original `max(1e-6, 0.001·|q|)`, an exclude hides every auto peak within it, and an `add` replaces nothing. The effective peaks, the inputs hash, the peaks API and the speculative peak rows all read the same masks (`curation_flags`).
+
+**Un-exclude and replay.** The route records the q values of the exclude rows it deletes in the `peak_unexcluded` payload (`curation_qs`): every exclude whose nearest auto peak is the target. The dispatcher deletes exactly those rows (one per recorded q), so replay does not depend on `q_step` or on the current `auto_peaks`. Events without `curation_qs` (old logs, direct callers) fall back to the same rule evaluated against the current `auto_peaks` and `q_step`. The route skips the event when the peak is not excluded.
+
+**When `q_step` is first filled.** Exposures analysed before `q_step` existed get it on their next trace read, which can trigger a one-time re-index. Existing curations can change meaning at that point: an old `add` within 6 grid points of an auto peak now replaces that peak, and an exclude recorded for a peak that has since moved now attaches to it. The frontend does not re-derive matching: every confirmed peak mutation, own or remote, refetches the exposure's peak list once no peak mutation for that exposure is pending (`lib/queue/refreshPeaks.ts`). A peak replaced by an `add` is omitted from the listing.
 
 `assignment_add` also upserts the frame's sample into `sample_calls` as `indexed`.
 
@@ -93,10 +99,11 @@ guard for the same reason. Their `user_actions` rows stay in the log, and
 
 **Pure log events — use `log_action!`** (no view side effect, no
 broadcast routing through the dispatcher):
-`set_exposure_status`, `select_exposure`, `update_sample`, `analyze`,
+`set_exposure_status`, `update_sample`, `analyze`,
 `scan`, `experiment_created`, `setups_added`. The dispatcher carries explicit no-op
 `return nothing` guards for the view-less kinds (`set_exposure_status`,
-`select_exposure`, …).
+`update_sample`, …). Old `select_exposure` rows are a retired kind: frame
+selection was removed, and the representative is always the newest kept frame.
 
 `set_exposure_status` is audit-only: it records a Drop action but
 produces no view. There is a single screening verb — **Drop** (the X key) —
@@ -305,7 +312,7 @@ commits. Implications:
 - Subscribers never see an event that was rolled back.
 - Process death between commit and broadcast loses the frame, but the
   event is durable in `user_actions`. Clients reconcile on reconnect by
-  refetching: `PrintApp` opens the stream through `lib/liveStream.ts`, and
+  refetching: `App` opens the stream through `lib/liveStream.ts`, and
   every `open` after the first runs `lib/queue/reconnectRefresh.ts`. That
   invalidates every query except raw exposure traces, and it waits until no
   mutation is pending, so a refetch can't overwrite an optimistic edit that
@@ -355,30 +362,16 @@ intake; cache folding lives in `applyRemoteToCache(remote, qc)`
    kinds are forwarded. Unknown kinds fall through to a default
    invalidate-by-entity-id fallback.
 
-The EventSource connection is bound to `src/print/App.tsx` (`PrintApp`)'s
+The EventSource connection is bound to `src/App.tsx` (`App`)'s
 mount/unmount only; `clientId` is stable for the lifetime of the tab, so
 no listener recycling is needed.
 
 ### Conflict resolution
 
-> **⚠ Superseded — decided 2026-06-03 (greenfield "The Print" rebuild).** The
-> optimistic-concurrency model described below (`If-Match` + 409-retry, Plan 7
-> R5b) is **cancelled, not deferred.** The product decision is that commit
-> conflicts should not surface as friction: multiplayer stays last-write-wins
-> permanently, and the positive replacement is **edit-tracking → undo/redo →
-> versioning**, designed during Layer 4. Do **not** build the `409`/`If-Match`
-> conflict UI from this section. See `docs/future-feature-ideas.md`
-> §"Multi-user / review" and `docs/himalayaui-design.md` §2.10. The original
-> deferral note is retained below for historical context only.
-
-Optimistic concurrency via `If-Match` headers + 409-retry on the
-frontend (R5b in Plan 7) was originally **deferred**. The gate was R4
-instrumentation showing real contention: ≥2% delta-event collision rate over
-≥4 weeks / ≥500 events. Until then, multiplayer is last-write-wins, which the
-event log makes auditable after the fact.
-
-`exposures.selected` is intentionally LWW — see the note in `CLAUDE.md`. (Under
-the 2026-06-03 decision above, *all* entities follow this LWW grain.)
+Multiplayer is last-write-wins, with no `If-Match`/409 path and no conflict UI
+(decided 2026-06-03). Undo in the workspace reads the server before it restores
+anything, so it never overwrites another user's newer edit. Versioning is still
+open; see `docs/future-feature-ideas.md` §"Multi-user / review".
 
 ---
 
@@ -479,8 +472,7 @@ this doc:
 
 ## See also
 
-- [`docs/himalayaui-design.md`](himalayaui-design.md) §2.6, §2.9, §2.10 —
-  design principles and the active-set preservation story.
+- [`PRODUCT.md`](../PRODUCT.md) and [`DESIGN.md`](../DESIGN.md) — product principles and the design system.
 - `packages/HimalayaUI/src/{events,hash,server,pipeline}.jl` and
   `packages/HimalayaUI/frontend/src/lib/queue/{replayCoordinator,applyRemoteToCache}.ts`
   — the code.

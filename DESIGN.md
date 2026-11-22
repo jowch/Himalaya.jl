@@ -112,17 +112,17 @@ components:
 
 > **Status: this is the living visual spec for "The Print", not a finished remediation log.** It is the canonical, extendable reference: every new screen, primitive, and token is expected to be authored against the rules below and to extend the named scales rather than scatter one-offs. The token primitives in the frontmatter are normative; the prose contextualizes how to apply them.
 >
-> History, for accuracy: the system was first authored 2026-05-27 for the redesign's fidelity pass; the token migration landed in R0a (#221) + R0b (#222) + R0c (#223), the shipped tokens (`styles.css` `@theme`, `phases.ts`) were verified to match this doc at R9 (#232), and the retired dark "Darkroom" defaults are gone. The system ships a single light "Print" identity today. The app has a dark theme, selected by `data-theme` on `<html>` (and on the workspace root) in `styles.css`: a desaturated charcoal near-black with a faint blue-violet tint (paper oklch 0.165 0.005 280), not warm brown. Every page follows it. It follows the OS unless the user picks one from the command palette's Theme page. The primitives were later relocated to `src/print/ui/` (the old `src/components/ui/` directory no longer exists) as the whole frontend moved under `src/print/`. When you add a screen, component, state, or token, add it here too, keeping the doc and the shipped system in lockstep.
+> History, for accuracy: the system was first authored 2026-05-27 for the redesign's fidelity pass; the token migration landed in R0a (#221) + R0b (#222) + R0c (#223), the shipped tokens (`styles.css` `@theme`, `phases.ts`) were verified to match this doc at R9 (#232), and the retired dark "Darkroom" defaults are gone. The system ships a single light "Print" identity today. The app has a dark theme, selected by `data-theme` on `<html>` (and on the workspace root) in `styles.css`: a desaturated charcoal near-black with a faint blue-violet tint (paper oklch 0.165 0.005 280), not warm brown. Every page follows it. It follows the OS unless the user picks one from the command palette's Theme page. The primitives live in `src/ui/`, with the workspace components beside them. When you add a screen, component, state, or token, add it here too, keeping the doc and the shipped system in lockstep.
 >
-> **Update (component-library extraction).** The Print's recurring patterns were extracted into closed-look primitives under `src/print/ui/` (Button, Card, PhaseChip, PhaseStrip, ModalShell, Kicker, IconButton, ScoreBar, Dot, Toast, HintText, and the base-layer Input, Tooltip, and more) and the system is now **mechanically enforced**: `scripts/check-design.mjs` runs as a pure-absolute `lint:design` build step that fails the build on any inline appearance utility (`text-[…]`, `rounded-[…]`, raw colour literals, side-stripes) outside the appearance-authoring dirs (`src/print/ui/**`, plus the renderer dirs `src/print/plot/**`, `src/print/detector/**`, `src/print/comb/**`, `src/print/export/**`). Consumers pass placement-only `className`; appearance lives in the primitives. Two token truths changed at extraction: `rounded.md` 7px → 5px (radius collapsed to one 5px step), and `--color-print-accent` now sources from `--color-accent`. The enforced contract lives in `packages/HimalayaUI/frontend/src/AGENTS.md` §"Design system"; the live visual catalog is Storybook (`npm run storybook` from `packages/HimalayaUI/frontend`). (The hand-maintained `docs/design-system.html` mock was retired 2026-06-21 — it drifted from the living primitives; the `.stories.tsx` files are the source of truth.)
+> **Update (component-library extraction).** The Print's recurring patterns were extracted into closed-look primitives under `src/ui/` (Button, Card, Checkbox, Dot, EmptyState, IconButton, Input, KbKey, Kicker, ModalShell, NoticePill, PhaseChip, Popover, Toast, Tooltip, TopBar and more; the workspace has its own under `src/ui/`) and the system is now **mechanically enforced**: `scripts/check-design.mjs` runs as a pure-absolute `lint:design` build step that fails the build on any inline appearance utility (`text-[…]`, `rounded-[…]`, raw colour literals, side-stripes) outside the appearance-authoring dirs (`src/ui/**`, `src/ui/**`, plus the renderer dirs `src/plot/**` and `src/detector/**`). Consumers pass placement-only `className`; appearance lives in the primitives. Two token truths changed at extraction: `rounded.md` 7px → 5px (radius collapsed to one 5px step), and `--color-print-accent` now sources from `--color-accent`. The enforced contract lives in `packages/HimalayaUI/frontend/src/AGENTS.md` §"Design system"; the live visual catalog is Storybook (`npm run storybook` from `packages/HimalayaUI/frontend`). (The hand-maintained `docs/design-system.html` mock was retired 2026-06-21 — it drifted from the living primitives; the `.stories.tsx` files are the source of truth.)
 
 ## 1. Overview
 
 **Creative North Star: "The Print"**
 
-HimalayaUI is composed the way a publication plate is composed: on warm paper, in ink, with the figure as the subject. The app's analytical destination is a publication-quality figure (the stacked-offset waterfall), so the whole product is set on the medium that figure will be published on, light, warm paper (`paper`, oklch 0.978, hue 85), not a dark console. Detector images, which are intrinsically dark, sit as **dark windows in the paper** (`frame-edge`, hue 55); everything else is ink on paper.
+HimalayaUI is composed the way a publication plate is composed: on warm paper, in ink, with the figure as the subject. The app's analytical destination is a publication-quality figure, so the whole product is set on the medium that figure will be published on, light, warm paper (`paper`, oklch 0.978, hue 85), not a dark console. Detector images, which are intrinsically dark, sit as **dark windows in the paper** (`frame-edge`, hue 55); everything else is ink on paper.
 
-Where the earlier dark "Darkroom" direction *rationed* a single accent and kept colour scarce, "The Print" lets **phase colour carry the surface**: colour here is the science (the phase identity), used generously and semantically. The chrome stays quiet, ink and hairlines on paper, and a single warm **terracotta** accent (`accent`, oklch 0.555 0.150 38) is the one interaction mark, the grease pencil: the reject ✕, the primary action, the live edit, the q-link highlight.
+Where the earlier dark "Darkroom" direction *rationed* a single accent and kept colour scarce, "The Print" lets **phase colour carry the surface**: colour here is the science (the phase identity), used generously and semantically. The chrome stays quiet, ink and hairlines on paper, and a single warm **terracotta** accent (`accent`, oklch 0.555 0.150 38) is the one interaction mark, the grease pencil: the primary action, the live edit, the q-link highlight.
 
 The personality is unchanged: a **confident expert** who is quiet. The interface makes calls and shows its reasoning; it never raises its voice. Density stays high. One sans family, Source Sans 3, sets everything; hierarchy comes from weight and ink tone rather than from a second typeface.
 
@@ -152,10 +152,10 @@ Around those three named steps, surfaces use Tailwind's default spacing scale fo
 The voice matches the brand: an **assured, precise, unshowy** colleague. Copy is direct and specific, never tentative, never cute, never a wizard's hand-holding. It states what is true and what the next action is.
 
 - **The No-Em-Dash Rule.** Never use an em dash (or a "--" stand-in) in interface copy or in this system's docs. Break the thought into two sentences, or use a comma or colon.
-- **Buttons** name the action as a verb in the user's terms: "Reanalyze", "New series", "Save figure", "Reject". Not "OK" / "Submit" / "Go".
-- **Empty states** tell the user why the surface is empty and what to do next, in the `EmptyState` title + body pair (e.g. title "No series match", body "Clear the search or filter to see the whole folio.").
-- **Error copy** is honest and specific, never a masquerade: a failed fetch says it failed and offers a recovery ("Couldn't load the folio" / "The series list failed to load. Try reloading the page."), and is never allowed to read as an empty "no results" state.
-- **Loading copy** is quiet and momentary ("Loading series…") behind the skeleton, not a spinner narration.
+- **Buttons** name the action as a verb in the user's terms: "+ Label", "Remove experiment", "Drop", "Restore". Not "OK" / "Submit" / "Go".
+- **Empty states** tell the user why the surface is empty and what to do next, in the `EmptyState` title + body pair (e.g. "No samples yet. They appear as the ingest reads the data folder.").
+- **Error copy** is honest and specific, never a masquerade: a failed fetch says it failed and offers a recovery ("The last ingest failed." with a Details button that shows the error), and is never allowed to read as an empty "no results" state.
+- **Loading copy** is quiet and momentary ("Loading samples…"), not a spinner narration.
 
 **The Domain-Vocabulary-Is-Correct Rule.** The instrument's own terms are *precise*, not jargon to be softened: Pn3m, Im3m, Ia3d, Fm3m, Fd3m, Hexagonal, Lamellar, Square, Miller, q-value, hkl, reanalyze. These are the scientist's working vocabulary; "simplifying" them is a regression, not an accessibility win. Write to the expert, not around them.
 
@@ -170,12 +170,12 @@ A warm paper-and-ink system (every neutral tinted to hue ~70–85) carrying one 
 - **Ink** (`ink`, 0.265 0.013 68): primary text and solid-button fills. **Ink-soft** (`ink-soft`, 0.467): secondary text, ghost buttons. **Ink-faint** (`ink-faint`, 0.640): captions, placeholders, disabled.
 - **Hair** (`hair`, 0.882) / **Hair-strong** (`hair-strong`, 0.806): hairline separators and card edges; the line does the separating, paired with a soft shadow only on the plate.
 - **Frame-edge** (`frame-edge`, 0.150 0.010 55): the warm near-black backing for detector images, the dark window set into the paper.
-- **Frame-tag** (`frame-tag`, 0.82 0.01 80): the light caption tint for the mono labels set *over* the dark `frame-edge` (the loupe frame-tag, R0c #223 / T-8); a dark-on-dark caption would vanish on the detector frame.
+- **Frame-tag** (`frame-tag`, 0.82 0.01 80): the light caption tint for text set *over* the dark `frame-edge` (a frame thumbnail's "No image", tooltips); a dark-on-dark caption would vanish on the detector frame.
 
-> **No legacy shim (post-R3-F, #259).** Earlier the dark-era neutral-ramp names (`--color-bg*`/`--color-fg*`/`--color-border*`) survived as a value-remapped shim; that shim is now excised. Use the canonical Print tokens directly — `paper`/`paper-sunk`/`plate`, `ink`/`ink-soft`/`ink-faint`, `hair`/`hair-strong`, `accent` (terracotta). Reintroducing an old name is self-revealing: Tailwind won't generate the utility and `var(--color-fg)` won't resolve. The dark `@theme` defaults, the `:root.theme-light` override, `color-scheme:dark`, the grain overlay, and the `theme` toggle were removed at R0a.
+> **No legacy shim (post-R3-F, #259).** Earlier the dark-era neutral-ramp names (`--color-bg*`/`--color-fg*`/`--color-border*`) survived as a value-remapped shim; that shim is now excised. Use the canonical Print tokens directly — `paper`/`paper-sunk`/`plate`, `ink`/`ink-soft`/`ink-faint`, `hair`/`hair-strong`, `accent` (terracotta). Reintroducing an old name is self-revealing: Tailwind won't generate the utility and `var(--color-fg)` won't resolve. The old dark `@theme` defaults, the `:root.theme-light` override and the grain overlay were removed at R0a. Today's dark theme is chosen on the palette's Theme page.
 
 ### Accent (the grease pencil)
-- **Terracotta** (`accent`, oklch 0.555 0.150 38): the single interaction accent, kept warm so it belongs to the paper. The reject ✕, the primary `button-accent` and ink-solid actions, focus rings, links, the q-link cross-highlight, the live-edit mark. It is the only chrome hue, and it earns that by appearing on a small fraction of any screen.
+- **Terracotta** (`accent`, oklch 0.555 0.150 38): the single interaction accent, kept warm so it belongs to the paper. The primary `button-accent` and ink-solid actions, focus rings, links, the q-link cross-highlight, the live-edit mark. It is the only chrome hue, and it earns that by appearing on a small fraction of any screen.
 
 ### Manual-peak magenta
 - **Manual-Peak Magenta** (`peak-manual`, oklch 0.550 0.200 340): paper-tuned (darker than the dark-era 0.78) for AA on the plate. Used for one thing only: peak markers the user added by hand. Its hue sits well clear of the terracotta accent (38) and every phase hue.
@@ -215,14 +215,14 @@ Section labels are sentence case at 600 in `ink-soft`. No uppercase, no letter-s
 ### Named rules
 **The Two-Weight Rule.** 400 and 600 only. Tailwind's `font-medium` resolves to 400 and `font-bold` to 600 through `--font-weight-*`, so a stray weight cannot appear.
 **The No-Monospace Rule.** There is no `--font-mono` token. Numbers align through tabular figures. Reintroducing a monospace face for values brings back a second voice the hierarchy does not need.
-**The Fixed-Scale Rule.** Extend the scale in `styles.css` as a reviewed change; never inline a one-off `text-[Npx]`. (Enforced: `scripts/check-design.mjs` fails the build on any inline `text-[…]` outside `src/print/ui/**`.)
+**The Fixed-Scale Rule.** Extend the scale in `styles.css` as a reviewed change; never inline a one-off `text-[Npx]`. (Enforced: `scripts/check-design.mjs` fails the build on any inline `text-[…]` outside `src/ui/**`.)
 
 ## 4. Elevation
 
 Mostly flat: paper and its chrome are flat; tonal steps (`paper` → `paper-sunk` → `plate`) and hairlines handle most separation. Genuine shadow is spent on **the plate**, the figure composed as a print lifts off the paper the way a print lifts off the developing tray.
 
 ### Shadow vocabulary
-- **Plate Lift** (e.g. `box-shadow: 0 1px 0 rgba(255,255,255,.6) inset, 0 6px 24px -8px rgba(40,30,20,.14)`): soft, warm, shallow. The figure plate, folio cards, the scoping worksheet, the loupe frame surround.
+- **Plate Lift** (e.g. `box-shadow: 0 1px 0 rgba(255,255,255,.6) inset, 0 6px 24px -8px rgba(40,30,20,.14)`): soft, warm, shallow. The figure plate and the detector frame surround.
 - Detector images are the dark exception: a dark window (`frame-edge`) set into the paper, not a lifted plate.
 
 ### Named rule
@@ -234,24 +234,24 @@ For each component, lead with a short character line, then specify shape, colour
 
 ### State taxonomy
 
-Every interactive primitive draws from one shared vocabulary of states. The treatments below are what the shipped primitives in `src/print/ui/` actually implement; where a state is not yet systematized it is flagged as an extension point.
+Every interactive primitive draws from one shared vocabulary of states. The treatments below are what the shipped primitives in `src/ui/` actually implement; where a state is not yet systematized it is flagged as an extension point.
 
 - **Rest.** The quiet default. Ghost buttons read ink-soft on transparent; inputs are a `plate` well with a `hair-strong` hairline; cards are flat `plate` + hairline.
 - **Hover.** A small tonal lift, never a colour shift that implies meaning. Ghost-button hover brings text to `ink` over a `paper-sunk` fill; solid and accent buttons brighten (`hover:brightness-110`); outline buttons and Field rows fill to `paper-sunk`. All of it rides the global 120ms ease-out colour transition.
 - **Active / pressed.** For toggles, the "on" state is the canonical **ink fill, paper text** (segmented-control active segment); an armed tool button switches to the terracotta accent fill with `aria-pressed`. Never a recessed `paper-sunk` fill for "on" (the L-5/B-A defect).
 - **Focus-visible.** A terracotta `accent` ring, keyboard-only (`focus-visible`, offset). Buttons outline 2px accent; ghost and inverse variants use a 1px accent outline; inputs land the ring on the whole field via `focus-within:border-accent`; SVG hit targets (custom-index snap points, slider thumbs) stroke accent on `:focus-visible` only. Mouse clicks never show a ring. Bespoke `<button>`/`<a>` elements outside the primitives inherit the 2px accent ring by default from a base-layer rule in `styles.css`, so the state is systematized everywhere; primitive refinements and deliberate suppressions override it from higher layers (per-property — the 1px refiners redeclare `outline-offset-0` explicitly).
-- **Disabled.** `disabled:opacity-45 disabled:cursor-not-allowed` on buttons; individual segmented-control segments can be disabled (e.g. Loupe with no sample selected). Disabled is a dimming, not a colour change.
+- **Disabled.** `disabled:opacity-45 disabled:cursor-not-allowed` on buttons; Disabled is a dimming, not a colour change.
 - **Selected.** `Card selected` adds accent selection chrome: an accent-tinted border plus a subtle inset accent ring (flat, no shadow), and exposes `data-selected="true"` for tests and targeted CSS. This is the candidate-pick / row-selection signal.
-- **Busy / loading.** A **skeleton** (boneyard `Skeleton`, the slow `.bone` pulse, fed a committed `*.bones.json` capture or an inline fixture) covers the first paint of a data-driven region. A known-duration job has no shared progress primitive yet. A bare spinner is reserved for indeterminate inline waits and is not yet a systematized primitive (extension point).
+- **Busy / loading.** The first paint of a data-driven region shows quiet loading copy or an `aria-busy` placeholder. A known-duration job has no shared progress primitive yet. A bare spinner is reserved for indeterminate inline waits and is not yet a systematized primitive (extension point).
 - **Error.** Inline and honest. Inputs take `invalid` → `border-error` plus `aria-invalid`, second-channeled by consumer error text. Page-level fetch failures render an `EmptyState` with failure copy (never a masquerading "no results"). `Toast` (`role="status"`) carries transient feedback with a leading status glyph + word (severity is the word + `aria-label`, not an edge hue).
 - **Read-only.** A genuinely inert value renders as a static, non-interactive row, no chevron, no pointer cursor, not a `<button>`. Controls must not lie: an affordance that does nothing is removed, not styled live.
 
-**The Honest-Surface-State Rule.** Skeleton for the first load of a data region; spinner or progress for an in-flight action on already-loaded content; `EmptyState` (with a next-step CTA in the body) for a legitimately empty or failed surface; inline `border-error` + error text for a single invalid field. Never let a failure read as an empty state, and never show a control that cannot act.
+**The Honest-Surface-State Rule.** Quiet loading copy for the first load of a data region; spinner or progress for an in-flight action on already-loaded content; `EmptyState` (with a next-step CTA in the body) for a legitimately empty or failed surface; inline `border-error` + error text for a single invalid field. Never let a failure read as an empty state, and never show a control that cannot act.
 
 ### Buttons
 - **Shape:** 5px radius (`rounded.sm`), compact padding.
 - **Solid (`button-solid`):** ink fill, paper text, the primary/confirm action and active segmented-control segments (`.btn-solid {background:var(--ink); color:var(--paper)}`). This is the mockup's primary-action treatment, not the terracotta fill.
-- **Accent (`button-accent`):** terracotta fill, paper text, reserved for the single grease-pencil action where the brand mark is the point (e.g. reject, "+ New series").
+- **Accent (`button-accent`):** terracotta fill, paper text, reserved for the single grease-pencil action where the brand mark is the point (e.g. the primary action of a dialog).
 - **Ghost (default):** no fill, ink-soft text; hover brings text to `ink` over a `paper-sunk` fill. Most chrome buttons are ghost.
 - **Focus:** `focus-visible` outline in `accent`, offset.
 
@@ -262,19 +262,16 @@ Every interactive primitive draws from one shared vocabulary of states. The trea
 - 5px radius (`rounded.md`), `plate` background, a `hair-strong` hairline, and the Plate Lift shadow. The figure plate widens to a max-width and centres; the rail recesses into `paper-sunk`. (Radius collapsed to a single 5px step in the 2026-05-29 component-library extraction: `rounded.sm` and `rounded.md` are both 5px, so cards and controls share one corner; the two names survive only to allow a future re-differentiation by editing one token. The `Card` primitive is the single source of the plate look.)
 
 ### Inputs
-- Recessed: `plate`/`paper-sunk` well, `hair` border, 5px radius. Focus shifts the border to `accent` with a 1px accent ring. Scoping values are "confident ink, re-openable" rather than a permanent open field (S-E).
+- Recessed: `plate`/`paper-sunk` well, `hair` border, 5px radius. Focus shifts the border to `accent` with a 1px accent ring.
 
 ### Detector frame
-- A dark window: `frame-edge` background, set into the paper. Rings render in phase-neutral gold on triage surfaces (contact sheet, thumbnails) where the question is image quality, and in phase colour on the focus big detector where the question is identity. Rejected frames carry the hand-skewed terracotta grease-pencil ✕ (M-10).
+- A dark window: `frame-edge` background, set into the paper. Thumbnails in the frame strip and the enlarged detector view (Space) both use it. A dropped frame dims to half opacity under a struck-through "dropped" caption.
 
 ### Signature components
-- **Score bar:** a 2px capsule (`paper-sunk` track) filled in the relevant phase colour to the score percentage.
 - **Semantic dot:** an 8px phase/status disc with `role="img"` + `aria-label`, the canonical second channel.
-- **Phase chip:** a monospace data badge naming a phase, the instrument voice for a categorical result; on the contact sheet it replaces the static "Not indexed" string (M-6).
-- **Mini-waterfall:** a read-only per-series SVG figure on folio cards (F-A), the folio is a wall of distinct figures, not a card grid.
-- **Tag pill:** the one fully rounded shape in the system, so a sample tag never reads as a phase chip or a button. Confirmed tags are a soft wash with ink text; a suggestion is a dashed outline with no fill and no "?". Built-in tags (Buffer, Calibrant, Empty capillary) are capitalised and default to a desaturated, darker blue (light ink 0.360 0.085 240, dark ink 0.860 0.080 240) that stays clear of Im3m's 258 hue in both themes; other tags default to a muted violet (280). Anyone can recolour a tag name for the whole app from five swatches: violet 280, blue 240, teal 182, rose 352 and stone (a warm grey, chroma 0.018 light, 0.030 dark). Olive was dropped because every hue between Lamellar (100) and Hexagonal (130) is taken. Tag inks are darker (light, 0.36) or lighter (dark, 0.86) than every phase colour, which keeps each at least 0.05 OKLab from every phase and status colour. The row is one fixed-height line that never wraps: what does not fit goes behind a "+N" pill whose list keeps every tag reachable. Source Sans caps sit about 2px high in a symmetric box, so pills use a 4px top and 0 bottom padding to centre the caps optically; recheck this if the global baseline shift changes.
-- **Phase strip:** one cell per sample, coloured by its phase call (coexistence = two-phase gradient), with a transition caption.
-- **Reflections card:** the lower-row table beside the detector window on the focus workspace. Column headers are `phase · order · q · d`. The second column is **`order`**, not `hkl` — SAXS peaks in our data model carry a 1-based ratio-series position, not an (h,k,l) Miller triple (`lib/seriesRatio.ts`, `src/phase.jl` `phaseratios`). "order" reads as "1st reflection, 2nd reflection…", which is what the value is.
+- **Phase chip:** a data badge naming a phase, the instrument voice for a categorical result.
+- **Label pill:** the one fully rounded shape in the system, so a sample label never reads as a phase chip or a button. Confirmed labels are a soft wash with ink text; a suggestion is a dashed outline with no fill and no "?". There are eight label colours (rose, plum, violet, blue, teal, green, ochre, stone). The system labels have fixed colours (Buffer blue, Calibrant ochre, Empty capillary stone) and those three are kept for them; user labels pick from the other five and default to violet. A colour belongs to the label name across the app. Label inks are darker (light) or lighter (dark) than every phase colour, so they stay apart from phase and status colours even where hues are near. The row is one fixed-height line that never wraps: what does not fit goes behind a "+N" pill whose list keeps every label reachable. Source Sans caps sit about 2px high in a symmetric box, so pills use a 4px top and 0 bottom padding to centre the caps optically; recheck this if the global baseline shift changes.
+- **Order, not hkl.** Where peaks are listed against a phase, the column is `order`, not `hkl`: SAXS peaks in our data model carry a 1-based ratio-series position, not an (h,k,l) Miller triple (`src/phase.jl` `phaseratios`).
 
 ### Motion
 
@@ -282,8 +279,8 @@ Motion is polish measured in milliseconds, never spectacle. It exists to soften 
 
 - **Default transition.** A global rule transitions `color`, `background-color`, `border-color`, and `opacity` over **120ms ease-out** (`styles.css` `@layer base`). That is the whole motion budget for hovers, focus, selection, and tonal shifts.
 - **Easing.** Ease-out only. No bounce, no elastic, no spring. Movement decelerates into rest and stops.
-- **Functional animations, kept short.** A few one-shot keyframes carry genuine feedback: overlay fade-ins (`.anim-pal-in` 120ms, `.anim-pal-scale` 140ms popover entry, `overlay-fade-in` 140ms for newly-built trace marks) and the slow `.bone` skeleton pulse (1.8s). These convey state (something appeared, something is loading), so they earn their motion.
-- **Motion conveys state only.** Nothing animates for delight. There is no page-load choreography, no scroll-driven sequence, no staggered entrance beyond the skeleton's brief reveal stagger. If a motion does not report a state change, it does not belong.
+- **Functional animations, kept short.** A few one-shot keyframes carry genuine feedback: overlay fade-ins (`.anim-pal-in` 120ms, `.anim-pal-scale` 140ms popover entry, `overlay-fade-in` 140ms for newly-built trace marks). These convey state (something appeared, something is loading), so they earn their motion.
+- **Motion conveys state only.** Nothing animates for delight. There is no page-load choreography, no scroll-driven sequence, no staggered entrance. If a motion does not report a state change, it does not belong.
 - **The Reduced-Motion Rule.** Under `prefers-reduced-motion: reduce`, every transition and animation is near-zeroed to 0.01ms (not removed, so `transitionend` / `animationend` listeners still fire) and `scroll-behavior` snaps to auto. The result has no perceptible spatial movement while functional feedback that depends on completing (spinners, progress, focus) is preserved.
 
 > The fractal-noise grain, palette fades, and trace-overlay choreography of the retired dark "Darkroom" era are gone. Do not reintroduce them.
@@ -291,7 +288,7 @@ Motion is polish measured in milliseconds, never spectacle. It exists to soften 
 ## 6. Do's and Don'ts
 
 ### Do
-- Keep the warm paper field; let the figure (trace plate, waterfall, detector window) be the subject.
+- Keep the warm paper field; let the figure (the trace plot and the detector window) be the subject.
 - Treat every colour as a label; let phase colour be generous (it is the science) while the terracotta accent stays rationed.
 - Set everything in Source Sans 3; let weight and ink tone carry hierarchy.
 - Make the active segmented-control segment ink-on-paper; make the primary action ink-solid, the grease-pencil action terracotta.

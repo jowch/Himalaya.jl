@@ -3,7 +3,7 @@ import cases from "../fixtures/representative-exposure.json";
 import { keptExposures, representativeExposure } from "../../src/lib/exposure";
 import type { Exposure } from "../../src/api";
 
-type Case = { case: string; frames: Pick<Exposure, "id" | "selected" | "status">[]; representative: number | null };
+type Case = { case: string; frames: Pick<Exposure, "id" | "status">[]; representative: number | null };
 
 function exposures(c: Case): Exposure[] {
   return c.frames.map((f) => ({

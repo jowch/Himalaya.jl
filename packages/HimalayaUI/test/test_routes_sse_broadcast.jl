@@ -92,25 +92,6 @@ end
         end
     end
 
-    @testset "PATCH /api/exposures/:id/select → select_exposure frame" begin
-        tmp    = mktempdir()
-        db     = open_prepared_clone(tmp)
-        exp_id = HimalayaUI.create_experiment!(db; path=tmp,
-            data_dir=joinpath(tmp,"data"), analysis_dir=joinpath(tmp,"analysis"))
-        s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-        e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="x")
-
-        _with_sub() do pending
-            with_test_server(db) do port, base
-                r = HTTP.patch("$base/api/exposures/$e_id/select";
-                    headers = ["X-Username" => "alice"])
-                @test r.status == 200
-            end
-            kinds = _frame_kinds(_drain_frames(pending))
-            @test "select_exposure" in kinds
-        end
-    end
-
     # D-10: the /groups member routes' SSE frames (index_confirmed /
     # index_unconfirmed) were retired with the routes. The assignment-native
     # member routes' SSE post_state contract ({assignment:{state,members}}) is

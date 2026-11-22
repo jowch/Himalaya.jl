@@ -299,6 +299,7 @@ const RETIRED_EVENT_KINDS = (
     "post_message",
     "sample_renamed", "sample_created", "sample_split", "grouping_flag_dismissed",
     "add_tag", "remove_tag", "edit_tag",
+    "select_exposure",
 )
 
 """
@@ -335,13 +336,22 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
     end
 
     if kind == "peak_unexcluded"
-        # payload.q is the auto peak's q; remove the matching exclude curation.
-        # Tolerance shape mirrors effective_peaks.
-        DBInterface.execute(db,
-            """DELETE FROM peak_curations
-               WHERE exposure_id = ? AND kind = 'exclude'
-                 AND ABS(q - ?) <= MAX(1e-6, ABS(?) * 0.001)""",
-            [Int(entity_id), Float64(payload.q), Float64(payload.q)])
+        # payload.q is the auto peak's q. Delete only the excludes that attach
+        # to that peak (peak_matching.jl); curation q values are never rewritten.
+        if haskey(payload, :curation_qs)
+            for cq in payload.curation_qs
+                DBInterface.execute(db,
+                    """DELETE FROM peak_curations WHERE id = (
+                           SELECT id FROM peak_curations
+                           WHERE exposure_id = ? AND kind = 'exclude' AND q = ?
+                           ORDER BY id LIMIT 1)""",
+                    [Int(entity_id), Float64(cq)])
+            end
+        else
+            for cid in exclude_ids_for_peak(db, Int(entity_id), Float64(payload.q))
+                DBInterface.execute(db, "DELETE FROM peak_curations WHERE id = ?", [cid])
+            end
+        end
         return nothing
     end
 
@@ -434,7 +444,6 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
     kind == "experiment_updated" && return nothing
     kind == "setup_updated" && return nothing
     kind == "set_exposure_status" && return nothing
-    kind == "select_exposure" && return nothing
 
     if kind == "sample_bridged"
         DBInterface.execute(db,

@@ -15,7 +15,7 @@ Before merging any PR that touches:
 - `lib/queue/mutators/*` (mutator additions or refactors)
 - `routes_peaks.jl`, `routes_analysis.jl`, or any route emitting `apply_event!`
 - `applyRemoteToCache.ts` (SSE-driven cache merge)
-- `workspace/ui/CustomIndexPanel.tsx`, `Toast.tsx`, `InfrastructureBanner.tsx`
+- `ui/CustomIndexPanel.tsx`, `Toast.tsx`, `InfrastructureBanner.tsx`
 - `App.tsx` SSE wiring or `attachPersistence`/`rehydrate` calls
 
 For non-queue PRs, a clean unit + integration test run is enough; this skill is overkill.

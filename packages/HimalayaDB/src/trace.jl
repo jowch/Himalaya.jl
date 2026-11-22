@@ -18,37 +18,46 @@ function load_dat(path::AbstractString)
     return (q, I, σ)
 end
 
+const DEFAULT_INTEGRATION_PATTERN = "{name}.dat"
+
+_name_pattern(v) = (v isa AbstractString && occursin("{name}", v)) ? String(v) : nothing
+
+integration_pattern_for(column) =
+    something(_name_pattern(coalesce(column, nothing)), DEFAULT_INTEGRATION_PATTERN)
+
 """
     load_trace(db, exposure_id; pattern=nothing) -> (q, I, σ)
 
-Resolve an exposure's on-disk `.dat` path and parse it. `exposures.experiment_id`
-is joined directly to `experiments` (an exposure can have a NULL `sample_id`, so
-going through `samples` would miss it). The candidate path is
-`joinpath(experiments.analysis_dir, replace(pat, "{name}" => exposures.filename))`,
-where `pat` is the `pattern` keyword if given, else the experiment's
-`integration_pattern` column, else `"{name}.dat"` when that column is NULL.
+Resolve an exposure's on-disk `.dat` path and parse it. The exposure's own
+setup (`exposures.setup_id`) gives the directory and the file pattern, so each
+setup of a beamtime resolves against its own `analysis_dir`. The candidate path
+is `joinpath(setups.analysis_dir, replace(pat, "{name}" => exposures.filename))`,
+where `pat` is the `pattern` keyword if given, else the setup's
+`integration_pattern` when it contains `{name}`, else `"{name}.dat"`.
 
 Mirrors `HimalayaUI.resolve_trace_path` (pipeline.jl): tries the exact name
 first, then falls back to the name with the trailing `_0_001` suffix stripped.
 Each exposure has its own `_tot.dat`, named by the stem without that suffix.
 
-Pass `pattern=` to override (e.g. `"{name}_tot.dat"`). The file-not-found error
-names the path(s) it tried, which reveals a pattern mismatch.
+The file-not-found error names the path(s) it tried, which reveals a pattern
+mismatch. Throws `ArgumentError` when the exposure is missing or belongs to no setup.
 """
 function load_trace(db::SQLite.DB, exposure_id::Integer;
                     pattern::Union{AbstractString,Nothing}=nothing)
     rows = Tables.rowtable(DBInterface.execute(db, """
-        SELECT e.filename, x.analysis_dir, x.integration_pattern
+        SELECT e.filename, st.analysis_dir, st.integration_pattern
         FROM exposures e
-        JOIN experiments x ON x.id = e.experiment_id
+        LEFT JOIN setups st ON st.id = e.setup_id
         WHERE e.id = ?
     """, [Int(exposure_id)]))
     isempty(rows) && throw(ArgumentError("load_trace: no exposure $exposure_id"))
     row = rows[1]
     row.filename === missing && throw(ArgumentError(
         "load_trace: exposure $exposure_id has no filename"))
+    row.analysis_dir === missing && throw(ArgumentError(
+        "load_trace: exposure $exposure_id belongs to no setup, so it has no analysis_dir"))
     pat = pattern !== nothing ? String(pattern) :
-          (row.integration_pattern === missing ? "{name}.dat" : String(row.integration_pattern))
+          integration_pattern_for(row.integration_pattern)
     dir = String(row.analysis_dir)
     fname = String(row.filename)
 

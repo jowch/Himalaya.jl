@@ -12,7 +12,7 @@ const KEEP_QUIET = stream("retry: 600000\n\n");
 
 async function mockApp(page: Page, answers: Answer[]): Promise<{ connections: () => number }> {
   await page.addInitScript(() => {
-    localStorage.setItem("himalaya-ui:state", JSON.stringify({ state: { username: "alice", tutorialSeen: true }, version: 5 }));
+    localStorage.setItem("himalaya-ui:state", JSON.stringify({ state: { username: "alice", tutorialSeen: true }, version: 6 }));
   });
   let connections = 0;
   let listed = 0;

@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ExperimentsHomePage } from "../src/print/pages/ExperimentsHomePage";
+import { ExperimentsHomePage } from "../src/pages/ExperimentsHomePage";
 import * as api from "../src/api";
 
 const navigate = vi.fn();
@@ -51,6 +51,16 @@ describe("ExperimentsHomePage (Phase E1)", () => {
     vi.spyOn(api, "listExperiments").mockResolvedValue([EXP({})]);
     renderPage();
     fireEvent.click(await screen.findByTestId("new-experiment-cta"));
+    expect(navigate).toHaveBeenCalledWith("/experiments/new");
+  });
+
+  it("keeps the header New CTA working on the empty home page", async () => {
+    vi.spyOn(api, "listExperiments").mockResolvedValue([]);
+    renderPage();
+    await screen.findByText(/no experiments yet/i);
+    const cta = screen.getByTestId("new-experiment-cta");
+    expect(cta).toBeEnabled();
+    fireEvent.click(cta);
     expect(navigate).toHaveBeenCalledWith("/experiments/new");
   });
 

@@ -6,6 +6,12 @@ export const MAX_LABEL_LENGTH = 64;
 const fold = (s: string): string => s.trim().toLowerCase();
 export const labelKey = (s: string): string => s.trim().replace(/[A-Z]+/g, (m) => m.toLowerCase());
 
+const DISTANCE_LABEL = /^\s*\d+(\.\d+)?\s*m\s*$/;
+
+export function sharedAcrossBridge(label: string): boolean {
+  return !DISTANCE_LABEL.test(label);
+}
+
 export function sameLabel(a: string, b: string): boolean {
   return labelKey(a) === labelKey(b);
 }

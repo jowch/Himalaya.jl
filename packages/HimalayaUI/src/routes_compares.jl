@@ -5,16 +5,14 @@ function compares_for_experiment(db, exp_id::Int)
         """SELECT c.sample_id, c.ref_sample_id, u.username
              FROM sample_compares c
              JOIN samples s ON s.id = c.sample_id
-             JOIN samples r ON r.id = c.ref_sample_id
              LEFT JOIN users u ON u.id = c.added_by
-            WHERE s.experiment_id = ? AND s.merged_into_id IS NULL AND r.merged_into_id IS NULL
+            WHERE s.experiment_id = ?
             ORDER BY c.sample_id, c.id""", [exp_id]))
     subs = Tables.rowtable(DBInterface.execute(db,
         """SELECT t.sample_id, t.ref_sample_id
              FROM sample_subtractions t
              JOIN samples s ON s.id = t.sample_id
-             JOIN samples r ON r.id = t.ref_sample_id
-            WHERE s.experiment_id = ? AND s.merged_into_id IS NULL AND r.merged_into_id IS NULL
+            WHERE s.experiment_id = ?
             ORDER BY t.sample_id""", [exp_id]))
     Dict(
         :compares => [Dict(:sample_id => Int(r.sample_id), :ref_sample_id => Int(r.ref_sample_id),
@@ -46,7 +44,8 @@ function compare_changes(current::Set{Int}, subtraction::Union{Int, Nothing},
     isempty(removing) || (payload[:remove] = removing)
     if sub_given
         sub != subtraction && (payload[:subtraction] = sub)
-    elseif subtraction !== nothing && subtraction ∈ removing
+    elseif subtraction !== nothing && (subtraction ∈ removing ||
+                                       (subtraction ∉ current && !(isempty(adding) && isempty(removing))))
         payload[:subtraction] = nothing
     end
     payload
@@ -77,7 +76,7 @@ function register_compare_routes!()
         ids = unique(vcat(id, refs))
         marks = join(fill("?", length(ids)), ", ")
         rows = Tables.rowtable(DBInterface.execute(db,
-            "SELECT id, experiment_id FROM samples WHERE id IN ($marks) AND merged_into_id IS NULL", ids))
+            "SELECT id, experiment_id FROM samples WHERE id IN ($marks)", ids))
         length(rows) == length(ids) || return _json_error(404, "sample not found")
         length(unique(Int(r.experiment_id) for r in rows)) == 1 ||
             return _json_error(422, "samples are in different experiments")

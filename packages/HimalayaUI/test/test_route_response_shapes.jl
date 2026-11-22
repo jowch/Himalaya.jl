@@ -26,10 +26,6 @@ function assert_keys(actual, expected::Vector{Symbol})
     @test actual_keys == expected_set
 end
 
-# Cross-file helpers (_setup_analyzed_exposure, _setup_for_resolve) are defined
-# in test_fixtures.jl (included via test_http.jl) and available here via the
-# standard runtests.jl include order.
-
 @testset "Route response shapes (queue contract)" begin
 
     @testset "POST /api/exposures/:id/peaks → PeakAddResponse (flat Peak & metadata)" begin
@@ -279,7 +275,7 @@ end
                 @test r.status == 200
                 body = only(JSON3.read(String(r.body)))
                 expected = [
-                    :id, :sample_id, :filename, :kind, :selected, :status,
+                    :id, :sample_id, :filename, :kind, :status,
                     :image_path, :trace_hash, :analysis_inputs_hash,
                     :experiment_id, :prp_path, :timestamp, :exposure_time,
                     :horizontal_position, :scan_id, :frame_no, :load_id,
@@ -313,67 +309,6 @@ end
                 for p in peaks
                     assert_keys(p, expected)
                 end
-            end
-        end
-    end
-
-    @testset "GET /api/experiments/:id/samples → full Sample shape" begin
-        mktempdir() do tmp
-            ctx = _setup_analyzed_exposure(tmp)
-            with_inproc_routes(ctx.db) do call
-                r = call("GET", "/api/experiments/$(ctx.experiment_id)/samples")
-                @test r.status == 200
-                body = only(JSON3.read(String(r.body)))
-                @test :id in keys(body)
-                @test :experiment_id in keys(body)
-                @test :tags ∉ keys(body)
-            end
-        end
-    end
-
-    # D-10: GET /api/exposures/:id/groups (GroupEntry[]) was retired. The read-side
-    # shape pinned here now lives on GET /assignment ({state, members}) in
-    # test_assignments.jl.
-
-    @testset "GET /api/resolve 200 (experiment+sample+exposure)" begin
-        mktempdir() do tmp
-            ctx = _setup_for_resolve(tmp)
-            with_inproc_routes(ctx.db) do call
-                r = call("GET", "/api/resolve?experiment=test-exp&sample=S1&exposure=JC001-007")
-                body = JSON3.read(String(r.body))
-                # Key set frozen.
-                @test Set(keys(body)) == Set([
-                    :experiment_id, :experiment_name,
-                    :sample_id, :sample_name,
-                    :exposure_id, :exposure_filename,
-                ])
-            end
-        end
-    end
-
-    @testset "GET /api/resolve 404 (missing exposure)" begin
-        mktempdir() do tmp
-            ctx = _setup_for_resolve(tmp)
-            with_inproc_routes(ctx.db) do call
-                r = call("GET", "/api/resolve?experiment=test-exp&sample=S1&exposure=nope")
-                body = JSON3.read(String(r.body))
-                @test Set(keys(body)) == Set([
-                    :error, :missing, :missing_value,
-                    :experiment_resolved, :sample_resolved,
-                ])
-                @test Set(keys(body.experiment_resolved)) == Set([:id, :name])
-                @test Set(keys(body.sample_resolved))     == Set([:id, :name])
-            end
-        end
-    end
-
-    @testset "GET /api/resolve 400 (ambiguous params)" begin
-        mktempdir() do tmp
-            ctx = _setup_for_resolve(tmp)
-            with_inproc_routes(ctx.db) do call
-                r = call("GET", "/api/resolve?experiment=test-exp&experiment_id=$(ctx.experiment_id)")
-                body = JSON3.read(String(r.body))
-                @test Set(keys(body)) == Set([:error])
             end
         end
     end

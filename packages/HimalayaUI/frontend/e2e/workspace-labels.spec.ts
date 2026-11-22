@@ -18,7 +18,7 @@ test.beforeEach(async ({ page }) => {
     localStorage.clear();
     localStorage.setItem("himalaya-ui:state", JSON.stringify({
       state: { username: "alice", tutorialSeen: true },
-      version: 5,
+      version: 6,
     }));
   });
   const json = (body: unknown) => ({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
@@ -163,4 +163,24 @@ test("on a narrow window labels fold into +N before the sample name truncates", 
   await expect(page.getByTestId("workspace-labels-more")).toBeVisible();
   expect(await title.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
   await expect(page.getByRole("button", { name: "+ Label L" })).toBeVisible();
+});
+
+test("the same-sample note gets only the room the name and labels leave", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 800 });
+  const json = (body: unknown) => ({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+  const names = ["MO_H2O_S2401 (S01P01)", "MO_H2O_37C_S2404 (S01P02)", "MO_PEG5_S2406 (S01P03)", "MO_PEG10_S2409 (S01P04)"];
+  await page.route((url) => url.pathname === "/api/samples", (r) =>
+    r.fulfill(json(names.map((name, i) => ({ id: 42 + i, experiment_id: 17, display_name: name, name, notes: null, q_units: "A-1" })))));
+  await page.route("**/api/experiments/17/bridges", (r) => r.fulfill(json(names.map((_, i) => ({ sample_id: 42 + i, group_id: 1 })))));
+  await page.route("**/api/experiments/17/labels", (r) => r.fulfill(json(
+    ["Buffer", "37C", "heated twice"].map((label, i) => ({ id: i + 1, sample_id: 42, label, state: "confirmed", source: "user" })))));
+  await page.goto("/experiments/17/workspace/42");
+  const title = page.getByRole("heading", { level: 2, name: names[0] });
+  await expect(title).toBeVisible();
+  const note = page.getByTitle(`Same as ${names.slice(1).join(", ")}`);
+  await expect(note).toBeVisible();
+  expect(await title.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  await expect(page.getByTestId("workspace-labels-more")).toBeHidden();
+  for (const label of ["Buffer", "37C", "heated twice"]) await expect(page.locator(`[data-label="${label}"]`).first()).toBeVisible();
+  expect(await note.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
 });

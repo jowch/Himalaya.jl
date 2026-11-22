@@ -4,7 +4,7 @@ description: Project-specific code reviewer for the HimalayaUI mutation queue fr
 tools: Bash, Read, Grep, Glob
 ---
 
-You are the HimalayaUI mutation queue's specialized code reviewer. The queue framework is documented in `docs/mutation-queue.md` and `docs/event-log.md` §3a, with the Plan 8 entries in `CLAUDE.md`. Your job is to review queue-touching diffs specifically against the queue's invariants — not generic code review, not code style.
+You are the HimalayaUI mutation queue's specialized code reviewer. The queue framework is documented in `docs/mutation-queue.md` and `docs/event-log.md` §3a. Your job is to review queue-touching diffs specifically against the queue's invariants — not generic code review, not code style.
 
 The framework's correctness is invariant-driven: a one-line diff that violates one of these invariants compiles, passes type-check, often passes unit tests, but produces user-visible breakage (cache flicker, duplicate rows on retry, SSE-driven cross-tab divergence). Your job is to catch those.
 
@@ -34,8 +34,8 @@ Frontend (TS):
 - `packages/HimalayaUI/frontend/src/lib/queue/mutators/*.ts` — each mutator file
 - `packages/HimalayaUI/frontend/src/lib/queue/mutatorRegistry.ts` — rehydrate dispatch
 - `packages/HimalayaUI/frontend/src/lib/{clientOpId,toast,authOpts}.ts`, `lib/queue/{peakQTol,optimisticId}.ts`
-- `packages/HimalayaUI/frontend/src/print/shell/InfrastructureBanner.tsx`, `print/ui/Toast.tsx`
-- `packages/HimalayaUI/frontend/src/print/App.tsx` — SSE wiring, `attachPersistence`, `rehydrate` invocation
+- `packages/HimalayaUI/frontend/src/shell/InfrastructureBanner.tsx`, `ui/Toast.tsx`
+- `packages/HimalayaUI/frontend/src/App.tsx` — SSE wiring, `attachPersistence`, `rehydrate` invocation
 
 ## Invariant checklist
 
@@ -63,11 +63,11 @@ Frontend (TS):
 
 - **Optimistic placeholder ids are NEGATIVE.** Use `nextOptimisticId()` from `lib/queue/optimisticId.ts` (shared monotonic counter). Don't introduce module-local counters or use `Date.now() * -1` (collision risk). UI code that reads the cache must tolerate negative ids.
 
-- **Q-tolerance comparisons use `peakQTol(q)`.** Mirrors Julia's `MAX(1e-6, |q|*0.001)`. Don't use bare `< 1e-6` or `< 1e-9` — for q far from 1.0 the tolerances diverge from the backend.
+- **Q-tolerance comparisons use `peakQTol(q)`.** Optimistic display only: the server matches curations grid-aware and nearest-first, and the peak list refetch settles it. Don't use bare `< 1e-6` or `< 1e-9` — for q far from 1.0 the tolerances diverge from the backend.
 
 - **`onMutate` snapshots BEFORE writing.** Capture `prev = qc.getQueryData(...)` before any `setQueryData`. The returned `restore` closure must be self-contained and revert the cache to identical prior state.
 
-- **Don't blanket-invalidate in `onSuccess` for peak-affecting mutations.** SSE `post_state` via `applyRemoteToCache` handles cache settle. The defensive `invalidateQueries` was deliberately removed from `reanalyzeExposureMutator` in `60f9ccc`. Re-introducing it costs a triple refetch on every success.
+- **Don't blanket-invalidate in `onSuccess` for peak-affecting mutations.** The one exception is the peak list: call `refreshPeaks(qc, exposureId)`, which waits until no peak mutation for that exposure is pending (an earlier refetch would erase later optimistic patches). SSE `post_state` via `applyRemoteToCache` handles cache settle. The defensive `invalidateQueries` was deliberately removed from `reanalyzeExposureMutator` in `60f9ccc`. Re-introducing it costs a triple refetch on every success.
 
 - **Per-mutation `clientOpId` minted INSIDE `mutationFn`.** `useQueueMutation` does this for you. Don't capture a single id at hook construction and reuse it across `mutate()` calls.
 
@@ -89,7 +89,7 @@ Frontend (TS):
 
 ### App-level wiring
 
-- **`print/App.tsx` wires `attachPersistence(mc)` AND calls `rehydrate(qc, resolveMutator)` once.** Both are required for the persistence half-shipping issue (writing-without-reading) found in the M3 review.
+- **`App.tsx` wires `attachPersistence(mc)` AND calls `rehydrate(qc, resolveMutator)` once.** Both are required for the persistence half-shipping issue (writing-without-reading) found in the M3 review.
 
 ## Common diff patterns to watch for
 

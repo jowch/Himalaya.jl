@@ -69,7 +69,7 @@ export interface CorpusSample extends Sample {
   setup_id?: number | null;
   phase?: string | null;
   /** The representative exposure's durable assignment state (`representative_exposure_id`:
-   *  the selected frame if kept, else the newest kept frame). Drives the contact-sheet status: `form_factor` shows a
+   *  the newest kept frame). Drives the contact-sheet status: `form_factor` shows a
    *  distinct "Form factor" status, `indexed` with a `phase` shows the chip,
    *  everything else reads "Not indexed". Absent on older payloads → treated as
    *  unindexed. */
@@ -208,11 +208,16 @@ export interface IngestProblems { ingest_error: string | null; exposures: Proble
 export const listProblems = (id: number) =>
   request<IngestProblems>("GET", `/api/experiments/${id}/problems`);
 
-/** Directory-picker path autocomplete (spec §9.2, read-only). */
-export interface PathSuggestResponse { suggestions: string[] }
-export const suggestPaths = (prefix: string) =>
-  request<PathSuggestResponse>(
-    "GET", `/api/fs/suggest?prefix=${encodeURIComponent(prefix)}`);
+export interface FolderSuggestion {
+  path: string;
+  kind: "beamtime" | "setup" | null;
+  setups: number | null;
+  added: { id: number; name: string } | null;
+  described: boolean;
+}
+export interface FolderSuggestions { folders: FolderSuggestion[]; more: boolean }
+export const suggestFolders = (prefix: string) =>
+  request<FolderSuggestions>("GET", `/api/fs/suggest?prefix=${encodeURIComponent(prefix)}`);
 
 export interface SetupPreview {
   root: string;
@@ -275,8 +280,6 @@ export const fetchManifest = (
 };
 
 // Samples
-export const listSamples    = (experiment_id: number) =>
-  request<Sample[]>("GET", `/api/experiments/${experiment_id}/samples`);
 export const listCorpusSamples = (experimentId?: number): Promise<CorpusSample[]> =>
   request<CorpusSample[]>("GET", experimentId === undefined ? "/api/samples" : `/api/samples?experiment_id=${experimentId}`);
 export const updateSample   = (id: number, patch: { name?: string; notes?: string }, opts?: AuthOpts) =>
@@ -290,8 +293,8 @@ export interface SampleBridge {
 export const listBridges = (experimentId: number): Promise<SampleBridge[]> =>
   request<SampleBridge[]>("GET", `/api/experiments/${experimentId}/bridges`);
 
-export const bridgeSamples = (sampleId: number, toSampleId: number, opts?: AuthOpts): Promise<SampleBridge[]> =>
-  request<SampleBridge[]>("POST", `/api/samples/${sampleId}/bridge`, { to_sample_id: toSampleId }, opts);
+export const bridgeSamples = (sampleId: number, toSampleId: number, keepCall: number | "both" | undefined, opts?: AuthOpts): Promise<SampleBridge[]> =>
+  request<SampleBridge[]>("POST", `/api/samples/${sampleId}/bridge`, keepCall === undefined ? { to_sample_id: toSampleId } : { to_sample_id: toSampleId, keep_call: keepCall }, opts);
 
 export const unbridgeSample = (sampleId: number, opts?: AuthOpts): Promise<SampleBridge[]> =>
   request<SampleBridge[]>("DELETE", `/api/samples/${sampleId}/bridge`, undefined, opts);
@@ -365,7 +368,6 @@ export interface Exposure {
   sample_id: number;
   filename: string | null;
   kind: "file" | "averaged" | "background_subtracted";
-  selected: boolean;
   status: "accepted" | "rejected" | null;
   image_path: string | null;
   /**
@@ -398,10 +400,6 @@ export const setExposureStatus = (
   opts?: AuthOpts,
 ) => request<{ id: number; status: string | null }>(
   "PATCH", `/api/exposures/${id}/status`, { status }, opts);
-
-export const selectExposure = (id: number, opts?: AuthOpts) =>
-  request<{ id: number; selected: boolean }>(
-    "PATCH", `/api/exposures/${id}/select`, {}, opts);
 
 // Trace
 export interface TraceMonitors {
@@ -613,62 +611,3 @@ export interface ReanalyzeResponse {
 }
 export const reanalyzeExposure = (exposure_id: number, opts?: AuthOpts) =>
   request<ReanalyzeResponse>("POST", `/api/exposures/${exposure_id}/analyze`, {}, opts);
-
-// ─── Permalink resolve (Plan §Task 8) ───────────────────────────────────────
-
-export interface ResolveSuccess {
-  experiment_id: number;
-  experiment_name: string;
-  sample_id: number | undefined;
-  sample_name: string | undefined;
-  exposure_id: number | undefined;
-  exposure_filename: string | undefined;
-}
-
-export interface ResolveError404 {
-  error: "not_found";
-  missing: "experiment" | "sample" | "exposure";
-  missing_value: string;
-  experiment_resolved: { id: number; name: string } | undefined;
-  sample_resolved:     { id: number; name: string } | undefined;
-}
-
-export interface ResolveError400 {
-  error: "ambiguous_params" | "missing_experiment" | "missing_sample";
-}
-
-export interface ResolveQuery {
-  experiment?: string;
-  sample?: string;
-  exposure?: string;
-  experiment_id?: number;
-  sample_id?: number;
-  exposure_id?: number;
-}
-
-/**
- * Calls /api/resolve. Returns either a `ResolveSuccess` (200), a
- * `ResolveError404`, or a `ResolveError400`. Caller distinguishes on
- * `error` field. Read-only — no auth headers.
- *
- * `signal` exposed for AbortController; caller is responsible for
- * the origin-tag race check (§4.2).
- */
-export async function resolve(
-  q: ResolveQuery,
-  signal: AbortSignal | undefined = undefined,
-): Promise<ResolveSuccess | ResolveError404 | ResolveError400> {
-  const params = new URLSearchParams();
-  if (q.experiment !== undefined) params.set("experiment", q.experiment);
-  if (q.sample !== undefined) params.set("sample", q.sample);
-  if (q.exposure !== undefined) params.set("exposure", q.exposure);
-  if (q.experiment_id !== undefined) params.set("experiment_id", String(q.experiment_id));
-  if (q.sample_id !== undefined) params.set("sample_id", String(q.sample_id));
-  if (q.exposure_id !== undefined) params.set("exposure_id", String(q.exposure_id));
-
-  const init: RequestInit = {};
-  if (signal !== undefined) init.signal = signal;
-  const res = await fetch(`/api/resolve?${params.toString()}`, init);
-  const body = await res.json();
-  return body as ResolveSuccess | ResolveError404 | ResolveError400;
-}

@@ -1,3 +1,4 @@
+import { refreshPeaks } from "./refreshPeaks";
 import type { QueryClient } from "@tanstack/react-query";
 import type { SseEvent, CurationPostState, AssignmentPostState, SampleCallPostState } from "./types";
 import { writeSampleCall, invalidateOtherFrameAssignments, invalidateSampleCalls } from "./sampleCall";
@@ -146,6 +147,7 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
           },
         ];
       });
+      refreshPeaks(qc, id);
       applyPostState();
       break;
     }
@@ -165,6 +167,7 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
             : p.source === "auto" && Math.abs(p.q - targetQ) < tol;
           return matches ? { ...p, excluded: true } : p;
         }));
+      refreshPeaks(qc, id);
       applyPostState();
       break;
     }
@@ -179,6 +182,7 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
             : p.source === "auto" && Math.abs(p.q - targetQ) < tol;
           return matches ? { ...p, excluded: false } : p;
         }));
+      refreshPeaks(qc, id);
       applyPostState();
       break;
     }
@@ -201,6 +205,7 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
         qc.invalidateQueries({ queryKey: queryKeys.peaks(id) });
         return old;
       });
+      refreshPeaks(qc, id);
       applyPostState();
       break;
     }
@@ -266,12 +271,6 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
       break;
     }
-    case "select_exposure": {
-      const sampleId = payload?.sample_id as number;
-      qc.invalidateQueries({ queryKey: queryKeys.exposures(sampleId) });
-      qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
-      break;
-    }
     case "analyze_run": {
       applyPostState();
       if (payload?.trace_hash_before !== payload?.trace_hash_after) {
@@ -298,6 +297,8 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
     case "sample_unbridged": {
       const expId = payload?.experiment_id as number | undefined;
       if (expId !== undefined) qc.invalidateQueries({ queryKey: queryKeys.bridges(expId) });
+      invalidateSampleCalls(qc);
+      qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
       break;
     }
     case "compares_changed": {

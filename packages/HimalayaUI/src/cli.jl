@@ -2,18 +2,6 @@ using ArgParse
 using Printf
 using DBInterface
 
-"""
-    _resolve_experiment(db, key) -> (id::Int, name::String, path::String)
-
-Resolve an experiment from the central DB. `key` may be:
-  - `nothing` — picks the sole experiment if there's exactly one; errors with
-    a listing otherwise.
-  - a numeric string — looked up by `experiments.id`.
-  - a path-like string (starts with `/` or `.`, or contains a separator) —
-    matched against `experiments.path` and its setups' `root_dir` and `data_dir`, as typed
-    (after `abspath`) and with symlinks resolved, ignoring a trailing slash.
-  - any other string — looked up by `experiments.name`.
-"""
 function _resolve_experiment(db::SQLite.DB, key::Union{Nothing,AbstractString})
     if key === nothing
         rows = Tables.rowtable(DBInterface.execute(db,
@@ -32,9 +20,6 @@ function _resolve_experiment(db::SQLite.DB, key::Union{Nothing,AbstractString})
         end
     end
 
-    # Heuristic: anything containing `/` is a path, not a name. Experiments
-    # whose name happens to contain `/` would be misclassified — pass `-e`
-    # with the numeric id to disambiguate in that (currently theoretical) case.
     looks_like_path = startswith(key, "/") || startswith(key, ".") || occursin('/', key)
     rows = if !isempty(key) && all(isdigit, key)
         Tables.rowtable(DBInterface.execute(db,
@@ -56,22 +41,6 @@ function _resolve_experiment(db::SQLite.DB, key::Union{Nothing,AbstractString})
     rows[1]
 end
 
-"""
-    _analyze_experiment!(db, exp_id; sample_filter=nothing) -> Int
-
-Run peak-finding + indexing for every exposure of `exp_id`, optionally
-restricted to a single sample label. Skips rejected exposures and leaves
-`selected` alone: the representative is derived by `representative_exposure_id`.
-Errors per-exposure are caught and printed as `SKIP (...)` so one bad
-.dat file doesn't abort the batch.
-
-Reports any assignment members the rebuild failed to re-attach (F-WIPE W1),
-per-exposure and again as a closing summary — a withdrawn phase call is a human
-decision disappearing, and this is the only surface that shows it on the CLI.
-
-Invoked by `cli_analyze` (explicit user invocation). Ingestion is handled by
-the HTTP scan path (`POST /api/experiments/{id}/scan`), not the CLI.
-"""
 function _analyze_experiment!(db::SQLite.DB, exp_id::Int; sample_filter=nothing)
     exp     = get_experiment(db, exp_id)
     samples = get_samples(db, exp_id)
@@ -94,12 +63,6 @@ function _analyze_experiment!(db::SQLite.DB, exp_id::Int; sample_filter=nothing)
             print("  Analyzing $(sample.name) / $(exp_row.filename) ... ")
             try
                 res = analyze_exposure!(db, e_id)
-                # A rebuild can fail to re-attach an assignment member (F-WIPE
-                # W1) — the human's phase call is withdrawn. The routes thread
-                # this into the SSE post_state; on the CLI it is the only signal
-                # a curated call disappeared, so it must not be silent. Reached
-                # in practice by the #304 migration: a Hexagonal call resting on
-                # the removed √11 can drop below minpeaks and stop existing.
                 if isempty(res.dropped_assignment_phases)
                     println("done")
                 else
@@ -150,8 +113,6 @@ function cli_analyze(args)
         skipped = 0
         for r in rows
             println("Experiment $(r.name):")
-            # Same catch-print-continue philosophy as the per-exposure loop:
-            # one bad experiment must not abort the rest of the batch.
             try
                 skipped += _analyze_experiment!(db, Int(r.id); sample_filter = p[:sample])
             catch e
@@ -164,7 +125,7 @@ function cli_analyze(args)
         exp_row = _resolve_experiment(db, p[:experiment])
         skipped = _analyze_experiment!(db, Int(exp_row.id); sample_filter = p[:sample])
     end
-    skipped > 0 && error("$skipped exposure(s) or experiment(s) skipped; see the SKIP lines above")
+    skipped > 0 && error("$skipped frame(s) or experiment(s) skipped; see the SKIP lines above")
 end
 
 _fmt(x, spec) = ismissing(x) || x === nothing ? "n/a" : Printf.format(Printf.Format(spec), x)
@@ -189,14 +150,19 @@ function cli_show(args)
     idx === nothing && error("sample $(p[:sample]) not found")
     sample_row = samples[idx]
 
-    exposures = get_exposures(db, Int(sample_row.id))
+    sid   = Int(sample_row.id)
+    state = sample_call_state(db, sid)
+    ms    = get(sample_call_members(db, [sid]), sid, [])
+    phases = call_summary(state, ms).call_phases
+    println("Call: ", export_call_state(state, ms), isempty(phases) ? "" : " ($(join(phases, ", ")))")
+
+    exposures = get_exposures(db, sid)
     for exp_row in exposures
         e_id    = Int(exp_row.id)
         pks     = get_peaks_for_exposure(db, e_id)
         idxs    = get_indices_for_exposure(db, e_id)
-        groups  = get_groups_for_exposure(db, e_id)
 
-        println("\nExposure: $(exp_row.filename)")
+        println("\nFrame: $(exp_row.filename)")
         println("  Peaks ($(length(pks))):")
         for pk in pks
             println("    q=", _fmt(pk.q, "%.4f"), "  prom=", _fmt(pk.prominence, "%.3f"),
@@ -207,10 +173,6 @@ function cli_show(args)
             println("    ", rpad(ix.phase, 6), "  basis=", _fmt(ix.basis, "%.4f"),
                     "  score=", _fmt(ix.score, "%.3f"), "  R²=", _fmt(ix.r_squared, "%.4f"),
                     "  d=", _fmt(ix.lattice_d, "%.2f"))
-        end
-        active = findfirst(g -> g.active == 1, groups)
-        if active !== nothing
-            println("  Active group: $(groups[active].kind)")
         end
     end
 end
@@ -231,12 +193,6 @@ function cli_serve(args)
     p = parse_serve_args(args)
 
     db_path = default_db_path()
-    # First-run bootstrap: serve an empty schema'd DB when none exists yet, so a
-    # brand-new user lands on the empty experiments home and can create one via
-    # the funnel (you can't reach the HTTP scan API without a running server, and
-    # the server can't start without a DB — a chicken-and-egg the old hard error
-    # left unresolvable). open_db creates + migrates. A loud notice keeps a typo'd
-    # HIMALAYA_DB_PATH from silently masking existing data behind a fresh empty DB.
     fresh = !isfile(db_path)
     fresh && @warn "no database at $db_path — creating a new empty one. If you expected existing data, stop and check HIMALAYA_DB_PATH."
 
