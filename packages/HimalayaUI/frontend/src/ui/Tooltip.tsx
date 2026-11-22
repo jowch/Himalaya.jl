@@ -192,7 +192,8 @@ export function Tooltip({ content, children, shortcut, side = "top", overflowOnl
   const own = children.props as TriggerProps;
   const childRef = (children as unknown as { ref?: Ref<HTMLElement> }).ref;
   const namesTrigger = overflowOnly || (typeof content === "string" && own["aria-label"] === content);
-  const describes = open && !empty && !namesTrigger;
+  const repeatsText = typeof content === "string" && (triggerRef.current?.textContent ?? "").includes(content);
+  const describes = open && !empty && !namesTrigger && !repeatsText;
   const trigger = cloneElement(children, {
     ref: (node: HTMLElement | null) => {
       triggerRef.current = node;

@@ -92,5 +92,6 @@ describe("SampleList tooltips", () => {
     fireEvent.mouseLeave(screen.getByRole("img", { name: "Unreviewed" }));
     fireEvent.mouseEnter(screen.getByText("⇄2"));
     expect(await screen.findByRole("tooltip")).toHaveTextContent("2 bridges");
+    expect(screen.getByText("⇄2").parentElement).not.toHaveAttribute("aria-describedby");
   });
 });

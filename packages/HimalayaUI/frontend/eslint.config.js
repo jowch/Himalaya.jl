@@ -15,7 +15,7 @@ export default tseslint.config(
       "no-restricted-syntax": [
         "error",
         {
-          selector: "JSXOpeningElement[name.name=/^[a-z]/] > JSXAttribute[name.name='title']",
+          selector: "JSXOpeningElement[name.name=/^([a-z].*|Link|NavLink)$/] > JSXAttribute[name.name='title']",
           message: "Native title tooltips are slow, unstyled and never show on keyboard focus. Wrap the element in <Tooltip content=…> from src/ui, or <Tooltip overflowOnly> when the text only repeats a truncated label.",
         },
       ],
