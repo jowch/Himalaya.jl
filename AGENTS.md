@@ -53,8 +53,9 @@ npm test
 # Frontend E2E (mocked)
 npm run e2e
 
-# Frontend build (must pass before PR)
+# Frontend build and type-check of tests and e2e specs (both must pass before PR)
 npm run build
+npm run typecheck:test
 ```
 
 ## Conventions
