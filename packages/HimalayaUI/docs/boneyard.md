@@ -173,7 +173,7 @@ Object.defineProperty(window, "matchMedia", {
 });
 ```
 
-Same pattern as the `ResizeObserver` stub used by `DetectorImage`. If you
+Same pattern as the `ResizeObserver` stub in `test/setup.ts`. If you
 add a new test environment (Vitest workspace, Storybook), copy the stubs
 or component-tests using `<Skeleton>` will throw on import.
 

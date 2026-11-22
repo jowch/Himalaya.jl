@@ -4,7 +4,7 @@ import { workspacePalette, type PaletteLabel, type WorkspacePaletteInput } from 
 import { PLOT_VIEWS } from "../../src/workspace/plotView";
 
 function candidate(id: number, lattice: number): IndexEntry {
-  return { id, exposure_id: 1, phase: "Ia3d", basis: 0, score: 1, r_squared: null, lattice_d: lattice, ngc: null, status: "candidate", kind: "auto", inputs_hash: null, peaks: [], predicted_q: [] };
+  return { id, exposure_id: 1, phase: "Ia3d", basis: 0, score: 1, r_squared: null, lattice_d: lattice, status: "candidate", kind: "auto", inputs_hash: null, peaks: [], predicted_q: [] };
 }
 
 function known(label: string, over: Partial<PaletteLabel> = {}): PaletteLabel {
@@ -15,7 +15,6 @@ function input(over: Partial<WorkspacePaletteInput> = {}): WorkspacePaletteInput
   const noop = vi.fn();
   return {
     modKey: "Ctrl",
-    sampleName: "A1",
     canEdit: true,
     nextUnreviewed: noop,
     compare: { samples: [], notes: new Map(), pick: noop, compared: [], remove: noop, subtractable: [], subtracted: undefined, subtract: noop },
@@ -101,13 +100,13 @@ describe("workspacePalette", () => {
     expect(row!.label).toBe("Create “dehydrated”");
     const form = row!.form!();
     expect(form.fields.map((f) => [f.label, f.value])).toEqual([["Name", "dehydrated"], ["Colour", "teal"]]);
-    expect(form.fields[1]!.options).toHaveLength(8);
+    expect(form.fields[1]!.options!.map((o) => o.value)).toEqual(["rose", "plum", "violet", "teal", "green"]);
     const name = form.fields[0]!;
     expect(name.check!("")).toBe("Type a name.");
     expect(name.check!("Retake")).toBe("That label exists. Pick it from the list.");
     expect(name.check!("dehydrated")).toBeUndefined();
-    form.submit({ name: "  dehydrated ", color: "ochre" });
-    expect(create).toHaveBeenCalledWith("dehydrated", "ochre");
+    form.submit({ name: "  dehydrated ", color: "green" });
+    expect(create).toHaveBeenCalledWith("dehydrated", "green");
   });
 
   it("labels rows say whether the label is on this sample, and Enter toggles it", () => {
@@ -130,6 +129,12 @@ describe("workspacePalette", () => {
     expect(recolour).not.toHaveBeenCalled();
     form.submit({ color: "green" });
     expect(recolour).toHaveBeenCalledWith("37C", "green");
+  });
+
+  it("keeps the Label colours page in usage order whatever order the labels arrive in", () => {
+    const labels = [known("dried", { uses: 1 }), known("retake", { uses: 4 }), known("37C", { uses: 4 })];
+    const { pages } = workspacePalette(input({ labels: { known: labels, colorFor: () => "plum", toggle: vi.fn(), create: vi.fn(), recolour: vi.fn() } }));
+    expect(pages.colours!.items.map((i) => i.label)).toEqual(["37C", "retake", "dried"]);
   });
 
   it("lists the experiment name and description on the Settings page only when the user can edit", () => {

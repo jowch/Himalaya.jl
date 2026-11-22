@@ -60,7 +60,7 @@ const ASSIGNMENT = {
 };
 const INDEX = {
   id: 10, exposure_id: 5, phase: "Pn3m", basis: 0.1, score: 0.9,
-  r_squared: 0.99, lattice_d: 50, ngc: 0.5, status: "candidate" as const,
+  r_squared: 0.99, lattice_d: 50, status: "candidate" as const,
   kind: "auto" as const, inputs_hash: "h1", peaks: [], predicted_q: [0.1],
 };
 const EXP_LIST_KEY = ["sample", 1, "exposures"] as const;
@@ -82,7 +82,7 @@ const SPECS: Spec[] = [
     seed: (qc) => qc.setQueryData(queryKeys.peaks(5), [PEAK]),
     run: (qc) => {
       const ctx = peakAddMutator.onMutate({
-        kind: "peak_added", clientOpId: "op", payload: { q: 0.42 },
+        kind: "peak_added", clientOpId: "op",
         exposureId: 5, username: "alice", clientId: "tab",
         q: 0.42,
       } as any, qc);
@@ -95,7 +95,7 @@ const SPECS: Spec[] = [
     seed: (qc) => qc.setQueryData(queryKeys.peaks(5), [PEAK]),
     run: (qc) => {
       const ctx = peakRemoveMutator.onMutate({
-        kind: "peak_removed", clientOpId: "op", payload: { peakId: 7 },
+        kind: "peak_removed", clientOpId: "op",
         exposureId: 5, username: "alice", clientId: "tab",
         peakId: 7,
       } as any, qc);
@@ -109,7 +109,6 @@ const SPECS: Spec[] = [
     run: (qc) => {
       const ctx = peakExcludeMutator.onMutate({
         kind: "peak_excluded", clientOpId: "op",
-        payload: { peakId: 7, q: 0.5 },
         exposureId: 5, username: "alice", clientId: "tab",
         peakId: 7, q: 0.5,
       } as any, qc);
@@ -123,7 +122,6 @@ const SPECS: Spec[] = [
     run: (qc) => {
       const ctx = peakUnexcludeMutator.onMutate({
         kind: "peak_unexcluded", clientOpId: "op",
-        payload: { peakId: 7, q: 0.5 },
         exposureId: 5, username: "alice", clientId: "tab",
         peakId: 7, q: 0.5,
       } as any, qc);
@@ -136,7 +134,7 @@ const SPECS: Spec[] = [
     seed: (qc) => qc.setQueryData(queryKeys.assignment(5), ASSIGNMENT),
     run: (qc) => {
       const ctx = addAssignmentPhaseMutator.onMutate({
-        kind: "assignment_add", clientOpId: "op", payload: { indexId: 99 },
+        kind: "assignment_add", clientOpId: "op",
         exposureId: 5, username: "alice", clientId: "tab", indexId: 99,
       } as any, qc);
       ctx.restore();
@@ -148,7 +146,7 @@ const SPECS: Spec[] = [
     seed: (qc) => qc.setQueryData(queryKeys.assignment(5), ASSIGNMENT),
     run: (qc) => {
       const ctx = removeAssignmentPhaseMutator.onMutate({
-        kind: "assignment_remove", clientOpId: "op", payload: { indexId: 10 },
+        kind: "assignment_remove", clientOpId: "op",
         exposureId: 5, username: "alice", clientId: "tab", indexId: 10,
       } as any, qc);
       ctx.restore();
@@ -165,7 +163,7 @@ const SPECS: Spec[] = [
       // onMutate is a no-op (server-assigned id; never splice a placeholder),
       // so restore() must leave both caches bit-exact.
       const ctx = customIndexMutator.onMutate({
-        kind: "custom_index_commit", clientOpId: "op", payload: { phase: "Pn3m", basis: 0.15 },
+        kind: "custom_index_commit", clientOpId: "op",
         exposureId: 5, username: "alice", clientId: "tab", phase: "Pn3m", basis: 0.15,
       } as any, qc);
       ctx.restore();
@@ -180,7 +178,7 @@ const SPECS: Spec[] = [
     },
     run: (qc) => {
       const ctx = setSampleCallStateMutator.onMutate({
-        kind: "sample_call_set_state", clientOpId: "op", payload: { state: "form_factor" },
+        kind: "sample_call_set_state", clientOpId: "op",
         sampleId: 1, username: "alice", clientId: "tab", state: "form_factor",
       } as any, qc);
       ctx.restore();
@@ -199,7 +197,6 @@ const SPECS: Spec[] = [
     run: (qc) => {
       const ctx = deleteIndexMutator.onMutate({
         kind: "delete_index", clientOpId: "op",
-        payload: { indexId: 10 },
         exposureId: 5, username: "alice", clientId: "tab",
         indexId: 10,
       } as any, qc);
@@ -215,7 +212,6 @@ const SPECS: Spec[] = [
     run: (qc) => {
       const ctx = createSpeculativeMutator.onMutate({
         kind: "speculative_created", clientOpId: "op",
-        payload: { phase: "Pn3m", anchor_peak_id: 7, anchor_ratio: 1, additional: [] },
         exposureId: 5, username: "alice", clientId: "tab",
         phase: "Pn3m", anchor_peak_id: 7, anchor_ratio: 1, additional: [],
       } as any, qc);
@@ -231,7 +227,7 @@ const SPECS: Spec[] = [
     },
     run: (qc) => {
       const ctx = reanalyzeExposureMutator.onMutate({
-        kind: "reanalyze_exposure", clientOpId: "op", payload: {},
+        kind: "reanalyze_exposure", clientOpId: "op",
         exposureId: 5, username: "alice", clientId: "tab",
       } as any, qc);
       ctx.restore();
@@ -246,7 +242,6 @@ const SPECS: Spec[] = [
     run: (qc) => {
       const ctx = updateSampleMutator.onMutate({
         kind: "update_sample", clientOpId: "op",
-        payload: { sampleId: 10 },
         sampleId: 10, experimentId: 1, username: "alice", clientId: "tab",
         display_name: "renamed",
       } as any, qc);
@@ -262,7 +257,6 @@ const SPECS: Spec[] = [
     run: (qc) => {
       const ctx = setExposureStatusMutator.onMutate({
         kind: "set_exposure_status", clientOpId: "op",
-        payload: { exposureId: 5, status: "rejected" },
         sampleId: 1, username: "alice", clientId: "tab",
         exposureId: 5, status: "rejected",
       } as any, qc);
@@ -277,7 +271,6 @@ const SPECS: Spec[] = [
     run: (qc) => {
       const ctx = selectExposureMutator.onMutate({
         kind: "select_exposure", clientOpId: "op",
-        payload: { exposureId: 6 },
         sampleId: 1, username: "alice", clientId: "tab",
         exposureId: 6,
       } as any, qc);
@@ -297,7 +290,7 @@ const SPECS: Spec[] = [
     ]),
     run: (qc: QueryClient) => {
       const ctx = mutator.onMutate({
-        kind, clientOpId: "op", payload: {},
+        kind, clientOpId: "op",
         sampleId: 10, label: "Buffer", experimentId: 1, username: "alice", clientId: "tab",
       } as any, qc);
       ctx.restore();

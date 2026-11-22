@@ -13,9 +13,10 @@ import {
   labelsFor,
   sampleMatchesFilter,
   labelColor,
-  labelColorIsDefault,
+  labelColorIsDefault, labelColorIsFixed,
   labelOptions,
   labelVocabulary,
+  USER_LABEL_COLORS,
 } from "../../src/lib/labels";
 
 function label(id: number, sample_id: number, text: string, state: SampleLabel["state"] = "confirmed"): SampleLabel {
@@ -96,12 +97,29 @@ describe("sample filter", () => {
 });
 
 describe("tag colours", () => {
-  it("built-ins default to blue and other tags to violet, and a stored colour wins without case", () => {
+  it("system labels have their own fixed colours, other labels default to violet, and a stored colour wins without case", () => {
     expect(labelColor([], "BUFFER")).toBe("blue");
+    expect(labelColor([], "calibrant")).toBe("ochre");
+    expect(labelColor([], "Empty capillary")).toBe("stone");
     expect(labelColor([], "37C")).toBe("violet");
-    expect(labelColor([{ label: "buffer", color: "stone" }], "Buffer")).toBe("stone");
+    expect(labelColor([{ label: "37c", color: "teal" }], "37C")).toBe("teal");
     expect(labelColorIsDefault([{ label: "37c", color: "teal" }], "37C")).toBe(false);
     expect(labelColorIsDefault([], "37C")).toBe(true);
+  });
+
+  it("a stored colour never overrides a system label's colour", () => {
+    expect(labelColor([{ label: "buffer", color: "rose" }], "Buffer")).toBe("blue");
+    expect(labelColorIsDefault([{ label: "buffer", color: "rose" }], "Buffer")).toBe(true);
+    expect(labelColorIsFixed("EMPTY CAPILLARY")).toBe(true);
+    expect(labelColorIsFixed("buffer 2")).toBe(false);
+  });
+
+  it("keeps blue, ochre and stone for the system labels: a user label stored with one shows its default", () => {
+    expect(USER_LABEL_COLORS).toEqual(["rose", "plum", "violet", "teal", "green"]);
+    for (const color of ["blue", "ochre", "stone"] as const) {
+      expect(labelColor([{ label: "retake", color }], "retake")).toBe("violet");
+      expect(labelColorIsDefault([{ label: "retake", color }], "retake")).toBe(true);
+    }
   });
 
   it("matches names ignoring ASCII case only, as the database does", () => {
@@ -142,8 +160,13 @@ describe("firstUnusedColor", () => {
     expect(firstUnusedColor([{ label: "retake", color: "rose" }], ["Buffer", "retake", "37C"])).toBe("plum");
   });
 
-  it("picks the least used colour once all eight are taken", () => {
-    const colors = (["rose", "plum", "violet", "blue", "teal", "green", "ochre", "stone"] as const).map((color, i) => ({ label: `l${i}`, color }));
+  it("picks the least used colour once all five user colours are taken", () => {
+    const colors = (["rose", "plum", "violet", "teal", "green"] as const).map((color, i) => ({ label: `l${i}`, color }));
     expect(firstUnusedColor([...colors, { label: "x", color: "rose" }], [...colors.map((c) => c.label), "x"])).toBe("plum");
+  });
+
+  it("ignores system labels, even with a colour stored for one before they were fixed", () => {
+    expect(firstUnusedColor([{ label: "buffer", color: "rose" }], ["Buffer", "retake"])).toBe("rose");
+    expect(firstUnusedColor([], ["Buffer", "Calibrant", "Empty capillary"])).toBe("rose");
   });
 });

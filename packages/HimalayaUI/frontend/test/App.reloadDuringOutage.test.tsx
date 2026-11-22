@@ -7,18 +7,13 @@ import { PrintApp } from "../src/print/App";
 import * as api from "../src/api";
 import * as toast from "../src/lib/toast";
 import { STORAGE_KEY, SCHEMA_VERSION } from "../src/lib/queue/persistence";
-
-class FakeES {
-  addEventListener() {}
-  removeEventListener() {}
-  close() {}
-}
+import { FakeEventSource } from "./helpers/fakeEventSource";
 
 describe("PrintApp mounting after a reload during an outage", () => {
   let qc: QueryClient;
 
   beforeEach(() => {
-    (globalThis as unknown as { EventSource: unknown }).EventSource = FakeES;
+    FakeEventSource.install();
     vi.spyOn(api, "listExperiments").mockResolvedValue([]);
     sessionStorage.clear();
   });

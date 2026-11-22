@@ -83,7 +83,7 @@ describe("useAppState", () => {
   // `setTheme`, and `ThemeId` were removed; the app renders Print by default
   // with no toggle. Guard against a regression that re-adds the field.
   it("has no `theme` field or `setTheme` action (Print is the single identity)", () => {
-    const s = useAppState.getState() as Record<string, unknown>;
+    const s: object = useAppState.getState();
     expect("theme" in s).toBe(false);
     expect("setTheme" in s).toBe(false);
   });

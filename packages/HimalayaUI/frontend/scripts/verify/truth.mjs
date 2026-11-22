@@ -152,7 +152,7 @@ export function plotMismatch(frame, plot, held) {
 function noticeMismatch(held, notice) {
   if (notice === undefined) return null;
   const n = held.length;
-  const says = /(\d+) exposures? waiting for a trace/.exec(notice ?? "");
+  const says = /(\d+) frames? waiting for a trace/.exec(notice ?? "");
   if (n === 0) return says ? notice : null;
   return says && Number(says[1]) === n ? null : notice ?? "no notice";
 }

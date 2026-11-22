@@ -4,7 +4,8 @@ import { renderHook } from "@testing-library/react";
 import { focusManager, QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import type { CorpusSample, Exposure } from "../../src/api";
 
-vi.mock("../../src/api", () => ({
+vi.mock("../../src/api", async () => ({
+  LABEL_COLORS: (await vi.importActual<typeof import("../../src/api")>("../../src/api")).LABEL_COLORS,
   ApiError: class ApiError extends Error {
     constructor(public status: number, message: string) {
       super(message);
@@ -20,17 +21,14 @@ vi.mock("../../src/api", () => ({
 import * as api from "../../src/api";
 import { queryKeys } from "../../src/queries";
 import { nearestFirst, neighbourSamples, PREFETCH_DWELL_MS, SIBLING_DWELL_MS, usePrefetchNeighbours, type PrefetchTarget } from "../../src/workspace/prefetch";
+import { makeExposure } from "../helpers/exposure";
 
 function sample(id: number, over: Partial<CorpusSample> = {}): CorpusSample {
   return { id, experiment_id: 1, name: `S${id}`, notes: null, q_units: "A^-1", representative_exposure_id: id * 10 + 1, ...over };
 }
 
 function exposure(id: number, sampleId: number): Exposure {
-  return {
-    id, sample_id: sampleId, filename: `f${id}.tif`, kind: "file", selected: false, status: null, exposure_time: 1,
-    image_path: "x.tif", image_version: "v1", sources: [], trace_hash: null, analysis_inputs_hash: null,
-    counting_time: null, transmitted_counts: null, incident_monitor: null,
-  };
+  return makeExposure({ id, sample_id: sampleId, filename: `f${id}.tif`, exposure_time: 1, image_path: "x.tif", image_version: "v1" });
 }
 
 const framesOf = (sampleId: number): Exposure[] => [1, 2, 3].map((n) => exposure(sampleId * 10 + n, sampleId));

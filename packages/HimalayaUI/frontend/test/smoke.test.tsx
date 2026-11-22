@@ -93,4 +93,13 @@ describe("App smoke", () => {
     expect(screen.getByTestId("onboarding-overlay")).toBeInTheDocument();
   });
 
+
+  it("puts the workspace theme pick on the page root, so the experiments home follows it", async () => {
+    localStorage.setItem("himalaya-ui:theme", "dark");
+    renderAppAt("/experiments");
+    await waitFor(() => expect(document.documentElement).toHaveAttribute("data-theme", "dark"));
+    localStorage.removeItem("himalaya-ui:theme");
+    document.documentElement.removeAttribute("data-theme");
+    document.documentElement.classList.remove("dark");
+  });
 });

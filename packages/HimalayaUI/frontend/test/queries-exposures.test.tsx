@@ -10,6 +10,7 @@ import {
 } from "../src/queries";
 import { pendingDeferreds } from "../src/lib/queue/deferred";
 import type { Exposure } from "../src/api";
+import { makeExposure } from "./helpers/exposure";
 
 const SAMPLE_ID = 10;
 const EXPOSURE_ID = 100;
@@ -31,21 +32,8 @@ function mockOnce(status: number, body: unknown): void {
   );
 }
 
-function makeExposure(over: Partial<Exposure>): Exposure {
-  return {
-    id: EXPOSURE_ID,
-    sample_id: SAMPLE_ID,
-    filename: "frame_001.tif",
-    kind: "file",
-    selected: false,
-    status: null,
-    image_path: null,
-    image_version: "",
-    sources: [],
-    trace_hash: null,
-    analysis_inputs_hash: null,
-    ...over,
-  };
+function frame(over: Partial<Exposure>): Exposure {
+  return makeExposure({ id: EXPOSURE_ID, sample_id: SAMPLE_ID, filename: "frame_001.tif", ...over });
 }
 
 describe("queries — exposure mutations (queue-driven)", () => {
@@ -61,7 +49,7 @@ describe("queries — exposure mutations (queue-driven)", () => {
   describe("useSetExposureStatus", () => {
     it("flips status optimistically in the exposures list", () => {
       const { client, wrapper } = withClient();
-      client.setQueryData(queryKeys.exposures(SAMPLE_ID), [makeExposure({})]);
+      client.setQueryData(queryKeys.exposures(SAMPLE_ID), [frame({})]);
       vi.spyOn(global, "fetch").mockReturnValue(new Promise(() => {}));
       const { result } = renderHook(
         () => useSetExposureStatus(SAMPLE_ID), { wrapper },
@@ -73,7 +61,7 @@ describe("queries — exposure mutations (queue-driven)", () => {
 
     it("retains the optimistic status after success (server response is a no-op)", async () => {
       const { client, wrapper } = withClient();
-      client.setQueryData(queryKeys.exposures(SAMPLE_ID), [makeExposure({})]);
+      client.setQueryData(queryKeys.exposures(SAMPLE_ID), [frame({})]);
       mockOnce(200, { id: EXPOSURE_ID, status: "rejected" });
       const { result } = renderHook(
         () => useSetExposureStatus(SAMPLE_ID), { wrapper },
@@ -87,7 +75,7 @@ describe("queries — exposure mutations (queue-driven)", () => {
 
     it("rolls back status on 4xx", async () => {
       const { client, wrapper } = withClient();
-      client.setQueryData(queryKeys.exposures(SAMPLE_ID), [makeExposure({ status: null })]);
+      client.setQueryData(queryKeys.exposures(SAMPLE_ID), [frame({ status: null })]);
       mockOnce(422, { error: "invalid" });
       const { result } = renderHook(
         () => useSetExposureStatus(SAMPLE_ID), { wrapper },
@@ -108,8 +96,8 @@ describe("queries — exposure mutations (queue-driven)", () => {
     it("flips selected to the targeted exposure optimistically", () => {
       const { client, wrapper } = withClient();
       client.setQueryData(queryKeys.exposures(SAMPLE_ID), [
-        makeExposure({ id: EXPOSURE_ID, selected: true }),
-        makeExposure({ id: OTHER_EXPOSURE_ID, selected: false }),
+        frame({ id: EXPOSURE_ID, selected: true }),
+        frame({ id: OTHER_EXPOSURE_ID, selected: false }),
       ]);
       vi.spyOn(global, "fetch").mockReturnValue(new Promise(() => {}));
       const { result } = renderHook(
@@ -124,8 +112,8 @@ describe("queries — exposure mutations (queue-driven)", () => {
     it("retains the selection after success", async () => {
       const { client, wrapper } = withClient();
       client.setQueryData(queryKeys.exposures(SAMPLE_ID), [
-        makeExposure({ id: EXPOSURE_ID, selected: true }),
-        makeExposure({ id: OTHER_EXPOSURE_ID, selected: false }),
+        frame({ id: EXPOSURE_ID, selected: true }),
+        frame({ id: OTHER_EXPOSURE_ID, selected: false }),
       ]);
       mockOnce(200, { id: OTHER_EXPOSURE_ID, selected: true });
       const { result } = renderHook(
@@ -141,8 +129,8 @@ describe("queries — exposure mutations (queue-driven)", () => {
     it("rolls back selection on 4xx", async () => {
       const { client, wrapper } = withClient();
       client.setQueryData(queryKeys.exposures(SAMPLE_ID), [
-        makeExposure({ id: EXPOSURE_ID, selected: true }),
-        makeExposure({ id: OTHER_EXPOSURE_ID, selected: false }),
+        frame({ id: EXPOSURE_ID, selected: true }),
+        frame({ id: OTHER_EXPOSURE_ID, selected: false }),
       ]);
       mockOnce(409, { error: "conflict" });
       const { result } = renderHook(

@@ -76,7 +76,7 @@
      "kept" verdict dot reads through `bg-success` (T-4). */
   --color-success: oklch(0.520 0.120 162);    /* sage */
   --color-warning: oklch(0.620 0.130 70);     /* amber */
-  --color-error:   oklch(0.520 0.170 28);     /* red */
+  --color-error:   oklch(0.490 0.190 15);     /* crimson */
   --color-phase-pn3m: oklch(0.520 0.100 200);
   --color-phase-im3m: oklch(0.480 0.140 258);
   --color-phase-ia3d: oklch(0.500 0.150 300);
@@ -122,7 +122,7 @@
   --color-frame-edge:   oklch(0.150 0.010 55);
   --color-frame-tag:    oklch(0.82 0.01 80);
   /* Bright signal endpoint for the detector-image LUT (U-1, #255). The
-     in-browser LUT in DetectorImage.tsx maps grayscale intensity t=0..1 onto
+     in-browser LUT in print/detector/detectorLut.ts maps grayscale intensity t=0..1 onto
      frame-edge (window backing) -> frame-signal (bright signal). A warm
      off-white (hue ~80, same family as paper) so bright Bragg rings read as
      "ink on dark paper" inside the warm dark window, bridging to the
@@ -417,17 +417,6 @@
    wrapper. The outer wrapper still positions the bones overlay via position:relative. */
 [data-boneyard-content] { display: contents; }
 
-/* SegmentedControl — fold in the 44px touch target only on coarse pointers
-   (DESIGN.md sign-off §8) so dense desktop toolbars keep compact density. */
-@media (pointer: coarse) {
-  .seg-segment {
-    min-height: 44px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-}
-
 /* Respect prefers-reduced-motion (impeccable checklist G). Unlayered + !important
    so it overrides the layered global transition rule AND the keyframe animations
    (.anim-*, .bone skeleton pulse). We near-zero rather than fully
@@ -442,7 +431,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  [data-workspace-theme="system"] {
+  [data-theme="system"] {
     --color-paper:       oklch(0.165 0.005 280);
     --color-paper-sunk:  oklch(0.140 0.005 280);
     --color-plate:       oklch(0.195 0.006 280);
@@ -457,7 +446,7 @@
     --color-row-cursor:  oklch(0.245 0.013 280);
     --color-success:     oklch(0.740 0.080 162);
     --color-warning:     oklch(0.780 0.110 70);
-    --color-error:       oklch(0.700 0.150 28);
+    --color-error:       oklch(0.680 0.170 15);
     --color-scrim:       oklch(0 0 0 / 0.6);
     --color-phase-pn3m: oklch(0.740 0.100 200);
     --color-phase-im3m: oklch(0.720 0.120 258);
@@ -486,7 +475,7 @@
     color-scheme: dark;
   }
 }
-[data-workspace-theme="dark"] {
+[data-theme="dark"] {
   --color-paper:       oklch(0.165 0.005 280);
   --color-paper-sunk:  oklch(0.140 0.005 280);
   --color-plate:       oklch(0.195 0.006 280);
@@ -501,7 +490,7 @@
   --color-row-cursor:  oklch(0.245 0.013 280);
   --color-success:     oklch(0.740 0.080 162);
   --color-warning:     oklch(0.780 0.110 70);
-  --color-error:       oklch(0.700 0.150 28);
+  --color-error:       oklch(0.680 0.170 15);
   --color-scrim:       oklch(0 0 0 / 0.6);
   --color-phase-pn3m: oklch(0.740 0.100 200);
   --color-phase-im3m: oklch(0.720 0.120 258);

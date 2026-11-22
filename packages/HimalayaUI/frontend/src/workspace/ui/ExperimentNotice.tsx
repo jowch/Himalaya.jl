@@ -12,7 +12,7 @@ const plural = (n: number, one: string, many: string): string => `${n.toLocaleSt
 export function ExperimentNotice({ progress, ingestFailed, waiting, failed, unrecognized, onDetails }: Props): JSX.Element | null {
   const parts = [
     ...(progress !== undefined ? [progress] : []),
-    ...(waiting > 0 ? [`${plural(waiting, "exposure", "exposures")} waiting for a trace`] : []),
+    ...(waiting > 0 ? [`${plural(waiting, "frame", "frames")} waiting for a trace`] : []),
     ...(failed > 0 ? [`${plural(failed, "analysis", "analyses")} failed`] : []),
     ...(unrecognized > 0 ? [`${plural(unrecognized, "setup folder", "setup folders")} not recognised`] : []),
   ];

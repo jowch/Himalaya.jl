@@ -20,6 +20,7 @@ import {
 } from "./mutators/assignment";
 import { customIndexMutator } from "./mutators/customIndex";
 import { bridgeSamplesMutator, unbridgeSampleMutator } from "./mutators/bridges";
+import { patchComparesMutator } from "./mutators/compares";
 import { addLabelMutator, removeLabelMutator, restoreLabelSuggestionMutator } from "./mutators/labels";
 import { setLabelColorMutator } from "./mutators/labelColors";
 import { patchExperimentMutator } from "./mutators/experiment";
@@ -79,6 +80,7 @@ export function resolveMutator(
       return customIndexMutator;
     case "bridge_samples":         return bridgeSamplesMutator;
     case "unbridge_sample":        return unbridgeSampleMutator;
+    case "patch_compares":         return patchComparesMutator;
     case "add_label":              return addLabelMutator;
     case "remove_label":           return removeLabelMutator;
     case "restore_label_suggestion": return restoreLabelSuggestionMutator;
@@ -119,6 +121,7 @@ export function resolveMutatorForEvent(
     case "select_exposure":     return selectExposureMutator;
     case "sample_bridged":           return bridgeSamplesMutator;
     case "sample_unbridged":         return unbridgeSampleMutator;
+    case "compares_changed":         return patchComparesMutator;
     case "label_added":              return addLabelMutator;
     case "label_removed":            return removeLabelMutator;
     case "label_suggestion_restored": return restoreLabelSuggestionMutator;

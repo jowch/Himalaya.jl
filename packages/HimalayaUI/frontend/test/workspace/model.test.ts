@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import type { CorpusSample, Exposure, IndexEntry } from "../../src/api";
-import { i0BelowZero, traceIsDark, sampleStatus, nextUnreviewed, firstUnreviewed, rankCandidates, imageUrl, stepExposure, peakClick } from "../../src/workspace/model";
+import { i0BelowZero, traceIsDark, sampleStatus, nextUnreviewed, firstUnreviewed, rankCandidates, imageUrl, stepExposure, nearestKeptExposure, peakClick } from "../../src/workspace/model";
 import { peakList } from "../fixtures/peaks";
+import { makeExposure } from "../helpers/exposure";
 
 function sample(id: number, over: Partial<CorpusSample> = {}): CorpusSample {
   return { id, experiment_id: 1, name: `S${id}`, notes: null, q_units: "A^-1", ...over };
@@ -9,16 +10,13 @@ function sample(id: number, over: Partial<CorpusSample> = {}): CorpusSample {
 
 function index(id: number, phase: string, score: number | null): IndexEntry {
   return {
-    id, exposure_id: 1, phase, basis: 0.1, score, r_squared: null, lattice_d: null, ngc: null,
+    id, exposure_id: 1, phase, basis: 0.1, score, r_squared: null, lattice_d: null, 
     status: "candidate", kind: "auto", inputs_hash: null, peaks: [], predicted_q: [],
   };
 }
 
 function exposure(id: number, over: Partial<Exposure> = {}): Exposure {
-  return {
-    id, sample_id: 1, filename: `f${id}.tif`, kind: "file", selected: false, status: null,
-    image_path: "x.tif", image_version: "v1", sources: [], trace_hash: null, analysis_inputs_hash: null, ...over,
-  };
+  return makeExposure({ id, filename: `f${id}.tif`, image_path: "x.tif", image_version: "v1", ...over });
 }
 
 describe("sampleStatus", () => {
@@ -79,13 +77,13 @@ describe("nextUnreviewed", () => {
 });
 
 describe("rankCandidates", () => {
-  it("sorts by score, drops unscored candidates, and keeps at most nine", () => {
+  it("sorts by score, drops unscored candidates, and keeps every scored one", () => {
     const ranked = rankCandidates([
       index(1, "Im3m", 0.4), index(2, "Pn3m", null), index(3, "Ia3d", 0.9),
       ...Array.from({ length: 10 }, (_, i) => index(10 + i, "Lamellar", 0.1)),
     ]);
     expect(ranked.map((c) => c.id).slice(0, 2)).toEqual([3, 1]);
-    expect(ranked).toHaveLength(9);
+    expect(ranked).toHaveLength(12);
     expect(ranked.some((c) => c.id === 2)).toBe(false);
   });
 
@@ -103,6 +101,28 @@ describe("stepExposure", () => {
     expect(stepExposure(list, 1, 1)).toBe(2);
     expect(stepExposure(list, 3, 1)).toBe(3);
     expect(stepExposure(list, 1, -1)).toBe(1);
+  });
+});
+
+describe("nearestKeptExposure", () => {
+  const kept = (id: number) => exposure(id);
+  const dropped = (id: number) => exposure(id, { status: "rejected" });
+
+  it("is the next kept frame after the one just dropped", () => {
+    expect(nearestKeptExposure([kept(1), kept(2), kept(3)], 2)).toBe(3);
+  });
+
+  it("falls back to the previous kept frame when the dropped one is last", () => {
+    expect(nearestKeptExposure([kept(1), kept(2), kept(3)], 3)).toBe(2);
+  });
+
+  it("skips frames that are already dropped, picking the closer side", () => {
+    expect(nearestKeptExposure([kept(1), dropped(2), kept(3), dropped(4), dropped(5), kept(6)], 4)).toBe(3);
+    expect(nearestKeptExposure([kept(1), dropped(2), dropped(3), kept(4)], 2)).toBe(1);
+  });
+
+  it("is undefined when no other frame is kept", () => {
+    expect(nearestKeptExposure([dropped(1), kept(2)], 2)).toBeUndefined();
   });
 });
 

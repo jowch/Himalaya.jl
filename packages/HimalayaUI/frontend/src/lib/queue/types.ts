@@ -45,6 +45,7 @@ export type OpKind =
   // resolveMutator (outbound).
   | "custom_index_commit"
   | "bridge_samples" | "unbridge_sample"
+  | "patch_compares"
   | "add_label" | "remove_label" | "restore_label_suggestion"
   | "set_tag_color"
   | "patch_experiment"
@@ -160,7 +161,7 @@ export interface QueueResponseMeta {
  * caller passed in, and the per-call input merged together. Defined once so
  * mutators don't have to re-derive it via `as unknown as` casts.
  */
-export type FlatPayload<TInput, TScope> = OpPayload<TInput> & TScope & TInput;
+export type FlatPayload<TInput, TScope> = Omit<OpPayload<TInput>, "payload"> & TScope & TInput;
 
 /**
  * A mutator describes one queue-able operation:

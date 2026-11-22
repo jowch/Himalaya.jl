@@ -447,6 +447,31 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
         DBInterface.execute(db, "DELETE FROM sample_bridges WHERE sample_id = ?", [Int(entity_id)])
         return nothing
     end
+    if kind == "compares_changed"
+        sid = Int(entity_id)
+        for ref in get(payload, :remove, Int[])
+            DBInterface.execute(db,
+                "DELETE FROM sample_compares WHERE sample_id = ? AND ref_sample_id = ?", [sid, Int(ref)])
+        end
+        for ref in get(payload, :add, Int[])
+            DBInterface.execute(db,
+                """INSERT OR IGNORE INTO sample_compares (sample_id, ref_sample_id, added_by)
+                   VALUES (?, ?, (SELECT user_id FROM user_actions WHERE id = ?))""",
+                [sid, Int(ref), event_id])
+        end
+        if haskey(payload, :subtraction)
+            sub = payload.subtraction
+            if sub === nothing
+                DBInterface.execute(db, "DELETE FROM sample_subtractions WHERE sample_id = ?", [sid])
+            else
+                DBInterface.execute(db,
+                    """INSERT INTO sample_subtractions (sample_id, ref_sample_id) VALUES (?, ?)
+                       ON CONFLICT(sample_id) DO UPDATE SET ref_sample_id = excluded.ref_sample_id""",
+                    [sid, Int(sub)])
+            end
+        end
+        return nothing
+    end
     if kind == "label_added"
         DBInterface.execute(db,
             """INSERT INTO sample_labels (sample_id, label, state, source) VALUES (?, ?, 'confirmed', 'user')

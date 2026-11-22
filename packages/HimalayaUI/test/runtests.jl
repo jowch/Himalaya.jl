@@ -31,7 +31,7 @@ const GROUPS = [
     ("routes2",  ["test_http.jl","test_routes_users.jl","test_ingestion_scan_api.jl",
                   "test_routes_analysis.jl","test_speculative.jl",
                   "test_route_validation_routing.jl","test_routes_resolve.jl",
-                  "test_inproc_equivalence.jl","test_routes_bridges.jl","test_routes_labels.jl","test_routes_label_colors.jl","test_label_suggestions.jl"]),
+                  "test_inproc_equivalence.jl","test_routes_bridges.jl","test_routes_compares.jl","test_routes_labels.jl","test_routes_label_colors.jl","test_label_suggestions.jl"]),
     ("events",   ["test_http.jl","test_actions.jl","test_events.jl","test_assignment_reattach.jl",
                   "test_ingestion_structural_events.jl",
                   "test_assignments.jl","test_sample_calls.jl","test_fast_skip.jl","test_idempotency.jl",
@@ -71,7 +71,7 @@ const ALL_ORDER = ["test_config.jl","test_db.jl",
                    "test_route_response_shapes.jl","test_route_validation_routing.jl",
                    "test_idempotency.jl","test_idempotency_replay_invariant.jl",
                    "test_concurrent_writes.jl","test_db_connections.jl","test_idempotency_sse_suppression.jl",
-                   "test_routes_resolve.jl","test_routes_bridges.jl","test_routes_labels.jl","test_routes_label_colors.jl","test_label_suggestions.jl",
+                   "test_routes_resolve.jl","test_routes_bridges.jl","test_routes_compares.jl","test_routes_labels.jl","test_routes_label_colors.jl","test_label_suggestions.jl",
                    "test_routes_fs.jl",
                    "test_spa_fallback.jl","test_precompile_workload.jl","test_migration_upgrade.jl"]
 
