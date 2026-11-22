@@ -6,7 +6,7 @@ This document explains why `score(index)` is defined the way it is and what phys
 
 `score` is load-bearing in two places:
 
-1. **`auto_group`** (pipeline) — selects the non-overlapping set of indices to present as the auto-analysis result. It builds the group greedily in descending score order and claims peaks first-come first-served, except that a higher-scoring index can be displaced by one that strictly dominates it. A wrong ordering can lock out the correct assignment. See "A dominating index is picked first" below.
+1. **`auto_group`** (pipeline) — selects the non-overlapping set of indices to present as the auto-analysis result. It builds the group greedily in descending score order and claims peaks first-come first-served, except that a higher-scoring index can be displaced by one that strictly dominates it. A wrong ordering can lock out the correct assignment. See "A dominating index displaces the top-scoring one" below.
 
 2. **`remove_subsets`** — when two indices share the same basis but one's peaks are a subset of the other's, the lower-scoring one is removed. Score breaks the tie.
 
@@ -58,7 +58,7 @@ end
 
 Zero-sharpness falls back to `cv = 0` (treated as maximally consistent), degrading to coverage-only scoring.
 
-## A dominating index is picked first
+## A dominating index displaces the top-scoring one
 
 `auto_group` does not simply take the top-scoring index. At each step, let `t` be the highest-scoring candidate whose effective peaks are all unclaimed. The group takes instead the highest-scoring compatible candidate `a` (other than `t`) such that:
 
@@ -73,7 +73,7 @@ The rule resists a single spurious sharp peak. An index built on a spurious peak
 
 Known limit: the rule only overrides when one index strictly contains the other's peaks. If the higher-scoring index explains some peaks the sharper one does not, score order stands.
 
-`score` and `remove_subsets` are unchanged, and the Alternatives list keeps its score order. Because the picked index claims its peaks, a lower-scoring index that shares them can no longer be selected.
+`score` and `remove_subsets` are unchanged, and the Alternatives list keeps its score order, so the auto call can sit below a higher-scoring alternative. The displaced index shares peaks with the one picked, so it is not selected later.
 
 ## R² — not in the score
 
