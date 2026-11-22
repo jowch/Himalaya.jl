@@ -30,12 +30,11 @@ describe("StaleUrlPage", () => {
       staleUrlContext: null,
       activeExperimentId: undefined,
       activeSampleId: undefined,
-      navModalOpen: false,
-      navModalStep: "experiment",
+      paletteOpen: false,
     });
   });
 
-  it("not_found:experiment — renders header, data-missing, CTA", () => {
+  it("not_found:experiment — renders header, data-missing, CTA opens the palette", () => {
     const ctx: StaleUrlContext = {
       kind: "not_found", missing: "experiment", missing_value: "lipid-typo",
       experiment_resolved: undefined, sample_resolved: undefined,
@@ -44,28 +43,27 @@ describe("StaleUrlPage", () => {
     expect(screen.getByTestId("stale-url-page")).toHaveAttribute("data-missing", "experiment");
     expect(screen.getByRole("heading")).toHaveTextContent(/Experiment 'lipid-typo' not found\./);
     fireEvent.click(screen.getByTestId("stale-url-cta"));
-    expect(useAppState.getState().navModalOpen).toBe(true);
-    expect(useAppState.getState().navModalStep).toBe("experiment");
+    expect(useAppState.getState().paletteOpen).toBe(true);
     expect(useAppState.getState().staleUrlContext).toBeNull();
   });
 
-  it("not_found:sample — preselects experiment and opens modal at sample step", () => {
+  it("not_found:sample — CTA opens the experiment, whose sample list is the picker", () => {
     const ctx: StaleUrlContext = {
       kind: "not_found", missing: "sample", missing_value: "JC001",
       experiment_resolved: { id: 17, name: "lipid-screen" },
       sample_resolved: undefined,
     };
+    useAppState.getState().setStaleUrlContext(ctx);
     renderStale(ctx);
     expect(screen.getByTestId("stale-url-page")).toHaveAttribute("data-missing", "sample");
     expect(screen.getByRole("heading")).toHaveTextContent(/Sample 'JC001' not found in 'lipid-screen'\./);
     fireEvent.click(screen.getByTestId("stale-url-cta"));
-    const s = useAppState.getState();
-    expect(s.activeExperimentId).toBe(17);
-    expect(s.navModalOpen).toBe(true);
-    expect(s.navModalStep).toBe("sample");
+    expect(lastLocation).toBe("/experiments/17");
+    expect(useAppState.getState().staleUrlContext).toBeNull();
+    expect(useAppState.getState().paletteOpen).toBe(false);
   });
 
-  it("not_found:exposure — preserves sample, openModal=false (snap back)", () => {
+  it("not_found:exposure — CTA goes back to the sample in the workspace", () => {
     const ctx: StaleUrlContext = {
       kind: "not_found", missing: "exposure", missing_value: "JC001-099",
       experiment_resolved: { id: 17, name: "lipid-screen" },
@@ -74,10 +72,8 @@ describe("StaleUrlPage", () => {
     renderStale(ctx);
     expect(screen.getByTestId("stale-url-page")).toHaveAttribute("data-missing", "exposure");
     fireEvent.click(screen.getByTestId("stale-url-cta"));
-    const s = useAppState.getState();
-    expect(s.activeExperimentId).toBe(17);
-    expect(s.activeSampleId).toBe(42);
-    expect(s.navModalOpen).toBe(false);
+    expect(lastLocation).toBe("/experiments/17/workspace/42");
+    expect(useAppState.getState().paletteOpen).toBe(false);
   });
 
   it("unknown_path — Page not found, CTA navigates to /experiments (T3.2)", () => {
@@ -97,7 +93,7 @@ describe("StaleUrlPage", () => {
     };
     renderStale(ctx);
     fireEvent.keyDown(window, { key: "/" });
-    expect(useAppState.getState().navModalOpen).toBe(true);
+    expect(useAppState.getState().paletteOpen).toBe(true);
   });
 
   it("/ keypress inside an INPUT does NOT trigger CTA", () => {
@@ -111,7 +107,7 @@ describe("StaleUrlPage", () => {
     document.body.appendChild(input);
     input.focus();
     fireEvent.keyDown(input, { key: "/" });
-    expect(useAppState.getState().navModalOpen).toBe(false);
+    expect(useAppState.getState().paletteOpen).toBe(false);
     document.body.removeChild(input);
   });
 });

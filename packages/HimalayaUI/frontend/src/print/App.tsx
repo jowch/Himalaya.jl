@@ -3,7 +3,6 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { AppRoutes } from "./shell/AppRoutes";
 import { OnboardingFlow } from "./shell/OnboardingFlow";
-import { NavModal } from "./shell/NavModal";
 import { ToastContainer, LiveRegion } from "./ui";
 import { InfrastructureBanner } from "./shell/InfrastructureBanner";
 import { DetectorLutFilters } from "./detector";
@@ -125,10 +124,6 @@ export function PrintApp(): JSX.Element {
     <>
       <AppRoutes />
       <OnboardingFlow />
-      {/* I5.1 (#182): NavModal was mounted in the retired AppShell. It must
-          stay mounted app-wide so the `/` + ⌘K shortcuts and StaleUrlPage
-          recovery can open it from any surface. */}
-      <NavModal />
       <ToastContainer />
       <LiveRegion />
       <InfrastructureBanner />

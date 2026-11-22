@@ -13,7 +13,7 @@ React 18 + Vite + TypeScript strict + TailwindCSS 4. TanStack Query for server s
 | Client state | `state.ts` | Zustand store — **use named actions only** |
 | Phase palette | `phases.ts` | phase → color mapping |
 | Tailwind theme | `styles.css` | `@theme { --color-* … }` |
-| App shell + routing | `print/shell/` | `AppShell`, `TopNav`, `AppRoutes`, `IndexSlugRedirect`, `StaleUrlPage`, `ResolvingFallback`, `OnboardingFlow`, `NavModal`, `InfrastructureBanner`. See [print/shell/AGENTS.md](print/shell/AGENTS.md) |
+| App shell + routing | `print/shell/` | `AppShell`, `TopNav`, `AppRoutes`, `IndexSlugRedirect`, `StaleUrlPage`, `ResolvingFallback`, `OnboardingFlow`, `ShellPalette`, `InfrastructureBanner`. See [print/shell/AGENTS.md](print/shell/AGENTS.md) |
 | Composites | `print/components/` | Page-composing components (rails, plates, panels, rows, modals) built from the `ui/` primitives |
 | Triage workspace | `workspace/` | The three-pane workspace (`WorkspacePage` at `/experiments/:id/workspace/:sampleId?`, outside `AppShell`; pure `model.ts`). Its primitives live in `workspace/ui/`, which is appearance-exempt like `print/ui/`; `WorkspacePage` stays placement-only. The plot (`ui/WorkspacePlot.tsx`) draws the approved mock-up directly on `print/plot/PlotFrame` + `projection.ts`; there is no shared trace-plot engine any more. |
 | UI primitives | `print/ui/` | Closed-look design-system primitives (Button, Card, PhaseChip, ModalShell, Kicker, IconButton, Dot, ToastContainer, …). Appearance lives here; consumer `className` is placement-only. See "Design system" below. |
@@ -30,7 +30,7 @@ React 18 + Vite + TypeScript strict + TailwindCSS 4. TanStack Query for server s
 
 ## Zustand — named actions
 
-Use the store's named actions (`clearUsername`, `setTutorialSeen`, `openNavModal`, …). Avoid `useAppState.setState({ ... })` — direct setState bypasses encapsulation and triggers lint warnings. New state transitions go in `state.ts` as named actions.
+Use the store's named actions (`clearUsername`, `setTutorialSeen`, `openPalette`, …). Avoid `useAppState.setState({ ... })` — direct setState bypasses encapsulation and triggers lint warnings. New state transitions go in `state.ts` as named actions.
 
 ## Zustand persist — version-bump wipe-guard
 

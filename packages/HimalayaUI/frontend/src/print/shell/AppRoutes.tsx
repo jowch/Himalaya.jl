@@ -11,6 +11,7 @@ import { ResolvingFallback } from "./ResolvingFallback";
 import { StaleUrlPage } from "./StaleUrlPage";
 import { useStateFromUrl } from "../../hooks/useStateFromUrl";
 import { useShellKeys } from "./useShellKeys";
+import { ShellPalette } from "./ShellPalette";
 import { HelpOverlay } from "../../workspace/ui/HelpOverlay";
 import { shellHelp } from "./shellHelp";
 import { WorkspacePage } from "../../workspace/WorkspacePage";
@@ -54,6 +55,7 @@ function AppShell(): JSX.Element {
       <main className="flex-1 min-h-0 overflow-auto">
         <Outlet />
       </main>
+      <ShellPalette openHelp={openHelp} />
       {helpOpen && <HelpOverlay sections={shellHelp(pathname)} onClose={() => setHelpOpen(false)} />}
     </div>
   );
