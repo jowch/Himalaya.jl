@@ -4,21 +4,45 @@ using Tables
 using JSON3
 using HTTP: HTTP, Request
 
-function sharpest_first(sorted, has_sharpest)
-    k = findfirst(has_sharpest, sorted)
-    (k === nothing || k == 1) && return sorted
-    vcat(sorted[k:k], sorted[1:k-1], sorted[k+1:end])
+# `claims_of(idx)` is the set an index claims; `candidates` must be sorted by
+# descending score. Peaks are identified by q for the dominance test.
+function greedy_dominating(candidates, claims_of)
+    n = length(candidates)
+    qs  = [Float64.(collect(Himalaya.peaks(idx))) for idx in candidates]
+    shs = [Float64.(nonzeros(idx.sharpness)) for idx in candidates]
+    claim_sets = [claims_of(idx) for idx in candidates]
+    picked  = falses(n)
+    claimed = Set()
+    group   = eltype(candidates)[]
+    while true
+        free = [i for i in 1:n if !picked[i] && isempty(intersect(claim_sets[i], claimed))]
+        isempty(free) && break
+        t = first(free)
+        pick = t
+        if !isempty(qs[t])
+            tq   = qs[t]
+            tmax = maximum(shs[t])
+            k = findfirst(free) do a
+                a != t && all(in(qs[a]), tq) && any(>(tmax), shs[a])
+            end
+            k === nothing || (pick = free[k])
+        end
+        picked[pick] = true
+        push!(group, candidates[pick])
+        union!(claimed, claim_sets[pick])
+    end
+    group
 end
 
 """
     auto_group(indices, eff) -> Vector{<:Index}
     auto_group(indices)       -> Vector{<:Index}
 
-Greedily select a non-overlapping set of indices by descending score.
-An index is added to the group only if none of its peaks are already
-claimed by a previously selected index. The first pick is the
-highest-scoring index that contains the sharpest peak (`docs/scoring.md`);
-if no index contains it, the order is plain descending score.
+Greedily select a non-overlapping set of indices. At each step the
+candidate is the highest-scoring index whose peaks are all unclaimed. It is
+replaced by the highest-scoring compatible index that contains every one of
+its peaks and a peak sharper than all of them (`docs/scoring.md`); the pick
+then claims its peaks. Both forms use the same rule, with peaks identified by q.
 
 The two-arg form claims by `eff.peak_id` (Int) — the membership test is
 on integer identity instead of `Float64` equality, so two indices whose
@@ -54,20 +78,7 @@ function auto_group(indices::Vector{<:Himalaya.Index},
     ids_of(idx) = Set{Int}(pid for q in Himalaya.peaks(idx)
                            for pid in (get(q_to_id, Float64(q), nothing),)
                            if pid !== nothing)  # arithmetically-derived q — won't claim
-    if !isempty(eff.q)
-        sharpest = Int(eff.peak_id[argmax(eff.sharpness)])
-        sorted = sharpest_first(sorted, idx -> sharpest in ids_of(idx))
-    end
-
-    claimed = Set{Int}()
-    group   = eltype(indices)[]
-    for idx in sorted
-        idx_ids = ids_of(idx)
-        isempty(intersect(idx_ids, claimed)) || continue
-        push!(group, idx)
-        union!(claimed, idx_ids)
-    end
-    group
+    greedy_dominating(sorted, ids_of)
 end
 
 function auto_group(indices::Vector{<:Himalaya.Index})::Vector{<:Himalaya.Index}
@@ -75,24 +86,7 @@ function auto_group(indices::Vector{<:Himalaya.Index})::Vector{<:Himalaya.Index}
     scores  = Himalaya.score.(indices)
     perm    = sortperm(scores; rev = true)
     sorted  = indices[perm]
-
-    sharpest_q, best = 0.0, -Inf
-    for idx in sorted
-        for (q, sh) in zip(Himalaya.peaks(idx), nonzeros(idx.sharpness))
-            sh > best && ((sharpest_q, best) = (Float64(q), Float64(sh)))
-        end
-    end
-    sorted = sharpest_first(sorted, idx -> sharpest_q in Himalaya.peaks(idx))
-
-    claimed = Set{Float64}()
-    group   = eltype(indices)[]
-    for idx in sorted
-        idx_peaks = Set(Himalaya.peaks(idx))
-        isempty(intersect(idx_peaks, claimed)) || continue
-        push!(group, idx)
-        union!(claimed, idx_peaks)
-    end
-    group
+    greedy_dominating(sorted, idx -> Set{Float64}(Himalaya.peaks(idx)))
 end
 
 """

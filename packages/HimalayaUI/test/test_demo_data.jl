@@ -10,10 +10,16 @@ module DemoGen
     include(joinpath(@__DIR__, "..", "scripts", "make_demo_data.jl"))
 end
 
+function _auto_group(pr)
+    eff = (q = pr.q, sharpness = pr.sharpness, peak_id = collect(1:length(pr.q)),
+           peak_kind = fill(:auto, length(pr.q)))
+    HimalayaUI.auto_group(Himalaya.indexpeaks(pr.q, pr.sharpness), eff)
+end
+
 function _demo_call(dat)
     q, I, σ = HimalayaUI.load_dat(dat)
     pr = Himalaya.findpeaks(q, I, σ)
-    g = HimalayaUI.auto_group(Himalaya.indexpeaks(pr.q, pr.sharpness))
+    g = _auto_group(pr)
     isempty(g) ? "none" : join(sort([string(nameof(Himalaya.phase(x))) for x in g]), "+")
 end
 
@@ -169,7 +175,7 @@ end
         model, _ = DemoGen.model_trace(rng, "sq", DemoGen.Component[(Himalaya.Square, 80.0, 3.0, 2.5e-3)])
         I, σ = DemoGen.measure(rng, model)
         pr = Himalaya.findpeaks(DemoGen.Q, I, σ)
-        [string(nameof(Himalaya.phase(x))) for x in HimalayaUI.auto_group(Himalaya.indexpeaks(pr.q, pr.sharpness))]
+        [string(nameof(Himalaya.phase(x))) for x in _auto_group(pr)]
     end
     @test count(c -> "Square" in c, calls) >= 4
 end

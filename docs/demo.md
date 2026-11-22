@@ -98,9 +98,8 @@ scratch/demo-experiment/
   included. `analyze` exits non-zero if it skipped any exposure.
 - **Expected calls are not always the generated truth**, by design. TRUTH's `auto`
   column is what Himalaya's own pipeline calls. Two samples differ:
-  - `MO_PEG5`: Pn3m √6 overlaps Im3m √10, so `auto_group` keeps only Pn3m, whose
-    index holds the sharpest peak. Im3m stays a candidate, as the second
-    hypothesis to promote by hand.
+  - `MO_PEG5`: Pn3m √6 overlaps Im3m √10, so `auto_group` keeps Im3m. Pn3m stays
+    a candidate, as the second hypothesis to promote by hand.
   - `MO_AMP_weak`: too weak to index automatically.
 
   `test/test_demo_data.jl` holds a regression floor on these calls over three

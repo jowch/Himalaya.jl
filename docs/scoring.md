@@ -6,7 +6,7 @@ This document explains why `score(index)` is defined the way it is and what phys
 
 `score` is load-bearing in two places:
 
-1. **`auto_group`** (pipeline) — selects the non-overlapping set of indices to present as the auto-analysis result. The first pick is the highest-scoring index that contains the sharpest peak; after that it takes candidates in descending score order and claims peaks first-come first-served. A wrong ordering can lock out the correct assignment. See "The first pick contains the sharpest peak" below.
+1. **`auto_group`** (pipeline) — selects the non-overlapping set of indices to present as the auto-analysis result. It builds the group greedily in descending score order and claims peaks first-come first-served, except that a higher-scoring index can be displaced by one that strictly dominates it. A wrong ordering can lock out the correct assignment. See "A dominating index is picked first" below.
 
 2. **`remove_subsets`** — when two indices share the same basis but one's peaks are a subset of the other's, the lower-scoring one is removed. Score breaks the tie.
 
@@ -58,13 +58,22 @@ end
 
 Zero-sharpness falls back to `cv = 0` (treated as maximally consistent), degrading to coverage-only scoring.
 
-## The first pick contains the sharpest peak
+## A dominating index is picked first
 
-`auto_group` does not start from the top-scoring index. It starts from the top-scoring index that contains the sharpest detected peak. If no candidate contains it, the order is plain descending score. Later picks follow score as before.
+`auto_group` does not simply take the top-scoring index. At each step, let `t` be the highest-scoring candidate whose effective peaks are all unclaimed. The group takes instead the highest-scoring compatible candidate `a` (other than `t`) such that:
 
-The sharpest peak is usually the dominant, lowest-order reflection, and it is the most reliable peak in the trace. An assignment that leaves it unexplained should not win because of the consistency term. That term penalises an index for mixing sharpness values, so an index that includes the very sharp first peak and several weak high-order peaks has a high CV and a low consistency. With enough weak high-order peaks detected, an index that skips the dominant peak and fits only the weaker ones can then outscore the correct one. For example, a hexagonal pattern with one sharp first peak and six weak higher peaks can score below an Ia3d index that explains only some of the weak peaks.
+1. `a` contains every peak of `t`, and
+2. `a` contains a peak sharper than every peak of `t`.
 
-The rule only changes which index is picked first. `score` and `remove_subsets` are unchanged, and the Alternatives list keeps its score order. Because the first pick claims its peaks, a lower-scoring index that shares them can no longer be selected.
+If no such `a` exists, `t` is taken. The picked index claims its peaks and the step repeats until no compatible candidate remains. Peaks are identified by q for the two conditions.
+
+The consistency term is `1/(1+CV)` of the peak sharpnesses. Higher-order amplitudes naturally fall off, so a correct index that includes a very sharp first reflection and several weak high-order peaks has a high CV and a low consistency. An index that skips the sharp first peak and fits only the weaker ones can then outscore it. For example, a hexagonal pattern with one sharp first peak and six weak higher peaks can score below an Ia3d index that explains only some of the weak peaks. Hexagonal contains all of that Ia3d index's peaks plus the sharp one, so it is picked instead. The same rule lets Hexagonal and Lamellar coexist when the top-scoring Ia3d index is contained in the Hexagonal index.
+
+The rule resists a single spurious sharp peak. An index built on a spurious peak can displace the top index only if it contains all of the top index's peaks, which means the top index is a subset of it.
+
+Known limit: the rule only overrides when one index strictly contains the other's peaks. If the higher-scoring index explains some peaks the sharper one does not, score order stands.
+
+`score` and `remove_subsets` are unchanged, and the Alternatives list keeps its score order. Because the picked index claims its peaks, a lower-scoring index that shares them can no longer be selected.
 
 ## R² — not in the score
 

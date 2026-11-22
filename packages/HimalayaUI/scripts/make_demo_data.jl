@@ -89,7 +89,7 @@ const SAMPLES = [
     # label            nscans components                                                  auto            note
     ("MO_H2O",         3, Component[(Pn3m, 102.0, 5.0, 2.1e-3)],                          "Pn3m",           "monoolein in excess water, clean Pn3m"),
     ("MO_H2O_37C",     2, Component[(Pn3m, 95.0, 4.0, 2.1e-3)],                           "Pn3m",           "Pn3m, lattice shrinks on heating"),
-    ("MO_PEG5",        2, Component[(Pn3m, 108.0, 3.0, 1.6e-3), (Im3m, 138.0, 2.0, 1.6e-3)], "Pn3m",          "Pn3m + Im3m coexistence (Bonnet ratio ~1.28). Pn3m √6 overlaps Im3m √10, so auto_group keeps only Pn3m, whose index holds the sharpest peak; Im3m is the second hypothesis to promote by hand"),
+    ("MO_PEG5",        2, Component[(Pn3m, 108.0, 3.0, 1.6e-3), (Im3m, 138.0, 2.0, 1.6e-3)], "Im3m",          "Pn3m + Im3m coexistence (Bonnet ratio ~1.28). Pn3m √6 overlaps Im3m √10, so auto_group keeps Im3m; Pn3m is the second hypothesis to promote by hand"),
     ("MO_F127",        2, Component[(Im3m, 145.0, 3.0, 2.4e-3)],                          "Im3m",           "polymer-stabilised Im3m"),
     ("MO_lowH2O",      2, Component[(Ia3d, 150.0, 4.0, 2.1e-3)],                          "Ia3d",           "low hydration Ia3d"),
     ("DOPE_H2O",       3, Component[(Hexagonal, 74.0, 6.0, 2.7e-3)],                      "Hexagonal",      "DOPE inverse hexagonal"),
