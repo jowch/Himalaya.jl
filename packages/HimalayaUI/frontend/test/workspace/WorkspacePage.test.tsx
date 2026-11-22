@@ -1240,7 +1240,7 @@ describe("WorkspacePage", () => {
     expect(row.querySelector("[data-testid='workspace-label-chips'] [data-label]")).toBeNull();
   });
 
-  it("colours each label from the shared map, built-ins blue and other labels violet by default", () => {
+  it("colours each label from the shared map, system labels their system colour and other labels violet by default", () => {
     state.labels = [
       { id: 1, sample_id: 10, label: "37C", state: "confirmed", source: "user" },
       { id: 2, sample_id: 10, label: "buffer", state: "confirmed", source: "user" },
@@ -1283,6 +1283,24 @@ describe("WorkspacePage", () => {
     fireEvent.click(within(form).getByRole("option", { name: "Green" }));
     fireEvent.keyDown(colour, { key: "Enter" });
     expect(calls).toEqual([{ hook: "setLabelColor", boundTo: 0, arg: { label: "retake", color: "green" } }]);
+  });
+
+  it("system labels keep their own colours: no colour menu, and no row on the palette's colour page", () => {
+    state.labels = [
+      { id: 1, sample_id: 10, label: "buffer", state: "confirmed", source: "user" },
+      { id: 2, sample_id: 10, label: "Calibrant", state: "confirmed", source: "user" },
+      { id: 3, sample_id: 10, label: "retake", state: "confirmed", source: "user" },
+    ];
+    state.labelColors = [{ label: "buffer", color: "rose" }];
+    renderAt("/experiments/1/workspace/10");
+    const chips = screen.getByTestId("workspace-label-chips");
+    expect(chips.querySelector("[data-label='buffer']")).toHaveAttribute("data-label-color", "blue");
+    expect(chips.querySelector("[data-label='Calibrant']")).toHaveAttribute("data-label-color", "ochre");
+    fireEvent.contextMenu(chips.querySelector("[data-label='buffer']")!);
+    expect(screen.queryByRole("dialog", { name: /^Colour of label/ })).toBeNull();
+    runFromPalette("label colour");
+    const page = screen.getByRole("dialog", { name: "Label colour" });
+    expect(within(page).getAllByRole("option").map((o) => o.getAttribute("aria-label"))).toEqual(["retake, 1 sample"]);
   });
 
   it("the palette's Settings page renames the experiment and sets its description", () => {
