@@ -33,6 +33,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test s.call_state == "uncalled"
         @test s.phase === nothing
         @test !s.exposures[1].called
+        @test !isempty(s.exposures[1].auto_phases)
         @test !haskey(s, :tags)
 
         # CSV
@@ -54,6 +55,9 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test r.status == 400
     end
 
+    auto_before = with_inproc_routes(db) do call
+        collect(String, JSON3.read(String(call("GET", "/api/experiments/$exp_id/export").body))[1].exposures[1].auto_phases)
+    end
     auto_ids = [Int(r.id) for r in Tables.rowtable(DBInterface.execute(db,
         "SELECT id FROM indices WHERE exposure_id = ?", [e_id]))]
     called_id = Int(DBInterface.lastrowid(DBInterface.execute(db,
@@ -74,6 +78,8 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test [ix.phase for ix in ex.indices] == ["Im3m"]
         @test ex.indices[1].lattice_d == 177.7
         @test !haskey(ex, :active_group_kind)
+        @test collect(ex.auto_phases) == auto_before
+        @test "Im3m" ∉ ex.auto_phases
 
         lines = split(strip(String(call("GET", "/api/experiments/$exp_id/export?format=csv").body)), "\n")
         @test startswith(lines[1], "sample_name,exposure_filename,call_state,call_phases,phases,")

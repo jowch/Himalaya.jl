@@ -27,11 +27,11 @@ function routes(demoDir) {
     "/api/experiments/4/problems": { ingest_error: null, exposures: [] },
     "/api/experiments/4/export": [
       { name: "MO_H2O_S1 (S01P01)", exposures: [
-        { filename: "MO_H2O_S1", selected: false, active_group_kind: "auto", indices: [{ phase: "Pn3m", basis: 0.087 }] },
-        { filename: "MO_H2O_S2", selected: false, active_group_kind: "auto", indices: [] },
+        { filename: "MO_H2O_S1", selected: false, auto_phases: ["Pn3m"] },
+        { filename: "MO_H2O_S2", selected: false, auto_phases: [] },
       ] },
       { name: "MO_PEG5_S3 (S01P02)", exposures: [
-        { filename: "MO_PEG5_S3", selected: false, active_group_kind: "auto", indices: [{ phase: "Im3m", basis: 0.064 }] },
+        { filename: "MO_PEG5_S3", selected: false, auto_phases: ["Im3m"] },
       ] },
     ],
     "/api/samples/10/exposures": [

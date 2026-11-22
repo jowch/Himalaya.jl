@@ -33,11 +33,18 @@ function build_export(db::SQLite.DB, experiment_id::Int)
             indices = Tables.rowtable(DBInterface.execute(db,
                 "SELECT id, phase, basis, score, r_squared, lattice_d
                  FROM indices WHERE exposure_id = ? ORDER BY score DESC, id", [Int(e.id)]))
+            auto_phases = [String(r.phase) for r in Tables.rowtable(DBInterface.execute(db,
+                "SELECT i.phase FROM indices i
+                 JOIN index_group_members m ON m.index_id = i.id
+                 JOIN index_groups g ON g.id = m.group_id
+                 WHERE g.exposure_id = ? AND g.kind = 'auto'
+                 ORDER BY i.score DESC, i.id", [Int(e.id)]))]
             called && (indices = filter(ix -> Int(ix.id) in called_ids, indices))
             push!(ex_out, Dict(
                 :filename => e.filename,
                 :selected => e.selected != 0,
                 :called   => called,
+                :auto_phases => auto_phases,
                 :indices  => [delete!(ix, :id) for ix in rows_to_json(indices)],
             ))
         end
