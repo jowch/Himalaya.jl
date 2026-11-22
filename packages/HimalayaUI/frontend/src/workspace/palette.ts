@@ -322,7 +322,7 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
         id: `label-${l.label}`,
         label: l.name,
         swatch: LABEL_SWATCH[l.color].solid,
-        hint: l.onSample === "confirmed" ? "On this sample, Enter removes it" : l.onSample === "suggested" ? "Suggested, Enter confirms it" : undefined,
+        hint: l.onSample === "confirmed" ? "On this sample. Press Enter to remove it." : l.onSample === "suggested" ? "Suggested. Press Enter to confirm it." : undefined,
         run: () => p.labels.toggle(l),
       })),
       extra: (q) => {

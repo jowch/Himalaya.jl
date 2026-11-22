@@ -59,7 +59,7 @@ function Chip({ entry, editable, color, measure = false, onAdd, onRemove, onOpen
       className={`inline-flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded-full border pt-0.5 pb-[3px] pl-2.5 pr-1 text-caption ${tone} ${fill}`}
     >
       {suggested && editable && onAdd ? (
-        <button type="button" onClick={() => onAdd(entry.label)} title="Suggested. Click to confirm" aria-label={`Confirm label ${name}`}>
+        <button type="button" onClick={() => onAdd(entry.label)} title="Suggested. Click to confirm." aria-label={`Confirm label ${name}`}>
           {name}
         </button>
       ) : (
