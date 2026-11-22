@@ -4,6 +4,7 @@ import { Overlay } from "./Overlay";
 interface Props {
   problems: IngestProblems | undefined;
   onPick: (sampleId: number) => void;
+  onAddSetups: () => void;
   onClose: () => void;
 }
 
@@ -11,8 +12,9 @@ function reason(p: ProblemExposure): string {
   return p.problem === "no_trace" ? "No trace yet. It is picked up when its _tot.dat appears." : p.reason;
 }
 
-export function ProblemList({ problems, onPick, onClose }: Props): JSX.Element {
+export function ProblemList({ problems, onPick, onAddSetups, onClose }: Props): JSX.Element {
   const rows = problems?.exposures ?? [];
+  const folders = problems?.setups ?? [];
   return (
     <Overlay label="Ingest problems" onClose={onClose} testId="workspace-problems">
       <div className="flex max-h-[70vh] flex-col gap-3 overflow-y-auto px-5 py-4 text-body">
@@ -23,7 +25,14 @@ export function ProblemList({ problems, onPick, onClose }: Props): JSX.Element {
             <span className="whitespace-pre-wrap break-words text-caption text-ink-soft">{problems.ingest_error}</span>
           </div>
         )}
-        {rows.length === 0 && problems?.ingest_error == null && <p className="text-ink-soft">No problems.</p>}
+        {folders.length > 0 && (
+          <div data-testid="problems-setups" className="flex flex-col gap-1">
+            <span>{folders.length === 1 ? "A setup folder was not added" : `${folders.length} setup folders were not added`}: {folders.map((f) => f.folder).join(", ")}.</span>
+            <span className="text-caption text-ink-soft">Their file layout was not recognised, so a rescan skips them. Add them with their file patterns typed in.</span>
+            <button type="button" data-testid="problems-add-setups" onClick={onAddSetups} className="self-start font-semibold text-accent hover:underline">Add setup folders</button>
+          </div>
+        )}
+        {rows.length === 0 && folders.length === 0 && problems?.ingest_error == null && <p className="text-ink-soft">No problems.</p>}
         {rows.length > 0 && (
           <ul className="flex flex-col">
             {rows.map((p) => (

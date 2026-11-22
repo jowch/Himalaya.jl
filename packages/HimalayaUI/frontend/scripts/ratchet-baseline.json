@@ -11,7 +11,7 @@
     "frontend/src/print/shell/TopNav.tsx": 9
   },
   "comments": {
-    "frontend/src/api.ts": 92,
+    "frontend/src/api.ts": 83,
     "frontend/src/bones/registry.ts": 1,
     "frontend/src/hooks/useClickOutside.ts": 6,
     "frontend/src/hooks/useFocusTrap.ts": 25,
@@ -98,7 +98,7 @@
     "src/pipeline.jl": 428,
     "src/prp.jl": 28,
     "src/routes_analysis.jl": 117,
-    "src/routes_experiments.jl": 55,
+    "src/routes_experiments.jl": 38,
     "src/routes_export.jl": 7,
     "src/routes_exposures.jl": 68,
     "src/routes_fs.jl": 26,
