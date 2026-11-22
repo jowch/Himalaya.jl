@@ -193,6 +193,29 @@ end
     @test isempty(findpeaks(q, nanpt, σ0; method = :hybrid).indices)
 end
 
+@testset "hybrid: tail shifted below zero gives no peaks" begin
+    q = HYB_Q
+    for shift_σ in (1.0, 3.0), (A, p) in ((500.0, 2.0), (2000.0, 3.0)), seed in 1:10
+        rng = MersenneTwister(seed)
+        Ip = A .* (q ./ q[1]) .^ (-p)
+        σp = sqrt.(Ip)
+        Ip .+= σp .* randn(rng, length(q))
+        Ip .-= Ip[end] + shift_σ * σp[end]
+        @test isempty(findpeaks(q, Ip, σp; method = :hybrid).indices)
+        @test isempty(findpeaks(q, Ip; method = :hybrid).indices)
+    end
+end
+
+@testset "hybrid: near-zero positive low-q region gives no peaks" begin
+    for seed in 1:10
+        q, I0, σ0, _ = _hybrid_trace(; seed, peaks = false)
+        I = copy(I0)
+        rng = MersenneTwister(100 + seed)
+        I[1:20] .= 0.02 .* abs.(randn(rng, 20)) .+ 1e-3   # masked, tiny positive values
+        @test isempty(findpeaks(q, I, σ0; method = :hybrid).indices)
+    end
+end
+
 @testset "hybrid: result does not depend on intensity scale" begin
     # Seeds 8 and 9 change under an absolute intensity floor (weak peak lost at 1e-9).
     for seed in 1:12
