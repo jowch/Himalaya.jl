@@ -4,6 +4,8 @@ import type { SampleBridge } from "../../../api";
 import { queryKeys } from "../../../queries";
 import { authOpts } from "../../authOpts";
 import { applyBridge, applyUnbridge } from "../../bridges";
+import type { KeepCall } from "../../bridgeCall";
+import { invalidateAssignmentsExcept, invalidateSampleCalls } from "../sampleCall";
 import type { Mutator, RollbackContext } from "../types";
 
 interface BridgeScope {
@@ -22,14 +24,17 @@ function patchBridges(qc: QueryClient, experimentId: number, next: (list: Sample
 function settle(qc: QueryClient, experimentId: number, response: unknown): void {
   if (Array.isArray(response)) qc.setQueryData<SampleBridge[]>(queryKeys.bridges(experimentId), response as SampleBridge[]);
   qc.invalidateQueries({ queryKey: queryKeys.bridges(experimentId) });
+  invalidateSampleCalls(qc);
+  invalidateAssignmentsExcept(qc, []);
+  qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
 }
 
-type BridgeInput = { sampleId: number; toSampleId: number };
+type BridgeInput = { sampleId: number; toSampleId: number; keepCall?: KeepCall };
 
 export const bridgeSamplesMutator: Mutator<BridgeInput, BridgeScope, SampleBridge[]> = {
   kind: "bridge_samples",
   onMutate: (p, qc) => patchBridges(qc, p.experimentId, (list) => applyBridge(list, p.sampleId, p.toSampleId)),
-  request: (p) => api.bridgeSamples(p.sampleId, p.toSampleId, authOpts(p.username, p.clientId, p.clientOpId)),
+  request: (p) => api.bridgeSamples(p.sampleId, p.toSampleId, p.keepCall, authOpts(p.username, p.clientId, p.clientOpId)),
   onSuccess: (p, response, qc) => settle(qc, p.experimentId, response),
 };
 

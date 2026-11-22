@@ -5,6 +5,7 @@ import type { PlotView, PlotViewOption } from "./plotView";
 import { latticeParam } from "./indexing";
 import type { AppTheme } from "../lib/theme";
 import { LABEL_SWATCH } from "../ui/labelSwatches";
+import type { KeepCall, KeepChoice } from "../lib/bridgeCall";
 import type { FieldOption, PaletteForm, PaletteGroup, PaletteItem, PalettePage } from "../ui/palette/model";
 
 export interface PaletteLabel {
@@ -37,7 +38,13 @@ export interface WorkspacePaletteInput extends AppActions {
     subtracted: number | undefined;
     subtract: (id: number) => void;
   };
-  bridge: { samples: readonly CorpusSample[]; pick: (id: number) => void; bridged: readonly string[]; leave: () => void };
+  bridge: {
+    samples: readonly CorpusSample[];
+    pick: (id: number, keep?: KeepCall) => void;
+    choices: (id: number) => readonly KeepChoice[] | undefined;
+    bridged: readonly string[];
+    leave: () => void;
+  };
   candidates: { list: readonly IndexEntry[]; ticked: ReadonlySet<number>; tick: (ix: IndexEntry) => void };
   labels: {
     known: readonly PaletteLabel[];
@@ -149,6 +156,18 @@ function recolourForm(l: PaletteLabel, p: WorkspacePaletteInput): PaletteForm {
     submit: (v) => {
       const c = asColor(v.color ?? "");
       if (c !== l.color) p.labels.recolour(l.label, c);
+    },
+  };
+}
+
+function keepCallForm(name: string, choices: readonly KeepChoice[], pick: (keep: KeepCall) => void): PaletteForm {
+  return {
+    title: `Same sample as ${name}`,
+    verb: "mark",
+    fields: [{ id: "keep", label: "Keep the call of", kind: "choice", value: choices[0]!.value, options: choices.map(({ value, label }) => ({ value, label })) }],
+    submit: (v) => {
+      const hit = choices.find((c) => c.value === v.keep) ?? choices[0]!;
+      pick(hit.keep);
     },
   };
 }
@@ -269,7 +288,11 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
       arg: "Sample",
       deep: true,
       empty: "No other samples.",
-      items: p.bridge.samples.map((s) => ({ id: `bridge-${s.id}`, label: s.name, run: () => p.bridge.pick(s.id) })),
+      items: p.bridge.samples.map((s) => {
+        const choices = p.bridge.choices(s.id);
+        if (!choices) return { id: `bridge-${s.id}`, label: s.name, run: () => p.bridge.pick(s.id) };
+        return { id: `bridge-${s.id}`, label: s.name, hint: "Different call", form: () => keepCallForm(s.name, choices, (keep) => p.bridge.pick(s.id, keep)) };
+      }),
     };
     if (p.candidates.list.length > 0) {
       pages.tick = {

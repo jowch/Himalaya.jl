@@ -1,4 +1,5 @@
-import type { Exposure, IndexEntry, Peak, SampleBridge, SampleLabel, SampleLabelState, LabelColor } from "../api";
+import type { AssignmentState, Exposure, IndexEntry, Peak, SampleBridge, SampleCallMember, SampleLabel, SampleLabelState, LabelColor } from "../api";
+import type { KeepCall } from "../lib/bridgeCall";
 import type { EditOps } from "../queries";
 import type { SetupPatch } from "../lib/queue/mutators/setup";
 import type { ExperimentPatch } from "../lib/queue/mutators/experiment";
@@ -303,7 +304,15 @@ function bridgeGains(members: readonly number[], labels: readonly SampleLabel[])
 
 export function bridgeEntry(
   ops: EditOps,
-  at: Where & { from: number; to: number; bridges: readonly SampleBridge[]; labels: readonly SampleLabel[] },
+  at: Where & {
+    from: number;
+    to: number;
+    bridges: readonly SampleBridge[];
+    labels: readonly SampleLabel[];
+    keep: KeepCall | undefined;
+    states: { from: AssignmentState; to: AssignmentState };
+    lost: readonly SampleCallMember[];
+  },
 ): UndoEntry {
   const sideA = [at.from, ...bridgedWith(at.bridges, at.from)];
   const sideB = [at.to, ...bridgedWith(at.bridges, at.to)];
@@ -314,9 +323,20 @@ export function bridgeEntry(
     undo: async () => {
       if (!together(await ops.read.bridges(), at.from, at.to)) return 0;
       const now = await ops.read.labels();
+      const call = await ops.read.call(at.from);
       for (const s of split) ops.unbridge(s);
-      for (const s of split.slice(1)) ops.bridge(split[0]!, s);
+      for (const s of split.slice(1)) ops.bridge(split[0]!, s, "both");
       let sent = split.length * 2 - 1;
+      for (const [side, prev] of [[sideA, at.states.from], [sideB, at.states.to]] as const) {
+        if (prev === call.state || prev === "null") continue;
+        ops.setCallState(side[0]!, prev);
+        sent += 1;
+      }
+      for (const m of at.lost) {
+        if (call.members.some((x) => x.exposure_id === m.exposure_id && x.index_id === m.index_id)) continue;
+        ops.addPhase(m.exposure_id, m.index_id);
+        sent += 1;
+      }
       const undone = new Set<string>();
       for (const side of [sideA, sideB]) {
         for (const sid of side) {
@@ -334,7 +354,7 @@ export function bridgeEntry(
     },
     redo: async () => {
       if (together(await ops.read.bridges(), at.from, at.to)) return 0;
-      ops.bridge(at.from, at.to);
+      ops.bridge(at.from, at.to, at.keep);
       return 1;
     },
   };
@@ -350,7 +370,7 @@ export function unbridgeEntry(
     undo: async () => {
       const partner = others[0];
       if (partner === undefined || together(await ops.read.bridges(), at.target, partner)) return 0;
-      ops.bridge(at.target, partner);
+      ops.bridge(at.target, partner, "both");
       return 1;
     },
     redo: async () => {

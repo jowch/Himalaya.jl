@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import type { CorpusSample, Exposure, IndexEntry, LabelColor } from "../api";
+import type { CorpusSample, Exposure, IndexEntry, LabelColor, SampleCallMember } from "../api";
 import { ApiError } from "../api";
 import {
   useAddAssignmentPhase,
@@ -50,6 +50,7 @@ import { useScanState } from "../hooks/useScanState";
 import { useMediaQuery } from "./useMediaQuery";
 import { isIngestStage, stageLabel } from "../lib/ingestStages";
 import { bridgeCounts, bridgedWith } from "../lib/bridges";
+import { keepChoices, type KeepCall } from "../lib/bridgeCall";
 import { bufferRole, buffersFirst, displayLabel, firstUnusedColor, labelColor, labelColorIsDefault, labelsFor, sameLabel, sampleMatchesFilter, labelVocabulary, labelKey } from "../lib/labels";
 import { representativeExposure } from "../lib/exposure";
 import { useCorpusPalette } from "../hooks/useCorpusPalette";
@@ -640,15 +641,30 @@ export function WorkspacePage(): JSX.Element {
     if (sampleId !== undefined && bridged.length > 0) unbridgeOne(sampleId);
   }, [sampleId, bridged, unbridgeOne]);
   const bridgeTo = useCallback(
-    (rid: number) => {
+    (rid: number, keep?: KeepCall) => {
       if (sampleId === undefined) return;
-      bridgeSamples.mutate({ sampleId, toSampleId: rid });
-      history.record(bridgeEntry(ops, {
-        label: `marked ${sample?.name ?? "this sample"} as the same sample as ${sampleNames.get(rid) ?? "a sample"}`, sampleId, exposureId: undefined,
-        from: sampleId, to: rid, bridges: bridgeList, labels: labelList,
-      }));
+      const states = {
+        from: sample?.assignment_state ?? "indexed",
+        to: samples.find((s) => s.id === rid)?.assignment_state ?? "indexed",
+      };
+      const send = (lost: readonly SampleCallMember[]): void => {
+        bridgeSamples.mutate(keep === undefined ? { sampleId, toSampleId: rid } : { sampleId, toSampleId: rid, keepCall: keep });
+        history.record(bridgeEntry(ops, {
+          label: `marked ${sample?.name ?? "this sample"} as the same sample as ${sampleNames.get(rid) ?? "a sample"}`, sampleId, exposureId: undefined,
+          from: sampleId, to: rid, bridges: bridgeList, labels: labelList, keep, states, lost,
+        }));
+      };
+      if (typeof keep !== "number") return send([]);
+      ops.read.call(keep === sampleId ? rid : sampleId).then((c) => send(c.members), () => send([]));
     },
-    [sampleId, sample?.name, bridgeSamples, history, ops, sampleNames, bridgeList, labelList],
+    [sampleId, sample?.name, sample?.assignment_state, samples, bridgeSamples, history, ops, sampleNames, bridgeList, labelList],
+  );
+  const bridgeChoices = useCallback(
+    (rid: number) => {
+      const there = samples.find((s) => s.id === rid);
+      return sample && there ? keepChoices(sample, there) : undefined;
+    },
+    [sample, samples],
   );
   const labelEdit = useCallback(
     (sid: number, tag: string, added: boolean) => {
@@ -1032,10 +1048,11 @@ export function WorkspacePage(): JSX.Element {
     },
     bridge: {
       samples: bridgePickable,
-      pick: (rid) => {
+      pick: (rid, keep) => {
         if (sampleId === undefined) return;
-        bridgeTo(rid);
+        bridgeTo(rid, keep);
       },
+      choices: bridgeChoices,
       bridged: bridgedNames,
       leave: leaveBridges,
     },

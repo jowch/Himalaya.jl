@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, render, screen, fireEvent, within } from "@testing-library/react";
+import { act, render, screen, fireEvent, within, waitFor } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
 import type { CorpusSample, Exposure, IndexEntry, Assignment, Peak, ProblemExposure, SampleBridge, SampleCall, SampleLabel, LabelColorEntry, LabelColor, Trace } from "../../src/api";
 import { ApiError } from "../../src/api";
@@ -120,6 +120,7 @@ const editOps = {
       ?? { exposure_id: eid, state: "null" as const, members: [] },
     labels: async () => state.labels,
     bridges: async () => state.bridges,
+    call: async (sid: number) => ({ sample_id: sid, state: "indexed" as const, phase: null, call_phases: [], members: sid === 10 ? [{ index_id: 2, exposure_id: 101, phase: "Pn3m" }] : [] }),
     exposures: async () => state.exposures.map((e) => (server.status.has(e.id) ? { ...e, status: server.status.get(e.id)! } : e)),
     labelColors: async () => {
       const merged = new Map(state.labelColors.map((e) => [e.label.toLowerCase(), e]));
@@ -1323,7 +1324,7 @@ describe("WorkspacePage", () => {
       expect(calls).toContainEqual({ hook: "unbridge", boundTo: 1, arg: { sampleId: 11 } });
       state.bridges = [];
       await undo();
-      expect(ops()).toEqual([["bridge", 11, 10]]);
+      expect(ops()).toEqual([["bridge", 11, 10, "both"]]);
       expect(toasts.at(-1)).toBe("Undone: marked A2 as not the same sample");
     });
 
@@ -2872,6 +2873,24 @@ describe("WorkspacePage", () => {
     fireEvent.keyDown(input, { key: "Enter" });
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(calls).toContainEqual({ hook: "bridge", boundTo: 1, arg: { sampleId: 10, toSampleId: 13 } });
+  });
+
+  it("bridging to a sample with a different call asks which call to keep and sends that choice", async () => {
+    state.corpus = state.corpus.map((s) => (s.id === 13 ? { ...s, assignment_state: "indexed", phase: "Im3m", call_phases: ["Im3m"] } : s));
+    renderAt("/experiments/1/workspace/10");
+    runFromPalette("same sample as…");
+    const page = screen.getByRole("dialog", { name: "Same sample as" });
+    const input = within(page).getByRole("combobox", { name: "Sample" });
+    fireEvent.change(input, { target: { value: "a4" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    const form = screen.getByRole("dialog", { name: "Same sample as A4" });
+    const keep = within(form).getByRole("combobox", { name: "Keep the call of" });
+    expect(keep).toHaveTextContent("A1: Pn3m");
+    expect(calls.filter((c) => c.hook === "bridge")).toHaveLength(0);
+    fireEvent.keyDown(keep, { key: "ArrowDown" });
+    fireEvent.keyDown(keep, { key: "Enter" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => expect(calls).toContainEqual({ hook: "bridge", boundTo: 1, arg: { sampleId: 10, toSampleId: 13, keepCall: 13 } }));
   });
 
   it("the palette says the open sample is not the same sample as every other sample in its group", () => {
