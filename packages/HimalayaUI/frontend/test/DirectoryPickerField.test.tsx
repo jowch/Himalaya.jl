@@ -4,7 +4,7 @@ import { DirectoryPickerField, folderHint } from "../src/components/DirectoryPic
 import type { FolderSuggestion } from "../src/api";
 
 const f = (path: string, extra: Partial<FolderSuggestion> = {}): FolderSuggestion =>
-  ({ path, kind: null, setups: null, added: null, ...extra });
+  ({ path, kind: null, setups: null, added: null, described: true, ...extra });
 
 const input = (): HTMLInputElement => screen.getByRole("combobox", { name: "Data directory" });
 const selected = (): string[] =>
@@ -23,13 +23,6 @@ describe("DirectoryPickerField", () => {
     fireEvent.blur(input(), { relatedTarget: screen.getByRole("button", { name: "next" }) });
     expect(screen.queryByRole("listbox")).toBeNull();
     fireEvent.focus(input());
-    expect(screen.getByRole("listbox")).toBeInTheDocument();
-  });
-
-  it("clicking the field never closes the list", () => {
-    render(<DirectoryPickerField value="/b/s" onChange={() => {}} folders={[f("/b/setup1")]} autoFocus />);
-    fireEvent.click(input());
-    fireEvent.click(input());
     expect(screen.getByRole("listbox")).toBeInTheDocument();
   });
 
@@ -103,18 +96,53 @@ describe("DirectoryPickerField", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it("Esc backs out one step: first the highlight, then the list, then the page gets it", () => {
+  it("Esc closes the list in one press, and the next Esc reaches the page", () => {
     const onPageKey = vi.fn();
     render(<div onKeyDown={(e) => { if (e.key === "Escape") onPageKey(); }}><DirectoryPickerField value="/b/s" onChange={() => {}} folders={[f("/b/setup1")]} autoFocus /></div>);
     fireEvent.keyDown(input(), { key: "Tab" });
-    fireEvent.keyDown(input(), { key: "Escape" });
-    expect(selected()).toEqual([]);
-    expect(screen.getByRole("listbox")).toBeInTheDocument();
     fireEvent.keyDown(input(), { key: "Escape" });
     expect(screen.queryByRole("listbox")).toBeNull();
     expect(onPageKey).not.toHaveBeenCalled();
     fireEvent.keyDown(input(), { key: "Escape" });
     expect(onPageKey).toHaveBeenCalledTimes(1);
+  });
+
+  it("typing clears the highlight, so Enter adds the typed folder rather than a stale row", () => {
+    const onChange = vi.fn();
+    const onSubmit = vi.fn();
+    render(<DirectoryPickerField value="/b/be" onChange={onChange} onSubmit={onSubmit} folders={[f("/b/beamtime-10"), f("/b/beamtime-11")]} autoFocus />);
+    fireEvent.keyDown(input(), { key: "Tab" });
+    fireEvent.change(input(), { target: { value: "/b/bea" } });
+    expect(selected()).toEqual([]);
+    fireEvent.keyDown(input(), { key: "Enter" });
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it("after a folder is filled in, its subfolders stay hidden until asked for, so Tab leaves the field", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(<DirectoryPickerField value="/b/be" onChange={onChange} folders={[f("/b/beamtime")]} autoFocus />);
+    fireEvent.keyDown(input(), { key: "Tab" });
+    fireEvent.keyDown(input(), { key: "Enter" });
+    expect(onChange).toHaveBeenCalledWith("/b/beamtime/");
+    rerender(<DirectoryPickerField value="/b/beamtime/" onChange={onChange} folders={[f("/b/beamtime/setup1"), f("/b/beamtime/setup2")]} autoFocus />);
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(fireEvent.keyDown(input(), { key: "Tab" })).toBe(true);
+    fireEvent.keyDown(input(), { key: "ArrowDown" });
+    expect(selected()).toEqual(["setup1"]);
+  });
+
+  it("a click on a folder fills it in and closes the list", () => {
+    const onChange = vi.fn();
+    render(<DirectoryPickerField value="/b/" onChange={onChange} folders={[f("/b/one")]} autoFocus />);
+    fireEvent.click(screen.getByRole("option"));
+    expect(onChange).toHaveBeenCalledWith("/b/one/");
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("marks a folder Himalaya ran out of time to check", () => {
+    render(<DirectoryPickerField value="/b/" onChange={() => {}} folders={[f("/b/slow", { described: false })]} autoFocus />);
+    expect(screen.getByRole("option")).toHaveAttribute("aria-label", "slow, not checked");
   });
 
   it("after Esc, Tab leaves the field and ↓ opens the list again", () => {

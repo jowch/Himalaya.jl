@@ -294,7 +294,7 @@
      refiners redeclare `focus-visible:outline-offset-0` explicitly (the shipped
      ghost look is 1px at offset 0). Deliberate suppressions win via
      @layer components ([data-observed-hit], .print-range) or focus:outline-none
-     utilities (Popover container, Input inner). Mouse clicks never show a ring. */
+     utilities (Input inner). Mouse clicks never show a ring. */
   button:focus-visible,
   a:focus-visible {
     outline: 2px solid var(--color-accent);

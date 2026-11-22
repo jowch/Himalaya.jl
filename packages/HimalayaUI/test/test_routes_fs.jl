@@ -31,7 +31,11 @@ end
         db = open_prepared_clone(tmp)
         with_inproc_routes(db) do call
             @test isempty(JSON3.read(call("GET", "/api/fs/suggest").body).folders)
-            @test isempty(_suggest(call, "src").folders)
+            cd(mktempdir()) do
+                mkpath("relative")
+                @test isempty(_suggest(call, "./rel").folders)
+                @test isempty(_suggest(call, "rel").folders)
+            end
         end
     end
 end
@@ -126,8 +130,39 @@ end
             @test kinds2["notes"] === nothing
             inner = _suggest(call, joinpath(bt, "setup1") * "/")
             @test [(basename(f.path), f.kind) for f in inner.folders] == [("data", nothing)]
+            @test all(f -> f.described, vcat(r.folders, r2.folders, inner.folders))
         end
     end
+end
+
+@testset "GET /api/fs/suggest marks folders it ran out of time to check as undescribed" begin
+    mktempdir() do tmp
+        db = open_prepared_clone(tmp)
+        with_inproc_routes(db) do call
+            root = mktempdir()
+            mkpath(joinpath(root, "beamtime", "setup1", "data"))
+            touch(joinpath(root, "beamtime", "setup1", "data", "a_0_001.tif"))
+            budget = HimalayaUI.SUGGEST_DESCRIBE_SECONDS[]
+            HimalayaUI.SUGGEST_DESCRIBE_SECONDS[] = 0.0
+            try
+                f = only(_suggest(call, root * "/").folders)
+                @test f.described == false
+                @test f.kind === nothing
+            finally
+                HimalayaUI.SUGGEST_DESCRIBE_SECONDS[] = budget
+            end
+            @test only(_suggest(call, root * "/").folders).described == true
+        end
+    end
+end
+
+@testset "setup_roots lists setups in natural order" begin
+    root = mktempdir()
+    for s in ("setup1", "setup10", "setup2")
+        mkpath(joinpath(root, s, "data"))
+        touch(joinpath(root, s, "data", "a.tif"))
+    end
+    @test basename.(HimalayaUI.setup_roots(root)) == ["setup1", "setup2", "setup10"]
 end
 
 @testset "GET /api/fs/suggest names the experiment a folder was added as" begin
@@ -157,8 +192,12 @@ end
                 @test resp.status == 200
                 @test JSON3.read(resp.body).path == joinpath(home, "bt")
             end
-            resp = call("GET", "/api/fs/preview?path=src")
-            @test resp.status == 400
+            cd(mktempdir()) do
+                mkpath("relative")
+                resp = call("GET", "/api/fs/preview?path=relative")
+                @test resp.status == 400
+                @test occursin("full path", JSON3.read(resp.body).error)
+            end
         end
     end
 end

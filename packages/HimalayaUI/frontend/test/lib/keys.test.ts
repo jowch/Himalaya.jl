@@ -93,7 +93,7 @@ describe("suppressGlobalKeys — focus inside an open non-modal popover (LO-POPK
   // inert to the rest of the page, only its own subtree captures keys.
   it("suppresses when the target is INSIDE a non-modal role=dialog popover", () => {
     const pop = mount("div");
-    pop.setAttribute("role", "dialog"); // the Popover primitive: role=dialog, no aria-modal
+    pop.setAttribute("role", "dialog");
     const btn = document.createElement("button");
     pop.appendChild(btn);
     expect(probe(btn)).toBe(true);

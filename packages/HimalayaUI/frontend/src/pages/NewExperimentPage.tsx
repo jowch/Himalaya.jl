@@ -351,12 +351,14 @@ export function NewExperimentPage(): JSX.Element {
       ? "Type a full path, starting with / or ~."
     : preview.isError
       ? preview.error instanceof api.ApiError && preview.error.status === 400
-        ? suggested.folders.length > 0 ? "Keep typing, or pick a folder from the list." : "That folder does not exist."
+        ? suggested.folders.length > 0 ? "Keep typing, or press ↓ to choose a folder." : "That folder does not exist."
         : `Could not read that folder: ${preview.error instanceof Error ? preview.error.message : "unknown error"}`
       : preview.isFetching && setups.length === 0
         ? "Looking for setups…"
         : setups.length === 0
-          ? "No images found here or in the folders directly inside it."
+          ? suggested.folders.some((f) => f.kind !== null)
+            ? "No images here. Press ↓ to choose a beamtime or setup inside it."
+            : "No images found here or in the folders directly inside it."
           : setups.length === 1
             ? "Found 1 setup."
             : `Found ${setups.length} setups.`;

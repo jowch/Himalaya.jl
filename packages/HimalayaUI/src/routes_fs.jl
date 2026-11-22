@@ -259,7 +259,7 @@ _setup_data_dir(root) = isdir(joinpath(root, "data")) ? joinpath(root, "data") :
 
 function setup_roots(path::AbstractString)
     isdir(joinpath(path, "data")) && _has_tifs(joinpath(path, "data")) && return [String(path)]
-    subs = String[d for d in sort!(_subdirs(path)) if _has_tifs(_setup_data_dir(d))]
+    subs = String[d for d in natural_sort(_subdirs(path)) if _has_tifs(_setup_data_dir(d))]
     !isempty(subs) && return subs
     _has_tifs(path) ? [String(path)] : String[]
 end
@@ -318,7 +318,7 @@ function _setup_preview(db, path, root)
 end
 
 const SUGGEST_LIMIT = 20
-const SUGGEST_DESCRIBE_SECONDS = 0.5
+const SUGGEST_DESCRIBE_SECONDS = Ref(0.5)
 
 expand_folder(p::AbstractString) = (q = String(strip(p)); q == "~" || startswith(q, "~/") ? expanduser(q) : q)
 
@@ -330,6 +330,11 @@ function _natural_key(s::AbstractString)
     parts
 end
 
+natural_sort(xs::Vector{String}) = xs[sortperm(map(_natural_key, xs))]
+
+_undescribed(dir, described) = Dict{Symbol,Any}(:path => dir, :kind => nothing, :setups => nothing,
+                                                :added => nothing, :described => described)
+
 function _describe_folder(db, dir)
     roots = setup_roots(dir)
     kind, setups = isempty(roots) ? (nothing, nothing) :
@@ -338,7 +343,7 @@ function _describe_folder(db, dir)
             kind == "setup" ? something(experiment_using_dir(db, _setup_data_dir(dir)),
                                         experiment_at_path(db, dir), Some(nothing)) :
             nothing
-    Dict(:path => dir, :kind => kind, :setups => setups,
+    Dict(:path => dir, :kind => kind, :setups => setups, :described => true,
          :added => added === nothing ? nothing : Dict(:id => added.id, :name => added.name))
 end
 
@@ -349,9 +354,8 @@ function suggest_folders(db, prefix::AbstractString)
     dir, base = endswith(p, "/") ? (p, "") : (dirname(p), basename(p))
     isdir(dir) || return none
     needle = lowercase(base)
-    names = sort!(String[n for n in _listdir(dir)
-                        if startswith(lowercase(n), needle) && (startswith(base, ".") || !startswith(n, "."))];
-                  by = _natural_key)
+    names = natural_sort(String[n for n in _listdir(dir)
+                                if startswith(lowercase(n), needle) && (startswith(base, ".") || !startswith(n, "."))])
     found = String[]
     more = false
     for n in names
@@ -360,11 +364,12 @@ function suggest_folders(db, prefix::AbstractString)
         length(found) == SUGGEST_LIMIT && (more = true; break)
         push!(found, full)
     end
-    inside_setup = _has_tifs(_setup_data_dir(rstrip(dir, '/')))
-    deadline = time() + SUGGEST_DESCRIBE_SECONDS
+    trimmed = rstrip(dir, '/')
+    inside_setup = _has_tifs(_setup_data_dir(isempty(trimmed) ? "/" : trimmed))
+    deadline = time() + SUGGEST_DESCRIBE_SECONDS[]
     folders = map(found) do full
-        inside_setup || time() > deadline ?
-            Dict{Symbol,Any}(:path => full, :kind => nothing, :setups => nothing, :added => nothing) :
+        inside_setup ? _undescribed(full, true) :
+        time() >= deadline ? _undescribed(full, false) :
             _describe_folder(db, full)
     end
     (; folders, more)

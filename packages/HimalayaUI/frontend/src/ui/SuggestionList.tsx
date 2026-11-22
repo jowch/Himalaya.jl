@@ -24,7 +24,7 @@ export function SuggestionList({ id, label, items, active, onPick, note, testId,
     <div className={`card z-30 p-2 ${className}`.trim()} data-testid={testId}>
       <ul id={id} role="listbox" aria-label={label} className="py-1">
         {items.map((item, i) => (
-          <li key={item.key}>
+          <li key={item.key} role="none">
             <button
               type="button"
               tabIndex={-1}
