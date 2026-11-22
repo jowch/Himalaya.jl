@@ -84,10 +84,9 @@ function build_dataset(exps::AbstractVector{LabeledExposure}; verbose::Bool = fa
     parts = Vector{Any}(undef, length(exps))
     Threads.@threads for k in eachindex(exps)
         e = exps[k]
-        c = candidate_indices(e.q, e.I, e.σ)
-        idx, X = candidate_features(e.q, e.I, e.σ)
+        idx, X, hyb = candidate_features(e.q, e.I, e.σ)
         lab = label_candidates(e.q, idx, e.adds, e.kept, e.excluded, e.curated, e.form_factor)
-        parts[k] = (idx, X, lab, c.hyb)
+        parts[k] = (idx, X, lab, hyb)
     end
     Xs = [p[2] for p in parts]
     exposure = reduce(vcat, [fill(k, length(parts[k][1])) for k in eachindex(parts)]; init = Int[])

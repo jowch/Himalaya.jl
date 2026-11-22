@@ -18,6 +18,15 @@ Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 Himalaya = {path = "../.."}
 HimalayaUI = {path = "../../packages/HimalayaUI"}
 
+[compat]
+DBInterface = "2"
+DecisionTree = "0.12"
+Himalaya = "0.6"
+HimalayaUI = "0.1"
+SQLite = "1"
+Tables = "1"
+julia = "1.11"
+
 [extras]
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 

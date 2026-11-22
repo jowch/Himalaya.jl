@@ -7,9 +7,15 @@ core package and HimalayaUI gain no dependencies.
 
 ## Privacy
 
-Everything stays on your machine. The tool reads the database file read-only
-(no migration, `PRAGMA query_only`) and your trace files, and writes only the
-model path you give it. Trained models and feature files are lab data: the
+Everything stays on your machine. The tool opens the database with the SQLite
+URI `mode=ro` (plus `PRAGMA query_only`), so it runs no migration, creates no
+file for a mistyped path, and does not checkpoint a `-wal` file when it closes.
+It reads your trace files and writes only the model path you give it. A
+database in WAL mode (one the server has open) still needs its `-shm` file to
+exist or its directory to be writable, so SQLite can create the `-shm`; that is
+the only file it may add. The safest input is a copy of the database.
+
+Trained models and feature files are lab data: the
 repository ignores `tools/peak-classifier/models/` and `features/`. Keep
 models there and never commit one.
 
@@ -25,11 +31,16 @@ julia --project=. scripts/peak_classifier.jl predict models/lab.jls TRACE_tot.da
 
 Options for `cv` and `train`: `--threshold` (default 0.5), `--nms` (8 grid
 points), `--trees` (200), `--group-by experiment|sample` (cross-validation
-fold key), `--no-form-factor`. `predict` prints one peak q per line. From Julia:
+fold key), `--no-form-factor`, `--no-detector-features` (drop the
+`in_persistence` and `in_hybrid` features; see "Reading the metrics").
+`predict` prints one peak q per line. From Julia:
 `predict_peaks(load_model(path), q, I, σ)`.
 
 A model file is a Julia `Serialization` dump: it loads only on the same Julia
-and DecisionTree.jl versions. Retrain after upgrading.
+and DecisionTree.jl versions. Retrain after upgrading. Loading it runs
+arbitrary code from the file, so load only models you trained yourself. Pass
+the trace's `σ` to `predict_peaks` when you have it; without it `σ` is
+estimated, and predictions can differ from what was validated.
 
 Tests: `julia --project=. -e 'using Pkg; Pkg.test()'` (synthetic data only; CI job
 "Peak classifier tool").
@@ -73,6 +84,15 @@ thresholds, the hybrid detector, and the unfiltered candidate pool. Columns:
 - **kept recall**: fraction of kept auto peaks still present.
 - **excl detected**: fraction of excluded auto peaks still present. Lower is
   better.
+
+Kept recall and excl detected depend on which detector wrote `auto_peaks`. On a
+database analysed with the hybrid detector, the hybrid row has kept recall and
+excl detected near 1.0 by construction, and the `in_hybrid` and
+`in_persistence` features line up with the kept and excluded labels. Treat add
+recall and extra/curated as the independent columns. `--no-detector-features`
+trains without those two features, to check how much the model leans on them.
+Other columns:
+
 - **extra/curated**: predicted peaks per curated exposure that match no add and
   no kept peak. Real peaks you never labelled count as extras, so this
   overstates false positives.

@@ -13,14 +13,17 @@ end
 
 """
     train(ds::Dataset; rows = nothing, n_trees = 200, min_samples_leaf = 5,
-          threshold = 0.5, nms = 8, weak_keep = 0.5, seed = 1) -> PeakModel
+          threshold = 0.5, nms = 8, weak_keep = 0.5, seed = 1,
+          detector_features = true) -> PeakModel
 
 Trains on positives and negatives. Weak negatives are subsampled with
 probability `weak_keep` (DecisionTree.jl has no sample weights). `rows`
-restricts training to a subset of candidate rows.
+restricts training to a subset of candidate rows. `detector_features = false`
+drops the `in_persistence` and `in_hybrid` columns (`DETECTOR_FEATURES`).
 """
 function train(ds::Dataset; rows = nothing, n_trees::Int = 200, min_samples_leaf::Int = 5,
-               threshold::Real = 0.5, nms::Int = 8, weak_keep::Real = 0.5, seed::Int = 1)
+               threshold::Real = 0.5, nms::Int = 8, weak_keep::Real = 0.5, seed::Int = 1,
+               detector_features::Bool = true)
     rng = MersenneTwister(seed)
     rows === nothing && (rows = 1:length(ds.label))
     sel = Int[]
@@ -32,14 +35,16 @@ function train(ds::Dataset; rows = nothing, n_trees::Int = 200, min_samples_leaf
     (any(y) && !all(y)) || error("training needs both positive and negative candidates ($(count(y)) positive of $(length(y)))")
     forest = RandomForestClassifier(n_trees = n_trees, min_samples_leaf = min_samples_leaf,
                                     rng = rng)
-    DecisionTree.fit!(forest, ds.X[sel, :], Int.(y))
-    PeakModel(forest, FEATURE_NAMES, Float64(threshold), nms,
+    names = detector_features ? FEATURE_NAMES : filter(!in(DETECTOR_FEATURES), FEATURE_NAMES)
+    DecisionTree.fit!(forest, ds.X[sel, indexin(names, FEATURE_NAMES)], Int.(y))
+    PeakModel(forest, names, Float64(threshold), nms,
               (positive = count(y), negative = count(!, y)))
 end
 
+# `X` has all `FEATURE_NAMES` columns; the model uses its own subset.
 function proba(m::PeakModel, X::AbstractMatrix)
     isempty(X) && return Float64[]
-    P = DecisionTree.predict_proba(m.forest, X)
+    P = DecisionTree.predict_proba(m.forest, X[:, indexin(m.feature_names, FEATURE_NAMES)])
     j = findfirst(==(1), m.forest.classes)
     j === nothing ? zeros(size(X, 1)) : P[:, j]
 end
@@ -60,12 +65,14 @@ end
 """
     predict_peaks(model, q, I, σ = nothing) -> Vector{Float64}
 
-q values of the peaks the model accepts. Without `σ` it is estimated from the
-trace as the hybrid detector does.
+q values of the peaks the model accepts. Pass the file's `σ` when you have it:
+training uses it. Without `σ` it is estimated from the trace as the hybrid
+detector does, and the σ-dependent features then differ from training, so
+predictions can shift.
 """
 function predict_peaks(m::PeakModel, q, I, σ = nothing)
     σ === nothing && (σ = Himalaya._estimate_sigma(I))
-    idx, X = candidate_features(q, I, σ)
+    idx, X, _ = candidate_features(q, I, σ)
     isempty(idx) && return Float64[]
     p = proba(m, X)
     Float64.(q[idx[select_peaks(idx, p, m.threshold, m.nms)]])
@@ -77,10 +84,11 @@ function save_model(path::AbstractString, m::PeakModel)
     path
 end
 
+# `deserialize` runs code from the file: load only models you trained yourself.
 function load_model(path::AbstractString)
     d = deserialize(path)
     d.version == 1 || error("unsupported model file version $(d.version)")
-    d.model.feature_names == FEATURE_NAMES ||
+    d.model.feature_names in (FEATURE_NAMES, filter(!in(DETECTOR_FEATURES), FEATURE_NAMES)) ||
         error("model was trained with a different feature set; retrain it")
     d.model
 end

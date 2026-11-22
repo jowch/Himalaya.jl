@@ -2,7 +2,7 @@
 #   julia --threads=auto --project=. scripts/peak_classifier.jl cv    DB [--group-by experiment|sample]
 #   julia --threads=auto --project=. scripts/peak_classifier.jl train DB --out models/lab.jls
 #   julia --threads=auto --project=. scripts/peak_classifier.jl predict MODEL TRACE.dat
-# Shared options for cv and train: --threshold 0.5 --nms 8 --trees 200 --no-form-factor
+# Shared options for cv and train: --threshold 0.5 --nms 8 --trees 200 --no-form-factor --no-detector-features
 using PeakClassifier, HimalayaUI
 
 function parse_opts(args)
@@ -10,8 +10,8 @@ function parse_opts(args)
     i = 1
     while i <= length(args)
         a = args[i]
-        if a == "--no-form-factor"
-            opt["no-form-factor"] = "1"
+        if a in ("--no-form-factor", "--no-detector-features")
+            opt[a[3:end]] = "1"
         elseif startswith(a, "--")
             i += 1; i <= length(args) || error("$a needs a value")
             opt[a[3:end]] = args[i]
@@ -29,7 +29,8 @@ function main(args)
     pos, opt = parse_opts(rest)
     kw = (threshold = parse(Float64, get(opt, "threshold", "0.5")),
           nms = parse(Int, get(opt, "nms", "8")),
-          n_trees = parse(Int, get(opt, "trees", "200")))
+          n_trees = parse(Int, get(opt, "trees", "200")),
+          detector_features = !haskey(opt, "no-detector-features"))
     if cmd == "predict"
         length(pos) == 2 || error("predict needs MODEL and TRACE.dat")
         m = load_model(pos[1])
