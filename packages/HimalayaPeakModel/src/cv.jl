@@ -10,12 +10,12 @@ Tally() = Tally(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 function tally!(t::Tally, e::LabeledExposure, peak_q::AbstractVector)
     q_step = grid_step(e.q)
     near(x, set) = any(p -> abs(x - p) <= match_tol(x, q_step), set)
-    if e.curated
+    if e.reviewed
         t.curated += 1
         t.adds += length(e.adds);       t.adds_hit += count(a -> near(a, peak_q), e.adds)
         t.kept += length(e.kept);       t.kept_hit += count(a -> near(a, peak_q), e.kept)
         t.excl += length(e.excluded);   t.excl_hit += count(a -> near(a, peak_q), e.excluded)
-        pos = vcat(e.adds, e.kept)
+        pos = vcat(e.adds, e.kept, e.kept_model)
         t.peaks += length(peak_q)
         t.extra += count(x -> !near(x, pos), peak_q)
     end

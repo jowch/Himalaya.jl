@@ -21,34 +21,55 @@ function _load_label_trace(db::SQLite.DB, r)
     end
 end
 
+function _latest_snapshot(db::SQLite.DB, exposure_id)
+    rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT peaks_json FROM peak_reviews WHERE exposure_id = ? ORDER BY id DESC LIMIT 1", [exposure_id]))
+    isempty(rows) ? nothing : JSON3.read(String(rows[1].peaks_json))
+end
+
+"""
+    labeled_exposures(db; group_by = :experiment, include_form_factor = true, io = stderr)
+
+Reviewed exposures (`reviewed_at` set) and, unless `include_form_factor` is
+false, form-factor ones, with labels read from the latest review snapshot: the
+peaks the user saw, minus those an exclude or an add now hides, split by
+`found_by` into `kept` (hybrid or both) and `kept_model`. Adds and excludes are
+read as they stand now. Requires a database that `open_db` has migrated.
+"""
 function labeled_exposures(db::SQLite.DB; group_by::Symbol = :experiment,
                            include_form_factor::Bool = true, io::IO = stderr)
     group_by in (:experiment, :sample) || throw(ArgumentError("group_by must be :experiment or :sample"))
+    _table_exists(db, "peak_reviews") ||
+        error("the database has no review snapshots; open it once with the current HimalayaUI to migrate it")
     out = HimalayaPeakModel.LabeledExposure[]
     skips = Dict{Symbol, Int}()
     rows = Tables.rowtable(DBInterface.execute(db, """
         SELECT e.id, e.filename, e.sample_id, e.experiment_id,
-               EXISTS(SELECT 1 FROM peak_curations c WHERE c.exposure_id = e.id) AS curated,
+               e.reviewed_at IS NOT NULL AS reviewed,
                COALESCE((SELECT sc.state = 'form_factor' FROM sample_calls sc
                           WHERE sc.sample_id = e.sample_id), 0) AS ff
           FROM exposures e
          WHERE e.status IS NOT 'rejected' AND e.kind = 'file'
-           AND (curated OR ($(include_form_factor ? 1 : 0) AND ff))
+           AND (reviewed OR ($(include_form_factor ? 1 : 0) AND ff))
          ORDER BY e.id"""))
     for r in rows
         try
             key = group_by === :experiment ? r.experiment_id : r.sample_id
             ismissing(key) && throw(SkipExposure(:no_group))
             q, I, σ = _load_label_trace(db, r)
-            auto = Tables.rowtable(DBInterface.execute(db,
-                "SELECT q FROM auto_peaks WHERE exposure_id = ? ORDER BY id", [r.id]))
-            aq = Float64[x.q for x in auto]
+            snap = _latest_snapshot(db, r.id)
+            seen = snap === nothing ? [(q = Float64(x.q), found_by = "hybrid") for x in Tables.rowtable(
+                DBInterface.execute(db, "SELECT q FROM auto_peaks WHERE exposure_id = ? ORDER BY id", [r.id]))] :
+                   [(q = Float64(p.q), found_by = String(p.found_by)) for p in snap]
+            aq = Float64[p.q for p in seen]
             fl = curation_flags(db, r.id, aq)
-            kept = aq[.!fl.excluded .& .!fl.superseded]
+            left = .!fl.excluded .& .!fl.superseded
+            kept = [p.q for (p, ok) in zip(seen, left) if ok && p.found_by != "model"]
+            kept_model = [p.q for (p, ok) in zip(seen, left) if ok && p.found_by == "model"]
             excl = Float64[x.q for x in Tables.rowtable(DBInterface.execute(db,
                 "SELECT q FROM peak_curations WHERE exposure_id = ? AND kind = 'exclude' ORDER BY id", [r.id]))]
             push!(out, HimalayaPeakModel.LabeledExposure(r.id, Int(key), q, I, σ,
-                Float64[a.q for a in fl.adds], kept, excl, r.curated == 1, r.ff == 1))
+                Float64[a.q for a in fl.adds], kept, excl, r.reviewed == 1, r.ff == 1, kept_model))
         catch err
             err isa SkipExposure || rethrow()
             skips[err.reason] = get(skips, err.reason, 0) + 1

@@ -36,6 +36,7 @@ function _pl_db(tmp)
         "SELECT q FROM auto_peaks WHERE exposure_id = ? ORDER BY q", [e_id]))]
     DBInterface.execute(db, "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'exclude', ?)", [e_id, auto[1]])
     DBInterface.execute(db, "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'add', ?)", [e_id, 0.4])
+    HimalayaUI.record_review!(db, e_id)
     (; db, path = db.file, exp_id, s_id, ff_sample, e_id, ff_id, auto, adir)
 end
 
@@ -49,6 +50,7 @@ end
     DBInterface.execute(b.db, "UPDATE exposures SET sample_id = NULL WHERE id = ?", [orphan])
     for id in (gone, orphan)
         DBInterface.execute(b.db, "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'add', 0.4)", [id])
+        HimalayaUI.record_review!(b.db, id)
     end
 
     log = IOBuffer()
@@ -57,12 +59,12 @@ end
     msg = String(take!(log))
     @test occursin("skipped 1 exposures", msg) && occursin("trace file not found", msg)
     e = got[findfirst(e -> e.id == b.e_id, got)]
-    @test e.curated && !e.form_factor && e.group == b.exp_id
+    @test e.reviewed && !e.form_factor && e.group == b.exp_id
     @test e.excluded == [b.auto[1]]
     @test e.adds == [0.4]
     @test sort(e.kept) == b.auto[2:end]
     ff = got[findfirst(e -> e.id == b.ff_id, got)]
-    @test ff.form_factor && !ff.curated && isempty(ff.adds)
+    @test ff.form_factor && !ff.reviewed && isempty(ff.adds)
     @test !any(e -> e.id == b.ff_id, HimalayaUI.labeled_exposures(b.db; include_form_factor = false, io = devnull))
 
     log = IOBuffer()
@@ -93,7 +95,52 @@ end
     DBInterface.close!(ro)
 
     b2 = _pl_db(mktempdir())
-    DBInterface.execute(b2.db, "DROP TABLE auto_peaks")
+    DBInterface.execute(b2.db, "DROP TABLE peak_curations")
     @test_throws SQLite.SQLiteException HimalayaUI.labeled_exposures(b2.db; io = devnull)
     DBInterface.close!(b2.db)
+end
+
+_pl_set_peaks!(db, e_id, qs, found_by) = begin
+    DBInterface.execute(db, "DELETE FROM auto_peaks WHERE exposure_id = ?", [e_id])
+    for (q, fb) in zip(qs, found_by)
+        DBInterface.execute(db, "INSERT INTO auto_peaks (exposure_id, q, found_by) VALUES (?, ?, ?)", [e_id, q, fb])
+    end
+end
+
+@testset "labeled_exposures reads the latest review snapshot, not live auto peaks" begin
+    b = _pl_db(mktempdir())
+    DBInterface.execute(b.db, "DELETE FROM peak_curations")
+    DBInterface.execute(b.db, "DELETE FROM peak_reviews")
+    DBInterface.execute(b.db, "UPDATE exposures SET reviewed_at = NULL")
+    @test isempty(HimalayaUI.labeled_exposures(b.db; include_form_factor = false, io = devnull))
+
+    _pl_set_peaks!(b.db, b.e_id, [0.1, 0.2, 0.3], ["hybrid", "both", "model"])
+    HimalayaUI.apply_event!(b.db, HimalayaUI._system_request(); kind = "set_exposure_status",
+        entity_type = "exposure", entity_id = b.e_id, payload = Dict(:status => "accepted"))
+    pick() = only(filter(e -> e.id == b.e_id, HimalayaUI.labeled_exposures(b.db; io = devnull)))
+    e = pick()
+    @test e.reviewed && isempty(e.adds) && isempty(e.excluded)
+    @test e.kept == [0.1, 0.2] && e.kept_model == [0.3]
+
+    _pl_set_peaks!(b.db, b.e_id, [0.5], ["hybrid"])
+    @test pick().kept == [0.1, 0.2]
+
+    HimalayaUI.apply_event!(b.db, HimalayaUI._system_request(); kind = "peak_excluded",
+        entity_type = "exposure", entity_id = b.e_id, payload = Dict(:q => 0.1))
+    e = pick()
+    @test e.kept == [0.5] && isempty(e.kept_model) && e.excluded == [0.1]
+
+    _pl_set_peaks!(b.db, b.e_id, [0.1, 0.3], ["hybrid", "model"])
+    HimalayaUI.apply_event!(b.db, HimalayaUI._system_request(); kind = "peak_excluded",
+        entity_type = "exposure", entity_id = b.e_id, payload = Dict(:q => 0.3))
+    e = pick()
+    @test e.kept == Float64[] && e.kept_model == Float64[] && sort(e.excluded) == [0.1, 0.3]
+    DBInterface.close!(b.db)
+end
+
+@testset "labeled_exposures names the missing migration" begin
+    b = _pl_db(mktempdir())
+    DBInterface.execute(b.db, "DROP TABLE peak_reviews")
+    @test_throws ErrorException HimalayaUI.labeled_exposures(b.db; io = devnull)
+    DBInterface.close!(b.db)
 end
