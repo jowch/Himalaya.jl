@@ -148,6 +148,19 @@ pre-processing step, particularly useful for traces with steeply falling
 backgrounds. Today the workspace subtracts a chosen buffer sample for display
 only, scaled by beam monitors; nothing is subtracted in the pipeline.
 
+### Rank buffer suggestions by their traces
+
+Ingest suggests Buffer, Calibrant and Empty capillary from sample names only
+(#389), and the compare picker lists buffers first. Most buffers carry a code
+name, so a name match misses them. Trace signals could rank candidates: no
+automatic peaks, a flat trace (mid-q close to the high-q floor), a lower floor
+than the setup's samples, and higher transmission. On past beamtimes,
+shape and floor ranked the true buffer only 5th–6th among equally flat traces,
+and transmission lifted it to 1st–2nd, so build this only after a labelled set
+of known buffers exists to measure it against. A stronger test may be which
+candidate's monitor-scaled subtraction leaves the flattest non-negative high-q
+residual. The user still picks; there is no automatic buffer default. From #368.
+
 ### Auto-best-exposure selection
 
 Heuristics for automatically selecting the best exposure for a given sample:

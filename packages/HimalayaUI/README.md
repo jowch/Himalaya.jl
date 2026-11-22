@@ -184,21 +184,23 @@ The work needed depends on what changed:
 |---|---|---|
 | Frontend only (TS/CSS/React) | `git pull` → `make frontend` → browser refresh | ~30 s |
 | Backend Julia, no new deps | `git pull` → `make sysimage` → `sudo systemctl restart himalaya` | ~5–10 min |
-| Backend Julia, no sysimage | `git pull` → `julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.precompile()'` → `sudo systemctl restart himalaya` | ~2 min, before the restart |
-| Backend with new Julia deps | as above + `Pkg.instantiate()` against the shared depot **before** `make sysimage` | ~5–10 min |
+| Backend Julia, no sysimage | `git pull` → `make setup` → `sudo systemctl restart himalaya` | ~2 min, before the restart |
+| Backend with new Julia deps | `git pull` → `make setup` → `make sysimage` → `sudo systemctl restart himalaya` | ~5–10 min |
 | Schema migration | none extra — `open_db` runs migrations on connect, daemon restart picks them up | — |
 | Julia version bump (juliaup) | rebuild sysimage (`make check-sysimage` flags the mismatch) | ~5–10 min |
 
-For multi-user deploys, set `JULIA_DEPOT_PATH` for the build steps so packages
-and the sysimage write into the shared depot:
+For multi-user deploys, packages and the sysimage must go into the shared depot
+that `bin/himalaya` runs against. `make setup`, `make sysimage` and
+`make check-sysimage` read `JULIA_DEPOT_PATH` from the same `.env` as
+`bin/himalaya`, so nothing needs exporting:
 
 ```bash
 cd /opt/Himalaya.jl
 git pull
-export JULIA_DEPOT_PATH=/opt/Himalaya.jl/.julia        # or whatever .env has
-julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.instantiate()'   # only if Project.toml changed
+make setup                                             # only if Project.toml or src/ changed
 make frontend                                          # only if frontend/ changed
 make sysimage                                          # only if any Julia code changed
+make check-sysimage                                    # fails on a depot or Julia mismatch, or if it won't start
 sudo systemctl restart himalaya                        # only if you rebuilt the sysimage
 ```
 
