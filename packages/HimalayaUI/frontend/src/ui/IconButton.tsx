@@ -33,7 +33,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
   ref,
 ): JSX.Element {
   return (
-    <Tooltip label={title ?? label}>
+    <Tooltip content={title ?? label}>
       <button
         ref={ref}
         type={type}
