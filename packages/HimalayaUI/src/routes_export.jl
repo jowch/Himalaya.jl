@@ -3,12 +3,8 @@ using HTTP, JSON3, DBInterface, Tables, Oxygen, CSV, SQLite
 """
     build_export(db, experiment_id) -> Vector{Dict}
 
-Compose the per-sample summary used by both JSON and CSV exports.
-Each sample carries its phase call (`call_state`, `phase`, `call_phases`), as
-the Call list shows it. `call_state` is `uncalled` until someone ticks a
-candidate, else `indexed`, `form_factor` or `null`. When the sample is called (`indexed` with members),
-each exposure's `indices` are the call's members on that exposure and
-`called` is true; otherwise they are all candidate indices by score.
+Per-sample summary with the sample's call; `call_state` is `uncalled` until someone ticks a candidate.
+A called sample lists each exposure's members (none when that frame adds nothing, still `called`); others list every candidate.
 """
 function build_export(db::SQLite.DB, experiment_id::Int)
     samples = Tables.rowtable(DBInterface.execute(db,
