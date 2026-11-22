@@ -20,6 +20,7 @@ interface Props {
   onOpenColor: (label: string) => void;
   onCloseColor: () => void;
   onSetColor: (label: string, color: LabelColor | null) => void;
+  note?: string | undefined;
 }
 
 const GAP = 6;
@@ -106,6 +107,7 @@ export function LabelRow({
   onOpenColor,
   onCloseColor,
   onSetColor,
+  note,
 }: Props): JSX.Element {
   const last = labels.filter((t) => t.state === "confirmed").at(-1);
   const box = useRef<HTMLDivElement | null>(null);
@@ -113,6 +115,7 @@ export function LabelRow({
   const moreRoot = useRef<HTMLDivElement | null>(null);
   const moreButton = useRef<HTMLButtonElement | null>(null);
   const [shown, setShown] = useState(labels.length);
+  const [natural, setNatural] = useState(0);
   const [moreOpen, setMoreOpen] = useState(false);
 
   useLayoutEffect(() => {
@@ -120,6 +123,7 @@ export function LabelRow({
       const room = box.current?.clientWidth ?? 0;
       const chips = ruler.current ? Array.from(ruler.current.children) : [];
       const widths = chips.map((c) => (c as HTMLElement).offsetWidth);
+      setNatural(widths.reduce((sum, w, i) => sum + w + (i > 0 ? GAP : 0), 0));
       setShown(room > 0 && widths.some((w) => w > 0) ? fitCount(widths, room) : labels.length);
     };
     measure();
@@ -190,7 +194,12 @@ export function LabelRow({
 
   return (
     <div className="relative flex h-6 w-full min-w-0 flex-nowrap items-center justify-end gap-1.5" data-testid="workspace-labels">
-      <div ref={box} className={"flex w-0 flex-1 flex-nowrap items-center justify-end gap-1.5 overflow-hidden " + (labels.length > 0 ? "min-w-11" : "min-w-0")} data-testid="workspace-label-chips">
+      {note && (
+        <span className="relative min-w-0 flex-1 self-stretch @max-[34rem]:hidden">
+          <span className="absolute inset-0 truncate whitespace-nowrap text-base leading-6 text-ink-faint" title={note}>{note}</span>
+        </span>
+      )}
+      <div ref={box} style={{ flexBasis: natural }} className={"flex shrink grow-0 flex-nowrap items-center justify-end gap-1.5 overflow-hidden " + (labels.length > 0 ? "min-w-11" : "min-w-0")} data-testid="workspace-label-chips">
         {labels.slice(0, shown).map((t) => (
           <Chip key={t.id} {...chipProps(t)} />
         ))}
