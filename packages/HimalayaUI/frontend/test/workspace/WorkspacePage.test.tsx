@@ -2043,11 +2043,11 @@ describe("WorkspacePage", () => {
     }
   });
 
-  it("puts the indexing plot first in the tools column, above the phase list", () => {
+  it("puts the Call list first in the tools column, then the indexing plot, then the exposure", () => {
     renderAt("/experiments/1/workspace/10");
     const tools = screen.getByRole("complementary", { name: "Tools" });
     const headings = within(tools).getAllByRole("heading").map((h) => h.textContent);
-    expect(headings).toEqual(["Indexing", "Call", "Exposure"]);
+    expect(headings).toEqual(["Call", "Indexing", "Exposure"]);
   });
 
   it("the Custom index button in the indexing section opens a custom index", () => {
