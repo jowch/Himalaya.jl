@@ -6,7 +6,7 @@ This document explains why `score(index)` is defined the way it is and what phys
 
 `score` is load-bearing in two places:
 
-1. **`auto_group`** (pipeline) — greedily selects the non-overlapping set of indices to present as the auto-analysis result by sorting candidates descending by score and claiming peaks first-come first-served. The highest-scoring index gets to claim its peaks before lower-scoring alternatives, so a wrong ordering can lock out the correct assignment.
+1. **`auto_group`** (pipeline) — selects the non-overlapping set of indices to present as the auto-analysis result. The first pick is the highest-scoring index that contains the sharpest peak; after that it takes candidates in descending score order and claims peaks first-come first-served. A wrong ordering can lock out the correct assignment. See "The first pick contains the sharpest peak" below.
 
 2. **`remove_subsets`** — when two indices share the same basis but one's peaks are a subset of the other's, the lower-scoring one is removed. Score breaks the tie.
 
@@ -57,6 +57,14 @@ end
 ```
 
 Zero-sharpness falls back to `cv = 0` (treated as maximally consistent), degrading to coverage-only scoring.
+
+## The first pick contains the sharpest peak
+
+`auto_group` does not start from the top-scoring index. It starts from the top-scoring index that contains the sharpest detected peak. If no candidate contains it, the order is plain descending score. Later picks follow score as before.
+
+The sharpest peak is usually the dominant, lowest-order reflection, and it is the most reliable peak in the trace. An assignment that leaves it unexplained should not win because of the consistency term. That term penalises an index for mixing sharpness values, so an index that includes the very sharp first peak and several weak high-order peaks has a high CV and a low consistency. With enough weak high-order peaks detected, an index that skips the dominant peak and fits only the weaker ones can then outscore the correct one. For example, a hexagonal pattern with one sharp first peak and six weak higher peaks can score below an Ia3d index that explains only some of the weak peaks.
+
+The rule only changes which index is picked first. `score` and `remove_subsets` are unchanged, and the Alternatives list keeps its score order. Because the first pick claims its peaks, a lower-scoring index that shares them can no longer be selected.
 
 ## R² — not in the score
 
