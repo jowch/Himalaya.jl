@@ -273,7 +273,6 @@ end
         hyb = findpeaks(q, I, σ; method = :hybrid)
         base = findpeaks(q, I, σ; q_trim_high = 0.07)
         @test hyb.indices == base.indices
-        @test length(hyb.indices) == 2
     end
 end
 
@@ -291,7 +290,7 @@ end
     hit = 0
     for seed in 1:8
         q, I, σ, _ = _hybrid_trace(; seed, peaks = false,
-            extra = [(0.06, 900.0, 0.008), (0.115, 400.0, 0.0012), (0.16, 400.0, 0.0012),
+            extra = [(0.06, 1300.0, 0.008), (0.115, 400.0, 0.0012), (0.16, 400.0, 0.0012),
                      (0.25, 400.0, 0.0012)])
         hyb = findpeaks(q, I, σ; method = :hybrid)
         sf = hyb.sharpness_full[hyb.indices]

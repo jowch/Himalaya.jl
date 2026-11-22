@@ -63,11 +63,13 @@ of the returned peaks (fallback: the smallest positive value in
 `sharpness_full`, then `eps()`). `score` falls back to CV = 0 when the mean
 sharpness is ≤ 0, and a near-zero value would inflate the CV and demote the
 peak; the median keeps it neutral. The result has an extra field `z`
-(max-over-width matched-filter z, `NaN` where undefined). Without `σ`
-(`findpeaks(q, I; method = :hybrid)`) σ is estimated as `sqrt(max(I, 0))`
-with nonpositive values replaced by the smallest positive one; the per-width
-MAD normalisation removes the overall scale, so only the relative shape
-matters. See `docs/peak-finding.md`.
+(max-over-width matched-filter z, `NaN` where undefined). If the valid range
+of the trace is shorter than 150 points the persistence result (with the
+hybrid's `q_trim_high`) is returned and `z` is all `NaN`. Without `σ`
+(`findpeaks(q, I; method = :hybrid)`) σ is estimated as
+`sqrt(max(I, 0)·s)` clamped from below at the data noise scale `s`; both
+terms scale with `I`, and the per-width MAD normalisation removes the overall
+scale, so only the relative shape matters. See `docs/peak-finding.md`.
 
 # Returns
 `(; indices, q, prominence, sharpness, sharpness_full)` —
@@ -135,6 +137,9 @@ function _hybrid_findpeaks(q, I, σ; k, kb, q_trim_high, sep = 9, kwargs...)
     base, cands = _persistence_findpeaks(q, I, σ; q_trim_high, kwargs...)
     n = length(I)
     z = matched_filter_z(I, σ)
+    # Too short a valid range: the matched filter is undefined, so return the
+    # persistence result (with the hybrid's q_trim_high) unchanged.
+    all(isnan, z) && return (; base..., z = z)
     qmin, qmax = extrema(q)
     qcut = qmin + (1 - q_trim_high) * (qmax - qmin)
     allowed = q .<= qcut
@@ -185,17 +190,14 @@ function findpeaks(q, I, σ; method = :persistence,
 end
 
 # Without σ, the default path uses a constant σ. The hybrid path needs the
-# relative noise shape, so it uses the Poisson estimate sqrt(max(I, 0)), with
-# nonpositive values replaced by the smallest positive one. The per-width MAD
-# normalisation removes the overall scale of σ.
+# relative noise shape, so it uses the Poisson shape sqrt(max(I, 0) · s) with
+# the data noise scale s, clamped from below at s. Both terms scale with I, so
+# the estimate is independent of intensity units, and it does not understate
+# noise where I is near zero or negative. The per-width MAD normalisation removes the
+# overall scale of σ.
 function _estimate_sigma(I)
-    σ = [x > 0 ? sqrt(float(x)) : 0.0 for x in I]
-    smin = Inf
-    for s in σ
-        s > 0 && s < smin && (smin = s)
-    end
-    isfinite(smin) || (smin = 1.0)
-    replace!(s -> s > 0 ? s : smin, σ)
+    s = noise_scale(I, Float64[])
+    [s * max(isfinite(x) && x > 0 ? sqrt(x / s) : 0.0, 1.0) for x in I]
 end
 
 findpeaks(q, I; kwargs...) =

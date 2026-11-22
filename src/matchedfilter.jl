@@ -96,7 +96,7 @@ end
 const MF_KERNELS = map(ricker_kernel, MF_WIDTHS)
 
 """
-    matched_filter_z(I, σ; snip_window = MF_SNIP_WINDOW) -> Vector{Float64}
+    matched_filter_core(I, σ, s, snip_window) -> Vector{Float64}
 
 Per-point matched-filter significance: the maximum over the Ricker widths
 `MF_WIDTHS` of the SNIP-subtracted residual correlated with a unit-norm,
@@ -110,20 +110,20 @@ over the widths that fit there; where none fits the value is `NaN`
 (undefined). Nonpositive or nonfinite `σ` are replaced by the smallest
 positive `σ` (or 1 if there is none).
 """
-function matched_filter_z(I, σ; snip_window::Integer = MF_SNIP_WINDOW)
+function matched_filter_core(I, σ, s::Real, snip_window::Integer)
     n = length(I)
     length(σ) == n || throw(DimensionMismatch("I and σ must be equal length"))
     σmin = Inf
-    for s in σ
-        isfinite(s) && s > 0 && s < σmin && (σmin = s)
+    for x in σ
+        isfinite(x) && x > 0 && x < σmin && (σmin = x)
     end
     isfinite(σmin) || (σmin = 1.0)
     σ2 = Vector{Float64}(undef, n)
     @inbounds for i in 1:n
-        s = isfinite(σ[i]) && σ[i] > 0 ? σ[i] : σmin
-        σ2[i] = s * s
+        x = isfinite(σ[i]) && σ[i] > 0 ? σ[i] : σmin
+        σ2[i] = x * x
     end
-    B = snip_background(I, noise_scale(I, σ), snip_window)
+    B = snip_background(I, s, snip_window)
     r = Vector{Float64}(undef, n)
     @inbounds for i in 1:n
         r[i] = isfinite(I[i]) ? I[i] - B[i] : 0.0
@@ -157,6 +157,90 @@ function matched_filter_z(I, σ; snip_window::Integer = MF_SNIP_WINDOW)
         end
     end
     zbest
+end
+
+const MF_MIN_RANGE = 150
+const MF_RANGE_WINDOW = 13
+
+# Replace nonpositive points that sit in a clearly positive neighbourhood (median
+# of the ±5 neighbours above 3 noise units) by linear interpolation between the
+# nearest points not so replaced. Nonpositive points in a near-zero region (a
+# negative tail, a masked block) are left alone.
+function fill_isolated_nonpositive(I, s)
+    n = length(I)
+    out = Float64.(I)
+    bad = falses(n)
+    nb = Float64[]
+    for i in 1:n
+        (isfinite(I[i]) && I[i] <= 0) || continue
+        empty!(nb)
+        for j in max(1, i - 5):min(n, i + 5)
+            j != i && isfinite(I[j]) && push!(nb, I[j])
+        end
+        !isempty(nb) && median!(nb) > 3s && (bad[i] = true)
+    end
+    i = 1
+    while i <= n
+        if !bad[i]
+            i += 1
+            continue
+        end
+        j = i
+        while j <= n && bad[j]; j += 1; end
+        lo, hi = i - 1, j
+        for t in i:(j - 1)
+            if lo >= 1 && hi <= n
+                out[t] = out[lo] + (out[hi] - out[lo]) * (t - lo) / (hi - lo)
+            else
+                out[t] = lo >= 1 ? out[lo] : out[hi]
+            end
+        end
+        i = j
+    end
+    out
+end
+
+# First and last index whose `MF_RANGE_WINDOW`-point mean exceeds 3 noise
+# units; (1, 0) if none. Outside this range the trace carries no signal.
+function mf_valid_range(I, s)
+    n = length(I)
+    h = MF_RANGE_WINDOW ÷ 2
+    lo, hi = 0, 0
+    for i in 1:n
+        t = 0.0; c = 0
+        for j in max(1, i - h):min(n, i + h)
+            isfinite(I[j]) && (t += I[j]; c += 1)
+        end
+        if c > 0 && t / c > 3s
+            lo == 0 && (lo = i)
+            hi = i
+        end
+    end
+    lo == 0 ? (1, 0) : (lo, hi)
+end
+
+"""
+    matched_filter_z(I, σ; snip_window = MF_SNIP_WINDOW) -> Vector{Float64}
+
+Matched-filter significance `z` (see `matched_filter_core`) computed only on
+the valid range of the trace: from the first to the last point whose
+13-point mean exceeds 3 noise units (`noise_scale`), so a masked or empty
+block at either end does not enter the background or the normalisation.
+Nonpositive points inside a clearly positive region are first interpolated
+over. `z` is `NaN` outside the valid range, and everywhere if the range is
+shorter than `MF_MIN_RANGE` (150 points; the widest kernel needs 129 points to
+fit, so a shorter range leaves too few points for the per-width scale).
+"""
+function matched_filter_z(I, σ; snip_window::Integer = MF_SNIP_WINDOW)
+    n = length(I)
+    length(σ) == n || throw(DimensionMismatch("I and σ must be equal length"))
+    s  = noise_scale(I, σ)
+    Iw = fill_isolated_nonpositive(I, s)
+    a, b = mf_valid_range(Iw, s)
+    z = fill(NaN, n)
+    b - a + 1 >= MF_MIN_RANGE || return z
+    z[a:b] = matched_filter_core(view(Iw, a:b), view(σ, a:b), s, snip_window)
+    z
 end
 
 # Local maxima of z with z ≥ k at positions where `allowed[i]`, greedily

@@ -149,20 +149,34 @@ but alone it adds more spurious candidates than the persistence detector.
 **What it does** (code in `src/matchedfilter.jl`):
 
 1. Run the persistence detector with `q_trim_high = 0.07`.
-2. Compute a matched-filter significance `z`. The background is a SNIP
-   baseline (half-window 60 points) using the LLS operator on data scaled by
-   a robust noise scale `s = 1.4826·MAD(diff(I))/√2` taken from the data
-   itself: `v = log(log(sqrt(max(I/s, 0) + 1) + 1) + 1)`, clip, invert, and
-   multiply by `s`. The operator compresses the dynamic range without a hole
-   at zero, so zero and negative points need no special handling, and because
-   `s` scales with `I` the result does not depend on intensity units.
-   Nonfinite points are interpolated from their neighbours for the
-   background and have zero residual. The residual is correlated with
-   unit-norm, zero-mean Ricker kernels of widths 2, 3, 4.5, 7, 11, 16 points
-   and divided by `sqrt(Σ k² σ²)`. Each width is normalised by its median and
-   1.4826·MAD over the points where that kernel fits inside the trace (a
-   width with zero MAD is skipped), and the maximum over the widths that fit
-   at a point is taken. Where no kernel fits, `z` is undefined (`NaN`).
+2. Compute a matched-filter significance `z`.
+   - **Noise scale.** `s = 1.4826·MAD(diff(I))/√2`, taken from the data
+     itself. Everything below scales with `s`, so the result does not depend
+     on intensity units.
+   - **Isolated nonpositive points.** A nonpositive point whose ±5 neighbours
+     have a median above 3`s` is interpolated over before anything else.
+     Nonpositive points in a near-zero region (a negative tail, a masked
+     block) are left alone.
+   - **Valid range.** From the first to the last point whose 13-point mean
+     exceeds 3`s`. The filter runs only there, so a masked or empty block at
+     either end does not enter the background or the normalisation. Outside
+     the range `z` is undefined (`NaN`) and persistence peaks there are kept,
+     as on the default path.
+   - **Short-trace fallback.** If the valid range is shorter than 150 points
+     (the widest kernel needs 129 points to fit), too few points remain for
+     the per-width scale. The persistence result (with `q_trim_high = 0.07`)
+     is returned unchanged, with `z` all `NaN`.
+   - **Background.** SNIP baseline (half-window 60 points) using the LLS
+     operator on data scaled by `s`: `v = log(log(sqrt(max(I/s, 0) + 1) + 1) + 1)`,
+     clip, invert, and multiply by `s`. The operator compresses the dynamic
+     range without a hole at zero. Nonfinite points are interpolated from
+     their neighbours for the background and have zero residual.
+   - **Filter.** The residual is correlated with unit-norm, zero-mean Ricker
+     kernels of widths 2, 3, 4.5, 7, 11, 16 points and divided by
+     `sqrt(Σ k² σ²)`. Each width is normalised by its median and
+     1.4826·MAD over the points where that kernel fits inside the valid
+     range (a width with zero MAD is skipped), and the maximum over the
+     widths that fit at a point is taken.
 3. Keep persistence peaks whose max `z` within ±3 points is at least `kb`
    (default 5). This removes persistence peaks that are not significant
    against the noise. A peak where `z` is undefined (within a few points of
@@ -181,8 +195,9 @@ peaks. `score` takes the CV of sharpness and falls back to CV = 0 when the
 mean is ≤ 0; a near-zero substitute would inflate the CV and demote exactly
 the peaks the hybrid adds, and the median keeps them neutral.
 
-Without `σ`, `findpeaks(q, I; method = :hybrid)` estimates `σ = sqrt(max(I, 0))`
-(nonpositive values replaced by the smallest positive one). The per-width MAD
+Without `σ`, `findpeaks(q, I; method = :hybrid)` estimates
+`σ = sqrt(max(I, 0)·s)` clamped from below at `s` (both terms scale with `I`,
+and the clamp keeps noise from being understated where `I` is near zero). The per-width MAD
 normalisation removes the overall scale, so only the relative shape matters.
 
 **Why this use of σ is not the rejected "σ-based SNR".** Nothing is fitted
