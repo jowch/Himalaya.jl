@@ -82,8 +82,7 @@ thresholds, the hybrid detector, and the unfiltered candidate pool. Columns:
 
 Pick the threshold from this table. The default of 0.5 came from a sweep on
 one other dataset; choosing from the same table you evaluate on is slightly
-optimistic. Every
-experiment is a different group, so with few experiments the folds are large
+optimistic. Every experiment is a different group, so with few experiments the folds are large
 and noisy. Compare against the hybrid row, not against 1.0.
 
 ## Label pitfalls
