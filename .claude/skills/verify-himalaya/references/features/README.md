@@ -93,4 +93,4 @@ Both pages were deleted on 2026-11-20 in favour of the workspace. `/sample/<id>`
 
 ## Not mapped yet
 
-The onboarding flow (`bin/verify open / --onboarding`). Add it the first time a PR touches it. Figure export went with Focus and Loupe; the workspace has none yet.
+The onboarding flow (`bin/verify open / --onboarding`). Add it the first time a PR touches it. The workspace has no figure export yet.

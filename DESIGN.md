@@ -120,7 +120,7 @@ components:
 
 **Creative North Star: "The Print"**
 
-HimalayaUI is composed the way a publication plate is composed: on warm paper, in ink, with the figure as the subject. The app's analytical destination is a publication-quality figure (the stacked-offset waterfall), so the whole product is set on the medium that figure will be published on, light, warm paper (`paper`, oklch 0.978, hue 85), not a dark console. Detector images, which are intrinsically dark, sit as **dark windows in the paper** (`frame-edge`, hue 55); everything else is ink on paper.
+HimalayaUI is composed the way a publication plate is composed: on warm paper, in ink, with the figure as the subject. The app's analytical destination is a publication-quality figure, so the whole product is set on the medium that figure will be published on, light, warm paper (`paper`, oklch 0.978, hue 85), not a dark console. Detector images, which are intrinsically dark, sit as **dark windows in the paper** (`frame-edge`, hue 55); everything else is ink on paper.
 
 Where the earlier dark "Darkroom" direction *rationed* a single accent and kept colour scarce, "The Print" lets **phase colour carry the surface**: colour here is the science (the phase identity), used generously and semantically. The chrome stays quiet, ink and hairlines on paper, and a single warm **terracotta** accent (`accent`, oklch 0.555 0.150 38) is the one interaction mark, the grease pencil: the reject ✕, the primary action, the live edit, the q-link highlight.
 
@@ -152,10 +152,10 @@ Around those three named steps, surfaces use Tailwind's default spacing scale fo
 The voice matches the brand: an **assured, precise, unshowy** colleague. Copy is direct and specific, never tentative, never cute, never a wizard's hand-holding. It states what is true and what the next action is.
 
 - **The No-Em-Dash Rule.** Never use an em dash (or a "--" stand-in) in interface copy or in this system's docs. Break the thought into two sentences, or use a comma or colon.
-- **Buttons** name the action as a verb in the user's terms: "Reanalyze", "New series", "Save figure", "Reject". Not "OK" / "Submit" / "Go".
-- **Empty states** tell the user why the surface is empty and what to do next, in the `EmptyState` title + body pair (e.g. title "No series match", body "Clear the search or filter to see the whole folio.").
-- **Error copy** is honest and specific, never a masquerade: a failed fetch says it failed and offers a recovery ("Couldn't load the folio" / "The series list failed to load. Try reloading the page."), and is never allowed to read as an empty "no results" state.
-- **Loading copy** is quiet and momentary ("Loading series…") behind the skeleton, not a spinner narration.
+- **Buttons** name the action as a verb in the user's terms: "Reanalyze", "Add label", "Remove experiment", "Drop". Not "OK" / "Submit" / "Go".
+- **Empty states** tell the user why the surface is empty and what to do next, in the `EmptyState` title + body pair (e.g. "No samples yet. They appear as the ingest reads the data folder.").
+- **Error copy** is honest and specific, never a masquerade: a failed fetch says it failed and offers a recovery ("The last ingest failed." with a Details button that shows the error), and is never allowed to read as an empty "no results" state.
+- **Loading copy** is quiet and momentary ("Loading samples…") behind the skeleton, not a spinner narration.
 
 **The Domain-Vocabulary-Is-Correct Rule.** The instrument's own terms are *precise*, not jargon to be softened: Pn3m, Im3m, Ia3d, Fm3m, Fd3m, Hexagonal, Lamellar, Square, Miller, q-value, hkl, reanalyze. These are the scientist's working vocabulary; "simplifying" them is a regression, not an accessibility win. Write to the expert, not around them.
 
@@ -170,7 +170,7 @@ A warm paper-and-ink system (every neutral tinted to hue ~70–85) carrying one 
 - **Ink** (`ink`, 0.265 0.013 68): primary text and solid-button fills. **Ink-soft** (`ink-soft`, 0.467): secondary text, ghost buttons. **Ink-faint** (`ink-faint`, 0.640): captions, placeholders, disabled.
 - **Hair** (`hair`, 0.882) / **Hair-strong** (`hair-strong`, 0.806): hairline separators and card edges; the line does the separating, paired with a soft shadow only on the plate.
 - **Frame-edge** (`frame-edge`, 0.150 0.010 55): the warm near-black backing for detector images, the dark window set into the paper.
-- **Frame-tag** (`frame-tag`, 0.82 0.01 80): the light caption tint for the mono labels set *over* the dark `frame-edge` (the loupe frame-tag, R0c #223 / T-8); a dark-on-dark caption would vanish on the detector frame.
+- **Frame-tag** (`frame-tag`, 0.82 0.01 80): the light caption tint for text set *over* the dark `frame-edge` (a frame thumbnail's "No image", tooltips); a dark-on-dark caption would vanish on the detector frame.
 
 > **No legacy shim (post-R3-F, #259).** Earlier the dark-era neutral-ramp names (`--color-bg*`/`--color-fg*`/`--color-border*`) survived as a value-remapped shim; that shim is now excised. Use the canonical Print tokens directly — `paper`/`paper-sunk`/`plate`, `ink`/`ink-soft`/`ink-faint`, `hair`/`hair-strong`, `accent` (terracotta). Reintroducing an old name is self-revealing: Tailwind won't generate the utility and `var(--color-fg)` won't resolve. The dark `@theme` defaults, the `:root.theme-light` override, `color-scheme:dark`, the grain overlay, and the `theme` toggle were removed at R0a.
 
@@ -222,7 +222,7 @@ Section labels are sentence case at 600 in `ink-soft`. No uppercase, no letter-s
 Mostly flat: paper and its chrome are flat; tonal steps (`paper` → `paper-sunk` → `plate`) and hairlines handle most separation. Genuine shadow is spent on **the plate**, the figure composed as a print lifts off the paper the way a print lifts off the developing tray.
 
 ### Shadow vocabulary
-- **Plate Lift** (e.g. `box-shadow: 0 1px 0 rgba(255,255,255,.6) inset, 0 6px 24px -8px rgba(40,30,20,.14)`): soft, warm, shallow. The figure plate, folio cards, the scoping worksheet, the loupe frame surround.
+- **Plate Lift** (e.g. `box-shadow: 0 1px 0 rgba(255,255,255,.6) inset, 0 6px 24px -8px rgba(40,30,20,.14)`): soft, warm, shallow. The figure plate and the detector frame surround.
 - Detector images are the dark exception: a dark window (`frame-edge`) set into the paper, not a lifted plate.
 
 ### Named rule
@@ -240,7 +240,7 @@ Every interactive primitive draws from one shared vocabulary of states. The trea
 - **Hover.** A small tonal lift, never a colour shift that implies meaning. Ghost-button hover brings text to `ink` over a `paper-sunk` fill; solid and accent buttons brighten (`hover:brightness-110`); outline buttons and Field rows fill to `paper-sunk`. All of it rides the global 120ms ease-out colour transition.
 - **Active / pressed.** For toggles, the "on" state is the canonical **ink fill, paper text** (segmented-control active segment); an armed tool button switches to the terracotta accent fill with `aria-pressed`. Never a recessed `paper-sunk` fill for "on" (the L-5/B-A defect).
 - **Focus-visible.** A terracotta `accent` ring, keyboard-only (`focus-visible`, offset). Buttons outline 2px accent; ghost and inverse variants use a 1px accent outline; inputs land the ring on the whole field via `focus-within:border-accent`; SVG hit targets (custom-index snap points, slider thumbs) stroke accent on `:focus-visible` only. Mouse clicks never show a ring. Bespoke `<button>`/`<a>` elements outside the primitives inherit the 2px accent ring by default from a base-layer rule in `styles.css`, so the state is systematized everywhere; primitive refinements and deliberate suppressions override it from higher layers (per-property — the 1px refiners redeclare `outline-offset-0` explicitly).
-- **Disabled.** `disabled:opacity-45 disabled:cursor-not-allowed` on buttons; individual segmented-control segments can be disabled (e.g. Loupe with no sample selected). Disabled is a dimming, not a colour change.
+- **Disabled.** `disabled:opacity-45 disabled:cursor-not-allowed` on buttons; Disabled is a dimming, not a colour change.
 - **Selected.** `Card selected` adds accent selection chrome: an accent-tinted border plus a subtle inset accent ring (flat, no shadow), and exposes `data-selected="true"` for tests and targeted CSS. This is the candidate-pick / row-selection signal.
 - **Busy / loading.** A **skeleton** (boneyard `Skeleton`, the slow `.bone` pulse, fed a committed `*.bones.json` capture or an inline fixture) covers the first paint of a data-driven region. A known-duration job has no shared progress primitive yet. A bare spinner is reserved for indeterminate inline waits and is not yet a systematized primitive (extension point).
 - **Error.** Inline and honest. Inputs take `invalid` → `border-error` plus `aria-invalid`, second-channeled by consumer error text. Page-level fetch failures render an `EmptyState` with failure copy (never a masquerading "no results"). `Toast` (`role="status"`) carries transient feedback with a leading status glyph + word (severity is the word + `aria-label`, not an edge hue).
@@ -251,7 +251,7 @@ Every interactive primitive draws from one shared vocabulary of states. The trea
 ### Buttons
 - **Shape:** 5px radius (`rounded.sm`), compact padding.
 - **Solid (`button-solid`):** ink fill, paper text, the primary/confirm action and active segmented-control segments (`.btn-solid {background:var(--ink); color:var(--paper)}`). This is the mockup's primary-action treatment, not the terracotta fill.
-- **Accent (`button-accent`):** terracotta fill, paper text, reserved for the single grease-pencil action where the brand mark is the point (e.g. reject, "+ New series").
+- **Accent (`button-accent`):** terracotta fill, paper text, reserved for the single grease-pencil action where the brand mark is the point (e.g. the primary action of a dialog).
 - **Ghost (default):** no fill, ink-soft text; hover brings text to `ink` over a `paper-sunk` fill. Most chrome buttons are ghost.
 - **Focus:** `focus-visible` outline in `accent`, offset.
 
@@ -262,19 +262,17 @@ Every interactive primitive draws from one shared vocabulary of states. The trea
 - 5px radius (`rounded.md`), `plate` background, a `hair-strong` hairline, and the Plate Lift shadow. The figure plate widens to a max-width and centres; the rail recesses into `paper-sunk`. (Radius collapsed to a single 5px step in the 2026-05-29 component-library extraction: `rounded.sm` and `rounded.md` are both 5px, so cards and controls share one corner; the two names survive only to allow a future re-differentiation by editing one token. The `Card` primitive is the single source of the plate look.)
 
 ### Inputs
-- Recessed: `plate`/`paper-sunk` well, `hair` border, 5px radius. Focus shifts the border to `accent` with a 1px accent ring. Scoping values are "confident ink, re-openable" rather than a permanent open field (S-E).
+- Recessed: `plate`/`paper-sunk` well, `hair` border, 5px radius. Focus shifts the border to `accent` with a 1px accent ring.
 
 ### Detector frame
-- A dark window: `frame-edge` background, set into the paper. Rings render in phase-neutral gold on triage surfaces (contact sheet, thumbnails) where the question is image quality, and in phase colour on the focus big detector where the question is identity. Rejected frames carry the hand-skewed terracotta grease-pencil ✕ (M-10).
+- A dark window: `frame-edge` background, set into the paper. Thumbnails in the frame strip and the enlarged detector view (Space) both use it. A dropped frame dims to half opacity under a struck-through "dropped" caption.
 
 ### Signature components
 - **Score bar:** a 2px capsule (`paper-sunk` track) filled in the relevant phase colour to the score percentage.
 - **Semantic dot:** an 8px phase/status disc with `role="img"` + `aria-label`, the canonical second channel.
-- **Phase chip:** a monospace data badge naming a phase, the instrument voice for a categorical result; on the contact sheet it replaces the static "Not indexed" string (M-6).
-- **Mini-waterfall:** a read-only per-series SVG figure on folio cards (F-A), the folio is a wall of distinct figures, not a card grid.
-- **Tag pill:** the one fully rounded shape in the system, so a sample tag never reads as a phase chip or a button. Confirmed tags are a soft wash with ink text; a suggestion is a dashed outline with no fill and no "?". Built-in tags (Buffer, Calibrant, Empty capillary) are capitalised and default to a desaturated, darker blue (light ink 0.360 0.085 240, dark ink 0.860 0.080 240) that stays clear of Im3m's 258 hue in both themes; other tags default to a muted violet (280). Anyone can recolour a tag name for the whole app from five swatches: violet 280, blue 240, teal 182, rose 352 and stone (a warm grey, chroma 0.018 light, 0.030 dark). Olive was dropped because every hue between Lamellar (100) and Hexagonal (130) is taken. Tag inks are darker (light, 0.36) or lighter (dark, 0.86) than every phase colour, which keeps each at least 0.05 OKLab from every phase and status colour. The row is one fixed-height line that never wraps: what does not fit goes behind a "+N" pill whose list keeps every tag reachable. Source Sans caps sit about 2px high in a symmetric box, so pills use a 4px top and 0 bottom padding to centre the caps optically; recheck this if the global baseline shift changes.
-- **Phase strip:** one cell per sample, coloured by its phase call (coexistence = two-phase gradient), with a transition caption.
-- **Reflections card:** the lower-row table beside the detector window on the focus workspace. Column headers are `phase · order · q · d`. The second column is **`order`**, not `hkl` — SAXS peaks in our data model carry a 1-based ratio-series position, not an (h,k,l) Miller triple (`lib/seriesRatio.ts`, `src/phase.jl` `phaseratios`). "order" reads as "1st reflection, 2nd reflection…", which is what the value is.
+- **Phase chip:** a data badge naming a phase, the instrument voice for a categorical result.
+- **Label pill:** the one fully rounded shape in the system, so a sample label never reads as a phase chip or a button. Confirmed labels are a soft wash with ink text; a suggestion is a dashed outline with no fill and no "?". There are eight label colours (rose, plum, violet, blue, teal, green, ochre, stone). The system labels have fixed colours (Buffer blue, Calibrant ochre, Empty capillary stone) and those three are kept for them; user labels pick from the other five and default to violet. A colour belongs to the label name across the app. Label inks are darker (light) or lighter (dark) than every phase colour, so they stay apart from phase and status colours even where hues are near. The row is one fixed-height line that never wraps: what does not fit goes behind a "+N" pill whose list keeps every label reachable. Source Sans caps sit about 2px high in a symmetric box, so pills use a 4px top and 0 bottom padding to centre the caps optically; recheck this if the global baseline shift changes.
+- **Order, not hkl.** Where peaks are listed against a phase, the column is `order`, not `hkl`: SAXS peaks in our data model carry a 1-based ratio-series position, not an (h,k,l) Miller triple (`src/phase.jl` `phaseratios`).
 
 ### Motion
 
@@ -291,7 +289,7 @@ Motion is polish measured in milliseconds, never spectacle. It exists to soften 
 ## 6. Do's and Don'ts
 
 ### Do
-- Keep the warm paper field; let the figure (trace plate, waterfall, detector window) be the subject.
+- Keep the warm paper field; let the figure (the trace plot and the detector window) be the subject.
 - Treat every colour as a label; let phase colour be generous (it is the science) while the terracotta accent stays rationed.
 - Set everything in Source Sans 3; let weight and ink tone carry hierarchy.
 - Make the active segmented-control segment ink-on-paper; make the primary action ink-solid, the grease-pencil action terracotta.
