@@ -317,6 +317,59 @@ function _setup_preview(db, path, root)
          :duplicate_of => dup === nothing ? nothing : Dict(:id => dup.id, :name => dup.name))
 end
 
+const SUGGEST_LIMIT = 20
+const SUGGEST_DESCRIBE_SECONDS = 0.5
+
+expand_folder(p::AbstractString) = (q = String(strip(p)); q == "~" || startswith(q, "~/") ? expanduser(q) : q)
+
+function _natural_key(s::AbstractString)
+    parts = Any[]
+    for m in eachmatch(r"\d+|\D+", lowercase(s))
+        push!(parts, isdigit(m.match[1]) ? (0, parse(BigInt, m.match), "") : (1, big(0), m.match))
+    end
+    parts
+end
+
+function _describe_folder(db, dir)
+    roots = setup_roots(dir)
+    kind, setups = isempty(roots) ? (nothing, nothing) :
+                   roots == [dir] ? ("setup", nothing) : ("beamtime", length(roots))
+    added = kind == "beamtime" ? experiment_at_path(db, dir) :
+            kind == "setup" ? something(experiment_using_dir(db, _setup_data_dir(dir)),
+                                        experiment_at_path(db, dir), Some(nothing)) :
+            nothing
+    Dict(:path => dir, :kind => kind, :setups => setups,
+         :added => added === nothing ? nothing : Dict(:id => added.id, :name => added.name))
+end
+
+function suggest_folders(db, prefix::AbstractString)
+    none = (; folders = Dict{Symbol,Any}[], more = false)
+    p = expand_folder(prefix)
+    isabspath(p) || return none
+    dir, base = endswith(p, "/") ? (p, "") : (dirname(p), basename(p))
+    isdir(dir) || return none
+    needle = lowercase(base)
+    names = sort!(String[n for n in _listdir(dir)
+                        if startswith(lowercase(n), needle) && (startswith(base, ".") || !startswith(n, "."))];
+                  by = _natural_key)
+    found = String[]
+    more = false
+    for n in names
+        full = joinpath(dir, n)
+        isdir(full) || continue
+        length(found) == SUGGEST_LIMIT && (more = true; break)
+        push!(found, full)
+    end
+    inside_setup = _has_tifs(_setup_data_dir(rstrip(dir, '/')))
+    deadline = time() + SUGGEST_DESCRIBE_SECONDS
+    folders = map(found) do full
+        inside_setup || time() > deadline ?
+            Dict{Symbol,Any}(:path => full, :kind => nothing, :setups => nothing, :added => nothing) :
+            _describe_folder(db, full)
+    end
+    (; folders, more)
+end
+
 """
     register_fs_routes!()
 
@@ -325,24 +378,14 @@ and `preview` (every setup under a picked folder).
 """
 function register_fs_routes!()
     @get "/api/fs/suggest" function(req::HTTP.Request)
-        q      = HTTP.queryparams(HTTP.URI(req.target))
-        prefix = get(q, "prefix", "")
-        isempty(prefix) && return _json(200, Dict(:suggestions => String[]))
-        dir  = isdir(prefix) ? prefix : dirname(prefix)
-        base = isdir(prefix) ? "" : basename(prefix)
-        isdir(dir) || return _json(200, Dict(:suggestions => String[]))
-        kids = String[]
-        for name in readdir(dir; sort = true)
-            startswith(name, base) || continue
-            full = joinpath(dir, name)
-            isdir(full) && push!(kids, full)
-            length(kids) >= 20 && break
-        end
-        _json(200, Dict(:suggestions => kids))
+        q = HTTP.queryparams(HTTP.URI(req.target))
+        r = suggest_folders(current_db(), get(q, "prefix", ""))
+        _json(200, Dict(:folders => r.folders, :more => r.more))
     end
     @get "/api/fs/preview" function(req::HTTP.Request)
         q    = HTTP.queryparams(HTTP.URI(req.target))
-        path = get(q, "path", "")
+        path = expand_folder(get(q, "path", ""))
+        isabspath(path) || return _json(400, Dict(:error => "use a full path, starting with / or ~"))
         isdir(path) || return _json(400, Dict(:error => "path is not a directory"))
         db = current_db()
         existing = experiment_at_path(db, path)

@@ -1,180 +1,180 @@
-// test/DirectoryPickerField.test.tsx
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { DirectoryPickerField } from "../src/print/components/DirectoryPickerField";
+import { DirectoryPickerField, folderHint } from "../src/print/components/DirectoryPickerField";
+import type { FolderSuggestion } from "../src/api";
 
-describe("DirectoryPickerField (Phase E1)", () => {
-  it("shows suggestions and Tab completes the top one", () => {
-    const onChange = vi.fn();
-    render(
-      <DirectoryPickerField
-        value="/Volumes/data/ssrl/2026_04/1"
-        onChange={onChange}
-        suggestions={["/Volumes/data/ssrl/2026_04/1p7m", "/Volumes/data/ssrl/2026_04/10x"]}
-      />,
-    );
-    // Input puts data-testid on its WRAPPER; onKeyDown (via ...rest) lands on
-    // the inner <input>. Fire on the inner input so the handler runs.
-    const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
-    fireEvent.keyDown(input, { key: "Tab" });
-    expect(onChange).toHaveBeenCalledWith("/Volumes/data/ssrl/2026_04/1p7m/");
+const f = (path: string, extra: Partial<FolderSuggestion> = {}): FolderSuggestion =>
+  ({ path, kind: null, setups: null, added: null, ...extra });
+
+const input = (): HTMLInputElement => screen.getByRole("combobox", { name: "Data directory" });
+const selected = (): string[] =>
+  screen.queryAllByRole("option").filter((o) => o.getAttribute("aria-selected") === "true").map((o) => o.textContent ?? "");
+
+describe("DirectoryPickerField", () => {
+  it("shows the folders as soon as the field has focus, without a click", () => {
+    render(<DirectoryPickerField value="/b/s" onChange={() => {}} folders={[f("/b/setup1"), f("/b/setup2")]} autoFocus />);
+    expect(document.activeElement).toBe(input());
+    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual(["setup1", "setup2"]);
+    expect(input()).toHaveAttribute("aria-expanded", "true");
   });
 
-  it("arrow-down moves the active suggestion, Enter completes it", () => {
-    const onChange = vi.fn();
-    render(
-      <DirectoryPickerField
-        value="/Volumes/data/ssrl/2026_04/1"
-        onChange={onChange}
-        suggestions={["/a/one", "/a/two"]}
-      />,
-    );
-    const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
-    fireEvent.keyDown(input, { key: "ArrowDown" });
-    fireEvent.keyDown(input, { key: "ArrowDown" });
-    fireEvent.keyDown(input, { key: "Enter" });
-    expect(onChange).toHaveBeenCalledWith("/a/two/");
+  it("hides the list when focus leaves the field and shows it again on return", () => {
+    render(<><DirectoryPickerField value="/b/s" onChange={() => {}} folders={[f("/b/setup1")]} autoFocus /><button>next</button></>);
+    fireEvent.blur(input(), { relatedTarget: screen.getByRole("button", { name: "next" }) });
+    expect(screen.queryByRole("listbox")).toBeNull();
+    fireEvent.focus(input());
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
   });
 
-  it("highlights no suggestion until the user moves into the list", () => {
-    render(<DirectoryPickerField value="/a/o" onChange={() => {}} suggestions={["/a/one", "/a/two"]} />);
-    const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
-    fireEvent.click(input);
-    expect(screen.getAllByRole("option").filter((o) => o.getAttribute("aria-selected") === "true")).toHaveLength(0);
+  it("clicking the field never closes the list", () => {
+    render(<DirectoryPickerField value="/b/s" onChange={() => {}} folders={[f("/b/setup1")]} autoFocus />);
+    fireEvent.click(input());
+    fireEvent.click(input());
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
   });
 
-  it("Enter with no suggestion highlighted submits the typed folder instead of completing a subfolder", () => {
+  it("highlights nothing until Tab or ↓ moves into the list", () => {
+    render(<DirectoryPickerField value="/b/s" onChange={() => {}} folders={[f("/b/setup1"), f("/b/setup2")]} autoFocus />);
+    expect(selected()).toEqual([]);
+    expect(input()).not.toHaveAttribute("aria-activedescendant");
+    fireEvent.keyDown(input(), { key: "Tab" });
+    expect(selected()).toEqual(["setup1"]);
+    fireEvent.keyDown(input(), { key: "ArrowDown" });
+    expect(selected()).toEqual(["setup2"]);
+    expect(document.getElementById(input().getAttribute("aria-activedescendant")!)).toBe(screen.getAllByRole("option")[1]);
+  });
+
+  it("Tab and Shift+Tab move through the list and wrap", () => {
+    render(<DirectoryPickerField value="/b/s" onChange={() => {}} folders={[f("/b/setup1"), f("/b/setup2")]} autoFocus />);
+    fireEvent.keyDown(input(), { key: "Tab" });
+    fireEvent.keyDown(input(), { key: "Tab" });
+    fireEvent.keyDown(input(), { key: "Tab" });
+    expect(selected()).toEqual(["setup1"]);
+    fireEvent.keyDown(input(), { key: "Tab", shiftKey: true });
+    expect(selected()).toEqual(["setup2"]);
+  });
+
+  it("Enter on a highlighted folder fills it in with a slash, to go into it", () => {
     const onChange = vi.fn();
     const onSubmit = vi.fn();
-    render(<DirectoryPickerField value="/beamtime/setup1" onChange={onChange} onSubmit={onSubmit} suggestions={["/beamtime/setup1/analysis", "/beamtime/setup1/data"]} />);
-    const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
-    fireEvent.keyDown(input, { key: "Enter" });
+    render(<DirectoryPickerField value="/b/s" onChange={onChange} onSubmit={onSubmit} folders={[f("/b/setup1"), f("/b/setup2")]} autoFocus />);
+    fireEvent.keyDown(input(), { key: "Tab" });
+    fireEvent.keyDown(input(), { key: "Tab" });
+    fireEvent.keyDown(input(), { key: "Enter" });
+    expect(onChange).toHaveBeenCalledWith("/b/setup2/");
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("Enter with nothing highlighted submits the typed folder", () => {
+    const onChange = vi.fn();
+    const onSubmit = vi.fn();
+    render(<DirectoryPickerField value="/b/day1/" onChange={onChange} onSubmit={onSubmit} folders={[f("/b/day1/setup1")]} autoFocus />);
+    fireEvent.keyDown(input(), { key: "Enter" });
     expect(onSubmit).toHaveBeenCalledTimes(1);
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it("Enter submits when there are no suggestions at all", () => {
+  it("Enter submits when there are no folders at all", () => {
     const onSubmit = vi.fn();
-    render(<DirectoryPickerField value="/beamtime/setup1/data" onChange={() => {}} onSubmit={onSubmit} suggestions={[]} />);
-    fireEvent.keyDown(screen.getByTestId("dirpicker-input").querySelector("input")!, { key: "Enter" });
+    render(<DirectoryPickerField value="/b/day1" onChange={() => {}} onSubmit={onSubmit} folders={[]} />);
+    fireEvent.keyDown(input(), { key: "Enter" });
     expect(onSubmit).toHaveBeenCalledTimes(1);
   });
 
-  it("opening the suggestion popover keeps focus in the input, not the dialog panel", () => {
-    // Regression: Popover's open-effect focuses its own panel by default. Without
-    // initialFocusRef → the input, clicking the field stole focus onto the
-    // role=dialog panel, so typing and Tab-completion never reached the input's
-    // onKeyDown. (The other tests fire keyDown ON the input directly, so they
-    // pass even when focus is actually on the panel — they cannot catch this.)
-    render(
-      <DirectoryPickerField
-        value="/Volumes/data/ssrl/2026_04/1"
-        onChange={() => {}}
-        suggestions={["/Volumes/data/ssrl/2026_04/1p7m"]}
-      />,
-    );
-    const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
-    // Click the field — this is the trigger that opens the Popover.
-    fireEvent.click(input);
-    // The suggestion dialog is open …
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-    // … and focus is on the INPUT (so the caret stays, typing works, and the
-    // onKeyDown Tab/↑↓ handlers fire), NOT on the panel.
-    expect(document.activeElement).toBe(input);
-  });
-
-  it("shows each suggestion's basename but completes the full path", () => {
-    const onChange = vi.fn();
-    render(
-      <DirectoryPickerField
-        value="/Users/me/projects/himalaya-devdata/mi"
-        onChange={onChange}
-        suggestions={["/Users/me/projects/himalaya-devdata/mini-1p7m"]}
-      />,
-    );
-    const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
-    fireEvent.click(input); // open the popover so the list renders
-    const opt = screen.getByRole("option");
-    // Label is the basename, not the full path …
-    expect(opt).toHaveTextContent("mini-1p7m");
-    expect(opt.textContent).not.toContain("/");
-    // … the full path stays available as a title for disambiguation …
-    expect(opt).toHaveAttribute("title", "/Users/me/projects/himalaya-devdata/mini-1p7m");
-    // … and selecting it completes the FULL path into the field.
-    fireEvent.click(opt);
-    expect(onChange).toHaveBeenCalledWith("/Users/me/projects/himalaya-devdata/mini-1p7m/");
-  });
-
-  it("Shift+Enter with nothing highlighted neither completes nor submits", () => {
+  it("Shift+Enter, Alt+Enter and an IME Enter do nothing", () => {
     const onChange = vi.fn();
     const onSubmit = vi.fn();
-    render(<DirectoryPickerField value="/a/o" onChange={onChange} onSubmit={onSubmit} suggestions={["/a/one", "/a/two"]} />);
-    const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
-    const errors: unknown[] = [];
-    const onError = (e: ErrorEvent): void => {
-      errors.push(e.error);
-      e.preventDefault();
-    };
-    window.addEventListener("error", onError);
-    try {
-      fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
-      fireEvent.keyDown(input, { key: "Enter", altKey: true });
-    } catch (e) {
-      errors.push(e);
-    } finally {
-      window.removeEventListener("error", onError);
-    }
-    expect(errors).toEqual([]);
+    render(<DirectoryPickerField value="/a/o" onChange={onChange} onSubmit={onSubmit} folders={[f("/a/one")]} autoFocus />);
+    fireEvent.keyDown(input(), { key: "Enter", shiftKey: true });
+    fireEvent.keyDown(input(), { key: "Enter", altKey: true });
+    fireEvent.keyDown(input(), { key: "Enter", isComposing: true });
     expect(onChange).not.toHaveBeenCalled();
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it("Tab leaves the field when the typed folder is complete and the list only holds its subfolders", () => {
+  it("⌘/Ctrl+Enter is left to the page, even with a folder highlighted", () => {
     const onChange = vi.fn();
-    render(<DirectoryPickerField value="/b/day1/setup2" onChange={onChange} suggestions={["/b/day1/setup2/analysis", "/b/day1/setup2/data"]} />);
-    const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
-    expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(true);
-    expect(onChange).not.toHaveBeenCalled();
-  });
-
-  it("Enter that confirms an IME composition does not submit", () => {
     const onSubmit = vi.fn();
-    render(<DirectoryPickerField value="/a/o" onChange={() => {}} onSubmit={onSubmit} suggestions={[]} />);
-    const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
-    fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+    render(<DirectoryPickerField value="/a/o" onChange={onChange} onSubmit={onSubmit} folders={[f("/a/one")]} autoFocus />);
+    fireEvent.keyDown(input(), { key: "Tab" });
+    expect(fireEvent.keyDown(input(), { key: "Enter", metaKey: true })).toBe(true);
+    expect(fireEvent.keyDown(input(), { key: "Enter", ctrlKey: true })).toBe(true);
+    expect(onChange).not.toHaveBeenCalled();
     expect(onSubmit).not.toHaveBeenCalled();
   });
-  it("Tab does not complete a suggestion left over from an earlier prefix", () => {
-    const onChange = vi.fn();
-    render(<DirectoryPickerField value="/b/day2" onChange={onChange} suggestions={["/b/day1", "/b/day1x"]} />);
-    const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
-    expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(true);
-    expect(onChange).not.toHaveBeenCalled();
+
+  it("Esc backs out one step: first the highlight, then the list, then the page gets it", () => {
+    const onPageKey = vi.fn();
+    render(<div onKeyDown={(e) => { if (e.key === "Escape") onPageKey(); }}><DirectoryPickerField value="/b/s" onChange={() => {}} folders={[f("/b/setup1")]} autoFocus /></div>);
+    fireEvent.keyDown(input(), { key: "Tab" });
+    fireEvent.keyDown(input(), { key: "Escape" });
+    expect(selected()).toEqual([]);
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+    fireEvent.keyDown(input(), { key: "Escape" });
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(onPageKey).not.toHaveBeenCalled();
+    fireEvent.keyDown(input(), { key: "Escape" });
+    expect(onPageKey).toHaveBeenCalledTimes(1);
   });
 
-  it("Tab skips leftover suggestions and completes the first that matches what is typed", () => {
-    const onChange = vi.fn();
-    render(<DirectoryPickerField value="/b/se" onChange={onChange} suggestions={["/b/notes", "/b/setup1"]} />);
-    const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
-    fireEvent.keyDown(input, { key: "Tab" });
-    expect(onChange).toHaveBeenCalledWith("/b/setup1/");
+  it("after Esc, Tab leaves the field and ↓ opens the list again", () => {
+    render(<DirectoryPickerField value="/b/s" onChange={() => {}} folders={[f("/b/setup1")]} autoFocus />);
+    fireEvent.keyDown(input(), { key: "Escape" });
+    expect(fireEvent.keyDown(input(), { key: "Tab" })).toBe(true);
+    fireEvent.keyDown(input(), { key: "ArrowDown" });
+    expect(selected()).toEqual(["setup1"]);
   });
 
-  it("keeps the suggestions out of the Tab order", () => {
-    render(<DirectoryPickerField value="/b/s" onChange={() => {}} suggestions={["/b/setup1", "/b/setup2"]} />);
-    fireEvent.click(screen.getByTestId("dirpicker-input").querySelector("input")!);
+  it("typing again after Esc shows the list again", () => {
+    const { rerender } = render(<DirectoryPickerField value="/b/s" onChange={() => {}} folders={[f("/b/setup1")]} autoFocus />);
+    fireEvent.keyDown(input(), { key: "Escape" });
+    fireEvent.change(input(), { target: { value: "/b/se" } });
+    rerender(<DirectoryPickerField value="/b/se" onChange={() => {}} folders={[f("/b/setup1")]} autoFocus />);
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+  });
+
+  it("Shift+Tab with nothing highlighted leaves the field", () => {
+    render(<DirectoryPickerField value="/b/s" onChange={() => {}} folders={[f("/b/setup1")]} autoFocus />);
+    expect(fireEvent.keyDown(input(), { key: "Tab", shiftKey: true })).toBe(true);
+  });
+
+  it("hides a list that only repeats the folder already typed, so Tab leaves the field", () => {
+    render(<DirectoryPickerField value="/b/day1" onChange={() => {}} folders={[f("/b/day1", { kind: "beamtime", setups: 2 })]} autoFocus />);
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(fireEvent.keyDown(input(), { key: "Tab" })).toBe(true);
+  });
+
+  it("shows the folder name and what it holds, and a click fills in the full path", () => {
+    const onChange = vi.fn();
+    render(<DirectoryPickerField value="/b/" onChange={onChange} folders={[
+      f("/b/2026-11", { kind: "beamtime", setups: 2 }),
+      f("/b/setup1", { kind: "setup", added: { id: 3, name: "Oct" } }),
+      f("/b/notes"),
+    ]} autoFocus />);
     const options = screen.getAllByRole("option");
-    expect(options).toHaveLength(2);
-    for (const o of options) expect(o).toHaveAttribute("tabindex", "-1");
+    expect(options.map((o) => o.getAttribute("aria-label"))).toEqual([
+      "2026-11, beamtime, 2 setups",
+      "setup1, setup · added as Oct",
+      "notes",
+    ]);
+    expect(options[0]).toHaveAttribute("title", "/b/2026-11");
+    fireEvent.click(options[0]!);
+    expect(onChange).toHaveBeenCalledWith("/b/2026-11/");
   });
-  it("points the field at the highlighted suggestion for screen readers", () => {
-    render(<DirectoryPickerField value="/b/s" onChange={() => {}} suggestions={["/b/setup1", "/b/setup2"]} />);
-    const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
-    fireEvent.click(input);
-    expect(input).not.toHaveAttribute("aria-activedescendant");
-    fireEvent.keyDown(input, { key: "ArrowDown" });
-    fireEvent.keyDown(input, { key: "ArrowDown" });
-    const id = input.getAttribute("aria-activedescendant")!;
-    expect(document.getElementById(id)).toBe(screen.getAllByRole("option")[1]);
+
+  it("says when more folders match than are listed", () => {
+    render(<DirectoryPickerField value="/b/" onChange={() => {}} folders={[f("/b/a")]} more autoFocus />);
+    expect(screen.getByTestId("dirpicker-suggestions-note")).toHaveTextContent("Keep typing");
+  });
+
+  it("keeps the options out of the Tab order and focus in the field when one is pressed", () => {
+    render(<DirectoryPickerField value="/b/s" onChange={() => {}} folders={[f("/b/setup1"), f("/b/setup2")]} autoFocus />);
+    for (const o of screen.getAllByRole("option")) expect(o).toHaveAttribute("tabindex", "-1");
+    expect(fireEvent.mouseDown(screen.getAllByRole("option")[0]!)).toBe(false);
+  });
+
+  it("folderHint words a beamtime with one setup in the singular", () => {
+    expect(folderHint(f("/b/x", { kind: "beamtime", setups: 1 }))).toBe("beamtime, 1 setup");
+    expect(folderHint(f("/b/x"))).toBeUndefined();
   });
 });

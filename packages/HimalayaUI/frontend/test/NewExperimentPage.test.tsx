@@ -39,6 +39,9 @@ function setup(root: string, overrides: Partial<api.SetupPreview> = {}): api.Set
   };
 }
 
+const folders = (paths: string[]): api.FolderSuggestions =>
+  ({ folders: paths.map((path) => ({ path, kind: null, setups: null, added: null })), more: false });
+
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
@@ -55,7 +58,7 @@ function pick(path: string): void {
 describe("NewExperimentPage", () => {
   beforeEach(() => {
     navigate.mockClear();
-    vi.spyOn(api, "suggestPaths").mockResolvedValue({ suggestions: [] });
+    vi.spyOn(api, "suggestFolders").mockResolvedValue({ folders: [], more: false });
   });
   afterEach(() => vi.restoreAllMocks());
 
@@ -138,7 +141,7 @@ describe("NewExperimentPage", () => {
   });
 
   it("⌘/Ctrl+Enter from a focused checkbox or the path field adds the ticked setups and nothing else", async () => {
-    vi.mocked(api.suggestPaths).mockResolvedValue({ suggestions: ["/b/20261103/notes"] });
+    vi.mocked(api.suggestFolders).mockResolvedValue(folders(["/b/20261103/notes"]));
     vi.spyOn(api, "previewFolder").mockResolvedValue({
       path: "/b/20261103",
       setups: [setup("/b/20261103/setup1"), setup("/b/20261103/setup2")],
@@ -157,7 +160,7 @@ describe("NewExperimentPage", () => {
   });
 
   it("⌘/Ctrl+Enter in the path field does not pick a suggestion", async () => {
-    vi.mocked(api.suggestPaths).mockResolvedValue({ suggestions: ["/b/20261103/notes"] });
+    vi.mocked(api.suggestFolders).mockResolvedValue(folders(["/b/20261103/notes"]));
     vi.spyOn(api, "previewFolder").mockResolvedValue({ path: "/b/20261103", setups: [setup("/b/20261103/setup1")] });
     vi.spyOn(api, "createExperiment").mockResolvedValue({ id: 11 } as api.Experiment);
     renderPage();
@@ -172,7 +175,7 @@ describe("NewExperimentPage", () => {
   });
 
   it("plain Enter in the path field adds the found setup rather than entering its first subfolder", async () => {
-    vi.mocked(api.suggestPaths).mockResolvedValue({ suggestions: ["/b/20261103/setup1/analysis", "/b/20261103/setup1/data"] });
+    vi.mocked(api.suggestFolders).mockResolvedValue(folders(["/b/20261103/setup1/analysis", "/b/20261103/setup1/data"]));
     vi.spyOn(api, "previewFolder").mockResolvedValue({ path: "/b/20261103/setup1", setups: [setup("/b/20261103/setup1")] });
     const create = vi.spyOn(api, "createExperiment").mockResolvedValue({ id: 11 } as api.Experiment);
     renderPage();
@@ -188,9 +191,8 @@ describe("NewExperimentPage", () => {
   });
 
   it("Enter right after picking a subfolder adds only that subfolder's setup, once its own preview has arrived", async () => {
-    vi.mocked(api.suggestPaths).mockImplementation(async (p) => ({
-      suggestions: p.includes("setup1") ? ["/b/day1/setup1/analysis"] : ["/b/day1/setup1", "/b/day1/setup2"],
-    }));
+    vi.mocked(api.suggestFolders).mockImplementation(async (p) =>
+      folders(p.includes("setup1") ? ["/b/day1/setup1/analysis"] : ["/b/day1/setup1", "/b/day1/setup2"]));
     vi.spyOn(api, "previewFolder").mockImplementation(async (p) =>
       p.includes("setup1")
         ? { path: p, setups: [setup("/b/day1/setup1")] }

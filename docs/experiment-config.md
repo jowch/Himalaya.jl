@@ -21,7 +21,7 @@ live in `routes_fs.jl` and never write to the DB; the create and scan live in
 
 | Step | Route | What it does |
 |------|-------|--------------|
-| Pick a folder | `GET /api/fs/suggest?prefix=` | Directory autocomplete (at most 20 subdirectories). |
+| Pick a folder | `GET /api/fs/suggest?prefix=` | Folder autocomplete: up to 20 folders whose names start with the last path segment (case-insensitive, natural order, `~` expanded, hidden folders only when the segment starts with `.`), `more` when others match. Each is marked `beamtime` (with its setup count) or `setup` and with the experiment it was added as, within a 0.5 s budget. Relative paths get nothing; `/api/fs/preview` refuses them. |
 | Preview | `GET /api/fs/preview?path=` | Lists the setups under the folder, each with its layout, counts and geometry (see [Preview](#preview)). `400` when the path is not a directory. |
 | Correct a setup | `GET /api/fs/manifest?path=&analysis_dir=&setup_file=&{image,metadata,integration}_pattern=` | Recounts one setup after the user edits its layout in Details (see [File manifest](#file-manifest)). |
 | Add | `POST /api/experiments` | One call for the folder. Creates the experiment and its setups, returns `202`, and starts the first scan in the background. |

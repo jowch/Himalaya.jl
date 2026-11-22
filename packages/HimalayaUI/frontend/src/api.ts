@@ -208,11 +208,15 @@ export interface IngestProblems { ingest_error: string | null; exposures: Proble
 export const listProblems = (id: number) =>
   request<IngestProblems>("GET", `/api/experiments/${id}/problems`);
 
-/** Directory-picker path autocomplete (spec §9.2, read-only). */
-export interface PathSuggestResponse { suggestions: string[] }
-export const suggestPaths = (prefix: string) =>
-  request<PathSuggestResponse>(
-    "GET", `/api/fs/suggest?prefix=${encodeURIComponent(prefix)}`);
+export interface FolderSuggestion {
+  path: string;
+  kind: "beamtime" | "setup" | null;
+  setups: number | null;
+  added: { id: number; name: string } | null;
+}
+export interface FolderSuggestions { folders: FolderSuggestion[]; more: boolean }
+export const suggestFolders = (prefix: string) =>
+  request<FolderSuggestions>("GET", `/api/fs/suggest?prefix=${encodeURIComponent(prefix)}`);
 
 export interface SetupPreview {
   root: string;
