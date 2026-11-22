@@ -995,7 +995,7 @@ inputs hash is computed from the DB alone and matched against the stored
 value; if they match, the call is effectively free.
 
 The .dat filename is constructed from `exposures.filename` and the
-experiment's integration pattern (`integration_pattern_for`).
+setup's integration pattern (`integration_pattern_for`).
 """
 function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String;
                             trace_known_unchanged::Bool=false,
@@ -1004,12 +1004,11 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     t0 = time()
 
     rows = Tables.rowtable(DBInterface.execute(db,
-        "SELECT filename, experiment_id FROM exposures WHERE id = ?", [Int(exposure_id)]))
+        "SELECT filename FROM exposures WHERE id = ?", [Int(exposure_id)]))
     isempty(rows) && error("exposure $exposure_id not found")
     filename      = rows[1].filename
-    experiment_id = rows[1].experiment_id
 
-    integration_pattern = integration_pattern_for(db, experiment_id)
+    integration_pattern = integration_pattern_for_exposure(db, exposure_id)
     dat_path = joinpath(analysis_dir, replace(integration_pattern, "{name}" => filename))
 
     current_version = read_analysis_version(db, exposure_id) == ANALYSIS_VERSION

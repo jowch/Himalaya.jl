@@ -1,11 +1,13 @@
 # Experiment configuration and ingest
 
 An experiment is a row in the central SQLite DB that points at a beamtime
-directory on disk. Its configuration (where the files live, how they are named,
-and the beamline geometry) lives on that row. There is no per-experiment
-config file and no lab-notebook manifest: an experiment is created through the
-New-experiment funnel in the UI, which infers the layout from the directory
-tree, lets the user correct it, and then scans the directory.
+directory on disk. Each setup subfolder of that directory is a row in the
+`setups` table under the experiment, and the setup holds the configuration:
+where the files live, how they are named, and the beamline geometry. Loads,
+samples and exposures carry the `setup_id` they were scanned from. There is no
+per-experiment config file and no lab-notebook manifest: an experiment is
+created through the New-experiment funnel in the UI, which infers the layout
+from the directory tree, lets the user correct it, and then scans the directory.
 
 Experiment directories are read-only data sources. Every write goes to the DB.
 
@@ -134,25 +136,38 @@ frame with a `kind` of `ingest_started`, `ingest_progress` (with a `stage` of
 
 ## Configuration fields
 
-All of these are columns on the `experiments` row.
+The experiment row keeps `name`, `description` and `path` (the beamtime folder,
+set at create). `PATCH /api/experiments/:id` edits `name` and `description`; a
+body with no patchable field, or with any other field (even alongside a name),
+is a `400` that names the field.
+
+Everything else is a column on the experiment's `setups` rows.
 
 | Column | Set by | Editable later |
 |--------|--------|----------------|
-| `name` | Create, or `PATCH` | Yes, a plain write |
-| `description` | `PATCH` only | Yes, a plain write |
-| `data_dir`, `analysis_dir`, `path` | Create | No: `PATCH` returns `400` |
-| `image_pattern`, `metadata_pattern`, `integration_pattern` | Create | Yes (see [Rescans](#rescans)) |
-| `energy_kev`, `flight_path_m`, `beam_center_x`, `beam_center_y`, `pixel_size_um` | Create, or the scan's fill-only step | Yes: the field's `*_source` becomes `user` |
-| `q_units` | `PATCH` only | Yes: its source becomes `user`. Reported as `A-1` with source `default` while `NULL` |
+| `folder` | Create: the setup subfolder's name | No |
+| `display_name` | Not yet (planned palette rename) | Shown instead of `folder` when set |
+| `included` | Create (`1`) | Planned: unticking hides a setup, and the scan skips it |
+| `root_dir`, `data_dir`, `analysis_dir` | Create | No |
+| `image_pattern`, `metadata_pattern`, `integration_pattern` | Create | Not yet (see [Rescans](#rescans)) |
+| `energy_kev`, `flight_path_m`, `beam_center_x`, `beam_center_y`, `pixel_size_um` | Create, or the scan's fill-only step | Not yet |
+| `q_units` | Not yet | Reported as `A-1` with source `default` while `NULL` |
 
-`path` mirrors `data_dir` for new experiments. `manifest_path`, `config` and
-`experiment_type` are legacy columns that nothing reads (see
-[Legacy](#legacy-experimenttoml)). `last_scan_tier` and
-`consecutive_empty_ticks` belonged to the deleted rescan timer and are unused.
+`GET /api/experiments` and `GET /api/experiments/:id` return the setups under
+`setups`, ordered by `position`, with `name` set to the display name.
 
-`PATCH /api/experiments/:id` edits these. The UI no longer calls it: the
-Configuration page was removed with the one-screen funnel. A body with no
-patchable field is a `400`.
+### Migration from one experiment per setup
+
+Before setups existed, each experiment row held one setup's configuration.
+`open_db` migrates such a DB in place (`migrate_setups!`, `setups.jl`): each
+experiment gets one setup copied from its old columns, a `path` equal to `data_dir` becomes the setup's
+root folder, every load, sample and exposure gets that `setup_id`, the exposure
+filename index becomes unique per setup, and the old configuration columns
+(with `manifest_path`, `config`, `experiment_type`, `last_scan_tier` and
+`consecutive_empty_ticks`) are dropped. Ids do not change. Merging several of
+these experiments into one beamtime is a separate, one-time CLI step. The migration is one-way:
+a build from before it cannot open the migrated DB, so copy `himalaya.db`
+before the first start of an upgraded build.
 
 ## File patterns
 
@@ -213,7 +228,8 @@ No view draws them since the Focus page was deleted (2026-11-20).
 ## Scan and grouping
 
 `scan_and_group!(db, experiment_id)` is the only code that inserts exposures. It
-reads `data_dir`, `analysis_dir` and the patterns from the row, then:
+runs once per included setup (`_scan_setup!`), reading `data_dir`,
+`analysis_dir` and the patterns from the setup row, then:
 
 1. **Discovers** exposures with `scan_directory` (`grouping.jl`): one per image
    in `data_dir`, with its metadata file parsed (`parse_prp`, `prp.jl`) and its
@@ -271,7 +287,7 @@ example a reshoot at a new position) is joined with a bridge in the workspace.
 last failed pass (cleared by the next pass that succeeds), and `exposures`:
 each exposure still waiting for its trace (`no_trace`) or whose analysis failed
 (`failed`), with its sample and reason. The workspace notice summarizes these
-(for example "2 exposures waiting for a trace · 1 analysis failed") and its
+(for example "2 frames waiting for a trace · 1 analysis failed") and its
 Details button opens the list; picking a row opens that sample. A frame
 waiting for its trace says "Waiting for this frame's trace." in the plot, not
 "No integrated trace", and the plot refetches the trace when the next pass

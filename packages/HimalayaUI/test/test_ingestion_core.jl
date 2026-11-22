@@ -666,7 +666,7 @@ end
 
         # Geometry written to experiments row
         row = first(Tables.rowtable(DBInterface.execute(db,
-            "SELECT energy_kev, flight_path_m, flight_path_m_source, beam_center_x FROM experiments WHERE id = ?",
+            "SELECT energy_kev, flight_path_m, flight_path_m_source, beam_center_x FROM setups WHERE experiment_id = ?",
             [exp_id])))
         @test row.energy_kev ≈ 9.000027604502573
         @test row.flight_path_m ≈ 1.8095   # from setup file
@@ -973,7 +973,7 @@ end
         @test res.added_exposures == 2
         # Geometry stayed at defaults rather than throwing.
         row = first(Tables.rowtable(DBInterface.execute(db,
-            "SELECT energy_kev_source, pixel_size_um_source FROM experiments WHERE id = ?", [exp_id])))
+            "SELECT energy_kev_source, pixel_size_um_source FROM setups WHERE experiment_id = ?", [exp_id])))
         @test row.energy_kev_source == "default"
         @test row.pixel_size_um_source == "default"
     end

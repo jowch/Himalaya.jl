@@ -101,6 +101,7 @@ jobs:
           cache-dependency-path: packages/HimalayaUI/frontend/package-lock.json
       - run: npm ci
       - run: npm run build
+      - run: npm run typecheck:test
       - run: npm test
       - run: npm run test:verify
 

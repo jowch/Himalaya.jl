@@ -433,6 +433,10 @@ end
         @test occursin("AUTOINCREMENT", sql)
     end
 
+    setup = only(HimalayaUI.setups_of(db, 1))
+    @test setup.data_dir == "/d" && setup.analysis_dir == "/a"
+    @test only(Tables.rowtable(DBInterface.execute(db, "SELECT setup_id FROM samples WHERE id = 1"))).setup_id == setup.id
+
     # Pre-existing auto peaks survive the migration with their ids intact.
     rows = Tables.rowtable(DBInterface.execute(db, "SELECT id, q FROM auto_peaks"))
     @test length(rows) == 1
@@ -458,7 +462,7 @@ end
 
         exp_id = HimalayaUI.create_experiment!(db;
             path = dir, data_dir = joinpath(dir, "data"), analysis_dir = analysis_dir,
-            integration_pattern = "{name}_1d.dat", experiment_type = "simple")
+            integration_pattern = "{name}_1d.dat")
         s_id = HimalayaUI.create_sample!(db; experiment_id = exp_id, name = "S")
         e_id = HimalayaUI.create_exposure!(db; experiment_id = exp_id, sample_id = s_id, filename = "EX001")
 
@@ -497,8 +501,7 @@ let
         end
         seed_experiment!(db, dir;
             name = name, analysis_dir = analysis_dir,
-            sample_name = name, stems = stems,
-            experiment_type = "simple")
+            sample_name = name, stems = stems)
     end
 
     @testset "cli_show prints an index whose score and R² are still NULL (#305)" begin

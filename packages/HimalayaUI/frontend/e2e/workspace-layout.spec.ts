@@ -57,6 +57,19 @@ test.beforeEach(async ({ page }) => {
   await page.route((url) => url.pathname === "/api/samples", (r) => r.fulfill(json(SAMPLES)));
   await page.route("**/api/users", (r) => r.fulfill(json([])));
   await page.route("**/api/experiments/17/bridges", (r) => r.fulfill(json([])));
+  const compares = { compares: [] as { sample_id: number; ref_sample_id: number; added_by: string | null }[], subtractions: [] as { sample_id: number; ref_sample_id: number }[] };
+  await page.route("**/api/experiments/17/compares", (r) => r.fulfill(json(compares)));
+  await page.route(/\/api\/samples\/\d+\/compares$/, (r) => {
+    const sampleId = Number(new URL(r.request().url()).pathname.split("/")[3]);
+    const change = r.request().postDataJSON() as { add?: number[]; remove?: number[]; subtraction?: number | null };
+    for (const ref of change.add ?? []) compares.compares.push({ sample_id: sampleId, ref_sample_id: ref, added_by: "alice" });
+    compares.compares = compares.compares.filter((c) => !(c.sample_id === sampleId && (change.remove ?? []).includes(c.ref_sample_id)));
+    if ("subtraction" in change) {
+      compares.subtractions = compares.subtractions.filter((t) => t.sample_id !== sampleId);
+      if (change.subtraction !== null && change.subtraction !== undefined) compares.subtractions.push({ sample_id: sampleId, ref_sample_id: change.subtraction });
+    }
+    return r.fulfill(json(compares));
+  });
   await page.route("**/api/experiments/17/problems", (r) => r.fulfill(json({ ingest_error: null, exposures: [] })));
   await page.route("**/api/label-colors", (r) => r.fulfill(json([])));
   await page.route("**/api/experiments/17/labels", (r) => r.fulfill(json(LABELS)));
@@ -104,7 +117,7 @@ async function layout(page: Page): Promise<Record<string, number[]>> {
       exposures: box(document.querySelector("[data-testid=workspace-exposures]")),
       indexing: box(section("Indexing")),
       indexingPlot: box(document.querySelector("[data-testid=workspace-indexing] svg")),
-      exposure: box(section("Exposure")),
+      exposure: box(section("Frame")),
     };
   });
 }
@@ -116,7 +129,7 @@ async function measured(page: Page): Promise<Record<string, number[]>> {
 }
 
 function exposureToggle(page: Page) {
-  return page.locator("aside").getByRole("button", { name: "Exposure" });
+  return page.locator("aside").getByRole("button", { name: "Frame" });
 }
 
 function callToggle(page: Page) {
@@ -135,7 +148,7 @@ async function openSample(page: Page, id: number): Promise<void> {
   await expect(page.locator("[data-testid=workspace-indexing] svg")).toBeVisible();
   if ((await callToggle(page).count()) === 0 || (await callToggle(page).getAttribute("aria-expanded")) === "true") {
     await expect(page.locator("[data-testid=workspace-candidates] li")).toHaveCount(CANDIDATES[id] || 0);
-    if (!CANDIDATES[id]) await expect(page.getByText("No candidate indices for this exposure.")).toBeVisible();
+    if (!CANDIDATES[id]) await expect(page.getByText("No candidate indices for this frame.")).toBeVisible();
   }
   await expect(page.locator("[data-testid=workspace-exposures] > li")).toHaveCount(FRAMES[id] ?? 1);
   const file = `JC_S${id}_0_00${FRAMES[id] ?? 1}`;
@@ -247,21 +260,21 @@ test("three comparisons with long names keep the compare bar on one line", async
 
 for (const viewport of VIEWPORTS) {
   const short = viewport.height <= 860;
-  const order = short ? "Call, then Exposure, with Indexing pinned at the bottom" : "Call, then Indexing, then Exposure";
+  const order = short ? "Call, then Frame, with Indexing pinned at the bottom" : "Call, then Indexing, then Frame";
   test(`the tools column reads ${order} at ${viewport.width}×${viewport.height}`, async ({ page }) => {
     await page.setViewportSize(viewport);
     await page.goto("/experiments/17/workspace/41");
     await openSample(page, 41);
     const tops = await page.evaluate(() => {
       const top = (sel: string) => Math.round(document.querySelector(sel)!.getBoundingClientRect().top);
-      return { call: top("aside section[data-section=Call]"), indexing: top("aside section[data-section=Indexing]"), exposure: top("aside section[data-section=Exposure]") };
+      return { call: top("aside section[data-section=Call]"), indexing: top("aside section[data-section=Indexing]"), exposure: top("aside section[data-section=Frame]") };
     });
     const sequence = Object.entries(tops).sort((a, b) => a[1] - b[1]).map(([name]) => name);
     expect(sequence).toEqual(short ? ["call", "exposure", "indexing"] : ["call", "indexing", "exposure"]);
   });
 }
 
-test("a long Call list (ten candidates, more than the number keys reach) keeps Indexing and Exposure in place, and the column never scrolls", async ({ page }) => {
+test("a long Call list (ten candidates, more than the number keys reach) keeps Indexing and Frame in place, and the column never scrolls", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/experiments/17/workspace/45");
   await openSample(page, 45);
@@ -301,7 +314,7 @@ test("subtracting a comparison, switching between Raw and Minus and stopping mov
   expect(await measured(page)).toEqual(before);
 });
 
-test("on a short window Call and Exposure fold as an accordion, and stay put from sample to sample", async ({ page }) => {
+test("on a short window Call and Frame fold as an accordion, and stay put from sample to sample", async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 650 });
   await page.goto("/experiments/17/workspace/41");
   await openSample(page, 41);
@@ -318,7 +331,7 @@ test("on a short window Call and Exposure fold as an accordion, and stay put fro
   await expect(page.locator("[data-testid=workspace-candidates]")).toHaveCount(0);
   await expect(page.locator("aside").getByText("JC_S41_0_001")).toBeVisible();
   expect(await fits()).toBe(true);
-  const lastRow = () => page.locator("aside section[data-section=Exposure] dl > :last-child > dd").evaluate((el) => Math.round(el.getBoundingClientRect().top));
+  const lastRow = () => page.locator("aside section[data-section=Frame] dl > :last-child > dd").evaluate((el) => Math.round(el.getBoundingClientRect().top));
   const first = await measured(page);
   const firstLastRow = await lastRow();
   for (const id of [44, 43, 40, 41]) {
@@ -333,12 +346,12 @@ test("on a short window Call and Exposure fold as an accordion, and stay put fro
   await page.keyboard.press("i");
   await expect(page.getByTestId("workspace-custom-index")).toBeVisible();
   await expect(exposureToggle(page), "Exposure is not a dead toggle while a custom index is open").toHaveCount(0);
-  await expect(page.locator("aside section[data-section=Exposure]")).toHaveAttribute("data-collapsed", "true");
+  await expect(page.locator("aside section[data-section=Frame]")).toHaveAttribute("data-collapsed", "true");
   await page.keyboard.press("Escape");
   await expect(exposureToggle(page)).toHaveAttribute("aria-expanded", "true");
 });
 
-test("on a short window, folding Call or Exposure and opening a custom index never moves the indexing chart", async ({ page }) => {
+test("on a short window, folding Call or Frame and opening a custom index never moves the indexing chart", async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 650 });
   await page.goto("/experiments/17/workspace/41");
   await openSample(page, 41);
@@ -346,10 +359,10 @@ test("on a short window, folding Call or Exposure and opening a custom index nev
   const start = await indexing();
   await exposureToggle(page).click();
   await expect(exposureToggle(page)).toHaveAttribute("aria-expanded", "true");
-  expect(await indexing(), "after opening Exposure").toEqual(start);
+  expect(await indexing(), "after opening Frame").toEqual(start);
   await page.getByRole("button", { name: /Custom index/ }).click();
   await expect(page.getByTestId("workspace-custom-index")).toBeVisible();
-  expect(await indexing(), "after opening a custom index from Exposure").toEqual(start);
+  expect(await indexing(), "after opening a custom index from Frame").toEqual(start);
   await page.getByRole("button", { name: /Custom index/ }).click();
   await expect(page.getByTestId("workspace-custom-index")).toHaveCount(0);
   expect(await indexing(), "after closing it with the same button").toEqual(start);
@@ -398,7 +411,7 @@ test("on a medium window the Call list scrolls inside a column that never scroll
   expect(state).toEqual({ asideFits: true, middleScrolls: true });
 });
 
-test("on a very short window the open Exposure section scrolls inside a column that never scrolls", async ({ page }) => {
+test("on a very short window the open Frame section scrolls inside a column that never scrolls", async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 520 });
   await page.goto("/experiments/17/workspace/44");
   await openSample(page, 44);
@@ -406,7 +419,7 @@ test("on a very short window the open Exposure section scrolls inside a column t
   await expect(page.locator("aside").getByText("JC_S44_0_007")).toBeVisible();
   const state = await page.evaluate(() => {
     const aside = document.querySelector("aside")!;
-    const exposure = aside.querySelector("section[data-section=Exposure]") as HTMLElement;
+    const exposure = aside.querySelector("section[data-section=Frame]") as HTMLElement;
     return { asideFits: aside.scrollHeight <= aside.clientHeight, exposureScrolls: exposure.scrollHeight > exposure.clientHeight };
   });
   expect(state).toEqual({ asideFits: true, exposureScrolls: true });

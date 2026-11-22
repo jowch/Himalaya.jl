@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { addCompare, compareScale, transmittedFlux, clampDomain, stripRange, interpolateAt, matchScale, robustRange, scaledTrace, subtractTrace, MAX_COMPARES } from "../../src/workspace/compare";
+import { compareScale, transmittedFlux, clampDomain, stripRange, interpolateAt, matchScale, robustRange, scaledTrace, subtractTrace } from "../../src/workspace/compare";
 
 const q = Array.from({ length: 101 }, (_, i) => 0.01 + i * 0.002);
 const background = (x: number): number => 5 + 1 / x;
@@ -38,13 +38,6 @@ describe("compare", () => {
     expect(scaledTrace({ q: [0.1, 0.2], I: [1, 2] }, 3)).toEqual({ q: [0.1, 0.2], I: [3, 6] });
   });
 
-  it("adds a comparison once and keeps the most recent few", () => {
-    expect(addCompare([1, 2], 2)).toEqual([1, 2]);
-    expect(addCompare([1, 2], 3)).toEqual([1, 2, 3]);
-    const full = Array.from({ length: MAX_COMPARES }, (_, i) => i + 1);
-    expect(addCompare(full, 9)).toEqual([...full.slice(1), 9]);
-  });
-
   it("masks the sample's own peaks in the high-q window, which would otherwise over-scale the reference", () => {
     const bg = (x: number): number => 5 + 1 / x;
     const peaksAt = [0.19, 0.2];
@@ -56,7 +49,7 @@ describe("compare", () => {
 
   it("takes the median, so one outlier in the window does not move the scale", () => {
     const buffer = { q, I: q.map(() => 1) };
-    const sample = { q, I: q.map((x, i) => (i === q.length - 1 ? 1000 : 2)) };
+    const sample = { q, I: q.map((_x, i) => (i === q.length - 1 ? 1000 : 2)) };
     expect(matchScale(sample, buffer)).toBe(2);
   });
 

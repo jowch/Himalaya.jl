@@ -103,7 +103,7 @@ end
     e2 = HimalayaUI.init_experiment!(db; name="E2", path="/e2",
         data_dir="/e2/d", analysis_dir="/e2/a")
 
-    DBInterface.execute(db, "UPDATE experiments SET q_units = 'nm-1' WHERE id = ?", [e1])
+    DBInterface.execute(db, "UPDATE setups SET q_units = 'nm-1' WHERE experiment_id = ?", [e1])
 
     s1 = HimalayaUI.create_sample!(db; experiment_id=e1, name="A1")
     s2 = HimalayaUI.create_sample!(db; experiment_id=e1, name="A2")
@@ -145,7 +145,7 @@ end
     end
 end
 
-@testset "corpus samples route reads q_units from the typed column only" begin
+@testset "corpus samples route reads q_units from the sample's setup" begin
     db = SQLite.DB()
     HimalayaUI.create_schema!(db)
 
@@ -153,14 +153,8 @@ end
         data_dir="/et/d", analysis_dir="/et/a", q_units="nm^-1")
     e_blob = HimalayaUI.init_experiment!(db; name="EB", path="/eb",
         data_dir="/eb/d", analysis_dir="/eb/a")
-    DBInterface.execute(db,
-        "UPDATE experiments SET config = ? WHERE id = ?",
-        ["[beamline]\nq_units = \"um^-1\"\n", e_blob])
     e_both = HimalayaUI.create_experiment!(db; name="EX", path="/ex",
         data_dir="/ex/d", analysis_dir="/ex/a", q_units="A^-1")
-    DBInterface.execute(db,
-        "UPDATE experiments SET config = ? WHERE id = ?",
-        ["[beamline]\nq_units = \"nm-1\"\n", e_both])
 
     HimalayaUI.create_sample!(db; experiment_id=e_typed, name="T1")
     HimalayaUI.create_sample!(db; experiment_id=e_blob,  name="L1")

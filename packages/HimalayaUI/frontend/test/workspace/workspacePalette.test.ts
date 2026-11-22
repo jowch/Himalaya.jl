@@ -15,7 +15,6 @@ function input(over: Partial<WorkspacePaletteInput> = {}): WorkspacePaletteInput
   const noop = vi.fn();
   return {
     modKey: "Ctrl",
-    sampleName: "A1",
     canEdit: true,
     nextUnreviewed: noop,
     compare: { samples: [], notes: new Map(), pick: noop, compared: [], remove: noop, subtractable: [], subtracted: undefined, subtract: noop },
@@ -130,6 +129,12 @@ describe("workspacePalette", () => {
     expect(recolour).not.toHaveBeenCalled();
     form.submit({ color: "green" });
     expect(recolour).toHaveBeenCalledWith("37C", "green");
+  });
+
+  it("keeps the Label colours page in usage order whatever order the labels arrive in", () => {
+    const labels = [known("dried", { uses: 1 }), known("retake", { uses: 4 }), known("37C", { uses: 4 })];
+    const { pages } = workspacePalette(input({ labels: { known: labels, colorFor: () => "plum", toggle: vi.fn(), create: vi.fn(), recolour: vi.fn() } }));
+    expect(pages.colours!.items.map((i) => i.label)).toEqual(["37C", "retake", "dried"]);
   });
 
   it("lists the experiment name and description on the Settings page only when the user can edit", () => {

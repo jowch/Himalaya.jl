@@ -160,7 +160,7 @@ describe("peak_* frames with the W1 assignment envelope", () => {
     // confirmation path never re-processes post_state.
     const response = await d.promise;
     peakAddMutator.onSuccess(
-      { kind: "peak_added", payload: { q: 0.42 }, clientOpId: "op-1",
+      { kind: "peak_added", clientOpId: "op-1",
         exposureId: 5, q: 0.42, username: undefined, clientId: getClientId() },
       response, qc);
     expect(toastCalls).toHaveLength(1);

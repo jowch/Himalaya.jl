@@ -22,13 +22,9 @@ function renderPage() {
 }
 
 const EXP = (over: Partial<api.Experiment>): api.Experiment => ({
-  id: 7, name: "SSRL · 1p7m", description: null, path: "/d", data_dir: "/d/data", analysis_dir: "/d/an",
-  manifest_path: null, created_at: "2026-04-12T00:00:00", q_units: "A^-1", beam_center_x: 1,
-  beam_center_y: 1, pixel_size_um: 172, energy_kev: 9, flight_path_m: 1.8,
-  energy_kev_source: "prp", flight_path_m_source: "setup", beam_center_x_source: "setup",
-  beam_center_y_source: "setup", pixel_size_um_source: "prp", q_units_source: "prp",
+  id: 7, name: "SSRL · 1p7m", description: null, path: "/d",
+  created_at: "2026-04-12T00:00:00",
   last_scanned_at: null, ingest_status: "complete",
-  image_pattern: null, metadata_pattern: null, integration_pattern: null,
   stats: { loads: 13, samples: 170, exposures: 682, sessions: 3, span_hours: 6.5, started_at: "2026-04-01T10:00:00" },
   ...over,
 });

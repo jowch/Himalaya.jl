@@ -83,18 +83,21 @@ end
     @test first(exposures).filename == "JC001"
 end
 
-@testset "experiments table has config columns" begin
+@testset "setup configuration lives on setups, not experiments" begin
     db = SQLite.DB()
     create_schema!(db)
-    cols = [r.name for r in Tables.rowtable(DBInterface.execute(db,
-        "PRAGMA table_info(experiments)"))]
-    @test "config"          in cols
-    @test "experiment_type" in cols
-    @test "energy_kev"      in cols
-    @test "flight_path_m"   in cols
+    exp_cols = HimalayaUI.cols_of(db, "experiments")
+    for c in ("data_dir", "analysis_dir", "integration_pattern", "energy_kev", "flight_path_m", "config")
+        @test !(c in exp_cols)
+    end
+    setup_cols = HimalayaUI.cols_of(db, "setups")
+    for c in ("folder", "display_name", "included", "root_dir", "data_dir", "analysis_dir",
+              "integration_pattern", "energy_kev", "flight_path_m", "q_units")
+        @test c in setup_cols
+    end
 end
 
-@testset "create_experiment! stores config columns" begin
+@testset "create_experiment! stores its setup" begin
     db = SQLite.DB()
     create_schema!(db)
     exp_id = create_experiment!(db;
@@ -102,24 +105,22 @@ end
         path = "/tmp/x",
         data_dir = "/tmp/x/data",
         analysis_dir = "/tmp/x/analysis",
-        config = "[experiment]\nname=\"X\"\n",
-        experiment_type = "simple",
         energy_kev = 12.0,
         flight_path_m = 2.5)
-
-    row = Tables.rowtable(DBInterface.execute(db,
-        "SELECT config, experiment_type, energy_kev, flight_path_m FROM experiments WHERE id=?",
-        [exp_id]))[1]
-
-    @test contains(row.config, "[experiment]")
-    @test row.experiment_type == "simple"
-    @test row.energy_kev == 12.0
-    @test row.flight_path_m == 2.5
+    setups = HimalayaUI.setups_of(db, exp_id)
+    @test length(setups) == 1
+    st = only(setups)
+    @test st.folder == "x"
+    @test st.root_dir == "/tmp/x"
+    @test st.data_dir == "/tmp/x/data"
+    @test st.energy_kev == 12.0
+    @test st.flight_path_m == 2.5
+    @test ismissing(st.display_name)
+    @test st.included == 1
 end
 
-@testset "migrate_schema! adds config columns to legacy DB" begin
+@testset "migrate_schema! moves a legacy experiment's folders into one setup" begin
     db = SQLite.DB()
-    # Simulate legacy schema without new columns
     DBInterface.execute(db, """
         CREATE TABLE experiments (
             id INTEGER PRIMARY KEY,
@@ -130,13 +131,17 @@ end
             manifest_path TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )""")
+    DBInterface.execute(db,
+        "INSERT INTO experiments (id, name, path, data_dir, analysis_dir) VALUES (1, 'old', '/bt/setup1/data', '/bt/setup1/data', '/bt/setup1/analysis')")
+    create_schema!(db)
     migrate_schema!(db)
-    cols = [r.name for r in Tables.rowtable(DBInterface.execute(db,
-        "PRAGMA table_info(experiments)"))]
-    @test "config" in cols
-    @test "experiment_type" in cols
-    @test "energy_kev" in cols
-    @test "flight_path_m" in cols
+    @test !("data_dir" in HimalayaUI.cols_of(db, "experiments"))
+    st = only(HimalayaUI.setups_of(db, 1))
+    @test st.folder == "setup1"
+    @test st.root_dir == "/bt/setup1"
+    @test st.data_dir == "/bt/setup1/data"
+    @test st.analysis_dir == "/bt/setup1/analysis"
+    @test only(Tables.rowtable(DBInterface.execute(db, "SELECT path FROM experiments WHERE id = 1"))).path == "/bt/setup1"
 end
 
 @testset "index_groups partial unique constraint on custom" begin
@@ -700,7 +705,7 @@ end
         db = HimalayaUI.open_db(joinpath(tmp, "test.db"))
         # Seed FK targets.
         DBInterface.execute(db,
-            "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e', '/p', '/d', '/a')")
+            "INSERT INTO experiments (name, path) VALUES ('e', '/p')")
         DBInterface.execute(db,
             "INSERT INTO samples (experiment_id, name) VALUES (1, 'A1')")
         res = DBInterface.execute(db,
@@ -905,7 +910,7 @@ end
 
                 # Seed a sample + two duplicate exposures via raw SQL (bypassing the upsert).
                 eid = let res = DBInterface.execute(db,
-                          "INSERT INTO experiments (name, path, data_dir, analysis_dir) VALUES ('e','/p','/d','/a')")
+                          "INSERT INTO experiments (name, path) VALUES ('e', '/p')")
                     Int(DBInterface.lastrowid(res))
                 end
                 sid = let res = DBInterface.execute(db,

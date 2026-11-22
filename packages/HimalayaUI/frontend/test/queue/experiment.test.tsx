@@ -12,7 +12,7 @@ import { queryKeys } from "../../src/queries";
 import type { SseEvent } from "../../src/lib/queue/types";
 import type { Experiment } from "../../src/api";
 
-const scope = { username: "jc", clientId: "c", clientOpId: "op", kind: "patch_experiment", payload: {}, experimentId: 3 } as const;
+const scope = { username: "jc", clientId: "c", clientOpId: "op", kind: "patch_experiment", experimentId: 3 } as const;
 
 function experiment(over: Partial<Experiment> = {}): Experiment {
   return { id: 3, name: "BL-19", description: null, ...over } as Experiment;

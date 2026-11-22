@@ -5,8 +5,8 @@ function register_trace_routes!()
         db   = current_db()
         rows = Tables.rowtable(DBInterface.execute(db,
             "SELECT e.filename, e.kind, e.transmitted_counts, e.exposure_time, e.counting_time,
-                    x.id AS experiment_id, x.analysis_dir
-             FROM exposures e JOIN experiments x ON x.id = e.experiment_id
+                    st.analysis_dir, st.integration_pattern
+             FROM exposures e JOIN setups st ON st.id = e.setup_id
              WHERE e.id = ?", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
@@ -19,7 +19,7 @@ function register_trace_routes!()
             ["Content-Type" => "application/json"],
             JSON3.write(Dict(:error => "exposure has no filename")))
 
-        pattern = integration_pattern_for(db, Int(row.experiment_id))
+        pattern = integration_pattern_for(row)
         filename = String(row.filename)
         path = resolve_trace_path(String(row.analysis_dir), pattern, filename)
         path === nothing && return HTTP.Response(404,
