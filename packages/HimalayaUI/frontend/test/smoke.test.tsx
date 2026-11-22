@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { PrintApp as App } from "../src/print/App";
+import { App } from "../src/App";
 import { useAppState } from "../src/state";
 import { renderWithProviders } from "./test-utils";
 

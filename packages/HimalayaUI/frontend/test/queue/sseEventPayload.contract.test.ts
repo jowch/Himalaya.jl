@@ -31,7 +31,7 @@ import type {
 import { queryKeys } from "../../src/queries";
 import { makeExposure } from "../helpers/exposure";
 
-const FULL_EXPOSURE: Exposure = makeExposure({ id: 5, selected: true, analysis_inputs_hash: "h0" });
+const FULL_EXPOSURE: Exposure = makeExposure({ id: 5, analysis_inputs_hash: "h0" });
 
 describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)", () => {
   let qc: QueryClient;
@@ -410,20 +410,6 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     expect(qc.getQueryData<Exposure[]>(queryKeys.exposures(1))![0]!.status).toBe("rejected");
   });
 
-  it("select_exposure invalidates the exposure list AND the picker projection", () => {
-    const invalidated: unknown[] = [];
-    qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
-      invalidated.push(arg.queryKey); return Promise.resolve();
-    }) as typeof qc.invalidateQueries;
-    // Mirrors routes_exposures.jl PATCH /select: payload is {sample_id}.
-    const evt: SseEvent = {
-      id: 99, kind: "select_exposure", entity_type: "exposure", entity_id: 5,
-      payload: { sample_id: 1 },
-    };
-    applyRemoteToCache(evt, qc);
-    expect(invalidated).toContainEqual(queryKeys.exposures(1));
-  });
-
   // -------------------------------------------------------------------------
   // Sample events
   // -------------------------------------------------------------------------
@@ -556,7 +542,7 @@ describe("synthesizeFromSse coverage (resolveMutatorForEvent contract)", () => {
   // Camp (b) breaks down into two rationales:
   //
   //   (b.i)  Forward-scaffolded — mutator exists but no UI gesture queues it
-  //          today (set_exposure_status, update_sample, select_exposure).
+  //          today (set_exposure_status, update_sample).
   //          When a future plan wires the gesture, add
   //          synthesizeFromSse to the owning mutator.
   //   (b.ii) Active mutators whose onSuccess relies on the `looksFull`
@@ -566,7 +552,6 @@ describe("synthesizeFromSse coverage (resolveMutatorForEvent contract)", () => {
     // (b.i) forward-scaffolded
     { kind: "set_exposure_status" },
     { kind: "update_sample" },
-    { kind: "select_exposure" },
     // (b.ii) looksFull-handled or hash-only effects
     { kind: "analyze_run" },
     { kind: "peak_removed" },

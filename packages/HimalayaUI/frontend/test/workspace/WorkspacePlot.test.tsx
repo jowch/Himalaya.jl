@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { act, render, fireEvent, screen } from "@testing-library/react";
-import { COMPARE_COLORS, PLOT_HEIGHT, WorkspacePlot } from "../../src/workspace/ui/WorkspacePlot";
+import { COMPARE_COLORS, PLOT_HEIGHT, WorkspacePlot } from "../../src/ui/WorkspacePlot";
 import { PLOT_MARGINS } from "../../src/workspace/plotScale";
 
 const trace = { q: [0.05, 0.1, 0.15, 0.2, 0.25], I: [10, 50, 8, 6, 5], sigma: [0, 0, 0, 0, 0] };

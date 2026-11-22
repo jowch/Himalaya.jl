@@ -1,6 +1,6 @@
 import { definePreview } from "@storybook/react-vite";
 import "../src/styles.css";
-import { DetectorLutFilters } from "../src/print/detector";
+import { DetectorLutFilters } from "../src/detector";
 
 export default definePreview({
   parameters: {

@@ -51,7 +51,7 @@ function samples(db::SQLite.DB; experiment::Union{Integer,Nothing}=nothing)
     end
 end
 
-const _EXPOSURE_COLS = """id, experiment_id, setup_id, sample_id, filename, kind, selected,
+const _EXPOSURE_COLS = """id, experiment_id, setup_id, sample_id, filename, kind,
     status, image_path, timestamp, exposure_time, frame_no,
     transmitted_counts, incident_monitor"""
 

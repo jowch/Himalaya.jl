@@ -6,7 +6,6 @@ export function makeExposure(over: Partial<Exposure> = {}): Exposure {
     sample_id: 1,
     filename: null,
     kind: "file",
-    selected: false,
     status: null,
     image_path: null,
     image_version: "",

@@ -33,7 +33,7 @@ import { customIndexMutator } from "../../src/lib/queue/mutators/customIndex";
 import { reanalyzeExposureMutator } from "../../src/lib/queue/mutators/reanalyzeExposure";
 import {
   updateSampleMutator,
-  setExposureStatusMutator, selectExposureMutator,
+  setExposureStatusMutator,
 } from "../../src/lib/queue/mutators/trivial";
 
 interface Captured {
@@ -63,7 +63,7 @@ function captureFetch(): Captured[] {
       status: "candidate", inputs_hash: "h",
       author_id: 3, author: "alice", body: "hi", created_at: "2026-05-03",
       event_id: 9, view_row_id: 100, analysis_inputs_hash: "h1",
-      analyzed: true, deleted: 1, selected: true,
+      analyzed: true, deleted: 1,
     }), { status: 200, headers: { "Content-Type": "application/json" } });
   }) as typeof fetch;
   return captured;
@@ -171,13 +171,6 @@ const SPECS: Spec[] = [
     run: () => setExposureStatusMutator.request(
       { ...FLAT_BASE, kind: "set_exposure_status",
         sampleId: 1, exposureId: 5, status: "rejected" } as any,
-      new AbortController().signal),
-  },
-  {
-    name: "selectExposure",
-    run: () => selectExposureMutator.request(
-      { ...FLAT_BASE, kind: "select_exposure",
-        sampleId: 1, exposureId: 6 } as any,
       new AbortController().signal),
   },
 ];

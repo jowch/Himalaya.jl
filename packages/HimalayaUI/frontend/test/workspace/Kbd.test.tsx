@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render } from "@testing-library/react";
-import { Kbd } from "../../src/workspace/ui/Kbd";
+import { Kbd } from "../../src/ui/Kbd";
 
 describe("Kbd", () => {
   it("renders a key cap on its own plate", () => {

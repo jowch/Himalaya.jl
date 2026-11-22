@@ -3,8 +3,8 @@ import { cleanLabel, labelColorIsFixed, sameLabel, USER_LABEL_COLORS } from "../
 import type { PlotView, PlotViewOption } from "./plotView";
 import { latticeParam } from "./indexing";
 import type { AppTheme } from "../lib/theme";
-import { LABEL_SWATCH } from "./ui/labelSwatches";
-import type { FieldOption, PaletteForm, PaletteGroup, PaletteItem, PalettePage } from "./ui/palette/model";
+import { LABEL_SWATCH } from "../ui/labelSwatches";
+import type { FieldOption, PaletteForm, PaletteGroup, PaletteItem, PalettePage } from "../ui/palette/model";
 
 export interface PaletteLabel {
   label: string;

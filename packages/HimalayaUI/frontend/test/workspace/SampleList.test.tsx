@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { SampleList } from "../../src/workspace/ui/SampleList";
+import { SampleList } from "../../src/ui/SampleList";
 import type { CorpusSample } from "../../src/api";
 
 const sample = (id: number, name: string) => ({ id, name } as unknown as CorpusSample);

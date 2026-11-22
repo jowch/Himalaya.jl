@@ -34,7 +34,7 @@ import { customIndexMutator } from "../../src/lib/queue/mutators/customIndex";
 import { reanalyzeExposureMutator } from "../../src/lib/queue/mutators/reanalyzeExposure";
 import {
   updateSampleMutator,
-  setExposureStatusMutator, selectExposureMutator,
+  setExposureStatusMutator,
 } from "../../src/lib/queue/mutators/trivial";
 import {
   addLabelMutator, removeLabelMutator, restoreLabelSuggestionMutator,
@@ -48,7 +48,7 @@ const PEAK = {
   sharpness: 30, source: "auto" as const, excluded: false,
 };
 const EXPOSURE = {
-  id: 5, sample_id: 1, filename: null, kind: "file" as const, selected: true,
+  id: 5, sample_id: 1, filename: null, kind: "file" as const,
   status: null, image_path: null, image_version: "",
   trace_hash: null, analysis_inputs_hash: "h0", sources: [],
 };
@@ -259,20 +259,6 @@ const SPECS: Spec[] = [
         kind: "set_exposure_status", clientOpId: "op",
         sampleId: 1, username: "alice", clientId: "tab",
         exposureId: 5, status: "rejected",
-      } as any, qc);
-      ctx.restore();
-    },
-  },
-  {
-    name: "selectExposure",
-    keys: [EXP_LIST_KEY as unknown as QueryKey],
-    seed: (qc) => qc.setQueryData(EXP_LIST_KEY as unknown as QueryKey,
-      [EXPOSURE, { ...EXPOSURE, id: 6, selected: false }]),
-    run: (qc) => {
-      const ctx = selectExposureMutator.onMutate({
-        kind: "select_exposure", clientOpId: "op",
-        sampleId: 1, username: "alice", clientId: "tab",
-        exposureId: 6,
       } as any, qc);
       ctx.restore();
     },

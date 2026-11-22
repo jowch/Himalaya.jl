@@ -114,7 +114,7 @@ export function handleRemoteEvent(
  * Dispatch: lookup by event_kind via resolveMutatorForEvent,
  * then ask the mutator to build its shape. Falls back to a generic
  * `{...base, ...payload}` for forward-scaffolded kinds (set_exposure_status,
- * update_sample, select_exposure). These emit SSE today but their
+ * update_sample). These emit SSE today but their
  * UI gesture doesn't queue through this pipeline (yet); when a future plan
  * wires that gesture, add `synthesizeFromSse` to the matching mutator and the
  * fallback stops handling them.

@@ -15,7 +15,7 @@ src/AGENTS.md                                        # core peak-finding/indexin
 packages/HimalayaUI/src/AGENTS.md                    # backend (SQLite, Oxygen, pipeline)
 packages/HimalayaUI/test/AGENTS.md                   # Julia test patterns
 packages/HimalayaUI/frontend/src/AGENTS.md           # frontend conventions
-packages/HimalayaUI/frontend/src/print/shell/AGENTS.md  # app shell / routing / modal gotchas
+packages/HimalayaUI/frontend/src/shell/AGENTS.md  # app shell / routing / modal gotchas
 packages/HimalayaUI/frontend/src/lib/queue/AGENTS.md  # mutation queue internals
 packages/HimalayaUI/frontend/test/AGENTS.md          # Vitest/JSDOM patterns
 packages/HimalayaUI/frontend/e2e/AGENTS.md           # Playwright patterns
@@ -43,9 +43,11 @@ packages/HimalayaUI/
   test/                             # backend tests — see packages/HimalayaUI/test/AGENTS.md
   frontend/
     src/                            # frontend — see frontend/src/AGENTS.md
-      workspace/                    # the three-pane triage workspace (fresh build); ui/ holds its primitives
-      print/                        # all presentation: shell/, ui/, components/, pages/, render layers
-        shell/                      # app shell, routing, modals — see print/shell/AGENTS.md
+      ui/                           # every appearance-owning component (primitives and workspace components)
+      shell/                        # app shell, routing, modals — see shell/AGENTS.md
+      pages/ components/            # experiments home, New-experiment funnel, their composites
+      plot/ detector/               # render layers
+      workspace/                    # the three-pane triage workspace: WorkspacePage and its logic
       hooks/                        # custom React hooks
       lib/                          # url, plot, peak-ref, custom-index, label and bridge helpers
         queue/                      # mutation queue — see lib/queue/AGENTS.md
@@ -148,7 +150,7 @@ Module-specific conventions and anti-patterns live in the AGENTS.md file nearest
 | Routes, SQLite, pipeline, events, image, idempotency | [packages/HimalayaUI/src/AGENTS.md](packages/HimalayaUI/src/AGENTS.md) |
 | Backend tests, in-process SSE, FK-heal fixtures | [packages/HimalayaUI/test/AGENTS.md](packages/HimalayaUI/test/AGENTS.md) |
 | Zustand, TanStack Query, SSE wiring, Tailwind | [packages/HimalayaUI/frontend/src/AGENTS.md](packages/HimalayaUI/frontend/src/AGENTS.md) |
-| App shell / routing / modal gotchas (AppRoutes, ExperimentEntry, ShellPalette, OnboardingFlow) | [packages/HimalayaUI/frontend/src/print/shell/AGENTS.md](packages/HimalayaUI/frontend/src/print/shell/AGENTS.md) |
+| App shell / routing / modal gotchas (AppRoutes, ExperimentEntry, ShellPalette, OnboardingFlow) | [packages/HimalayaUI/frontend/src/shell/AGENTS.md](packages/HimalayaUI/frontend/src/shell/AGENTS.md) |
 | Mutation queue internals | [packages/HimalayaUI/frontend/src/lib/queue/AGENTS.md](packages/HimalayaUI/frontend/src/lib/queue/AGENTS.md) |
 | Vitest / JSDOM / RTL patterns | [packages/HimalayaUI/frontend/test/AGENTS.md](packages/HimalayaUI/frontend/test/AGENTS.md) |
 | Playwright selectors, port binding, live-mode timing | [packages/HimalayaUI/frontend/e2e/AGENTS.md](packages/HimalayaUI/frontend/e2e/AGENTS.md) |
@@ -160,8 +162,8 @@ Module-specific conventions and anti-patterns live in the AGENTS.md file nearest
 - **Backend:** transactional SQLite pipeline, the HTTP ingest funnel (`/api/fs/*` → `POST /api/experiments` → `scan_and_group!`), REST API (Oxygen.jl), CLI (`analyze`, `show`, `serve`, `merge`), TIFF→PNG image route with Q0f31-aware lognormalize. One experiment per beamtime folder, one `setups` row per setup subfolder; rescans are insert-only and add new setups. There is no `experiment.toml`. See `docs/experiment-config.md`.
 - **Events and multiplayer:** every edit goes through `apply_event!` into the `user_actions` log, with content-hash memoization and SSE at `GET /api/events`. Multiplayer is last-write-wins with no conflict UI; undo reads the server before it restores anything. See `docs/event-log.md`.
 - **Mutation queue:** a per-mutation `client_op_id` keys both the backend `with_idempotency` cache and the frontend `pendingDeferreds` registry. See `docs/mutation-queue.md`.
-- **Frontend:** `index.html → src/print/main.tsx → PrintApp`. The experiments home, the one-screen New-experiment funnel and onboarding live under `src/print/`. Triage happens in the three-pane workspace at `/experiments/:id/workspace/:sampleId` (`src/workspace/`): sample list, trace plot with peak editing and custom index, detector overlay, phase calls, comparisons and subtraction, bridges, labels, undo, and the ⌘K palette.
-- **Design system:** closed-look primitives in `src/print/ui/` and `src/workspace/ui/`. Consumers pass placement-only `className`, and `scripts/check-design.mjs` (`lint:design`) fails the build on inline appearance utilities elsewhere. Storybook (`npm run storybook`) is the visual catalog.
+- **Frontend:** `index.html → src/main.tsx → App`. The experiments home and the one-screen New-experiment funnel live in `src/pages/`, the shell and onboarding in `src/shell/`. Triage happens in the three-pane workspace at `/experiments/:id/workspace/:sampleId` (`src/workspace/`): sample list, trace plot with peak editing and custom index, detector overlay, phase calls, comparisons and subtraction, bridges, labels, undo, and the ⌘K palette.
+- **Design system:** closed-look components in `src/ui/`. Consumers pass placement-only `className`, and `scripts/check-design.mjs` (`lint:design`) fails the build on inline appearance utilities elsewhere. Storybook (`npm run storybook`) is the visual catalog.
 - **Removed features get a fresh design if they return.** Focus, Loupe, the Index chat, the old Series/Compare page, sample chat, tags, the corpus page, grouping review and the configuration page are gone. `migrate_drop_retired_tables!` drops their tables on `open_db` and the log rows stay.
 - **Deferred:** see [docs/future-feature-ideas.md](docs/future-feature-ideas.md).
 
