@@ -1292,7 +1292,7 @@ export function WorkspacePage(): JSX.Element {
                 chips={activeRefs.map((rid) => ({
                   id: rid,
                   name: sampleNames.get(rid) ?? `Sample ${rid}`,
-                  setup: sampleSetup.get(rid),
+                  setup: sampleSetup.get(rid) !== (sampleId === undefined ? undefined : sampleSetup.get(sampleId)) ? sampleSetup.get(rid) : undefined,
                   color: COMPARE_COLORS[activeRefs.indexOf(rid) % COMPARE_COLORS.length]!,
                   scale: scales.get(rid),
                   hidden: shownCompareSet.has(rid),
@@ -1312,6 +1312,7 @@ export function WorkspacePage(): JSX.Element {
                 onSubtract={toggleSubtract}
                 onRemove={removeCompare}
                 onAdd={() => setPicking(true)}
+                full={comparesFull}
                 trailing={difference && subRef !== undefined ? <SubtractToggle name={subName} on={minusOn} onChange={setMinus} /> : undefined}
               />
               {picking && (
