@@ -507,3 +507,20 @@ end
         @test all(i -> abs(i - 500) <= 6, hyb.indices)
     end
 end
+
+@testset "hybrid: a broad peak just after a zero beamstop is kept where the default keeps it" begin
+    n = 600
+    x = collect(1.0:n)
+    q = collect(range(0.01, 0.4; length = n))
+    for L in (30, 50), sd in (10.0, 18.0), off in (20, 30), seed in 1:20
+        c = L + off
+        I0 = 3000 .* exp.(-x ./ 200) .+ 600.0 .* exp.(-((x .- c) ./ sd) .^ 2 ./ 2)
+        σ = sqrt.(I0)
+        I = I0 .+ σ .* randn(MersenneTwister(seed), n)
+        I[1:L] .= 0.0
+        near(v) = filter(i -> abs(i - c) <= 5, v)
+        base = near(findpeaks(q, I, σ).indices)
+        @test issubset(base, findpeaks(q, I, σ; method = :hybrid).indices)
+        @test issubset(near(findpeaks(q, I).indices), findpeaks(q, I; method = :hybrid).indices)
+    end
+end
