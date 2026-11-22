@@ -2559,6 +2559,29 @@ describe("WorkspacePage", () => {
     }
   });
 
+  it("on a short window the folded Frame header names the shown frame's sample for a bridged sample, and only then", () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(max-height: 860px)", media: query, addEventListener: () => {}, removeEventListener: () => {} }));
+    try {
+      state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
+      state.corpus = state.corpus.map((s) => (s.id === 12 ? { ...s, assignment_state: "indexed" } : s));
+      state.mateExposures = new Map([[12, [exposure(200, { sample_id: 12 })]]]);
+      const { unmount } = renderAt("/experiments/1/workspace/10");
+      const tools = () => screen.getByRole("complementary", { name: "Tools" });
+      const frame = () => within(tools()).getByRole("button", { name: /^Frame/ }).closest("section")!;
+      expect(frame().querySelector("[data-section-folded]")).toHaveTextContent("A1");
+      fireEvent.click(screen.getByRole("button", { name: "Frame 1 of A3" }));
+      expect(frame().querySelector("[data-section-folded]")).toHaveTextContent("A3");
+      fireEvent.click(within(tools()).getByRole("button", { name: /^Frame/ }));
+      expect(frame().querySelector("[data-section-folded]")).toBeNull();
+      unmount();
+      state.bridges = [];
+      renderAt("/experiments/1/workspace/10");
+      expect(frame().querySelector("[data-section-folded]")).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("puts the Call list first in the tools column, then the indexing plot, then the exposure", () => {
     renderAt("/experiments/1/workspace/10");
     const tools = screen.getByRole("complementary", { name: "Tools" });

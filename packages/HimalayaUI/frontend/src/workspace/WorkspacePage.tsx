@@ -1392,6 +1392,7 @@ export function WorkspacePage(): JSX.Element {
           <Section
             title="Frame"
             aside="← →"
+            folded={groups.length > 1 ? frameOwner : undefined}
             className={shortWindow && exposureOpen ? "min-h-0 flex-1 overflow-y-auto" : exposureOpen ? "min-h-0 shrink overflow-y-auto" : "shrink-0"}
             collapsible={shortWindow ? { open: exposureOpen, onOpen: draft === null ? () => setOpenPanel("exposure") : undefined } : undefined}
           >
