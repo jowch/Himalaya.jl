@@ -644,7 +644,7 @@ describe("WorkspacePage", () => {
     expect(screen.queryByRole("button", { name: "A2, hidden" })).toBeNull();
   });
 
-  it("/ puts the cursor in the filter, where letters type, ? from the empty filter opens the shortcuts, and Esc leaves it", () => {
+  it("/ puts the cursor in the filter, where letters type, and ? opens the shortcuts only while the filter is empty", () => {
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "/" });
     const filter = screen.getByRole("searchbox", { name: "Filter samples" });
@@ -659,8 +659,43 @@ describe("WorkspacePage", () => {
     fireEvent.change(filter, { target: { value: "a" } });
     fireEvent.keyDown(filter, { key: "?" });
     expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
-    fireEvent.keyDown(filter, { key: "Escape" });
-    expect(document.activeElement).not.toBe(filter);
+  });
+
+  it("Esc leaves a page field that has no Esc handling of its own", () => {
+    renderAt("/experiments/1/workspace/10");
+    const field = document.createElement("input");
+    document.body.appendChild(field);
+    field.focus();
+    fireEvent.keyDown(field, { key: "Escape" });
+    expect(document.activeElement).not.toBe(field);
+    field.remove();
+  });
+
+  it("? types into the empty palette field instead of opening the shortcuts over it", () => {
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    const input = screen.getByLabelText("Command or sample");
+    expect(input).toHaveValue("");
+    fireEvent.keyDown(input, { key: "?" });
+    expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
+  });
+
+  it("⌘/Ctrl+0 in a field leaves the zoom alone", () => {
+    state.trace = makeTrace(1);
+    renderAt("/experiments/1/workspace/10");
+    const plot = screen.getByTestId("workspace-trace");
+    const xTicks = (): string =>
+      Array.from(plot.ownerDocument.querySelectorAll('[data-testid="workspace-trace"] [data-role="axis-bottom"] text')).map((t) => t.textContent).join(" ");
+    const full = xTicks();
+    for (let i = 0; i < 5; i++) fireEvent.wheel(plot.parentElement!, { deltaY: -300, clientX: 500 });
+    const zoomed = xTicks();
+    expect(zoomed).not.toBe(full);
+    const filter = screen.getByRole("searchbox", { name: "Filter samples" });
+    filter.focus();
+    fireEvent.keyDown(filter, { key: "0", ctrlKey: true });
+    expect(xTicks()).toBe(zoomed);
+    fireEvent.keyDown(window, { key: "0", ctrlKey: true });
+    expect(xTicks()).toBe(full);
   });
 
   it("page keys stay off while a modal is open, even before focus lands in it", () => {

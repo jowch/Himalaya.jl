@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { Input } from "../ui/Input";
 import { Popover } from "../ui/Popover";
@@ -44,6 +44,7 @@ export function DirectoryPickerField({
   className = "",
 }: DirectoryPickerFieldProps): JSX.Element {
   const [active, setActive] = useState(-1);
+  const listId = useId();
   const suggestionsKey = suggestions.join("\n");
   useEffect(() => setActive(-1), [suggestionsKey]);
   // Ref to the inner <input>. Popover's open-effect focuses its panel by
@@ -120,6 +121,7 @@ export function DirectoryPickerField({
             mono
             placeholder="Type or paste your experiment directory…"
             aria-label={ariaLabel}
+            aria-activedescendant={highlighted === undefined ? undefined : `${listId}-${active}`}
             autoFocus={autoFocus}
             className="w-full"
           />
@@ -132,6 +134,7 @@ export function DirectoryPickerField({
         {hasSuggestions && (
           <ul
             data-testid="dirpicker-suggestions"
+            id={listId}
             role="listbox"
             aria-label="Directory suggestions"
             className="py-1"
@@ -141,6 +144,7 @@ export function DirectoryPickerField({
                 <button
                   type="button"
                   tabIndex={-1}
+                  id={`${listId}-${i}`}
                   role="option"
                   aria-selected={i === active}
                   data-active={i === active ? "true" : undefined}

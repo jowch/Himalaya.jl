@@ -60,6 +60,33 @@ describe("shell keys on the pages outside the workspace", () => {
     expect(await screen.findByRole("dialog", { name: "Keyboard shortcuts" })).toBeInTheDocument();
   });
 
+  it("⌘? and Ctrl+? in the empty folder field do not open the shortcuts", async () => {
+    renderAt("/experiments/new");
+    await screen.findByTestId("app-shell");
+    const field = screen.getByTestId("dirpicker-input").querySelector("input")!;
+    fireEvent.keyDown(field, { key: "?", metaKey: true });
+    fireEvent.keyDown(field, { key: "?", ctrlKey: true });
+    expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
+  });
+
+  it("? types into an empty field inside a dialog instead of opening the shortcuts over it", async () => {
+    renderAt("/experiments");
+    await screen.findByTestId("app-shell");
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    const input = document.createElement("input");
+    dialog.appendChild(input);
+    document.body.appendChild(dialog);
+    input.focus();
+    try {
+      fireEvent.keyDown(input, { key: "?" });
+      expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
+    } finally {
+      dialog.remove();
+    }
+  });
+
   it("⌘K does nothing inside an open dialog", async () => {
     renderAt("/experiments");
     await screen.findByTestId("app-shell");

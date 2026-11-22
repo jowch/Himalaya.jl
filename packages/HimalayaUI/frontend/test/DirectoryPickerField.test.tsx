@@ -167,4 +167,14 @@ describe("DirectoryPickerField (Phase E1)", () => {
     expect(options).toHaveLength(2);
     for (const o of options) expect(o).toHaveAttribute("tabindex", "-1");
   });
+  it("points the field at the highlighted suggestion for screen readers", () => {
+    render(<DirectoryPickerField value="/b/s" onChange={() => {}} suggestions={["/b/setup1", "/b/setup2"]} />);
+    const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
+    fireEvent.click(input);
+    expect(input).not.toHaveAttribute("aria-activedescendant");
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    const id = input.getAttribute("aria-activedescendant")!;
+    expect(document.getElementById(id)).toBe(screen.getAllByRole("option")[1]);
+  });
 });
