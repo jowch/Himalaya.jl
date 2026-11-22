@@ -12,16 +12,8 @@ const ITEMS: readonly NavItem[] = [
   { id: "experiments", label: "Experiments", to: "/experiments" },
 ];
 
-/**
- * TopNav — the unified top navigation bar (App Shell Unification spec §3.1).
- * Wordmark "Himalaya · SAXS" links to /experiments; one section tab
- * (Experiments) with router-derived active state. Replaces both
- * the legacy triple-chrome that preceded it in T3.2. No Samples tab,
- * no Beamtime chip, no gear (Configuration rides the experiment header, §3.1).
- */
 export function TopNav(): JSX.Element {
   const { pathname } = useLocation();
-
   const wordmark = (
     <Link
       to="/experiments"
@@ -32,7 +24,6 @@ export function TopNav(): JSX.Element {
       <Wordmark tail="SAXS">Himalaya</Wordmark>
     </Link>
   );
-
   const tabs = (
     <nav data-testid="topnav-tabs" aria-label="Sections" className="flex gap-0.5">
       {ITEMS.map((it) => {
@@ -58,7 +49,6 @@ export function TopNav(): JSX.Element {
       })}
     </nav>
   );
-
   return (
     <TopBar data-testid="topnav" wordmark={wordmark}>
       {tabs}
