@@ -15,8 +15,6 @@ export const LS_KEY = "himalaya-ui:state";
 // the `migrate` below, which formally strips any lingering `activePage` key from
 // a pre-cutover blob while preserving every surviving pref.
 
-export type NavModalStep = "experiment" | "sample";
-
 export type IngestProgressStatus = Exclude<IngestStatus, "idle">;
 export interface IngestProgress {
   processed: number;
@@ -42,13 +40,6 @@ export type StaleUrlContext =
       sample_resolved: { id: number; name: string } | undefined;
     }
   | { kind: "unknown_path"; raw: string };
-
-export type RecoverOpts = {
-  step: NavModalStep;
-  experimentId: number | undefined;
-  sampleId: number | undefined;
-  openModal?: boolean; // default true; row "exposure" passes false
-};
 
 export interface AppState {
   // persisted
@@ -84,10 +75,7 @@ export interface AppState {
    *  header + LiveIngestUnfold. NOT persisted (omitted from partialize); a
    *  reload re-derives terminal state from the experiment's `ingest_status`. */
   ingestInFlight: Record<number, IngestProgress> | null;
-  navModalOpen: boolean;
-  navModalStep: NavModalStep;
-
-
+  paletteOpen: boolean;
 
   /**
    * Permalink URL handling slot (spec §4.4 + §6).
@@ -110,14 +98,13 @@ export interface AppState {
   clearIngestProgress: (experimentId: number) => void;
   setTutorialSeen: (seen: boolean) => void;
   setTutorialPendingFor: (handle: string | undefined) => void;
-  openNavModal: (step?: NavModalStep) => void;
-  closeNavModal: () => void;
-  setNavModalStep: (step: NavModalStep) => void;
+  openPalette: () => void;
+  closePalette: () => void;
   clearUsername: () => void;
 
   // Permalink URL handling actions (spec §4.4 + §6)
   setStaleUrlContext: (ctx: StaleUrlContext | null) => void;
-  recoverFromStaleUrl: (opts: RecoverOpts) => void;
+  recoverFromStaleUrl: () => void;
   /** Mark the URL as an unknown frontend path (renders StaleUrlPage). */
   setStaleUnknownPath: (raw: string) => void;
   /** Atomic commit of a `/api/resolve` 404 response. Renders StaleUrlPage. */
@@ -144,8 +131,7 @@ export const useAppState = create<AppState>()(
         hoveredQ: undefined,
         previewIndexId: undefined,
         ingestInFlight: null,
-        navModalOpen: false,
-        navModalStep: "experiment",
+        paletteOpen: false,
 
         // Permalink URL handling — ephemeral, default empty.
         staleUrlContext: null,
@@ -190,27 +176,15 @@ export const useAppState = create<AppState>()(
           }),
         setTutorialSeen: (tutorialSeen) => set({ tutorialSeen }),
         setTutorialPendingFor: (tutorialPendingFor) => set({ tutorialPendingFor }),
-        openNavModal: (step) =>
-          set(step ? { navModalOpen: true, navModalStep: step } : { navModalOpen: true }),
-        closeNavModal: () => set({ navModalOpen: false }),
-        setNavModalStep: (navModalStep) => set({ navModalStep }),
+        openPalette: () => set({ paletteOpen: true }),
+        closePalette: () => set({ paletteOpen: false }),
         clearUsername: () => set({ username: undefined, firstName: undefined, lastName: undefined }),
 
         // Permalink URL handling actions (spec §4.4 + §6).
-        // `recoverFromStaleUrl` is atomic: clears stale + sets active ids +
-        // opens nav modal in one render-cycle commit so consumers don't see
-        // an intermediate state.
+        // `recoverFromStaleUrl` is atomic: clears stale + opens the palette in
+        // one render-cycle commit so consumers don't see an intermediate state.
         setStaleUrlContext: (staleUrlContext) => set({ staleUrlContext }),
-        recoverFromStaleUrl: (opts) => {
-          set((s) => ({
-            staleUrlContext: null,
-            activeExperimentId: opts.experimentId ?? s.activeExperimentId,
-            activeSampleId: opts.sampleId ?? undefined,
-            activeExposureId: undefined,
-            navModalOpen: opts.openModal ?? true,
-            navModalStep: opts.step,
-          }));
-        },
+        recoverFromStaleUrl: () => set({ staleUrlContext: null, paletteOpen: true }),
         setStaleUnknownPath: (raw) =>
           set({ staleUrlContext: { kind: "unknown_path", raw } }),
         setStaleNotFound: (ctx) =>

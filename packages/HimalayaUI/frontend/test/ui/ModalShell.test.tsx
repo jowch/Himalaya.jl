@@ -112,7 +112,7 @@ describe("ModalShell", () => {
     // trigger and lands on the dialog's first focusable. Consumers that place
     // focus themselves still win — autoFocus runs before the trap effect and
     // is respected; a parent's own focus effect runs after it (child-before-
-    // parent effect order) and overrides it (NavModal's input).
+    // parent effect order) and overrides it.
     expect(document.activeElement).toBe(screen.getByTestId("inner"));
     document.body.removeChild(trigger);
   });

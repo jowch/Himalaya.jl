@@ -11,7 +11,7 @@ const FOCUSABLE =
  *   descendant, or to the container itself (given tabIndex=-1) if none —
  *   unless the consumer already placed focus inside. React `autoFocus` fires
  *   during commit (before this effect) and is respected; a PARENT's own focus
- *   effect (NavModal's input focus) instead runs AFTER this child-mounted
+ *   effect (a consumer focusing its own input) instead runs AFTER this child-mounted
  *   trap and simply overwrites its initial placement — both end up inside.
  * - One trap at a time: two simultaneously-active traps would ping-pong via
  *   their focusin guards. Unreachable today (suppressGlobalKeys blocks modal
@@ -20,7 +20,7 @@ const FOCUSABLE =
  *   when focus has escaped the container: boundary presses wrap, and a press
  *   with focus outside is driven back to the first (last for Shift) focusable.
  *   Focusables are recomputed per keydown — modal contents change. A Tab the
- *   consumer already `preventDefault`ed is left alone (NavModal Tab-commit).
+ *   consumer already `preventDefault`ed is left alone.
  * - A document `focusin` guard pulls focus back in if it lands outside.
  * - Restores focus to the previously-focused element on deactivation.
  *   Effect setup/cleanup are symmetric, so StrictMode double-activation is

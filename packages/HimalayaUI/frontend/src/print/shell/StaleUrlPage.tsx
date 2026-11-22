@@ -3,6 +3,7 @@ import { useNavigate, type NavigateFunction } from "react-router-dom";
 import { useAppState } from "../../state";
 import { suppressGlobalKeys } from "../../lib/keys";
 import type { StaleUrlContext } from "../../state";
+import { workspaceHref } from "./SampleRedirect";
 
 interface Props {
   staleUrlContext: StaleUrlContext;
@@ -37,41 +38,31 @@ function uiFor(
       dataMissing: "experiment",
       header: `Experiment '${ctx.missing_value}' not found.`,
       ctaLabel: "Select an experiment",
-      onPick: () => store.recoverFromStaleUrl({
-        step: "experiment",
-        experimentId: undefined,
-        sampleId: undefined,
-      }),
+      onPick: () => store.recoverFromStaleUrl(),
     };
   }
+  const expId = ctx.experiment_resolved?.id;
+  const sampleId = ctx.sample_resolved?.id;
+  const leave = (to: string | undefined): void => {
+    if (to === undefined) return store.recoverFromStaleUrl();
+    store.setStaleUrlContext(null);
+    navigate(to, { replace: true });
+  };
   if (ctx.missing === "sample") {
     const expName = ctx.experiment_resolved?.name ?? "?";
-    const expId = ctx.experiment_resolved?.id;
     return {
       dataMissing: "sample",
       header: `Sample '${ctx.missing_value}' not found in '${expName}'.`,
       ctaLabel: "Select another sample",
-      onPick: () => store.recoverFromStaleUrl({
-        step: "sample",
-        experimentId: expId,
-        sampleId: undefined,
-      }),
+      onPick: () => leave(expId === undefined ? undefined : `/experiments/${expId}`),
     };
   }
-  // missing === "exposure"
   const sampleName = ctx.sample_resolved?.name ?? "?";
-  const expId = ctx.experiment_resolved?.id;
-  const sampleId = ctx.sample_resolved?.id;
   return {
     dataMissing: "exposure",
     header: `Frame '${ctx.missing_value}' not found in '${sampleName}'.`,
     ctaLabel: "Back to sample",
-    onPick: () => store.recoverFromStaleUrl({
-      step: "sample",
-      experimentId: expId,
-      sampleId: sampleId,
-      openModal: false,
-    }),
+    onPick: () => leave(expId === undefined || sampleId === undefined ? undefined : workspaceHref(expId, sampleId)),
   };
 }
 
