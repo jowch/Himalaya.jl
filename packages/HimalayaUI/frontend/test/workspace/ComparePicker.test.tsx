@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { ComparePicker } from "../../src/workspace/ui/ComparePicker";
+import { ComparePicker } from "../../src/ui/ComparePicker";
 import { STANDARD_LABELS } from "../../src/lib/labels";
 import type { CorpusSample } from "../../src/api";
 

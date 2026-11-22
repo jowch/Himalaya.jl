@@ -1,7 +1,7 @@
 // test/DirectoryPickerField.test.tsx
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { DirectoryPickerField } from "../src/print/components/DirectoryPickerField";
+import { DirectoryPickerField } from "../src/components/DirectoryPickerField";
 
 describe("DirectoryPickerField (Phase E1)", () => {
   it("shows suggestions and Tab completes the top one", () => {

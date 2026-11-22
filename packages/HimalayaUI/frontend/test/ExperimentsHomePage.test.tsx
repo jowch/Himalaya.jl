@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ExperimentsHomePage } from "../src/print/pages/ExperimentsHomePage";
+import { ExperimentsHomePage } from "../src/pages/ExperimentsHomePage";
 import * as api from "../src/api";
 
 const navigate = vi.fn();
