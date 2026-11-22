@@ -48,6 +48,7 @@ interface Props {
   retrying?: boolean;
   emptyMessage?: string;
   difference?: DifferenceLine;
+  highlight?: ReadonlyMap<string, string> | null;
 }
 
 interface Geometry {
@@ -108,6 +109,7 @@ export function WorkspacePlot({
   retrying = false,
   emptyMessage,
   difference,
+  highlight = null,
 }: Props): JSX.Element {
   const clipId = `workspace-clip-${useId().replace(/:/g, "")}`;
   const geometry = useRef<Geometry | null>(null);
@@ -285,36 +287,53 @@ export function WorkspacePlot({
                 </text>
               )}
             </g>
+            {hoverQ !== null && (
+              <line
+                data-role="crosshair"
+                x1={x.to(hoverQ)}
+                x2={x.to(hoverQ)}
+                y1={0}
+                y2={dims.plotHeight}
+                stroke="var(--color-ink-faint)"
+                strokeWidth={1}
+                strokeDasharray="3 3"
+                pointerEvents="none"
+              />
+            )}
             <g data-role="peak-glyph">
-              {shownPeaks.map((p) => (
-                <polygon
-                  key={peakKey(p)}
-                  data-peak-key={peakKey(p)}
-                  data-excluded={p.excluded || undefined}
-                  points={peakPoints(x.to(p.q))}
-                  fill={peakFill(p)}
-                  stroke={p.excluded ? "var(--color-ink-faint)" : "none"}
-                  pointerEvents="all"
-                  {...(onClickPeak
-                    ? {
-                        role: "button",
-                        tabIndex: 0,
-                        "aria-label": `${p.source === "manual" ? "Manual" : "Auto"} peak at q = ${p.q.toFixed(4)} Å⁻¹${p.excluded ? ", off" : ""}`,
-                        className: "cursor-pointer outline-none",
-                        onFocus: (ev: React.FocusEvent<SVGPolygonElement>) => {
-                          if (keyboardFocus(ev.currentTarget)) setFocusedPeak(peakKey(p));
-                        },
-                        onBlur: () => setFocusedPeak(null),
-                        onKeyDown: (ev: React.KeyboardEvent) => {
-                          if (ev.key !== "Enter" && ev.key !== " ") return;
-                          ev.preventDefault();
-                          ev.stopPropagation();
-                          onClickPeak({ id: p.id, source: p.source });
-                        },
-                      }
-                    : {})}
-                />
-              ))}
+              {shownPeaks.map((p) => {
+                const lit = highlight?.get(peakKey(p));
+                return (
+                  <polygon
+                    key={peakKey(p)}
+                    data-peak-key={peakKey(p)}
+                    data-excluded={p.excluded || undefined}
+                    points={peakPoints(x.to(p.q))}
+                    fill={lit && !p.excluded ? lit : peakFill(p)}
+                    stroke={lit ? lit : p.excluded ? "var(--color-ink-faint)" : "none"}
+                    {...(highlight && !lit ? { opacity: 0.3 } : {})}
+                    pointerEvents="all"
+                    {...(onClickPeak
+                      ? {
+                          role: "button",
+                          tabIndex: 0,
+                          "aria-label": `${p.source === "manual" ? "Manual" : "Auto"} peak at q = ${p.q.toFixed(4)} Å⁻¹${p.excluded ? ", off" : ""}`,
+                          className: "cursor-pointer outline-none",
+                          onFocus: (ev: React.FocusEvent<SVGPolygonElement>) => {
+                            if (keyboardFocus(ev.currentTarget)) setFocusedPeak(peakKey(p));
+                          },
+                          onBlur: () => setFocusedPeak(null),
+                          onKeyDown: (ev: React.KeyboardEvent) => {
+                            if (ev.key !== "Enter" && ev.key !== " ") return;
+                            ev.preventDefault();
+                            ev.stopPropagation();
+                            onClickPeak({ id: p.id, source: p.source });
+                          },
+                        }
+                      : {})}
+                  />
+                );
+              })}
               {shownPeaks.filter((p) => peakKey(p) === focusedPeak).map((p) => (
                 <rect
                   key="focus"

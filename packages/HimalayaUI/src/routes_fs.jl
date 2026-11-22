@@ -77,13 +77,6 @@ function _detect_integration_layout(data_dir::AbstractString, analysis_root::Abs
     return first(l for l in order if rank(l) == best)
 end
 
-"""
-    resolve_experiment_layout(root) -> NamedTuple
-
-Structural defaults for one setup folder: `(; name, data_dir, analysis_dir,
-setup_file, setup_ambiguous, image_pattern, metadata_pattern, integration_pattern)`.
-Only shallow reads, because the folder is usually on SMB.
-"""
 function resolve_experiment_layout(root::AbstractString)
     root = String(root)
     name = basename(rstrip(root, '/'))
@@ -203,13 +196,6 @@ function _preview_geometry(data_dir, metadata_pattern, meta_stems, setup_file)
     (gd, [Dict(:field => d.field, :message => d.message) for d in disc])
 end
 
-"""
-    fs_manifest(data_dir; image_pattern, metadata_pattern, integration_pattern,
-                analysis_dir, setup_file) -> NamedTuple
-
-Read-only match of the three patterns against `data_dir` (integration against
-`analysis_dir` when given) plus the geometry the scan would derive.
-"""
 function fs_manifest(data_dir::AbstractString;
         image_pattern::AbstractString = "{name}.tif",
         metadata_pattern::AbstractString = "{name}.prp",
@@ -249,12 +235,6 @@ end
 
 _has_tifs(dir::AbstractString) = any(_is_tif, _listdir(dir))
 
-"""
-    setup_roots(path) -> Vector{String}
-
-The setup folders `path` holds: `path` itself when its data folder has images,
-else each immediate subfolder that does (the `<date>/setup1`, `setup2`, … layout).
-"""
 _setup_data_dir(root) = isdir(joinpath(root, "data")) ? joinpath(root, "data") : String(root)
 
 function setup_roots(path::AbstractString)
@@ -317,12 +297,6 @@ function _setup_preview(db, path, root)
          :duplicate_of => dup === nothing ? nothing : Dict(:id => dup.id, :name => dup.name))
 end
 
-"""
-    register_fs_routes!()
-
-Read-only filesystem probes for the New-experiment screen: `suggest`, `manifest`,
-and `preview` (every setup under a picked folder).
-"""
 function register_fs_routes!()
     @get "/api/fs/suggest" function(req::HTTP.Request)
         q      = HTTP.queryparams(HTTP.URI(req.target))
