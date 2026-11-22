@@ -800,6 +800,23 @@ describe("WorkspacePage", () => {
       expect(toasts.at(-1)).toBe("Undone: ticked Im3m + Pn3m on A1");
     });
 
+    it("adds only the missing member when the header of a partly ticked group is clicked, and undoes only that", async () => {
+      const peaksAt = (qs: number[]) => qs.map((q, i) => ({ peak_id: i + 1, ratio_position: i + 1, residual: 0, q_observed: q }));
+      state.indices = [
+        { ...index(1, "Im3m", 0.9), lattice_d: 127.9, peaks: peaksAt([0.05, 0.07, 0.09, 0.11]) },
+        { ...index(2, "Pn3m", 0.6), lattice_d: 100, peaks: peaksAt([0.06, 0.08, 0.1, 0.12]) },
+      ];
+      state.assignment = { exposure_id: 101, state: "indexed", members: [1] };
+      renderAt("/experiments/1/workspace/10");
+      const header = screen.getByTestId("workspace-bonnet-group");
+      expect(header).toHaveAttribute("aria-pressed", "mixed");
+      fireEvent.click(header);
+      expect(calls).toEqual([{ hook: "add", boundTo: 101, arg: 2 }]);
+      onServer(101, { members: [1, 2] });
+      await undo();
+      expect(ops()).toEqual([["removePhase", 101, 2]]);
+    });
+
     it("unticks a whole Bonnet group when every member is in the call", () => {
       const peaksAt = (qs: number[]) => qs.map((q, i) => ({ peak_id: i + 1, ratio_position: i + 1, residual: 0, q_observed: q }));
       state.indices = [

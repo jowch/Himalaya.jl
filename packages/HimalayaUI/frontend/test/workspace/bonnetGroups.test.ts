@@ -47,6 +47,14 @@ describe("bonnetGroups", () => {
     expect(ids(bonnetGroups(c))).toEqual([[c[0]!.id, c[1]!.id]]);
   });
 
+  it("drops a later group whose member explains only peaks an earlier group claimed", () => {
+    const c = [
+      ix("Pn3m", 100, range(1, 6), 0.9), ix("Im3m", 127.9, range(5, 10), 0.9),
+      ix("Pn3m", 141.4, range(1, 4), 0.5), ix("Im3m", 180.9, [11, 12, 1, 2], 0.5),
+    ];
+    expect(ids(bonnetGroups(c))).toEqual([[c[0]!.id, c[1]!.id]]);
+  });
+
   it("puts a candidate in at most one group", () => {
     const c = [ix("Pn3m", 100, range(1, 4)), ix("Im3m", 127.9, range(5, 10)), ix("Im3m", 128.5, range(11, 14))];
     expect(ids(bonnetGroups(c))).toEqual([[c[0]!.id, c[1]!.id]]);

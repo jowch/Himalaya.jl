@@ -59,8 +59,12 @@ export function bonnetGroups(candidates: readonly IndexEntry[]): IndexEntry[][] 
   const claimed = new Set<string>();
   for (const { g } of ranked) {
     if (g.some((m) => used.has(m.id))) continue;
+    const fresh = (m: IndexEntry) => {
+      const others = union(g.filter((o) => o !== m).map(of));
+      return [...of(m)].filter((k) => !others.has(k) && !claimed.has(k)).length;
+    };
+    if (!g.every((m) => fresh(m) >= MIN_OWN)) continue;
     const mine = explained(g);
-    if ([...mine].filter((k) => !claimed.has(k)).length < MIN_OWN) continue;
     kept.push(g);
     for (const m of g) used.add(m.id);
     for (const k of mine) claimed.add(k);

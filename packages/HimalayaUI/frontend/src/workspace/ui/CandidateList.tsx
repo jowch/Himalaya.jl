@@ -84,7 +84,7 @@ function Rows({ rows, assigned, disabled, onToggle, onToggleGroup, onHover }: Om
               onMouseEnter={() => onHover(ids)}
               onFocus={() => onHover(ids)}
               data-testid="workspace-bonnet-group"
-              className={ROW + "grid-cols-[auto_1fr_auto] " + look(pressed === true)}
+              className={ROW + "grid-cols-[auto_1fr_auto] " + (pressed === "mixed" ? "border-dashed border-ink-soft" : look(pressed === true))}
             >
               <Key n={key} />
               <span>Bonnet group</span>
