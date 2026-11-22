@@ -109,7 +109,7 @@ end
     @test r.candidate_auc > 0.9
     c = r.by_threshold[1][2]
     @test c.add_recall > 0.8
-    @test c.extra_per_curated < r.candidates.extra_per_curated
+    @test c.extra_per_labelled < r.candidates.extra_per_labelled
 
     held = filter(e -> e.group == 4, exps)
     train_exps = filter(e -> e.group != 4, exps)

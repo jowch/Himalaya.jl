@@ -179,7 +179,7 @@ function diff_update_auto_peaks!(db::SQLite.DB, exposure_id::Int,
                                   peaks_result::NamedTuple,
                                   I_full::Vector{Float64};
                                   q_step::Union{Float64, Nothing} = exposure_q_step(db, exposure_id),
-                                  found_by::Union{AbstractString, AbstractVector{<:AbstractString}} = "hybrid",
+                                  found_by::Union{AbstractString, AbstractVector{<:AbstractString}, Nothing} = nothing,
                                   model_id::Union{Integer, Nothing, AbstractVector} = nothing)
     existing = Tables.rowtable(DBInterface.execute(db,
         "SELECT id, q FROM auto_peaks WHERE exposure_id = ? ORDER BY id", [exposure_id]))
@@ -220,18 +220,26 @@ function diff_update_auto_peaks!(db::SQLite.DB, exposure_id::Int,
         intensity = I_full[full_idx]
         prom      = peaks_result.prominence[i]
         sharp     = peaks_result.sharpness[i]
-        fb        = String(found_by isa AbstractString ? found_by : found_by[i])
+        fb        = String(found_by === nothing ? "hybrid" : found_by isa AbstractString ? found_by : found_by[i])
         mid       = model_id isa AbstractVector ? model_id[i] : model_id
 
         best_id = get(matched_id, i, 0)
 
         if best_id != 0
-            DBInterface.execute(db,
-                """UPDATE auto_peaks SET q = ?, intensity = ?, prominence = ?,
-                                         sharpness = ?, findpeaks_index = ?,
-                                         found_by = ?, model_id = ?
-                   WHERE id = ?""",
-                [qval, intensity, prom, sharp, full_idx, fb, mid, best_id])
+            if found_by === nothing
+                DBInterface.execute(db,
+                    """UPDATE auto_peaks SET q = ?, intensity = ?, prominence = ?,
+                                             sharpness = ?, findpeaks_index = ?
+                       WHERE id = ?""",
+                    [qval, intensity, prom, sharp, full_idx, best_id])
+            else
+                DBInterface.execute(db,
+                    """UPDATE auto_peaks SET q = ?, intensity = ?, prominence = ?,
+                                             sharpness = ?, findpeaks_index = ?,
+                                             found_by = ?, model_id = ?
+                       WHERE id = ?""",
+                    [qval, intensity, prom, sharp, full_idx, fb, mid, best_id])
+            end
             delete!(remaining, best_id)
             q_to_id[qval] = best_id
         else

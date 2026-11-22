@@ -528,6 +528,7 @@ function migrate_schema!(db::SQLite.DB)
     migrate_hex_sqrt11!(db)
 
     migrate_index_peaks_ratio_int!(db)
+    migrate_peak_provenance_schema!(db)
     migrate_sample_bridges!(db)
     migrate_sample_compares!(db)
     migrate_sample_labels!(db)

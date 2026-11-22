@@ -23,7 +23,7 @@ end
 
 function _latest_snapshot(db::SQLite.DB, exposure_id)
     rows = Tables.rowtable(DBInterface.execute(db,
-        "SELECT peaks_json FROM peak_reviews WHERE exposure_id = ? ORDER BY id DESC LIMIT 1", [exposure_id]))
+        "SELECT peaks_json FROM peak_reviews WHERE exposure_id = ? AND direct = 1 ORDER BY id DESC LIMIT 1", [exposure_id]))
     isempty(rows) ? nothing : JSON3.read(String(rows[1].peaks_json))
 end
 

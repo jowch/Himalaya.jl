@@ -126,13 +126,19 @@ dispatcher, on a fresh insert only. For the kinds in `REVIEW_EXPOSURE_KINDS`
 (peak add, remove, exclude, un-exclude; assignment add, remove, state;
 `set_exposure_status`; the retired index confirm kinds are never emitted and
 are not in the list) it pins the event's
-exposure, and for `sample_call_set_state` every exposure of the sample. Pinning
+exposure, and for `sample_call_set_state` every exposure of the sample.
+Pinning
 sets `exposures.reviewed_at` if it is NULL and appends a `peak_reviews` row with
 the exposure's `auto_peaks` (q, `found_by`, `model_id`) at that moment. It runs
 in the event's transaction, so a failing event writes neither, and an
-idempotent retry writes nothing. The snapshot's `direct` flag is 1 for the
-peak and assignment kinds on the exposure itself and 0 for sample calls and
-`set_exposure_status`; only direct snapshots make an exposure a training label. It runs for payload-less events too.
+idempotent retry writes nothing. It runs for payload-less events too.
+
+The snapshot's `direct` flag is 1 for the peak and assignment kinds on the
+exposure itself and 0 for sample calls and `set_exposure_status`. Callers can
+override it with `review_direct`; `_clear_frame_call!` (a `keep_call` bridge)
+passes `false`. Only direct snapshots make an exposure a training label. The
+share-bridged-labels and share-bridged-calls migrations run inside
+`without_review_pins`, so their events pin nothing.
 
 `reviewed_at` and `peak_reviews` are **bookkeeping, not views**.
 `rebuild_views_from_log!` calls `update_view_for_event!` directly, never

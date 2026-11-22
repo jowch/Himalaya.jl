@@ -2,7 +2,7 @@ mutable struct Tally
     adds::Int; adds_hit::Int
     kept::Int; kept_hit::Int
     excl::Int; excl_hit::Int
-    curated::Int; peaks::Int; extra::Int
+    labelled::Int; peaks::Int; extra::Int
     ff::Int; ff_peaks::Int
 end
 Tally() = Tally(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
@@ -11,7 +11,7 @@ function tally!(t::Tally, e::LabeledExposure, peak_q::AbstractVector)
     q_step = grid_step(e.q)
     near(x, set) = any(p -> abs(x - p) <= match_tol(x, q_step), set)
     if e.labelled
-        t.curated += 1
+        t.labelled += 1
         t.adds += length(e.adds);       t.adds_hit += count(a -> near(a, peak_q), e.adds)
         t.kept += length(e.kept);       t.kept_hit += count(a -> near(a, peak_q), e.kept)
         t.excl += length(e.excluded);   t.excl_hit += count(a -> near(a, peak_q), e.excluded)
@@ -55,7 +55,7 @@ never saw it. Reports, per threshold, the classifier against the hybrid
 detector and against the unfiltered candidate pool (the recall ceiling), on
 the same exposures: recall of adds, kept peaks and excluded peaks (an
 excluded peak that is still detected is a miss), and predicted peaks per
-curated exposure that match neither an add nor a kept peak (`extra`;
+labelled exposure that match neither an add nor a kept peak (`extra`;
 unlabelled real peaks count here, so this overstates false positives).
 `kwargs` go to `train`; its `nms` is applied.
 """
@@ -84,8 +84,8 @@ function cross_validate(exps::AbstractVector{LabeledExposure}, ds::Dataset;
     summary(T) = (add_recall = ratio(T.adds_hit, T.adds), adds = (T.adds_hit, T.adds),
         kept_recall = ratio(T.kept_hit, T.kept), kept = (T.kept_hit, T.kept),
         excluded_still_detected = ratio(T.excl_hit, T.excl), excluded = (T.excl_hit, T.excl),
-        peaks_per_curated = ratio(T.peaks, T.curated), extra_per_curated = ratio(T.extra, T.curated),
-        peaks_per_form_factor = ratio(T.ff_peaks, T.ff), curated = T.curated, form_factor = T.ff)
+        peaks_per_labelled = ratio(T.peaks, T.labelled), extra_per_labelled = ratio(T.extra, T.labelled),
+        peaks_per_form_factor = ratio(T.ff_peaks, T.ff), labelled = T.labelled, form_factor = T.ff)
     by_threshold = map(thresholds) do thr
         thr => summary(run(k -> (idx = ds.cand[k];
             idx[select_peaks(idx, oof[rows_of[k]], thr, nms)])))
@@ -101,12 +101,12 @@ function print_cv(r)
     f(x) = (x[1] == 0 && x[2] == 0) ? "-" : @sprintf("%d/%d", x...)
     @printf("candidate AUC (positive vs any negative, out of fold): %.3f\n", r.candidate_auc)
     println(rpad("", 16), rpad("add recall", 18), rpad("kept recall", 18), rpad("excl detected", 18),
-            rpad("extra/curated", 15), "peaks/FF")
+            rpad("extra/labelled", 15), "peaks/FF")
     row(name, s) = @printf("%-16s%-18s%-18s%-18s%-15.2f%.2f\n", name,
         @sprintf("%.2f (%s)", s.add_recall, f(s.adds)),
         @sprintf("%.2f (%s)", s.kept_recall, f(s.kept)),
         @sprintf("%.2f (%s)", s.excluded_still_detected, f(s.excluded)),
-        s.extra_per_curated, s.peaks_per_form_factor)
+        s.extra_per_labelled, s.peaks_per_form_factor)
     for (thr, s) in r.by_threshold
         row("p >= $thr", s)
     end

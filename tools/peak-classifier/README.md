@@ -61,7 +61,7 @@ Tests: `julia --project=. -e 'using Pkg; Pkg.test()'` (synthetic data only; CI j
    edited its own peaks or indexing (a peak add, remove, exclude or un-exclude,
    or an assignment edit); phase calls on a sample and accept or reject do not
    count. Its
-   kept peaks come from the latest review snapshot, the auto peaks you saw, minus
+   kept peaks come from the latest direct review snapshot, the auto peaks you saw, minus
    those an exclude or add now hides. Rules apply in order, first match wins:
    - positive: the nearest candidate to each add, and to each kept peak the
      hybrid detector found (`found_by` hybrid or both);
@@ -98,11 +98,11 @@ Kept recall and excl detected depend on which detector wrote `auto_peaks`. On a
 database analysed with the hybrid detector, the hybrid row has kept recall and
 excl detected near 1.0 by construction, and the `in_hybrid` and
 `in_persistence` features line up with the kept and excluded labels. Treat add
-recall and extra/curated as the independent columns. `--no-detector-features`
+recall and extra/labelled as the independent columns. `--no-detector-features`
 trains without those two features, to check how much the model leans on them.
 Other columns:
 
-- **extra/curated**: predicted peaks per curated exposure that match no add and
+- **extra/labelled**: predicted peaks per labelled exposure that match no add and
   no kept peak. Real peaks you never labelled count as extras, so this
   overstates false positives.
 - **peaks/FF**: predicted peaks per form-factor exposure.

@@ -73,7 +73,7 @@ end
 function _clear_frame_call!(db, req, exposure_id::Int)
     result = apply_event!(InTransaction(), db, req;
         kind = "assignment_set_state", entity_type = "exposure", entity_id = exposure_id,
-        payload = Dict(:state => "null"))
+        payload = Dict(:state => "null"), review_direct = false)
     _enqueue_broadcast_from_result!(result, "assignment_set_state", "exposure", exposure_id;
         post_state = Dict(:assignment => _assignment_post_state(_assignment_body(db, exposure_id))))
 end
@@ -113,6 +113,7 @@ end
 
 function migrate_share_bridged_calls!(db::SQLite.DB)
     _migrated(db, MIGRATION_BRIDGED_CALLS) && return nothing
+    without_review_pins() do
     SQLite.transaction(db) do
         req = _system_request()
         for (_, ms) in sort(collect(_live_bridge_groups(db)); by = first)
@@ -123,7 +124,7 @@ function migrate_share_bridged_calls!(db::SQLite.DB)
             align_call_state!(db, req, ms, c.state; broadcast = false)
         end
         _record_migration!(db, MIGRATION_BRIDGED_CALLS)
-    end
+    end end
     nothing
 end
 

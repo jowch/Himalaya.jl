@@ -41,42 +41,63 @@ function record_review!(db::SQLite.DB, exposure_id::Integer;
     nothing
 end
 
+const NO_REVIEW_PINS_KEY = :himalaya_no_review_pins
+
+function without_review_pins(f)
+    task_local_storage(f, NO_REVIEW_PINS_KEY, true)
+end
+
 function record_event_reviews!(db::SQLite.DB, kind::AbstractString,
-                               entity_type::AbstractString, entity_id::Integer, event_id::Integer)
-    direct = kind in DIRECT_REVIEW_KINDS && entity_type == "exposure"
+                               entity_type::AbstractString, entity_id::Integer, event_id::Integer;
+                               direct::Union{Bool, Nothing} = nothing)
+    get(task_local_storage(), NO_REVIEW_PINS_KEY, false) === true && return nothing
+    is_direct = direct === nothing ? (kind in DIRECT_REVIEW_KINDS && entity_type == "exposure") : direct
     for id in review_exposure_ids(db, kind, entity_type, entity_id)
-        record_review!(db, id; event_id = Int(event_id), direct)
+        record_review!(db, id; event_id = Int(event_id), direct = is_direct)
     end
     nothing
 end
 
-const _REVIEW_EVENT_KIND_SQL = join(("'$k'" for k in (REVIEW_EXPOSURE_KINDS..., REVIEW_SAMPLE_KINDS...)), ", ")
+const LEGACY_DIRECT_KINDS = ("index_confirmed", "index_unconfirmed")
+_sql_list(kinds) = join(("'$k'" for k in kinds), ", ")
+const _REVIEW_EVENT_KIND_SQL = _sql_list((REVIEW_EXPOSURE_KINDS..., REVIEW_SAMPLE_KINDS...))
+const _DIRECT_KIND_SQL = _sql_list((DIRECT_REVIEW_KINDS..., LEGACY_DIRECT_KINDS...))
+
+function migrate_peak_provenance_schema!(db::SQLite.DB)
+    "found_by" in cols_of(db, "auto_peaks") || DBInterface.execute(db,
+        """ALTER TABLE auto_peaks ADD COLUMN found_by TEXT NOT NULL DEFAULT 'hybrid'
+           CHECK (found_by IN ('hybrid', 'model', 'both'))""")
+    "model_id" in cols_of(db, "auto_peaks") ||
+        DBInterface.execute(db, "ALTER TABLE auto_peaks ADD COLUMN model_id INTEGER")
+    "reviewed_at" in cols_of(db, "exposures") ||
+        DBInterface.execute(db, "ALTER TABLE exposures ADD COLUMN reviewed_at TEXT")
+    "direct" in cols_of(db, "peak_reviews") ||
+        DBInterface.execute(db, "ALTER TABLE peak_reviews ADD COLUMN direct INTEGER NOT NULL DEFAULT 0")
+    nothing
+end
 
 function migrate_peak_provenance!(db::SQLite.DB)
     _migrated(db, MIGRATION_PEAK_PROVENANCE) && return nothing
     SQLite.transaction(db) do
-        "found_by" in cols_of(db, "auto_peaks") || DBInterface.execute(db,
-            """ALTER TABLE auto_peaks ADD COLUMN found_by TEXT NOT NULL DEFAULT 'hybrid'
-               CHECK (found_by IN ('hybrid', 'model', 'both'))""")
-        "model_id" in cols_of(db, "auto_peaks") ||
-            DBInterface.execute(db, "ALTER TABLE auto_peaks ADD COLUMN model_id INTEGER")
-        "reviewed_at" in cols_of(db, "exposures") ||
-            DBInterface.execute(db, "ALTER TABLE exposures ADD COLUMN reviewed_at TEXT")
-        "direct" in cols_of(db, "peak_reviews") ||
-            DBInterface.execute(db, "ALTER TABLE peak_reviews ADD COLUMN direct INTEGER NOT NULL DEFAULT 0")
+        migrate_peak_provenance_schema!(db)
         migrated_at = now_iso()
         rows = Tables.rowtable(DBInterface.execute(db, """
             SELECT e.id,
                    (EXISTS (SELECT 1 FROM peak_curations c WHERE c.exposure_id = e.id)
-                    OR EXISTS (SELECT 1 FROM assignment_members m WHERE m.exposure_id = e.id)) AS direct,
+                    OR EXISTS (SELECT 1 FROM user_actions ua
+                                WHERE ua.entity_type = 'exposure' AND ua.entity_id = e.id
+                                  AND ua.action IN ($_DIRECT_KIND_SQL))) AS direct,
                    (SELECT strftime('%Y-%m-%dT%H:%M:%fZ', MIN(ua.timestamp)) FROM user_actions ua
-                     WHERE ua.action IN ($_REVIEW_EVENT_KIND_SQL)
+                     WHERE ua.action IN ($_REVIEW_EVENT_KIND_SQL, 'index_confirmed', 'index_unconfirmed')
                        AND ((ua.entity_type = 'exposure' AND ua.entity_id = e.id)
                          OR (ua.entity_type = 'sample' AND ua.entity_id = e.sample_id))) AS first_event
               FROM exposures e
              WHERE e.reviewed_at IS NULL
                AND (EXISTS (SELECT 1 FROM peak_curations c WHERE c.exposure_id = e.id)
                  OR EXISTS (SELECT 1 FROM assignment_members m WHERE m.exposure_id = e.id)
+                 OR EXISTS (SELECT 1 FROM user_actions ua
+                             WHERE ua.entity_type = 'exposure' AND ua.entity_id = e.id
+                               AND ua.action IN ($_DIRECT_KIND_SQL))
                  OR e.status IS NOT NULL
                  OR EXISTS (SELECT 1 FROM sample_calls sc WHERE sc.sample_id = e.sample_id))
              ORDER BY e.id"""))

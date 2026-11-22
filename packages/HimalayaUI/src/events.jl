@@ -46,7 +46,8 @@ function apply_event!(db::SQLite.DB, req;
                       payload = nothing,
                       undoes_event_id::Union{Int,Nothing} = nothing,
                       defer_broadcast::Bool = false,
-                      post_state::Union{Dict, Nothing} = nothing)
+                      post_state::Union{Dict, Nothing} = nothing,
+                      review_direct::Union{Bool, Nothing} = nothing)
     # Run the durable write inside a tx via the InTransaction variant, but
     # always defer the broadcast there — broadcast must wait until AFTER the
     # tx commits so subscribers can't see uncommitted state.
@@ -59,7 +60,8 @@ function apply_event!(db::SQLite.DB, req;
                          kind = kind, entity_type = entity_type, entity_id = entity_id,
                          payload = payload, undoes_event_id = undoes_event_id,
                          defer_broadcast = true,
-                         post_state = post_state)
+                         post_state = post_state,
+                         review_direct = review_direct)
         end
     end
 
@@ -105,7 +107,8 @@ function apply_event!(::InTransaction, db::SQLite.DB, req;
                       payload = nothing,
                       undoes_event_id::Union{Int,Nothing} = nothing,
                       defer_broadcast::Bool = true,  # accepted for kw-symmetry; ignored here
-                      post_state::Union{Dict, Nothing} = nothing)
+                      post_state::Union{Dict, Nothing} = nothing,
+                      review_direct::Union{Bool, Nothing} = nothing)
     username     = get_username(req)
     client_id    = get_client_id(req)
     client_op_id = get_client_op_id(req)
@@ -160,7 +163,7 @@ function apply_event!(::InTransaction, db::SQLite.DB, req;
         payload_canonical = JSON3.read(payload_json)
         view_row_id = update_view_for_event!(db, kind, entity_id, payload_canonical, event_id)
     end
-    fresh_insert && record_event_reviews!(db, kind, entity_type, entity_id, event_id)
+    fresh_insert && record_event_reviews!(db, kind, entity_type, entity_id, event_id; direct = review_direct)
 
     return (event_id    = event_id,
             view_row_id = view_row_id,

@@ -187,7 +187,7 @@ end
         @test isequal(rows(), [(0.3, "both", 5), (0.6, "model", 5)])
         HimalayaUI.diff_update_auto_peaks!(db, e, pr([0.3, 0.8]), I; q_step = 0.01, found_by = "model", model_id = 9)
         @test isequal(rows(), [(0.3, "model", 9), (0.8, "model", 9)])
-        HimalayaUI.diff_update_auto_peaks!(db, e, pr([0.3, 0.8]), I; q_step = 0.01)
+        HimalayaUI.diff_update_auto_peaks!(db, e, pr([0.3, 0.8]), I; q_step = 0.01, found_by = "hybrid")
         @test isequal(rows(), [(0.3, "hybrid", missing), (0.8, "hybrid", missing)])
         @test_throws Exception HimalayaUI.diff_update_auto_peaks!(db, e, pr([0.3]), I; q_step = 0.01, found_by = "bogus")
     end
@@ -198,16 +198,18 @@ function _pp_legacy(dir)
     db = HimalayaUI.open_db(path)
     exp_id = HimalayaUI.create_experiment!(db; path = "/x", data_dir = "/x", analysis_dir = "/x")
     mk(name) = HimalayaUI.create_sample!(db; experiment_id = exp_id, name = name)
-    s_cur, s_asg, s_call, s_stat, s_none = mk("cur"), mk("asg"), mk("call"), mk("stat"), mk("none")
+    s_cur, s_asg, s_call, s_stat, s_none, s_conf = mk("cur"), mk("asg"), mk("call"), mk("stat"), mk("none"), mk("conf")
     ex(s) = HimalayaUI.create_exposure!(db; experiment_id = exp_id, sample_id = s)
     e = (cur = ex(s_cur), asg = ex(s_asg), call1 = ex(s_call), call2 = ex(s_call),
-         stat = ex(s_stat), none = ex(s_none))
+         stat = ex(s_stat), none = ex(s_none), conf = ex(s_conf))
     for id in values(e)
         DBInterface.execute(db, "INSERT INTO auto_peaks (exposure_id, q) VALUES (?, 0.1)", [id])
     end
     DBInterface.execute(db, "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'add', 0.3)", [e.cur])
     DBInterface.execute(db,
         "INSERT INTO user_actions (action, entity_type, entity_id, timestamp) VALUES ('peak_added', 'exposure', ?, '2026-01-02 03:04:05')", [e.cur])
+    DBInterface.execute(db,
+        "INSERT INTO user_actions (action, entity_type, entity_id) VALUES ('index_confirmed', 'exposure', ?)", [e.conf])
     ix = Int(DBInterface.lastrowid(DBInterface.execute(db,
         "INSERT INTO indices (exposure_id, phase, basis) VALUES (?, 'Pn3m', 0.1)", [e.asg])))
     DBInterface.execute(db, "INSERT INTO assignment_members (exposure_id, index_id) VALUES (?, ?)", [e.asg, ix])
@@ -227,11 +229,11 @@ end
         lg = _pp_legacy(dir)
         db = HimalayaUI.open_db(lg.path)
         e = lg.e
-        for id in (e.cur, e.asg, e.call1, e.call2, e.stat)
+        for id in (e.cur, e.asg, e.call1, e.call2, e.stat, e.conf)
             @test _reviewed(db, id)
             snap = only(_reviews(db, id))
             @test snap.backfilled == 1 && ismissing(snap.event_id)
-            @test snap.direct == (id in (e.cur, e.asg) ? 1 : 0)
+            @test snap.direct == (id in (e.cur, e.conf) ? 1 : 0)
             @test snap.shown_detector == HimalayaUI.ANALYSIS_VERSION
             @test [p.found_by for p in JSON3.read(snap.peaks_json)] == ["hybrid"]
         end
@@ -244,7 +246,7 @@ end
         n = only(Tables.rowtable(DBInterface.execute(db, "SELECT COUNT(*) AS n FROM peak_reviews"))).n
         close(db)
         db = HimalayaUI.open_db(lg.path)
-        @test only(Tables.rowtable(DBInterface.execute(db, "SELECT COUNT(*) AS n FROM peak_reviews"))).n == n == 5
+        @test only(Tables.rowtable(DBInterface.execute(db, "SELECT COUNT(*) AS n FROM peak_reviews"))).n == n == 6
         @test only(Tables.rowtable(DBInterface.execute(db, "PRAGMA integrity_check"))).integrity_check == "ok"
         close(db)
     end
@@ -260,5 +262,69 @@ end
         @test length(_reviews(db, lg.e.cur)) == 1
         @test HimalayaUI._migrated(db, HimalayaUI.MIGRATION_PEAK_PROVENANCE)
         close(db)
+    end
+end
+
+@testset "a pending bridged-calls migration neither fails nor counts as a review" begin
+    mktempdir() do dir
+        path = joinpath(dir, "legacy.db")
+        db = HimalayaUI.open_db(path)
+        exp_id = HimalayaUI.create_experiment!(db; path = "/x", data_dir = "/x", analysis_dir = "/x")
+        sa = HimalayaUI.create_sample!(db; experiment_id = exp_id, name = "A")
+        sb = HimalayaUI.create_sample!(db; experiment_id = exp_id, name = "B")
+        ea = HimalayaUI.create_exposure!(db; experiment_id = exp_id, sample_id = sa)
+        eb = HimalayaUI.create_exposure!(db; experiment_id = exp_id, sample_id = sb)
+        for id in (ea, eb)
+            DBInterface.execute(db, "INSERT INTO auto_peaks (exposure_id, q) VALUES (?, 0.1)", [id])
+        end
+        for s in (sa, sb)
+            DBInterface.execute(db, "INSERT INTO sample_bridges (sample_id, group_id) VALUES (?, 1)", [s])
+        end
+        DBInterface.execute(db, "INSERT INTO sample_calls (sample_id, state) VALUES (?, 'form_factor')", [sa])
+        DBInterface.execute(db, "ALTER TABLE auto_peaks DROP COLUMN found_by")
+        DBInterface.execute(db, "ALTER TABLE auto_peaks DROP COLUMN model_id")
+        DBInterface.execute(db, "ALTER TABLE exposures DROP COLUMN reviewed_at")
+        DBInterface.execute(db, "DROP TABLE peak_reviews")
+        DBInterface.execute(db, "DELETE FROM schema_migrations WHERE name IN (?, ?)",
+            [HimalayaUI.MIGRATION_PEAK_PROVENANCE, HimalayaUI.MIGRATION_BRIDGED_CALLS])
+        close(db)
+
+        db = HimalayaUI.open_db(path)
+        @test only(Tables.rowtable(DBInterface.execute(db,
+            "SELECT state FROM sample_calls WHERE sample_id = ?", [sb]))).state == "form_factor"
+        for e in (ea, eb)
+            @test _reviewed(db, e)
+            snap = only(_reviews(db, e))
+            @test snap.backfilled == 1 && snap.direct == 0 && ismissing(snap.event_id)
+        end
+        close(db)
+    end
+end
+
+@testset "diff_update_auto_peaks! keeps found_by and model_id unless told otherwise" begin
+    mktempdir() do dir
+        db = open_prepared_clone(dir)
+        exp_id = HimalayaUI.create_experiment!(db; path = "/x", data_dir = "/x", analysis_dir = "/x")
+        s = HimalayaUI.create_sample!(db; experiment_id = exp_id, name = "S")
+        e = HimalayaUI.create_exposure!(db; experiment_id = exp_id, sample_id = s)
+        I = fill(10.0, 100)
+        pr(qs) = (q = qs, indices = [round(Int, 100q) for q in qs], prominence = fill(1.0, length(qs)),
+                  sharpness = fill(1.0, length(qs)))
+        rows() = [(r.q, r.found_by, r.model_id) for r in Tables.rowtable(DBInterface.execute(db,
+            "SELECT q, found_by, model_id FROM auto_peaks WHERE exposure_id = ? ORDER BY q", [e]))]
+        HimalayaUI.diff_update_auto_peaks!(db, e, pr([0.3]), I; q_step = 0.01, found_by = "both", model_id = 4)
+        HimalayaUI.diff_update_auto_peaks!(db, e, pr([0.3, 0.6]), I; q_step = 0.01)
+        @test isequal(rows(), [(0.3, "both", 4), (0.6, "hybrid", missing)])
+    end
+end
+
+@testset "review_direct overrides the kind rule" begin
+    mktempdir() do dir
+        fx = _pp_fixture(dir)
+        e = fx.eids[1]
+        HimalayaUI.apply_event!(fx.db, _pp_req(); kind = "assignment_set_state", entity_type = "exposure",
+            entity_id = e, payload = Dict(:state => "null"), review_direct = false)
+        snap = only(_reviews(fx.db, e))
+        @test _reviewed(fx.db, e) && snap.direct == 0
     end
 end

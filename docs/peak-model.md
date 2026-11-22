@@ -97,8 +97,10 @@ Labels do not come from live `auto_peaks`, which a release can re-detect. Each
 reviewing event instead writes a **review snapshot** in the same transaction:
 the exposure's auto peaks at that moment (q, `found_by`, `model_id`), the
 detector on screen (`ANALYSIS_VERSION` plus model id), and the curation.
-Training reads only snapshots, using each exposure's latest one for the peaks
-the user saw and all its curations as they stand now.
+Training reads only snapshots, using each exposure's latest **direct**
+snapshot for the peaks the user saw (a later indirect snapshot, such as a
+sample call after a re-detection, is ignored) and all its curations as they
+stand now.
 
 Labels for training (all by q). They use the app's tolerance function,
 `peak_match_tol`, with the grid step taken from the trace and an
@@ -129,8 +131,11 @@ dropped rather than left to the weak-negative rule, which would otherwise
 make it, and its neighbours, a negative. Exposures reviewed before snapshots
 existed get one snapshot from their current auto peaks when the migration
 runs, all `found_by = hybrid`, with `direct = 1` when the exposure has a
-curation or an assignment member and 0 when it was pinned only by a sample call
-or status.
+peak curation or a logged event of a direct kind on it (including the legacy
+`index_confirmed` and `index_unconfirmed`, which mark pre-Plan-A human
+confirmations) and 0 when it was pinned only by a sample call, a status, or an
+assignment member with no such event. Members alone can be the auto guess that
+`migrate_assignments!` seeded, so they do not count.
 
 Implementation (step 2). The pin and snapshot are written by
 `record_event_reviews!`, called from `apply_event!` after the dispatcher (not
@@ -144,11 +149,27 @@ backfilled rows), `created_at`, `shown_detector` (`ANALYSIS_VERSION`),
 The backfill pins exposures that have a curation, an assignment member, an
 accept or reject status, or a sample call (all frames of the sample), with
 the first matching event time or the migration time. `labeled_exposures`
-reads the latest snapshot of each exposure with a direct snapshot, and
-`LabeledExposure.labelled` and `kept_model` carries kept
-`found_by = model` peaks, which `label_candidates` drops with their
-neighbours. Bridge call changes emit `sample_call_set_state` and
-`assignment_set_state` too, so they pin the frames of the bridged samples.
+includes exposures with a direct snapshot and reads each one's latest direct
+snapshot. Kept peaks with `found_by = model` go in `LabeledExposure.kept_model`,
+and `label_candidates` drops them and their neighbours. `LabeledExposure.labelled`
+is true for exposures with a direct snapshot.
+
+Bridge call changes emit `sample_call_set_state`, and a `keep_call` bridge
+also emits `assignment_set_state` on the losing side's frames. Both pin and
+snapshot those frames; the bridge passes `review_direct = false`, so none of
+them becomes labelled. The share-bridged-labels and share-bridged-calls
+migrations run with pinning off: they are system changes, and the backfill that
+runs after them pins the resulting calls as indirect. The provenance columns
+are added before them (`migrate_peak_provenance_schema!`).
+
+Growth: every reviewing event appends a full `peaks_json`, so a sample call
+adds one row per frame of the sample, and bridged mates add more. Nothing
+prunes `peak_reviews`. If that matters, store a new snapshot only when its peak
+set differs from the latest one for the exposure.
+
+`diff_update_auto_peaks!` keeps a re-matched row's `found_by` and `model_id`
+unless the caller passes `found_by` (then both are written, `model_id` NULL
+when omitted); inserts default to `hybrid` and NULL.
 
 ## Training
 
