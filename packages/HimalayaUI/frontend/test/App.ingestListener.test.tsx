@@ -8,7 +8,6 @@ import { useAppState } from "../src/state";
 import * as api from "../src/api";
 import { FakeEventSource } from "./helpers/fakeEventSource";
 
-
 describe("App ingestInFlight SSE listener (Phase E1)", () => {
   beforeEach(() => {
     FakeEventSource.install();

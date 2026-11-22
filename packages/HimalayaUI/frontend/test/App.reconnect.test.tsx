@@ -6,7 +6,6 @@ import { PrintApp } from "../src/print/App";
 import * as api from "../src/api";
 import { FakeEventSource } from "./helpers/fakeEventSource";
 
-
 const KEY = ["samples", "corpus-probe"];
 const OTHER = ["exposure", 9, "peaks"];
 

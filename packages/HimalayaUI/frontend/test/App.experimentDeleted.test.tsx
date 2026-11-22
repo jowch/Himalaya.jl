@@ -8,7 +8,6 @@ import * as toast from "../src/lib/toast";
 import { getClientId } from "../src/lib/clientId";
 import { FakeEventSource } from "./helpers/fakeEventSource";
 
-
 function Where() {
   return <output aria-label="where">{useLocation().pathname}</output>;
 }
