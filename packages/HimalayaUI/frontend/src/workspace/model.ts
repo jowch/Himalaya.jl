@@ -51,6 +51,20 @@ export function stepExposure(
   return exposures[Math.min(exposures.length - 1, Math.max(0, i + dir))]!.id;
 }
 
+export function nearestKeptExposure(
+  exposures: readonly Pick<Exposure, "id" | "status">[],
+  droppedId: number,
+): number | undefined {
+  const at = exposures.findIndex((e) => e.id === droppedId);
+  for (let d = 1; d < exposures.length; d++) {
+    for (const i of [at + d, at - d]) {
+      const e = exposures[i];
+      if (e && e.status !== "rejected") return e.id;
+    }
+  }
+  return undefined;
+}
+
 export function imageUrl(e: Pick<Exposure, "id" | "image_path" | "image_version">, thumb: boolean): string | null {
   if (e.image_path === null) return null;
   const params = new URLSearchParams();

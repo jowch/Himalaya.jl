@@ -314,6 +314,10 @@ commits. Implications:
   `liveStream` opens a new stream with 1–5 s backoff. `vite.config.ts` also
   ends the proxied response when the upstream closes.
 - `e2e/reconnect.spec.ts` covers a clean end of stream and a 500.
+- A re-index run from the CLI (`analyze`) in another process broadcasts
+  only to subscribers of that process, so it never reaches pages open on the
+  running server. They keep the data they have cached until a reload, which
+  is why `verify_truth.sh` reads step 7 with `check-truth --ui --reload`.
 - Slow subscribers (channel full) and disconnected subscribers (channel
   closed) are pruned via `_try_put!` rather than blocking the broadcast
   loop. A pruned subscriber reconnects on the EventSource side and gets
