@@ -231,7 +231,7 @@ end
         n_indices = first(Tables.rowtable(DBInterface.execute(ctx.db,
             "SELECT COUNT(*) AS c FROM indices WHERE exposure_id = ?",
             [ctx.exposure_id]))).c
-        # Precondition: this fixture really indexes to zero without its basis.
+        # Precondition: this fixture really indexes to zero without its two lowest peaks.
         # If core recall changes and this fails, the testset no longer covers
         # the zero-index case — pick a different peak to exclude.
         @test n_indices == 0

@@ -9,12 +9,19 @@ under `Unreleased` are application-level unless stated otherwise.
 
 ### Changed
 
+- **The analysis pipeline uses the hybrid peak detector.** `analyze_exposure!` calls
+  `findpeaks(...; method = :hybrid)`, so weak peaks and shoulders on steep
+  backgrounds are detected and phase calls change. The core default stays
+  `:persistence`. The hybrid trims the top 7% of the q range rather than 5%, so
+  default-detector peaks in that band disappear. `ANALYSIS_VERSION` is `+3`: every
+  stored exposure is re-analysed in the background at boot after the upgrade.
+  See `docs/peak-finding.md`.
 - **`auto_group` no longer orders purely by score.** At each step, if a compatible
   candidate contains every peak of the top-scoring candidate plus a strictly
   sharper peak below them, it is picked instead. A pattern with one sharp first reflection
   and weak higher orders now calls Hexagonal rather than an Ia3d index fitted to
   some of the weak peaks. Stored analyses are recomputed on the next analysis run
-  (`ANALYSIS_VERSION` is `+2`). See `docs/scoring.md`.
+  (via the `ANALYSIS_VERSION` bump). See `docs/scoring.md`.
 
 ### Breaking changes
 

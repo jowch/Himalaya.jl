@@ -134,7 +134,7 @@ a trace. Switch to `:cwt` (multi-scale Ricker) when peaks span a wide
 range of widths within one trace, or when single-pixel spike rejection
 is important.
 
-## Hybrid detector (opt-in)
+## Hybrid detector (core opt-in; HimalayaUI default)
 
 `findpeaks(q, I, σ; method = :hybrid)`. The core default is still
 `:persistence`; the HimalayaUI pipeline (`analyze_exposure!`) calls the
@@ -248,9 +248,12 @@ second differences.
 
 **Evidence.** On a set of curated real traces it recovered several times
 more user-added peaks than the default path while detecting fewer
-user-rejected ones, and the phase calls from the resulting peak lists improved. This is not enough to change the core default, which stays
+user-rejected ones, and the phase calls from the resulting peak lists
+improved. This is not enough to change the core default, which stays
 `:persistence` until the hybrid has been tried on more data. The app uses
-the hybrid in the meantime, which gathers that data.
+the hybrid in the meantime, which gathers that data. The hybrid trims the
+top 7% of the q range rather than 5%, so when an experiment is re-analysed
+with it, default-detector peaks in that band disappear.
 
 ## References
 
