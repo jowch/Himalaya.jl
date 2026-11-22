@@ -16,7 +16,7 @@ const trace = { q, I: q.map((x) => 1 / (x * x) + 50 * Math.exp(-(((x - 0.1) / 0.
 function exposureOf(sampleId: number, monitors: boolean, frame = 0, averaged = false) {
   return {
     id: sampleId * 10 + frame, sample_id: sampleId, filename: `JC_S${sampleId}_0_00${frame + 1}`,
-    kind: averaged ? "averaged" : "file", selected: true, status: null,
+    kind: averaged ? "averaged" : "file", status: null,
     image_path: null, image_version: "", sources: averaged ? [sampleId * 10] : [], trace_hash: null, analysis_inputs_hash: null,
     exposure_time: monitors ? 15 : null, counting_time: monitors ? 15 : null,
     transmitted_counts: monitors ? 7000 : null, incident_monitor: monitors ? 1.5 : null,
