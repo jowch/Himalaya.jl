@@ -11,7 +11,7 @@ const PHASE_SHORT: Record<string, string> = {
 function short(p: string): string { return PHASE_SHORT[p] ?? p; }
 
 interface PhaseChipProps
-  extends Omit<HTMLAttributes<HTMLSpanElement>, "color" | "children"> {
+  extends Omit<HTMLAttributes<HTMLSpanElement>, "color" | "children" | "title"> {
   phase?: string;
   formFactor?: boolean;
   coexistWith?: string[];

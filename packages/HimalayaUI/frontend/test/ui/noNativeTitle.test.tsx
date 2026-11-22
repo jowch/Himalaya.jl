@@ -6,6 +6,9 @@ import { Button } from "../../src/ui/Button";
 import { Card } from "../../src/ui/Card";
 import { Checkbox } from "../../src/ui/Checkbox";
 import { Dot } from "../../src/ui/Dot";
+import { Input } from "../../src/ui/Input";
+import { Kicker } from "../../src/ui/Kicker";
+import { PhaseChip } from "../../src/ui/PhaseChip";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -33,7 +36,13 @@ describe("native title tooltips are banned", () => {
       <Checkbox key="k" checked={false} onChange={() => {}} title="x" />,
       // @ts-expect-error title would render a native tooltip
       <Dot key="d" title="x" />,
+      // @ts-expect-error title would render a native tooltip
+      <Input key="i" title="x" />,
+      // @ts-expect-error title would render a native tooltip
+      <Kicker key="h" title="x">a</Kicker>,
+      // @ts-expect-error title would render a native tooltip
+      <PhaseChip key="p" phase="Pn3m" title="x" />,
     ];
-    expect(rejected).toHaveLength(4);
+    expect(rejected).toHaveLength(7);
   });
 });

@@ -22,10 +22,6 @@ export default tseslint.config(
     },
   },
   {
-    files: ["src/ui/CompareBar.tsx"],
-    rules: { "no-restricted-syntax": "off" },
-  },
-  {
     files: ["src/**/*.stories.tsx"],
     rules: { "no-console": "off" },
   },
