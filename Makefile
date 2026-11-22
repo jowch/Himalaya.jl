@@ -11,16 +11,18 @@ frontend:
 lint:
 	cd $(FRONTEND_DIR) && npm run lint:design && npm run lint:ratchet && npm run lint
 
-ENV_CANDIDATES = $(HIMALAYA_ENV_FILE) $(CURDIR)/.env $(CURDIR)/packages/HimalayaUI/.env /etc/himalaya/.env
+SHELL := /bin/bash
 
-LOAD_ENV = set -a; for c in $(ENV_CANDIDATES); do \
-	           if [ -f "$$c" ]; then . "$$c"; break; fi; \
+LOAD_ENV = set -a; for c in "$${HIMALAYA_ENV_FILE:-}" "$(CURDIR)/.env" "$(CURDIR)/packages/HimalayaUI/.env" /etc/himalaya/.env; do \
+	           if [ -n "$$c" ] && [ -f "$$c" ]; then . "$$c"; break; fi; \
 	         done; set +a;
 
 JULIA = $(LOAD_ENV) julia
 
+DEPOT_PROBE = 'd = first(DEPOT_PATH); print(ispath(d) ? realpath(d) : rstrip(normpath(d), collect("/")))'
+
 sysimage:
-	@$(LOAD_ENV) echo "Building sysimage with JULIA_DEPOT_PATH=$${JULIA_DEPOT_PATH:-<julia default>}"
+	@$(JULIA) -e 'print("Building sysimage with depot ")' -e $(DEPOT_PROBE) -e 'println()'
 	$(JULIA) --project=scripts -e 'using Pkg; Pkg.instantiate()'
 	$(JULIA) --project=scripts scripts/build_sysimage.jl
 
@@ -28,7 +30,7 @@ check-sysimage:
 	@$(LOAD_ENV) \
 	stamp=$(BUILD_DIR)/julia_version; \
 	depot_stamp=$(BUILD_DIR)/depot_path; \
-	if [ ! -f $$stamp ]; then \
+	if [ ! -f $(BUILD_DIR)/himalaya.so ] || [ ! -f $$stamp ]; then \
 		echo "No sysimage found. Run 'make sysimage'."; exit 1; \
 	fi; \
 	stored=$$(cat $$stamp); \
@@ -39,21 +41,21 @@ check-sysimage:
 		echo "  current Julia:       $$current"; \
 		echo "Run 'make sysimage' to rebuild."; exit 1; \
 	fi; \
-	if [ ! -f $$depot_stamp ]; then \
-		echo "Sysimage OK (Julia $$current), but it predates depot stamping,"; \
-		echo "so the depot it was built against can't be checked. If it fails"; \
-		echo "to start with 'Artifact ... was not found', run 'make sysimage'."; \
-		exit 0; \
+	current_depot=$$(julia -e $(DEPOT_PROBE)); \
+	if [ -f $$depot_stamp ]; then \
+		stored_depot=$$(cat $$depot_stamp); \
+		if [ "$$stored_depot" != "$$current_depot" ]; then \
+			echo "Depot mismatch. This sysimage will fail to start here:"; \
+			echo "  sysimage built with: $$stored_depot"; \
+			echo "  runtime depot:       $$current_depot"; \
+			echo "Run 'make sysimage' to rebuild against the runtime depot."; exit 1; \
+		fi; \
 	fi; \
-	stored_depot=$$(cat $$depot_stamp); \
-	current_depot=$${JULIA_DEPOT_PATH:-}; \
-	if [ "$$stored_depot" != "$$current_depot" ]; then \
-		echo "Depot mismatch. This sysimage will fail to start here:"; \
-		echo "  sysimage built with: $${stored_depot:-<julia default>}"; \
-		echo "  runtime depot:       $${current_depot:-<julia default>}"; \
+	if ! julia --project=packages/HimalayaUI --sysimage=$(BUILD_DIR)/himalaya.so --startup-file=no -e 'exit()'; then \
+		echo "The sysimage failed to start with depot $$current_depot."; \
 		echo "Run 'make sysimage' to rebuild against the runtime depot."; exit 1; \
 	fi; \
-	echo "Sysimage OK (Julia $$current, depot $${current_depot:-<julia default>})"
+	echo "Sysimage OK (Julia $$current, depot $$current_depot)"
 
 clean:
 	rm -rf $(BUILD_DIR) $(FRONTEND_DIR)/dist
@@ -66,7 +68,7 @@ GROUPS := db pipeline routes routes2 events wire migration
 test-parallel:
 	@mkdir -p build
 	@echo "Running $(words $(GROUPS)) groups in parallel..."
-	@pids=""; rc=0; \
+	@$(LOAD_ENV) pids=""; rc=0; \
 	for g in $(GROUPS); do \
 		( GROUP=$$g HIMALAYA_SUITE_PARALLEL=1 julia --project=packages/HimalayaUI \
 			-e 'using Pkg; Pkg.test("HimalayaUI"; julia_args=["--threads=4,1"])' > build/test-$$g.log 2>&1 ) & \
@@ -108,30 +110,30 @@ dev-setup:
 DEMO_DIR    ?= scratch/demo-experiment
 DEMO_DB_DIR ?= scratch/demo
 demo-data:
-	julia --project=packages/HimalayaUI packages/HimalayaUI/scripts/make_demo_data.jl $(DEMO_DIR) $(DEMO_DATA_FLAGS)
+	$(JULIA) --project=packages/HimalayaUI packages/HimalayaUI/scripts/make_demo_data.jl $(DEMO_DIR) $(DEMO_DATA_FLAGS)
 
 # Realistic scale: DEMO_LARGE_DIR/large_01 ... large_10, 300 samples each, with
 # images shared from a pool (docs/demo.md "Large mode"). Takes ~35 s, ~1.4 GB.
 DEMO_LARGE_DIR    ?= scratch/demo-large
 DEMO_LARGE_DB_DIR ?= scratch/demo-large-db
 demo-large-data:
-	julia --project=packages/HimalayaUI packages/HimalayaUI/scripts/make_demo_data.jl $(DEMO_LARGE_DIR) --large
+	$(JULIA) --project=packages/HimalayaUI packages/HimalayaUI/scripts/make_demo_data.jl $(DEMO_LARGE_DIR) --large
 
 # Generate (if missing) and ingest every large experiment, then start the app.
 demo-large:
-	DEMO_DIR=$(DEMO_LARGE_DIR) DEMO_DB_DIR=$(DEMO_LARGE_DB_DIR) packages/HimalayaUI/scripts/demo.sh --large
+	$(LOAD_ENV) DEMO_DIR=$(DEMO_LARGE_DIR) DEMO_DB_DIR=$(DEMO_LARGE_DB_DIR) packages/HimalayaUI/scripts/demo.sh --large
 
 # Backend + Vite with the demo experiment ingested (through the same API calls
 # the New-experiment funnel makes). Generates the data first if it is missing.
 demo:
-	DEMO_DIR=$(DEMO_DIR) DEMO_DB_DIR=$(DEMO_DB_DIR) packages/HimalayaUI/scripts/demo.sh
+	$(LOAD_ENV) DEMO_DIR=$(DEMO_DIR) DEMO_DB_DIR=$(DEMO_DB_DIR) packages/HimalayaUI/scripts/demo.sh
 
 # Backend + Vite on a fresh empty DB, to walk the ingest funnel by hand.
 demo-empty:
-	DEMO_DIR=$(DEMO_DIR) DEMO_DB_DIR=$(DEMO_DB_DIR) packages/HimalayaUI/scripts/demo.sh --empty
+	$(LOAD_ENV) DEMO_DIR=$(DEMO_DIR) DEMO_DB_DIR=$(DEMO_DB_DIR) packages/HimalayaUI/scripts/demo.sh --empty
 
 verify-truth:
-	packages/HimalayaUI/scripts/verify_truth.sh
+	$(LOAD_ENV) packages/HimalayaUI/scripts/verify_truth.sh
 
 # Deletes DEMO_DIR only when it is a demo tree (has TRUTH.csv), and DEMO_LARGE_DIR
 # only when it holds nothing but large_NN folders and the completion marker, so a
@@ -142,4 +144,4 @@ demo-clean:
 	rm -rf "$(DEMO_DB_DIR)" "$(DEMO_DB_DIR)-empty"
 	rm -rf "$(DEMO_LARGE_DB_DIR)"
 	@if [ -e "$(DEMO_LARGE_DIR)" ] || [ -L "$(DEMO_LARGE_DIR)" ]; then \
-		julia --project=packages/HimalayaUI --startup-file=no packages/HimalayaUI/scripts/make_demo_data.jl --clean-large "$(DEMO_LARGE_DIR)"; fi
+		$(JULIA) --project=packages/HimalayaUI --startup-file=no packages/HimalayaUI/scripts/make_demo_data.jl --clean-large "$(DEMO_LARGE_DIR)"; fi
