@@ -324,6 +324,17 @@ the compare picker, where confirmed buffers come before suggested ones. Ranking
 buffers by their traces (no peaks, a flat trace, a low floor) is not built yet
 (#368).
 
+The same step suggests a flight-path label (`suggest_flight_path!`). Each
+exposure stores the `.prp` pipe length, which is the flight path, as
+`exposures.pipe_length_m` (read at scan time, or by the beam-monitor back-fill).
+When every exposure of a sample that has a pipe length rounds to the same
+tenth of a metre, the sample gets the suggested label `<n.n> m`, for example
+`1.7 m`, with source `ingest`. Frames that disagree, or no pipe length at all,
+suggest nothing. A sample that already has any `<number> m` label, in any
+state, is left alone, so removing or renaming it sticks. Databases from before
+this column re-read their `.prp` files once (`exposures_pipe_length_v1` resets
+`monitors_read`), and the start-up back-fill then suggests the labels.
+
 `ingest_has_work(db, id)` (`ingest.jl`) says whether a pass would change
 anything: an image (with its metadata file, when the folder has any) that has no
 exposure yet, an exposure whose trace has appeared, one never analyzed, or one
