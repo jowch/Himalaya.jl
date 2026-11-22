@@ -17,7 +17,7 @@ async function walkTutorial(): Promise<{ text: string; keys: string[] }> {
   for (;;) {
     const tutorial = await screen.findByTestId("onboarding-tutorial");
     text.push(tutorial.textContent ?? "");
-    keys.push(...within(tutorial).queryAllByTestId("kbkey").map((k) => k.textContent ?? ""));
+    keys.push(...[...tutorial.querySelectorAll("kbd")].map((k) => k.textContent ?? ""));
     const next = within(tutorial).queryByRole("button", { name: "Next" });
     if (!next) break;
     await user.click(next);
