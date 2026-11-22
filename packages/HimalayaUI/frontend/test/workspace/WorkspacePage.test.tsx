@@ -2710,11 +2710,11 @@ describe("WorkspacePage", () => {
   });
   it("hovering a candidate, a custom row or a Bonnet group header colours the peaks it claims on the trace", () => {
     state.trace = makeTrace(1);
-    state.peaks = [peak(7, 0.05, "auto"), peak(8, 0.06, "auto"), peak(9, 0.07, "manual"), peak(10, 0.2, "auto")];
+    state.peaks = [peak(7, 0.05, "auto"), peak(8, 0.06, "auto"), peak(9, 0.07, "manual"), peak(10, 0.2, "auto"), peak(11, 0.08, "auto")];
     const claims = (pairs: [number, number][]) => pairs.map(([id, q], i) => ({ peak_id: id, ratio_position: i + 1, residual: 0, q_observed: q }));
     state.indices = [
       { ...index(1, "Im3m", 0.9), lattice_d: 127.9, peaks: claims([[7, 0.05], [9, 0.07]]) },
-      { ...index(2, "Pn3m", 0.6), lattice_d: 100, peaks: claims([[8, 0.06]]) },
+      { ...index(2, "Pn3m", 0.6), lattice_d: 100, peaks: claims([[8, 0.06], [11, 0.08]]) },
       { ...index(3, "Ia3d", 0), kind: "speculative", score: null, lattice_d: 300, peaks: claims([[10, 0.2]]) },
     ];
     state.assignment = { exposure_id: 101, state: "null", members: [] };
