@@ -173,13 +173,17 @@ function register_experiments_routes!()
 
         body = json(req)
 
-        # Reject any attempt to write read-only path/id fields.
         for k in _READONLY_FIELDS
             (haskey(body, Symbol(k)) || haskey(body, k)) &&
                 return HTTP.Response(400,
                     ["Content-Type" => "application/json"],
                     JSON3.write(Dict(:error => "$k is read-only; change it via create/scan")))
         end
+        unknown = sort!([String(k) for k in keys(body) if !(String(k) in _PLAIN_PATCH_FIELDS)])
+        isempty(unknown) || return HTTP.Response(400,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "not an experiment field: $(join(unknown, ", ")); " *
+                                       "only name and description can be changed")))
 
         set_clauses = String[]
         params      = Any[]
@@ -199,10 +203,6 @@ function register_experiments_routes!()
             changed[Symbol(field)] = val
         end
 
-        # No recognized patchable field in the body → 400, matching the
-        # codebase's PATCH validation convention (cf. PATCH /samples, exercised by
-        # test_route_validation_routing.jl: a body with no patchable field is a
-        # bad request, not a 200 no-op).
         isempty(set_clauses) && return HTTP.Response(400,
             ["Content-Type" => "application/json"],
             JSON3.write(Dict(:error => "no patchable fields; supply name or description")))

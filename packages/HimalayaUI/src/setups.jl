@@ -8,6 +8,8 @@ const SETUP_CONFIG_COLUMNS = (
     "pixel_size_um", "pixel_size_um_source", "q_units", "q_units_source",
 )
 
+const MIGRATION_SETUP_IDS = "setup_ids_v1"
+
 const RETIRED_EXPERIMENT_COLUMNS = (
     SETUP_CONFIG_COLUMNS...,
     "manifest_path", "config", "experiment_type", "last_scan_tier", "consecutive_empty_ticks",
@@ -79,12 +81,15 @@ end
 
 setup_display_name(row) = coalesce(row.display_name, row.folder)
 
+_same_path(a, b) = !ismissing(a) && rstrip(String(a), '/') == rstrip(String(b), '/')
+
 function _copy_experiments_into_setups!(db::SQLite.DB)
     exp_cols = cols_of(db, "experiments")
     "data_dir" in exp_cols || return nothing
     shared = [c for c in SETUP_CONFIG_COLUMNS if c in exp_cols]
+    sel(c) = endswith(c, "_source") ? "COALESCE(x.$c, 'default') AS $c" : "x.$c"
     rows = Tables.rowtable(DBInterface.execute(db, """
-        SELECT x.id, $(join(("x." * c for c in shared), ", ")) FROM experiments x
+        SELECT x.id, x.path, $(join((sel(c) for c in shared), ", ")) FROM experiments x
          WHERE x.data_dir IS NOT NULL
            AND NOT EXISTS (SELECT 1 FROM setups st WHERE st.experiment_id = x.id)
          ORDER BY x.id"""))
@@ -95,7 +100,8 @@ function _copy_experiments_into_setups!(db::SQLite.DB)
             INSERT INTO setups (experiment_id, folder, position, included, root_dir, $(join(shared, ", ")))
             VALUES (?, ?, 0, 1, ?, $(join(fill("?", length(shared)), ", ")))""",
             [Int(r.id), setup_folder(root), root, vals...])
-        DBInterface.execute(db, "UPDATE experiments SET path = ? WHERE id = ?", [root, Int(r.id)])
+        _same_path(r.path, r.data_dir) &&
+            DBInterface.execute(db, "UPDATE experiments SET path = ? WHERE id = ?", [root, Int(r.id)])
     end
     nothing
 end
@@ -158,7 +164,10 @@ function migrate_setups!(db::SQLite.DB; finish::Bool = true)
         _copy_experiments_into_setups!(db)
         if finish
             _add_setup_id_columns!(db)
-            _backfill_setup_ids!(db)
+            if !_migrated(db, MIGRATION_SETUP_IDS)
+                _backfill_setup_ids!(db)
+                _record_migration!(db, MIGRATION_SETUP_IDS)
+            end
             _setup_keyed_indexes!(db)
             _drop_retired_experiment_columns!(db)
         end

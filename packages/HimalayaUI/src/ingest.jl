@@ -4,8 +4,6 @@
 #
 # Discipline cloned from _reingest_inner! (cli.jl) + analyze_exposure! (pipeline.jl):
 #   - Insert-only for loads/samples/exposures (no clobber on rescan).
-#   - The exposure dedup key is (setup_id, filename) — also enforced by the
-#     `exposures_unique_filename` UNIQUE index (setups.jl _setup_keyed_indexes!).
 #   - Geometry is FILL-ONLY: it writes a field only when still unset ('default');
 #     any established source (setup/prp/computed, or 'user') is left untouched, so
 #     geometry derived once (at the funnel preview) is never re-derived (spec §4).
@@ -137,9 +135,6 @@ function _scan_setup!(db::SQLite.DB, experiment_id::Int, setup;
     any(m -> m.prp !== nothing, metas) && filter!(m -> m.prp !== nothing, metas)
     isempty(metas) && return (status = :empty, added_loads = 0, added_samples = 0, added_exposures = 0)
 
-    # -----------------------------------------------------------------------
-    # 2. Geometry: derive + write to experiments row (never-clobber human fields)
-    # -----------------------------------------------------------------------
     setup_files = _find_setup_files(analysis_dir)
 
     # Reuse the PRPs scan_directory already parsed. The path-based
@@ -177,7 +172,6 @@ function _scan_setup!(db::SQLite.DB, experiment_id::Int, setup;
 
     lock(_DB_WRITE_LOCK) do
         SQLite.transaction(db) do
-            # Existing exposure filenames for this experiment (dedup key).
             existing_filenames = Set{String}(String(r.filename)
                 for r in Tables.rowtable(DBInterface.execute(db,
                     "SELECT filename FROM exposures WHERE setup_id = ? AND filename IS NOT NULL",
@@ -185,14 +179,6 @@ function _scan_setup!(db::SQLite.DB, experiment_id::Int, setup;
 
             for gl in grouping.loads
                 any(ge -> !(ge.stem in existing_filenames), (ge for gs in gl.samples for ge in gs.exposures)) || continue
-                # Dedup the load row by (setup_id, load_index). The loads table
-                # has only a NON-unique index (loads_experiment_idx), so an
-                # unconditional INSERT would mint a fresh load_id on every rescan —
-                # that re-keys the sample dedup below onto a NEW load_id, finds
-                # nothing, and creates duplicate samples + an orphan load row.
-                # Mirror the sample/exposure insert-only discipline: reuse the
-                # existing load_id when present; insert only when absent. This makes
-                # a clean rescan a true no-op.
                 existing_load = Tables.rowtable(DBInterface.execute(db,
                     "SELECT id FROM loads WHERE setup_id = ? AND load_index = ?",
                     [setup_id, gl.load_index]))
@@ -211,9 +197,6 @@ function _scan_setup!(db::SQLite.DB, experiment_id::Int, setup;
 
                 for gs in gl.samples
                     any(ge -> !(ge.stem in existing_filenames), gs.exposures) || continue
-                    # Sample dedup by (setup_id, load_id, slot_index). Reuse the
-                    # existing row on rescan rather than re-inserting (also avoids
-                    # tripping the samples_unique_name UNIQUE index).
                     existing_sample = Tables.rowtable(DBInterface.execute(db,
                         "SELECT id FROM samples WHERE setup_id = ? AND load_id = ? AND slot_index = ?",
                         [setup_id, load_id, gs.slot_index]))

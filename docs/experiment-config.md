@@ -138,7 +138,8 @@ frame with a `kind` of `ingest_started`, `ingest_progress` (with a `stage` of
 
 The experiment row keeps `name`, `description` and `path` (the beamtime folder,
 set at create). `PATCH /api/experiments/:id` edits `name` and `description`; a
-body with no patchable field, or with any other field, is a `400`.
+body with no patchable field, or with any other field (even alongside a name),
+is a `400` that names the field.
 
 Everything else is a column on the experiment's `setups` rows.
 
@@ -159,12 +160,14 @@ Everything else is a column on the experiment's `setups` rows.
 
 Before setups existed, each experiment row held one setup's configuration.
 `open_db` migrates such a DB in place (`migrate_setups!`, `setups.jl`): each
-experiment gets one setup copied from its old columns, `path` becomes the setup's
+experiment gets one setup copied from its old columns, a `path` equal to `data_dir` becomes the setup's
 root folder, every load, sample and exposure gets that `setup_id`, the exposure
 filename index becomes unique per setup, and the old configuration columns
 (with `manifest_path`, `config`, `experiment_type`, `last_scan_tier` and
 `consecutive_empty_ticks`) are dropped. Ids do not change. Merging several of
-these experiments into one beamtime is a separate, one-time CLI step.
+these experiments into one beamtime is a separate, one-time CLI step. The migration is one-way:
+a build from before it cannot open the migrated DB, so copy `himalaya.db`
+before the first start of an upgraded build.
 
 ## File patterns
 

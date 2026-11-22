@@ -43,6 +43,13 @@ using HimalayaUI: with_inproc_routes, open_prepared_clone
                 body=Vector{UInt8}(JSON3.write(Dict("image_pattern" => "*.tif"))))
             @test r4.status == 400
 
+            r4b = call("PATCH", "/api/experiments/$exp_id";
+                headers=["Content-Type"=>"application/json","X-Username"=>"alice"],
+                body=Vector{UInt8}(JSON3.write(Dict("name" => "with geometry", "energy_kev" => 9))))
+            @test r4b.status == 400
+            @test occursin("energy_kev", JSON3.read(r4b.body)["error"])
+            @test JSON3.read(call("GET", "/api/experiments/$exp_id").body)["name"] != "with geometry"
+
             # data_dir stays read-only (400)
             r5 = call("PATCH", "/api/experiments/$exp_id";
                 headers=["Content-Type"=>"application/json","X-Username"=>"alice"],

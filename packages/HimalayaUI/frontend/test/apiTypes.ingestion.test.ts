@@ -22,7 +22,7 @@ describe("ingestion api types (Phase E1)", () => {
     expect(e.setups?.[0].flight_path_m_source).toBe("setup");
     expect(e.ingest_status).toBe("idle");
     expect(e.description).toBe("AgBe SAXS run");
-    // @ts-expect-error folder configuration moved to setups
+    // @ts-expect-error
     expect(e.image_pattern).toBeUndefined();
   });
 

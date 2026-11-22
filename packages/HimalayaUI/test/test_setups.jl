@@ -131,4 +131,59 @@ _count(db, sql, args...) = Int(only(Tables.rowtable(DBInterface.execute(db, sql,
         @test _count(db2, "SELECT COUNT(*) AS c FROM setups") == 2
         SQLite.close(db2)
     end
+    @testset "upgrade from the pre-setups schema" begin
+        path = joinpath(mktempdir(), "pre.db")
+        old = SQLite.DB(path)
+        for stmt in split(read(joinpath(@__DIR__, "fixtures", "pre_setups_schema.sql"), String), ";\n")
+            isempty(strip(stmt)) || DBInterface.execute(old, stmt)
+        end
+        DBInterface.execute(old, """INSERT INTO experiments
+            (id, name, path, data_dir, analysis_dir, integration_pattern,
+             flight_path_m, flight_path_m_source, energy_kev, energy_kev_source)
+            VALUES (1, 'one', '/bt/setup1/data', '/bt/setup1/data', '/bt/setup1/analysis', '{name}_tot.dat',
+                    2.5, 'user', 9.0, NULL),
+                   (2, 'two', '/elsewhere', '/bt/setup2/data', '/bt/setup2/analysis', NULL,
+                    NULL, 'default', NULL, 'default')""")
+        for (eid, lid) in ((1, 10), (2, 20))
+            DBInterface.execute(old, "INSERT INTO loads (id, experiment_id, load_index) VALUES (?, ?, 1)", [lid, eid])
+            DBInterface.execute(old, "INSERT INTO samples (id, experiment_id, name, load_id, slot_index) VALUES (?, ?, 'MO (S01P01)', ?, 1)",
+                [lid + 1, eid, lid])
+            DBInterface.execute(old, "INSERT INTO exposures (id, experiment_id, sample_id, load_id, filename) VALUES (?, ?, ?, ?, 'MO_S0001')",
+                [lid + 2, eid, lid + 1, lid])
+        end
+        DBInterface.execute(old, "INSERT INTO sample_calls (sample_id, state) VALUES (11, 'form_factor')")
+        close(old)
+
+        db = HimalayaUI.open_db(path)
+        @test isempty(Tables.rowtable(DBInterface.execute(db, "PRAGMA foreign_key_check")))
+        @test only(Tables.rowtable(DBInterface.execute(db, "PRAGMA integrity_check"))).integrity_check == "ok"
+        @test HimalayaUI.cols_of(db, "experiments") ==
+              ["id", "name", "path", "created_at", "last_scanned_at", "ingest_status", "ingest_error", "description"]
+        sts = Tables.rowtable(DBInterface.execute(db, "SELECT * FROM setups ORDER BY experiment_id"))
+        @test [(r.experiment_id, r.folder, r.root_dir, r.data_dir) for r in sts] ==
+              [(1, "setup1", "/bt/setup1", "/bt/setup1/data"), (2, "setup2", "/bt/setup2", "/bt/setup2/data")]
+        @test (sts[1].flight_path_m, sts[1].flight_path_m_source) == (2.5, "user")
+        @test (sts[1].energy_kev, sts[1].energy_kev_source) == (9.0, "default")
+        @test sts[1].integration_pattern == "{name}_tot.dat"
+        @test [r.path for r in Tables.rowtable(DBInterface.execute(db, "SELECT path FROM experiments ORDER BY id"))] ==
+              ["/bt/setup1", "/elsewhere"]
+        for t in ("loads", "samples", "exposures")
+            rows = Tables.rowtable(DBInterface.execute(db,
+                "SELECT x.setup_id, st.experiment_id AS sx, x.experiment_id AS ex FROM $t x LEFT JOIN setups st ON st.id = x.setup_id"))
+            @test length(rows) == 2
+            @test all(r -> !ismissing(r.setup_id) && r.sx == r.ex, rows)
+        end
+        idx = only(Tables.rowtable(DBInterface.execute(db,
+            "SELECT sql FROM sqlite_master WHERE name = 'exposures_unique_filename'"))).sql
+        @test occursin("(setup_id, filename)", idx)
+        @test _count(db, "SELECT COUNT(*) AS c FROM sample_calls WHERE sample_id = 11 AND state = 'form_factor'") == 1
+        @test HimalayaUI._migrated(db, HimalayaUI.MIGRATION_SETUP_IDS)
+
+        DBInterface.execute(db, "INSERT INTO exposures (experiment_id, filename) VALUES (1, 'orphan')")
+        close(db)
+        db = HimalayaUI.open_db(path)
+        @test ismissing(only(Tables.rowtable(DBInterface.execute(db,
+            "SELECT setup_id FROM exposures WHERE filename = 'orphan'"))).setup_id)
+        @test _count(db, "SELECT COUNT(*) AS c FROM setups") == 2
+    end
 end
