@@ -68,7 +68,7 @@
     "frontend/src/print/ui/Dot.tsx": 2,
     "frontend/src/print/ui/EmptyState.tsx": 11,
     "frontend/src/print/ui/IconButton.tsx": 18,
-    "frontend/src/print/ui/Input.tsx": 28,
+    "frontend/src/print/ui/Input.tsx": 25,
     "frontend/src/print/ui/KbKey.tsx": 17,
     "frontend/src/print/ui/Kicker.tsx": 16,
     "frontend/src/print/ui/LiveRegion.tsx": 22,
