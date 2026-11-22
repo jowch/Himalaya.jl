@@ -5,7 +5,7 @@ interface Collapsible {
   onOpen?: (() => void) | undefined;
 }
 
-export function Section({ title, aside, className, collapsible, children }: { title: string; aside?: ReactNode; className?: string; collapsible?: Collapsible | undefined; children: ReactNode }): JSX.Element {
+export function Section({ title, aside, folded, className, collapsible, children }: { title: string; aside?: ReactNode; folded?: string | undefined; className?: string; collapsible?: Collapsible | undefined; children: ReactNode }): JSX.Element {
   const open = collapsible?.open ?? true;
   return (
     <section className={"flex flex-col px-3.5 py-3" + (className ? ` ${className}` : "")} data-section={title} data-collapsed={open ? undefined : "true"}>
@@ -26,6 +26,7 @@ export function Section({ title, aside, className, collapsible, children }: { ti
           <h2 className="text-sm font-semibold text-ink-soft">{title}</h2>
         )}
         {aside && open && <span className="text-xs text-ink-faint">{aside}</span>}
+        {folded && !open && <span className="min-w-0 flex-1 truncate text-right text-xs text-ink-faint" title={folded} data-section-folded="">{folded}</span>}
       </header>
       {open && children}
     </section>
