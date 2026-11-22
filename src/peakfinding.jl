@@ -15,6 +15,8 @@ kneedle elbow finder, plus two backstops against pure-noise traces.
 Shape-agnostic; no per-trace tuning.
 
 # Arguments
+- `method`: `:persistence` (default, described here) or `:hybrid`, which adds
+  a matched-filter detector (see "Hybrid" below).
 - `q`, `I`, `σ`: equal-length vectors. `σ` is per-point intensity
   uncertainty (e.g., the third column of a SAXS `_tot.dat` file).
 - `normalize_by_σ`: if `true`, work on `I ./ σ` so prominence is in
@@ -29,7 +31,8 @@ Shape-agnostic; no per-trace tuning.
   (default), the kneedle algorithm chooses each from the data's own
   distribution. Manual values compose with `prom_ratio_floor` as a max.
 - `q_trim_high`: fraction of the q-range to discard from the high-q end
-  as a post-filter (applied after kneedle). Default `0.05`. Set to `0.0`
+  as a post-filter (applied after kneedle). Default `0.05` (`0.07` for
+  `method = :hybrid`). Set to `0.0`
   to disable. Real Bragg peaks rarely land in the upper few percent of
   the swept q-range on typical SAXS configurations; the high-q tail is
   dominated by shot noise on a near-zero baseline and produces spurious
@@ -45,6 +48,18 @@ Shape-agnostic; no per-trace tuning.
   `RATIO_FLOOR_MIN_CANDIDATES` (currently 20) candidates are present, so
   synthetic single-peak traces aren't suppressed by their own median.
 
+# Hybrid (`method = :hybrid`)
+Opt-in. Runs the persistence detector with `q_trim_high = 0.07`, keeps its
+peaks whose matched-filter z (max within ±3 points) is at least `kb`
+(default 5), then adds local maxima of z with `z ≥ k` (default 12), at least
+9 points apart, outside the top 5% of points and more than 4 points from a
+kept peak. Added peaks get `prominence` = the persistence prominence of `I`
+there if it is a local maximum, else `0.0`. Any `sharpness` ≤ 0 is replaced
+by a small positive value scaled by z, at most the smallest positive
+sharpness in the trace, so `score` can take its CV. The result has an extra field `z`
+(max-over-width matched-filter z, length `length(I)`). See
+`docs/peak-finding.md`.
+
 # Returns
 `(; indices, q, prominence, sharpness, sharpness_full)` —
 `indices`, `q`, `prominence`, `sharpness` are four equal-length vectors,
@@ -56,12 +71,8 @@ re-running the Savitzky–Golay pass.
 """
 const RATIO_FLOOR_MIN_CANDIDATES = 20
 
-function findpeaks(q, I, σ; normalize_by_σ    = false,
-                              sharpness_method = :savgol,
-                              prom_floor       = nothing,
-                              sharp_floor      = nothing,
-                              q_trim_high      = 0.05,
-                              prom_ratio_floor = 15.0)
+function _persistence_findpeaks(q, I, σ; normalize_by_σ, sharpness_method,
+                                prom_floor, sharp_floor, q_trim_high, prom_ratio_floor)
     @assert length(q) == length(I) == length(σ) "q, I, σ must be equal length"
     @assert 0 <= q_trim_high < 1 "q_trim_high must be in [0, 1)"
     @assert prom_ratio_floor >= 0 "prom_ratio_floor must be ≥ 0"
@@ -101,11 +112,62 @@ function findpeaks(q, I, σ; normalize_by_σ    = false,
         perm = perm[in_window]
     end
 
-    (indices        = idx[perm],
-     q              = q[idx[perm]],
-     prominence     = cands.prominence[keep][perm],
-     sharpness      = sharps_at_peaks[keep][perm],
-     sharpness_full = sharps_full)
+    result = (indices        = idx[perm],
+              q              = q[idx[perm]],
+              prominence     = cands.prominence[keep][perm],
+              sharpness      = sharps_at_peaks[keep][perm],
+              sharpness_full = sharps_full)
+    result, cands
+end
+
+# Hybrid detector: persistence detector (gated by matched-filter z) plus
+# matched-filter peaks. See src/matchedfilter.jl and docs/peak-finding.md.
+function _hybrid_findpeaks(q, I, σ; k, kb, q_trim_high, sep = 9, guard = 4,
+                           trim_top = 0.05, kwargs...)
+    base, cands = _persistence_findpeaks(q, I, σ; q_trim_high, kwargs...)
+    n = length(I)
+    z = matched_filter_z(I, σ)
+    idx, _ = hybrid_merge(base.indices, z, k, kb, sep, round(Int, trim_top * n), guard)
+
+    sharps_full = base.sharpness_full
+    tiny = Inf
+    for s in sharps_full
+        s > 0 && s < tiny && (tiny = s)
+    end
+    isfinite(tiny) || (tiny = eps())
+    zmax = max(maximum(view(z, idx); init = 1.0), 1.0)
+    sharp = similar(sharps_full, length(idx))
+    prom  = zeros(length(idx))
+    pmap  = Dict(zip(cands.indices, cands.prominence))
+    for (m, i) in enumerate(idx)
+        s = sharps_full[i]
+        # `score` takes a CV of sharpness; a nonpositive value breaks it.
+        sharp[m] = s > 0 ? s : tiny * max(z[i], 0.0) / zmax + eps()
+        prom[m]  = get(pmap, i, 0.0)
+    end
+    (indices = idx, q = q[idx], prominence = prom, sharpness = sharp,
+     sharpness_full = sharps_full, z = z)
+end
+
+function findpeaks(q, I, σ; method = :persistence,
+                              normalize_by_σ    = false,
+                              sharpness_method = :savgol,
+                              prom_floor       = nothing,
+                              sharp_floor      = nothing,
+                              q_trim_high      = nothing,
+                              prom_ratio_floor = 15.0,
+                              k                = 12.0,
+                              kb               = 5.0)
+    if method === :persistence
+        return first(_persistence_findpeaks(q, I, σ; normalize_by_σ, sharpness_method,
+            prom_floor, sharp_floor, q_trim_high = something(q_trim_high, 0.05),
+            prom_ratio_floor))
+    elseif method === :hybrid
+        return _hybrid_findpeaks(q, I, σ; k, kb,
+            q_trim_high = something(q_trim_high, 0.07), normalize_by_σ, sharpness_method,
+            prom_floor, sharp_floor, prom_ratio_floor)
+    end
+    throw(ArgumentError("Unknown method: $(repr(method)) (use :persistence or :hybrid)"))
 end
 
 findpeaks(q, I; kwargs...) = findpeaks(q, I, ones(length(I)); kwargs...)

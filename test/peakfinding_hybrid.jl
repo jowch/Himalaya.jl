@@ -12,14 +12,14 @@ const HYB_DQ = step(range(0.01, 0.4; length = HYB_N))
 function _hybrid_trace(; seed = 1, peaks = true)
     rng = MersenneTwister(seed)
     q = HYB_Q
-    I = 4e-3 .* (q ./ q[1]) .^ (-3) .* 1e3 .+ 30.0
+    I = 6000.0 .* (q ./ 0.04) .^ (-4) .+ 30.0
     strong = [0.07, 0.115, 0.16, 0.23, 0.30]
-    weak = [0.19]
-    shoulder = [0.0285]          # sits on the steep low-q flank
+    weak = [0.34]
+    shoulder = [0.04]           # sits on the steep low-q flank
     if peaks
         for (q0, h, γ) in vcat([(x, 400.0, 0.0012) for x in strong],
-                               [(x, 14.0, 0.0012) for x in weak],
-                               [(x, 1500.0, 0.0012) for x in shoulder])
+                               [(x, 120.0, 0.0012) for x in weak],
+                               [(x, 1100.0, 0.0012) for x in shoulder])
             I .+= h ./ (1 .+ ((q .- q0) ./ γ) .^ 2)
         end
     else
