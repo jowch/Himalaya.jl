@@ -33,6 +33,14 @@ describe("compare changes", () => {
     expect(comparesOf(applyCompareChange(base, 1, { subtraction: null }, "jc"), 1).subtraction).toBeUndefined();
     expect(comparesOf(applyCompareChange(EMPTY_COMPARES, 9, { subtraction: 1 }, null), 9).subtraction).toBe(1);
   });
+
+  it("a saved subtraction that is not a comparison is cleared by the next change, so adding it never makes it the background", () => {
+    const stale = { compares: [{ sample_id: 1, ref_sample_id: 3, added_by: "jc" }], subtractions: [{ sample_id: 1, ref_sample_id: 2 }] };
+    expect(comparesOf(applyCompareChange(stale, 1, { add: [2] }, "jc"), 1)).toMatchObject({ refs: [3, 2], subtraction: undefined });
+    expect(comparesOf(applyCompareChange(stale, 1, { remove: [3] }, "jc"), 1).subtraction).toBeUndefined();
+    expect(comparesOf(applyCompareChange(stale, 1, { remove: [9] }, "jc"), 1).subtraction).toBe(2);
+    expect(comparesOf(applyCompareChange(stale, 1, { add: [2], subtraction: 2 }, "jc"), 1).subtraction).toBe(2);
+  });
 });
 
 describe("compare mutations", () => {

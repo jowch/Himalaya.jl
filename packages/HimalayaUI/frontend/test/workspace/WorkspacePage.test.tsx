@@ -1286,7 +1286,7 @@ describe("WorkspacePage", () => {
       state.bridges = [];
       await undo();
       expect(ops()).toEqual([["bridge", 11, 10]]);
-      expect(toasts.at(-1)).toBe("Undone: unbridged A2");
+      expect(toasts.at(-1)).toBe("Undone: marked A2 as not the same sample");
     });
 
     it("undoes and redoes adding a comparison, and skips the redo once someone else re-added it", async () => {
@@ -2777,7 +2777,7 @@ describe("WorkspacePage", () => {
     state.compareTraces = new Map([[12, makeTrace(3)]]);
     state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
     renderAt("/experiments/1/workspace/10");
-    expect(document.querySelector("[data-same-sample]")).toHaveTextContent("Same sample as A3");
+    expect(screen.getByTitle("Same sample as A3")).toHaveTextContent("Same sample as A3");
     expect(screen.getByTestId("workspace-compares").querySelector("[data-compare='12']")).toBeNull();
     expect(screen.getByTestId("workspace-compare-bar").querySelector("[data-compare-chip]")).toBeNull();
     const list = screen.getByTestId("workspace-samples");
@@ -2800,19 +2800,40 @@ describe("WorkspacePage", () => {
     expect(calls).toContainEqual({ hook: "bridge", boundTo: 1, arg: { sampleId: 10, toSampleId: 13 } });
   });
 
-  it("the palette says the open sample is not the same sample as its group", () => {
-    state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
+  it("the palette says the open sample is not the same sample as every other sample in its group", () => {
+    state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }, { sample_id: 13, group_id: 4 }];
     renderAt("/experiments/1/workspace/10");
-    runFromPalette("not the same sample as a3");
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "not the same" } });
+    expect(screen.getByRole("option", { name: "Not the same sample as A3, A4" })).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByLabelText("Command or sample"), { key: "Enter" });
     expect(calls).toContainEqual({ hook: "unbridge", boundTo: 1, arg: { sampleId: 10 } });
   });
 
-  it("five comparisons still fit next to the same sample", () => {
+  it("the same sample takes no comparison slot, so a fifth comparison goes in past a bridge", () => {
     state.corpus = [...state.corpus, sample(14, "A5"), sample(15, "A6"), sample(16, "A7")];
-    act(() => setCompares({ compares: [11, 13, 14, 15, 16].map((r) => ({ sample_id: 10, ref_sample_id: r, added_by: "jc" })), subtractions: [] }));
+    act(() => setCompares({ compares: [11, 13, 14, 15].map((r) => ({ sample_id: 10, ref_sample_id: r, added_by: "jc" })), subtractions: [] }));
     state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
     renderAt("/experiments/1/workspace/10");
+    calls.length = 0;
+    fireEvent.click(within(screen.getByTestId("workspace-samples")).getByRole("button", { name: /A7/ }), { ctrlKey: true });
+    expect(calls.filter((c) => c.hook === "patchCompares")).toHaveLength(1);
+    expect(toasts.at(-1)).not.toBe(COMPARES_FULL);
     expect(screen.getByTestId("workspace-compare-bar").querySelectorAll("[data-compare-chip]")).toHaveLength(5);
+  });
+
+  it("names a same sample whose setup is hidden, so the note and the leave command match the group", () => {
+    state.setups = [
+      { id: 2, name: "setup2", folder: "setup2", included: true },
+      { id: 1, name: "setup1", folder: "setup1", included: false },
+    ];
+    state.corpus = [{ ...sample(10, "B1"), setup_id: 2 }, { ...sample(12, "A1"), setup_id: 1 }];
+    state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByTitle("Same sample as A1")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "not the same" } });
+    expect(screen.getByRole("option", { name: "Not the same sample as A1" })).toBeInTheDocument();
   });
 
   it("B is not a shortcut, the palette offers no unbridging without bridges, and no bridging before a user is set", () => {

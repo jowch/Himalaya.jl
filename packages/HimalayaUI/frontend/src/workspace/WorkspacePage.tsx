@@ -347,10 +347,11 @@ export function WorkspacePage(): JSX.Element {
   const commitCustom = useCommitCustomIndex(exposure?.id ?? 0);
   const bridges = useBridges(experimentId);
   const bridgeList = useMemo(() => bridges.data ?? [], [bridges.data]);
-  const bridged = useMemo(
-    () => (sampleId === undefined ? [] : bridgedWith(bridgeList, sampleId).filter((r) => !hiddenSamples.has(r))),
-    [bridgeList, sampleId, hiddenSamples],
-  );
+  const bridged = useMemo(() => (sampleId === undefined ? [] : bridgedWith(bridgeList, sampleId)), [bridgeList, sampleId]);
+  const bridgedNames = useMemo(() => {
+    const names = new Map(inExperiment.map((s) => [s.id, s.name]));
+    return bridged.map((r) => names.get(r) ?? `Sample ${r}`);
+  }, [bridged, inExperiment]);
   const counts = useMemo(() => bridgeCounts(bridgeList), [bridgeList]);
   const bridgeSamples = useBridgeSamples(experimentId);
   const unbridgeSample = useUnbridgeSample(experimentId);
@@ -615,7 +616,7 @@ export function WorkspacePage(): JSX.Element {
       if (!username || sampleId === undefined) return;
       unbridgeSample.mutate({ sampleId: target });
       history.record(unbridgeEntry(ops, {
-        label: `unbridged ${sampleNames.get(target) ?? "a sample"}`, sampleId, exposureId: undefined, target, bridges: bridgeList,
+        label: `marked ${sampleNames.get(target) ?? "a sample"} as not the same sample`, sampleId, exposureId: undefined, target, bridges: bridgeList,
       }));
     },
     [username, sampleId, unbridgeSample, history, ops, sampleNames, bridgeList],
@@ -628,7 +629,7 @@ export function WorkspacePage(): JSX.Element {
       if (sampleId === undefined) return;
       bridgeSamples.mutate({ sampleId, toSampleId: rid });
       history.record(bridgeEntry(ops, {
-        label: `bridged ${sample?.name ?? "this sample"} to ${sampleNames.get(rid) ?? "a sample"}`, sampleId, exposureId: undefined,
+        label: `marked ${sample?.name ?? "this sample"} as the same sample as ${sampleNames.get(rid) ?? "a sample"}`, sampleId, exposureId: undefined,
         from: sampleId, to: rid, bridges: bridgeList,
       }));
     },
@@ -1018,7 +1019,7 @@ export function WorkspacePage(): JSX.Element {
         if (sampleId === undefined) return;
         bridgeTo(rid);
       },
-      bridged: bridged.flatMap((r) => samples.filter((x) => x.id === r).map((x) => x.name)),
+      bridged: bridgedNames,
       leave: leaveBridges,
     },
     candidates: {
@@ -1144,9 +1145,9 @@ export function WorkspacePage(): JSX.Element {
             <SampleHeading
               name={sample.name}
               meta={exposure ? `Frame ${exposureIndex} of ${exposureList.length}` : undefined}
-              note={bridged.length > 0 ? `Same sample as ${bridged.map((r) => sampleNames.get(r) ?? `Sample ${r}`).join(", ")}` : undefined}
               aside={
                 <LabelRow
+                  note={bridgedNames.length > 0 ? `Same sample as ${bridgedNames.join(", ")}` : undefined}
                   labels={sampleLabels}
                   vocabulary={vocabulary}
                   editable={Boolean(username)}

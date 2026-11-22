@@ -253,7 +253,7 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
       title: "Same sample as",
       arg: "Sample",
       deep: true,
-      empty: "No other samples to link.",
+      empty: "No other samples.",
       items: p.bridge.samples.map((s) => ({ id: `bridge-${s.id}`, label: s.name, run: () => p.bridge.pick(s.id) })),
     };
     if (p.candidates.list.length > 0) {
