@@ -36,10 +36,10 @@ async function mockFunnel(page: Page, created: Created[]): Promise<void> {
   await page.route(/\/api\/fs\/suggest\?/, (r) => {
     const prefix = new URL(r.request().url()).searchParams.get("prefix") ?? "";
     const folders = [
-      { path: "/lab/20261103", kind: "beamtime", setups: 2, added: null },
-      { path: "/lab/20261103/notes", kind: null, setups: null, added: null },
-      { path: "/lab/20261103/setup1", kind: "setup", setups: null, added: null },
-      { path: "/lab/20261103/setup2", kind: "setup", setups: null, added: null },
+      { path: "/lab/20261103", kind: "beamtime", setups: 2, added: null, described: true },
+      { path: "/lab/20261103/notes", kind: null, setups: null, added: null, described: true },
+      { path: "/lab/20261103/setup1", kind: "setup", setups: null, added: null, described: true },
+      { path: "/lab/20261103/setup2", kind: "setup", setups: null, added: null, described: true },
     ];
     const dir = prefix.slice(0, prefix.lastIndexOf("/") + 1);
     const inDir = folders.filter((f) => f.path.lastIndexOf("/") + 1 === dir.length && f.path.startsWith(prefix));
@@ -114,11 +114,15 @@ test("typing a path shows the folders below it, and the keyboard picks one", asy
   await page.keyboard.press("Tab");
   await page.keyboard.press("Enter");
   await expect(field).toHaveValue("/lab/20261103/");
-  await expect(list.getByRole("option")).toHaveCount(3);
-  await expect(list.getByRole("option", { name: "setup1, setup" })).toBeVisible();
   await expect(page.getByTestId("setup-row")).toHaveCount(2);
+  await expect(list).toBeHidden();
+  await page.keyboard.press("ArrowDown");
+  await expect(list.getByRole("option")).toHaveCount(3);
+  await expect(list.getByRole("option", { name: "notes" })).toHaveAttribute("aria-selected", "true");
   await page.keyboard.press("Escape");
   await expect(list).toBeHidden();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("textbox", { name: "Experiment name" })).toBeFocused();
   await page.keyboard.press("ControlOrMeta+Enter");
   await expect(page).toHaveURL(/\/experiments\/1/);
   expect(created[0]!.path).toBe("/lab/20261103");

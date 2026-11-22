@@ -40,7 +40,7 @@ function setup(root: string, overrides: Partial<api.SetupPreview> = {}): api.Set
 }
 
 const folders = (paths: string[]): api.FolderSuggestions =>
-  ({ folders: paths.map((path) => ({ path, kind: null, setups: null, added: null })), more: false });
+  ({ folders: paths.map((path) => ({ path, kind: null, setups: null, added: null, described: true })), more: false });
 
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -186,8 +186,10 @@ describe("NewExperimentPage", () => {
     pick("/b/20261103");
     await screen.findAllByTestId("setup-row");
     const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
-    fireEvent.click(input);
+    fireEvent.focus(input);
     await screen.findByRole("option", { name: "notes" });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(screen.getByRole("option", { name: "notes" })).toHaveAttribute("aria-selected", "true");
     fireEvent.keyDown(input, { key: "Enter", metaKey: true });
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/experiments/11"));
     expect(input).toHaveValue("/b/20261103");
@@ -201,7 +203,7 @@ describe("NewExperimentPage", () => {
     pick("/b/20261103/setup1");
     await screen.findAllByTestId("setup-row");
     const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
-    fireEvent.click(input);
+    fireEvent.focus(input);
     await screen.findByRole("option", { name: "analysis" });
     fireEvent.keyDown(input, { key: "Enter" });
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/experiments/11"));
@@ -222,7 +224,7 @@ describe("NewExperimentPage", () => {
     pick("/b/day1/");
     await waitFor(() => expect(screen.getAllByTestId("setup-row")).toHaveLength(2));
     const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
-    fireEvent.click(input);
+    fireEvent.focus(input);
     await screen.findByRole("option", { name: "setup1" });
     fireEvent.keyDown(input, { key: "ArrowDown" });
     fireEvent.keyDown(input, { key: "Enter" });

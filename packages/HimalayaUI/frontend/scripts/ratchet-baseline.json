@@ -20,7 +20,7 @@
     "frontend/src/lib/customIndex.ts": 38,
     "frontend/src/lib/cx.ts": 2,
     "frontend/src/lib/ingestStatus.ts": 23,
-    "frontend/src/lib/keys.ts": 48,
+    "frontend/src/lib/keys.ts": 44,
     "frontend/src/lib/plot/formatAxis.ts": 9,
     "frontend/src/lib/queue/applyRemoteToCache.ts": 81,
     "frontend/src/lib/queue/assignmentDropped.ts": 31,

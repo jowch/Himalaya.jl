@@ -28,6 +28,7 @@ const basename = (p: string): string => {
 
 export function folderHint(f: FolderSuggestion): string | undefined {
   const parts: string[] = [];
+  if (!f.described) return "not checked";
   if (f.kind === "beamtime") parts.push(f.setups === 1 ? "beamtime, 1 setup" : `beamtime, ${f.setups ?? 0} setups`);
   if (f.kind === "setup") parts.push("setup");
   if (f.added !== null) parts.push(`added as ${f.added.name}`);
@@ -61,12 +62,14 @@ export function DirectoryPickerField({
 
   const change = (v: string): void => {
     setDismissed(false);
+    setActive(-1);
     onChange(v);
   };
 
   const complete = (path: string): void => {
-    change(path.endsWith("/") ? path : `${path}/`);
+    onChange(path.endsWith("/") ? path : `${path}/`);
     setActive(-1);
+    setDismissed(true);
   };
 
   const step = (dir: 1 | -1): void => {
@@ -80,8 +83,8 @@ export function DirectoryPickerField({
       if (!showing) return;
       e.preventDefault();
       e.stopPropagation();
-      if (active >= 0) setActive(-1);
-      else setDismissed(true);
+      setActive(-1);
+      setDismissed(true);
       return;
     }
     if (e.key === "Enter") {

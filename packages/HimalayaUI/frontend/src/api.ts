@@ -213,6 +213,7 @@ export interface FolderSuggestion {
   kind: "beamtime" | "setup" | null;
   setups: number | null;
   added: { id: number; name: string } | null;
+  described: boolean;
 }
 export interface FolderSuggestions { folders: FolderSuggestion[]; more: boolean }
 export const suggestFolders = (prefix: string) =>
