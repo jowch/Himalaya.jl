@@ -96,6 +96,7 @@ npm run test:watch    # Vitest watch mode
 npm run e2e           # Playwright E2E (mocked; builds and serves the bundle; runs in CI)
 npm run e2e:live      # Live integration tests (requires backend + Vite running)
 npm run build         # lint:design + lint:ratchet + eslint + tsc --noEmit + vite build (must pass before PR)
+npm run typecheck:test  # tsc over src + test (Vitest skips types; CI runs this)
 ```
 
 Tests use stdlib `Test` (`@testset`, `@test`, `@test_throws`). Internal (non-exported) helpers are accessed via `Himalaya.<name>` / `HimalayaUI.<name>` in tests.

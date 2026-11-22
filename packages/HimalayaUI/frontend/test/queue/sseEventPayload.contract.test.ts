@@ -29,13 +29,9 @@ import type {
   Peak, Exposure, Sample, Assignment,
 } from "../../src/api";
 import { queryKeys } from "../../src/queries";
+import { makeExposure } from "../helpers/exposure";
 
-const FULL_EXPOSURE: Exposure = {
-  id: 5, sample_id: 1, filename: null, kind: "file", selected: true,
-  status: null, image_path: null, image_version: "",
-  trace_hash: null, analysis_inputs_hash: "h0",
-  sources: [],
-};
+const FULL_EXPOSURE: Exposure = makeExposure({ id: 5, selected: true, analysis_inputs_hash: "h0" });
 
 describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)", () => {
   let qc: QueryClient;
@@ -486,8 +482,8 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     // expected default fall-through (review suggestion #16).
     let invalidatedKeys: unknown[] = [];
     const orig = qc.invalidateQueries.bind(qc);
-    qc.invalidateQueries = ((arg: { queryKey: unknown }) => {
-      invalidatedKeys.push(arg.queryKey); return orig(arg);
+    qc.invalidateQueries = ((...args: Parameters<typeof orig>) => {
+      invalidatedKeys.push(args[0]?.queryKey); return orig(...args);
     }) as typeof qc.invalidateQueries;
     const evt: SseEvent = {
       id: 99, kind: "delete_index", entity_type: "exposure", entity_id: 5,
