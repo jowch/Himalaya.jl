@@ -11,25 +11,49 @@ frontend:
 lint:
 	cd $(FRONTEND_DIR) && npm run lint:design && npm run lint:ratchet && npm run lint
 
+ENV_CANDIDATES = $(HIMALAYA_ENV_FILE) $(CURDIR)/.env $(CURDIR)/packages/HimalayaUI/.env /etc/himalaya/.env
+
+LOAD_ENV = set -a; for c in $(ENV_CANDIDATES); do \
+	           if [ -f "$$c" ]; then . "$$c"; break; fi; \
+	         done; set +a;
+
+JULIA = $(LOAD_ENV) julia
+
 sysimage:
-	julia --project=scripts -e 'using Pkg; Pkg.instantiate()'
-	julia --project=scripts scripts/build_sysimage.jl
+	@$(LOAD_ENV) echo "Building sysimage with JULIA_DEPOT_PATH=$${JULIA_DEPOT_PATH:-<julia default>}"
+	$(JULIA) --project=scripts -e 'using Pkg; Pkg.instantiate()'
+	$(JULIA) --project=scripts scripts/build_sysimage.jl
 
 check-sysimage:
-	@stamp=$(BUILD_DIR)/julia_version; \
+	@$(LOAD_ENV) \
+	stamp=$(BUILD_DIR)/julia_version; \
+	depot_stamp=$(BUILD_DIR)/depot_path; \
 	if [ ! -f $$stamp ]; then \
 		echo "No sysimage found. Run 'make sysimage'."; exit 1; \
 	fi; \
 	stored=$$(cat $$stamp); \
 	current=$$(julia -e 'print(VERSION)'); \
-	if [ "$$stored" = "$$current" ]; then \
-		echo "Sysimage OK (Julia $$current)"; \
-	else \
+	if [ "$$stored" != "$$current" ]; then \
 		echo "Julia version mismatch:"; \
 		echo "  sysimage built with: $$stored"; \
 		echo "  current Julia:       $$current"; \
 		echo "Run 'make sysimage' to rebuild."; exit 1; \
-	fi
+	fi; \
+	if [ ! -f $$depot_stamp ]; then \
+		echo "Sysimage OK (Julia $$current), but it predates depot stamping,"; \
+		echo "so the depot it was built against can't be checked. If it fails"; \
+		echo "to start with 'Artifact ... was not found', run 'make sysimage'."; \
+		exit 0; \
+	fi; \
+	stored_depot=$$(cat $$depot_stamp); \
+	current_depot=$${JULIA_DEPOT_PATH:-}; \
+	if [ "$$stored_depot" != "$$current_depot" ]; then \
+		echo "Depot mismatch. This sysimage will fail to start here:"; \
+		echo "  sysimage built with: $${stored_depot:-<julia default>}"; \
+		echo "  runtime depot:       $${current_depot:-<julia default>}"; \
+		echo "Run 'make sysimage' to rebuild against the runtime depot."; exit 1; \
+	fi; \
+	echo "Sysimage OK (Julia $$current, depot $${current_depot:-<julia default>})"
 
 clean:
 	rm -rf $(BUILD_DIR) $(FRONTEND_DIR)/dist
@@ -67,11 +91,11 @@ UI_PROJECT := packages/HimalayaUI/Project.toml
 UI_PREFS   := packages/HimalayaUI/LocalPreferences.toml
 setup:
 	cd $(FRONTEND_DIR) && npm ci
-	julia --project=. -e 'using Pkg; Pkg.instantiate()'
+	$(JULIA) --project=. -e 'using Pkg; Pkg.instantiate()'
 	cp $(UI_PROJECT) $(UI_PROJECT).setup-bak; \
 	trap 'mv $(UI_PROJECT).setup-bak $(UI_PROJECT)' EXIT; \
-	julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
-	julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.precompile()'
+	$(JULIA) --project=packages/HimalayaUI -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
+	$(JULIA) --project=packages/HimalayaUI -e 'using Pkg; Pkg.precompile()'
 	@! grep -qs 'precompile_workload *= *false' $(UI_PREFS) || \
 		echo "Note: $(UI_PREFS) turns the route warm-up off. Delete it on a server."
 

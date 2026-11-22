@@ -189,8 +189,10 @@ The work needed depends on what changed:
 | Schema migration | none extra — `open_db` runs migrations on connect, daemon restart picks them up | — |
 | Julia version bump (juliaup) | rebuild sysimage (`make check-sysimage` flags the mismatch) | ~5–10 min |
 
-For multi-user deploys, set `JULIA_DEPOT_PATH` for the build steps so packages
-and the sysimage write into the shared depot:
+For multi-user deploys, packages and the sysimage must go into the shared depot
+that `bin/himalaya` runs against. `make setup`, `make sysimage` and
+`make check-sysimage` read `JULIA_DEPOT_PATH` from the same `.env` as
+`bin/himalaya`, so only a bare `julia` call needs it exported:
 
 ```bash
 cd /opt/Himalaya.jl
@@ -199,6 +201,7 @@ export JULIA_DEPOT_PATH=/opt/Himalaya.jl/.julia        # or whatever .env has
 julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.instantiate()'   # only if Project.toml changed
 make frontend                                          # only if frontend/ changed
 make sysimage                                          # only if any Julia code changed
+make check-sysimage                                    # fails if the depot or Julia version differs
 sudo systemctl restart himalaya                        # only if you rebuilt the sysimage
 ```
 

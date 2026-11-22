@@ -17,6 +17,7 @@ create_sysimage(
 )
 
 write(joinpath(out_dir, "julia_version"), string(VERSION))
+write(joinpath(out_dir, "depot_path"), get(ENV, "JULIA_DEPOT_PATH", ""))
 
 @info """
 Sysimage built: $out_path
