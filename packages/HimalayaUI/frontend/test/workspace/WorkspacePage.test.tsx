@@ -3576,12 +3576,21 @@ describe("WorkspacePage", () => {
     expect(selections()).toHaveLength(3);
   });
 
+  it("undoes an Enter press by restoring the selection it changed", async () => {
+    state.exposures = [exposure(100, { selected: false }), exposure(101, { selected: true })];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "Enter" });
+    state.exposures = [exposure(100, { selected: false }), exposure(101, { selected: false })];
+    await act(async () => { fireEvent.keyDown(window, { key: "z", ctrlKey: true }); for (let i = 0; i < 10; i++) await Promise.resolve(); });
+    expect(calls.filter((c) => c.hook === "op:setSelection").map((c) => c.arg)).toEqual([[10, []], [10, [101]]]);
+  });
+
   it("Enter selects the image shown in the enlarged detector view, and its hint says which way", () => {
     state.exposures = [exposure(100, { selected: false, image_path: "/a.tif", image_version: "1" }), exposure(101, { selected: true, image_path: "/b.tif", image_version: "1" })];
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: " " });
     const dialog = screen.getByRole("dialog", { name: "Detector image" });
-    expect(dialog).toHaveTextContent("Enter deselect");
+    expect(screen.getByTestId("detector-select-hint")).toHaveTextContent(/^deselect$/);
     fireEvent.keyDown(dialog, { key: "Enter" });
     expect(calls.filter((c) => c.hook === "op:setSelection").map((c) => c.arg)).toEqual([[10, []]]);
     expect(screen.getByRole("dialog", { name: "Detector image" })).toBeInTheDocument();

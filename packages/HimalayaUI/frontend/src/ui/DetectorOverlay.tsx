@@ -85,7 +85,15 @@ export function DetectorOverlay({ exposures, currentId, caption, onStep, onToggl
         <p className="m-0 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-faint">
           <span><Kbd>←</Kbd> <Kbd>→</Kbd> images</span>
           {onToggleDrop && <span><Kbd>X</Kbd> {dropped ? "restore" : "drop"}</span>}
-          {selection && <span><Kbd>Enter</Kbd> {selection.selected ? "deselect" : "select"}</span>}
+          {selection && (
+            <span>
+              <Kbd>Enter</Kbd>{" "}
+              <span className="inline-grid">
+                <span aria-hidden="true" className="invisible col-start-1 row-start-1">deselect</span>
+                <span data-testid="detector-select-hint" className="col-start-1 row-start-1">{selection.selected ? "deselect" : "select"}</span>
+              </span>
+            </span>
+          )}
           <span><Kbd>Esc</Kbd> close</span>
           <span className={ringView && ringView.rings.length > 0 ? undefined : "invisible"}>Press and hold the image to hide the rings.</span>
         </p>
