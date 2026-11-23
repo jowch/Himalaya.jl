@@ -11,6 +11,7 @@ export interface PaletteItem {
   swatch?: string | undefined;
   danger?: boolean;
   typeOnly?: boolean;
+  keywords?: readonly string[];
 }
 
 export interface FieldOption {
@@ -66,6 +67,10 @@ export function matches(text: string, query: string): boolean {
   return query.toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.includes(w));
 }
 
+function searchText(item: PaletteItem): string {
+  return item.keywords ? `${item.label} ${item.keywords.join(" ")}` : item.label;
+}
+
 export function rootRows(groups: readonly PaletteGroup[], pages: Readonly<Record<string, PalettePage>>, query: string): PaletteRow[] {
   const q = query.trim();
   const out: PaletteRow[] = [];
@@ -74,7 +79,7 @@ export function rootRows(groups: readonly PaletteGroup[], pages: Readonly<Record
     out.push({ kind: "head", title }, ...rows);
   };
   const searchGroup = (g: PaletteGroup): void => {
-    const hits = g.items.filter((i) => matches(i.label, q));
+    const hits = g.items.filter((i) => matches(searchText(i), q));
     const exact = hits.filter((i) => i.name !== undefined && i.name.toLowerCase() === q.toLowerCase());
     const ordered = [...exact, ...hits.filter((i) => !exact.includes(i))].slice(0, SEARCH_LIMIT);
     pushGroup(g.title, ordered.map((item) => ({ kind: "item", item })));
@@ -83,7 +88,7 @@ export function rootRows(groups: readonly PaletteGroup[], pages: Readonly<Record
   for (const g of exactGroups) searchGroup(g);
   for (const g of groups) {
     if (g.searchOnly) continue;
-    const items = g.items.filter((i) => (q ? matches(i.label, q) : !i.typeOnly));
+    const items = g.items.filter((i) => (q ? matches(searchText(i), q) : !i.typeOnly));
     pushGroup(g.title, items.map((item) => ({ kind: "item", item })));
   }
   if (!q) return out;
@@ -99,7 +104,7 @@ export function rootRows(groups: readonly PaletteGroup[], pages: Readonly<Record
 
 export function pageRows(page: PalettePage, query: string): PaletteRow[] {
   const q = query.trim();
-  const items = [...page.items.filter((i) => !q || matches(i.label, q)), ...(page.extra?.(q) ?? [])];
+  const items = [...page.items.filter((i) => !q || matches(searchText(i), q)), ...(page.extra?.(q) ?? [])];
   return items.map((item) => ({ kind: "item", item }));
 }
 

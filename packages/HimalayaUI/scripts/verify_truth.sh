@@ -113,7 +113,7 @@ step 12-bridge-labels log bash -c '
   bin/verify api POST "/api/samples/$a/labels" --data "{\"label\":\"37C\"}" > /dev/null
   bin/verify api POST "/api/samples/$a/bridge" --data "{\"to_sample_id\":$b}" > /dev/null
   bin/verify api POST "/api/samples/$b/labels" --data "{\"label\":\"pH 7\"}" > /dev/null
-  bin/verify check-truth > "$out/12-bridged.json" || true
+  bin/verify check-truth > "$out/12-bridged.json" || { echo "check-truth failed with the first two samples bridged"; node -e "const r=JSON.parse(require(\"fs\").readFileSync(process.argv[1],\"utf8\"));console.log(JSON.stringify(r.summary))" "$out/12-bridged.json"; exit 1; }
   node -e "
     const r = JSON.parse(require(\"fs\").readFileSync(process.argv[1], \"utf8\"));
     const inv = r.invariants.bridged_labels_match;
@@ -129,7 +129,7 @@ step 12-bridge-labels log bash -c '
 step 13-bridge-call json node "$HELP" bridge-call
 step 13-calls-match log bash -c '
   out=$1
-  bin/verify check-truth > "$out/13-bridged.json" || true
+  bin/verify check-truth > "$out/13-bridged.json" || { echo "check-truth failed after bridging two samples with different calls"; node -e "const r=JSON.parse(require(\"fs\").readFileSync(process.argv[1],\"utf8\"));console.log(JSON.stringify(r.summary))" "$out/13-bridged.json"; exit 1; }
   node -e "
     const r = JSON.parse(require(\"fs\").readFileSync(process.argv[1], \"utf8\"));
     const inv = r.invariants.bridged_calls_match;

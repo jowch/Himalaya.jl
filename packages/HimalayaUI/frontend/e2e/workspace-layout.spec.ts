@@ -748,3 +748,60 @@ test("a subscripted phase name in the sample list leaves every row the same heig
   expect(new Set(heights.map(([row]) => row)).size, "row heights").toBe(1);
   expect(new Set(heights.map(([, mark]) => mark)).size, "status mark heights").toBe(1);
 });
+
+for (const viewport of [...VIEWPORTS, { width: 1024, height: 600 }, { width: 800, height: 480 }, { width: 480, height: 800 }]) {
+  test(`the ? shortcut list fits the window, scrolls by keyboard to its last row, and keeps its header in view at ${viewport.width}×${viewport.height}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await page.goto("/experiments/17/workspace/40");
+    await openSample(page, 40);
+    await page.keyboard.press("?");
+    const help = page.getByRole("dialog", { name: "Keyboard shortcuts" });
+    await expect(help).toBeVisible();
+    const panel = (await help.boundingBox())!;
+    expect(panel.y + panel.height, "the list ends inside the window").toBeLessThanOrEqual(viewport.height);
+    expect(panel.x + panel.width, "the list fits the window's width").toBeLessThanOrEqual(viewport.width);
+    const body = help.getByTestId("help-body");
+    const header = help.getByTestId("help-header");
+    await expect(body).toBeFocused();
+    const headerBefore = (await header.boundingBox())!;
+    const rows = body.locator(":scope > span");
+    const last = rows.last();
+    await page.keyboard.press("End");
+    await expect.poll(async () => {
+      const [b, r] = await Promise.all([body.boundingBox(), last.boundingBox()]);
+      return r!.y + r!.height <= b!.y + b!.height + 0.5 && r!.y >= b!.y - 0.5;
+    }, { message: "End brings the last row fully into view" }).toBe(true);
+    expect(await header.boundingBox(), "the header stays put while the list scrolls").toEqual(headerBefore);
+    await page.keyboard.press("Home");
+    await expect.poll(async () => {
+      const [b, r] = await Promise.all([body.boundingBox(), rows.first().boundingBox()]);
+      return r!.y >= b!.y - 0.5;
+    }, { message: "Home brings the first row back" }).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(help).toHaveCount(0);
+  });
+}
+
+test("on a short window the ? shortcut list really scrolls, so the fit test above is not vacuous", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 650 });
+  await page.goto("/experiments/17/workspace/40");
+  await openSample(page, 40);
+  await page.keyboard.press("?");
+  const body = page.getByTestId("help-body");
+  await expect(body).toBeVisible();
+  const { scrollHeight, clientHeight } = await body.evaluate((el) => ({ scrollHeight: el.scrollHeight, clientHeight: el.clientHeight }));
+  expect(scrollHeight).toBeGreaterThan(clientHeight);
+  await body.hover();
+  await page.mouse.wheel(0, 400);
+  await expect.poll(() => body.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+});
+
+test("the ? shortcut list's close button closes it", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 650 });
+  await page.goto("/experiments/17/workspace/40");
+  await openSample(page, 40);
+  await page.keyboard.press("?");
+  const help = page.getByRole("dialog", { name: "Keyboard shortcuts" });
+  await help.getByRole("button", { name: "Close" }).click();
+  await expect(help).toHaveCount(0);
+});
