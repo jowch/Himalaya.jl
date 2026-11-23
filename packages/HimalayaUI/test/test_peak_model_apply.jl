@@ -1,4 +1,4 @@
-using Test, HTTP, JSON3, SQLite, DBInterface, Tables
+using Test, HTTP, JSON3, Random, SQLite, DBInterface, Tables
 using HimalayaUI
 import HimalayaPeakModel as HPM
 isdefined(@__MODULE__, :_pt_db) || include("peak_training_fixture.jl")
@@ -150,5 +150,141 @@ end
         DBInterface.execute(db, "INSERT INTO peak_models (created_at, status, label_watermark, core_version) VALUES ('t', 'failed', 0, 'v')")
         @test due()
         DBInterface.close!(db)
+    end
+end
+
+function _pma_db(dir; n = 3, points = 700)
+    rng = Random.MersenneTwister(5)
+    db = open_prepared_clone(dir)
+    adir = joinpath(dir, "analysis"); mkpath(adir)
+    xid = HimalayaUI.init_experiment!(db; path = joinpath(dir, "exp"), data_dir = joinpath(dir, "data"), analysis_dir = adir)
+    sid = HimalayaUI.create_sample!(db; experiment_id = xid, name = "S")
+    eids = Int[]; traces = Dict{Int, Any}()
+    for k in 1:n
+        name = "k$(k)_tot"
+        q, I, σ = _pt_trace(rng, 0.05 + 0.01k; n = points)
+        _pt_write_dat(joinpath(adir, name * ".dat"), q, I, σ)
+        eid = HimalayaUI.create_exposure!(db; experiment_id = xid, sample_id = sid, filename = name)
+        push!(eids, eid); traces[eid] = HimalayaUI.load_dat(joinpath(adir, name * ".dat"))
+    end
+    (; db, adir, xid, sid, eids, traces)
+end
+
+_pma_peaks(db, e) = Tables.rowtable(DBInterface.execute(db,
+    "SELECT q, found_by, model_id, sharpness, prominence, findpeaks_index FROM auto_peaks WHERE exposure_id = ? ORDER BY q", [e]))
+_pma_version(db, e) = _pma_one(db, "SELECT peak_model_version AS v, analysis_version FROM exposures WHERE id = ?", [e])
+_pma_review!(db, e) = DBInterface.execute(db, "UPDATE exposures SET reviewed_at = '2026-01-01T00:00:00.000Z' WHERE id = ?", [e])
+
+@testset "an unreviewed exposure gets the model's peaks with provenance" begin
+    mktempdir() do dir
+        b = _pma_db(dir)
+        model_id = _pma_add_model!(b.db; status = "active")
+        pm = HimalayaUI.production_detector(b.db)
+        e = b.eids[1]
+        HimalayaUI.analyze_exposure!(b.db, e, b.adir)
+        q, I, σ = b.traces[e]
+        expected = HPM.predict_peaks(pm.model, q, I, σ)
+        rows = _pma_peaks(b.db, e)
+        @test !isempty(expected)
+        @test [r.q for r in rows] == expected
+        hyb = Himalaya.findpeaks(q, I, σ; method = :hybrid)
+        step = HimalayaUI.grid_step(q)
+        for r in rows
+            near = any(h -> abs(r.q - h) <= HimalayaUI.peak_match_tol(r.q, step), hyb.q)
+            @test r.found_by == (near ? "both" : "model")
+            @test r.model_id == model_id
+            @test r.sharpness > 0 && r.prominence >= 0
+            @test q[r.findpeaks_index] == r.q
+        end
+        v = _pma_version(b.db, e)
+        @test v.v == model_id && v.analysis_version == HimalayaUI.ANALYSIS_VERSION
+        DBInterface.close!(b.db)
+    end
+end
+
+@testset "reviewed exposures, and databases without a model, get the hybrid's peaks" begin
+    mktempdir() do dir
+        b = _pma_db(dir)
+        a, r = b.eids[1], b.eids[2]
+        HimalayaUI.analyze_exposure!(b.db, a, b.adir)
+        @test all(p -> p.found_by == "hybrid" && ismissing(p.model_id), _pma_peaks(b.db, a))
+        @test ismissing(_pma_version(b.db, a).v)
+        _pma_add_model!(b.db; status = "active")
+        _pma_review!(b.db, r)
+        HimalayaUI.analyze_exposure!(b.db, r, b.adir)
+        q, I, σ = b.traces[r]
+        hyb = Himalaya.findpeaks(q, I, σ; method = :hybrid)
+        @test [p.q for p in _pma_peaks(b.db, r)] == hyb.q
+        @test all(p -> p.found_by == "hybrid" && ismissing(p.model_id), _pma_peaks(b.db, r))
+        @test ismissing(_pma_version(b.db, r).v)
+        DBInterface.close!(b.db)
+    end
+end
+
+@testset "a reviewed exposure re-detected after a version bump goes back to the hybrid's provenance" begin
+    mktempdir() do dir
+        b = _pma_db(dir)
+        e = b.eids[1]
+        id = _pma_add_model!(b.db; status = "active")
+        HimalayaUI.analyze_exposure!(b.db, e, b.adir)
+        @test _pma_version(b.db, e).v == id
+        _pma_review!(b.db, e)
+        DBInterface.execute(b.db, "UPDATE exposures SET analysis_version = 'older' WHERE id = ?", [e])
+        HimalayaUI.analyze_exposure!(b.db, e, b.adir)
+        @test all(p -> p.found_by == "hybrid" && ismissing(p.model_id), _pma_peaks(b.db, e))
+        @test ismissing(_pma_version(b.db, e).v)
+        DBInterface.close!(b.db)
+    end
+end
+
+@testset "a failing prediction, or a trace too short for the model, keeps the hybrid's peaks" begin
+    mktempdir() do dir
+        b = _pma_db(dir)
+        _pma_add_model!(b.db; status = "active")
+        old = HimalayaUI.PEAK_MODEL_PREDICT[]
+        HimalayaUI.PEAK_MODEL_PREDICT[] = (args...; kw...) -> error("boom")
+        try
+            e = b.eids[1]
+            @test_logs (:warn, r"peak model") HimalayaUI.analyze_exposure!(b.db, e, b.adir)
+            q, I, σ = b.traces[e]
+            @test [p.q for p in _pma_peaks(b.db, e)] == Himalaya.findpeaks(q, I, σ; method = :hybrid).q
+            @test all(p -> p.found_by == "hybrid" && ismissing(p.model_id), _pma_peaks(b.db, e))
+            @test ismissing(_pma_version(b.db, e).v)
+            @test ismissing(_pma_one(b.db, "SELECT analysis_error AS e FROM exposures WHERE id = ?", [e]).e)
+        finally
+            HimalayaUI.PEAK_MODEL_PREDICT[] = old
+        end
+        DBInterface.close!(b.db)
+    end
+    mktempdir() do dir
+        b = _pma_db(dir; n = 1, points = 100)
+        _pma_add_model!(b.db; status = "active")
+        e = b.eids[1]
+        HimalayaUI.analyze_exposure!(b.db, e, b.adir)
+        @test all(p -> p.found_by == "hybrid" && ismissing(p.model_id), _pma_peaks(b.db, e))
+        @test ismissing(_pma_version(b.db, e).v)
+        DBInterface.close!(b.db)
+    end
+end
+
+@testset "force_detect re-detects despite matching hashes; only_unreviewed leaves reviewed exposures alone" begin
+    mktempdir() do dir
+        b = _pma_db(dir)
+        a, r = b.eids[1], b.eids[2]
+        for e in (a, r)
+            HimalayaUI.analyze_exposure!(b.db, e, b.adir)
+        end
+        before = _pma_peaks(b.db, a)
+        id = _pma_add_model!(b.db; status = "active")
+        HimalayaUI.analyze_exposure!(b.db, a, b.adir)
+        @test isequal(_pma_peaks(b.db, a), before) && ismissing(_pma_version(b.db, a).v)
+        _pma_review!(b.db, r)
+        before_r = _pma_peaks(b.db, r)
+        HimalayaUI.analyze_exposure!(b.db, r, b.adir; force_detect = true, only_unreviewed = true)
+        @test isequal(_pma_peaks(b.db, r), before_r) && ismissing(_pma_version(b.db, r).v)
+        HimalayaUI.analyze_exposure!(b.db, a, b.adir; force_detect = true, only_unreviewed = true)
+        @test _pma_version(b.db, a).v == id
+        @test all(p -> p.model_id == id, _pma_peaks(b.db, a))
+        DBInterface.close!(b.db)
     end
 end
