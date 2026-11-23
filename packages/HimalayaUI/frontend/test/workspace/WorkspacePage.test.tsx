@@ -2883,10 +2883,13 @@ describe("WorkspacePage", () => {
     const rows = within(screen.getByTestId("workspace-candidates")).getAllByRole("button");
     fireEvent.mouseEnter(rows[1]!);
     expect(ringSets()).toHaveLength(2);
-    const circles = [...ringSets()[0]!.querySelectorAll("circle")];
-    expect(circles).toHaveLength(2);
-    expect(Number(circles[0]!.getAttribute("r"))).toBeCloseTo(230.7, 0);
-    expect(circles[0]!.getAttribute("stroke")).toBe(phaseColor("Im3m"));
+    const arcs = [...ringSets()[0]!.querySelectorAll('[data-role="det-ring"]')];
+    expect(arcs).toHaveLength(2);
+    const [, x0, y0, , r, , , , sweep, x1, y1] = arcs[0]!.getAttribute("d")!.split(" ");
+    expect(Number(r)).toBeCloseTo(230.7, 0);
+    expect(sweep).toBe("0");
+    expect([x1, Number(y1) - Number(y0)]).toEqual([x0, 2 * Number(r)]);
+    expect(arcs[0]!.getAttribute("stroke")).toBe(phaseColor("Im3m"));
     fireEvent.mouseLeave(screen.getByTestId("workspace-candidates"));
     expect(ringSets()).toHaveLength(0);
     fireEvent.keyDown(window, { key: "i" });
@@ -2905,7 +2908,7 @@ describe("WorkspacePage", () => {
     renderAt("/experiments/1/workspace/10");
     fireEvent.mouseEnter(within(screen.getByTestId("workspace-candidates")).getAllByRole("button")[1]!);
     const radii = [...screen.getByTestId("workspace-exposures").querySelectorAll('[data-testid="detector-rings"]')]
-      .map((set) => Number(set.querySelector("circle")!.getAttribute("r")));
+      .map((set) => Number(set.querySelector('[data-role="det-ring"]')!.getAttribute("d")!.split(" ")[4]));
     expect(radii).toHaveLength(2);
     expect(radii[0]).toBeCloseTo(230.7, 0);
     expect(radii[1]).toBeCloseTo(radii[0]!, 6);
@@ -2921,7 +2924,7 @@ describe("WorkspacePage", () => {
     fireEvent.keyDown(window, { key: "i" });
     fireEvent.keyDown(window, { key: " " });
     const big = screen.getByTestId("workspace-detector-big");
-    expect(big.querySelectorAll('[data-testid="detector-rings"] circle').length).toBeGreaterThan(0);
+    expect(big.querySelectorAll('[data-testid="detector-rings"] [data-role="det-ring"]').length).toBeGreaterThan(0);
     fireEvent.keyDown(big, { key: "Escape" });
     expect(screen.queryByTestId("workspace-detector-big")).toBeNull();
     expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();

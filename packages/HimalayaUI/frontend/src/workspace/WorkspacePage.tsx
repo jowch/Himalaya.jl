@@ -616,7 +616,7 @@ export function WorkspacePage(): JSX.Element {
       const centre = g ? ringCircles([], qUnits, g, size) : null;
       if (!g || !size || !centre) return null;
       const rings = ringSets.flatMap((set) => (ringCircles(set.qs, qUnits, g, size)?.radii ?? []).map((r) => ({ r, color: set.color })));
-      return { size, cx: centre.cx, cy: centre.cy, rings };
+      return { size, cx: centre.cx, cy: centre.cy, side: centre.side, rings };
     },
     [ringSets, geometryOf, detectorSizes, qUnits],
   );

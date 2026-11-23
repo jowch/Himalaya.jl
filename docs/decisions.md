@@ -130,6 +130,7 @@ Every row also needs the date it was decided, as `YYYY-MM-DD`.
 | combine-select | What you select is what is analysed. Images are selected by a checkbox, Shift-click or ⌘-click; one image is that image, several are their monitor-normalised average with its own peaks, keyed by the set. Every kept image starts selected, with Select all and Select none. A plain click only views. The call stays with the sample. | 2026-11-23 | planned | thread "Show combined curve by default" |
 | combine-keep-one | Dropping the last kept image is refused. | 2026-11-23 | planned | thread "Show combined curve by default" |
 | combine-no-cross-setup | Images never combine across setups. | 2026-11-22 | planned | thread "Show combined curve by default" |
+| img-half-rings | Predicted rings are half-circles on the narrower side of the beam centre (left or right), so the wider side shows the bare image out to the highest q. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/lib/detectorRings.test.ts › puts the rings on the narrower side of the beam, so the wider side shows the image out to the highest q |
 
 ## Bridges and beamtimes
 
