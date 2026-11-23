@@ -282,6 +282,9 @@ export function compareTruth(truthRows, appSamples, { strict = false, expect = n
     if (expect === "fresh" && droppedEarly.length) problems.push(`frames dropped before triage: ${droppedEarly.join(" ")}`);
     const one = matches.length === 1 ? matches[0] : null;
     const shown = one ? { ...withoutFull(shownStatus(one.shown)), frame: filenameOf(one.frames, one.shown.representative_id ?? null) } : null;
+    if (one && one.shown.phase && !(Array.isArray(one.shown.call_phases) && one.shown.call_phases.length > 0)) {
+      problems.push(`GET /api/samples gives ${one.name} the phase ${one.shown.phase} but no call_phases, so check-truth can't tell whether the list shows every phase of the call`);
+    }
     const unread = one ? unreadViews(one) : [];
     if (one && one.views) {
       shown.workspace_text = one.workspaceText ?? null;
@@ -382,7 +385,7 @@ export async function collectApp(cfg, experimentId) {
       return {
         id: s.id,
         name: s.name,
-        shown: { phase: s.phase ?? null, call_phases: s.call_phases ?? [], state: s.assignment_state ?? null, representative_id: s.representative_exposure_id ?? null },
+        shown: { phase: s.phase ?? null, call_phases: s.call_phases, state: s.assignment_state ?? null, representative_id: s.representative_exposure_id ?? null },
         frameOrder: exposures.map((e) => e.filename),
         frames,
         bridged: bridged.has(s.id),
