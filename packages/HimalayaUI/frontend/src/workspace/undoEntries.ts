@@ -378,6 +378,7 @@ export function bridgeEntry(
   return {
     ...at,
     undo: async () => {
+      await ops.whenSaved();
       if (!together(await ops.read.bridges(), at.from, at.to)) return 0;
       const now = await ops.read.labels();
       const call = await ops.read.call(at.from);

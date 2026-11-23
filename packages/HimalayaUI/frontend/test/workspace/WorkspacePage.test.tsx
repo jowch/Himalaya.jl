@@ -1547,6 +1547,56 @@ describe("WorkspacePage", () => {
       ]));
     });
 
+    it("reads what a kept call drops only after the earlier bridge has saved, so undo restores the first mate's call", async () => {
+      state.corpus = state.corpus.map((s) =>
+        s.id === 10 ? { ...s, assignment_state: "null", phase: null, call_phases: [] }
+        : s.id === 11 ? { ...s, assignment_state: "indexed", phase: "Pn3m", call_phases: ["Pn3m"] }
+        : s.id === 13 ? { ...s, assignment_state: "indexed", phase: "Im3m", call_phases: ["Im3m"] }
+        : s);
+      server.callMembers.set(10, []);
+      server.saving = true;
+      renderAt("/experiments/1/workspace/10");
+      runFromPalette("same sample as…");
+      const input = screen.getByRole("combobox", { name: "Sample" });
+      for (const name of ["a2", "a4"]) {
+        fireEvent.change(input, { target: { value: name } });
+        fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+      }
+      fireEvent.keyDown(input, { key: "Enter" });
+      const keep = within(screen.getByRole("dialog", { name: "Same sample as A2, A4" })).getByRole("combobox", { name: "Keep the call of" });
+      fireEvent.keyDown(keep, { key: "ArrowDown" });
+      expect(keep).toHaveTextContent("A4: Im3m");
+      fireEvent.keyDown(keep, { key: "Enter" });
+      await settle();
+      expect(calls.filter((c) => c.hook === "bridge")).toHaveLength(1);
+      server.callMembers.set(10, [{ index_id: 5, exposure_id: 300, phase: "Pn3m" }]);
+      server.saving = false;
+      act(() => server.saved?.());
+      await waitFor(() => expect(calls.filter((c) => c.hook === "bridge").map((c) => c.arg)).toEqual([
+        { sampleId: 10, toSampleId: 11 },
+        { sampleId: 10, toSampleId: 13, keepCall: 13 },
+      ]));
+      state.bridges = [{ sample_id: 10, group_id: 1 }, { sample_id: 11, group_id: 1 }, { sample_id: 13, group_id: 1 }];
+      server.callMembers.set(10, [{ index_id: 6, exposure_id: 301, phase: "Im3m" }]);
+      calls.length = 0;
+      await undo();
+      expect(ops().filter((o) => o[0] === "addPhase")).toEqual([["addPhase", 300, 5]]);
+    });
+
+    it("skips a ticked sample the earlier steps already brought into the group", async () => {
+      state.bridges = [{ sample_id: 11, group_id: 2 }, { sample_id: 13, group_id: 2 }];
+      renderAt("/experiments/1/workspace/12");
+      runFromPalette("same sample as…");
+      const input = screen.getByRole("combobox", { name: "Sample" });
+      for (const name of ["a2", "a4"]) {
+        fireEvent.change(input, { target: { value: name } });
+        fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+      }
+      fireEvent.keyDown(input, { key: "Enter" });
+      await settle();
+      expect(calls.filter((c) => c.hook === "bridge").map((c) => c.arg)).toEqual([{ sampleId: 12, toSampleId: 11 }]);
+    });
+
     it("undoes saying a sample is not the same sample after all", async () => {
       state.bridges = [{ sample_id: 10, group_id: 1 }, { sample_id: 11, group_id: 1 }];
       renderAt("/experiments/1/workspace/11");

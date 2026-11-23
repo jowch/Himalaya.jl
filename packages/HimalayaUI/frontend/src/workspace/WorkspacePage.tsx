@@ -142,7 +142,7 @@ function helpSections(mod: string): HelpSection[] {
         { keys: ["Esc"], what: "Leave the phase choices and let Tab reach every other control until you open another sample" },
         { keys: ["I"], what: "Custom index: press Tab or Shift+Tab to change the symmetry, then drag the lattice, nudge it with ← →, or click a peak to snap to it. Press Enter to add it or Esc to cancel." },
         { keys: ["L"], what: "Label the sample, e.g. Buffer. Press Enter to add it or Esc to close." },
-        { keys: [mod, "K"], what: "Open the commands and choose Same sample as… to mark this as the same sample measured in another setup. Shift+Enter ticks several, and Enter marks them all." },
+        { keys: [mod, "K"], what: "Open the commands and choose Same sample as… to mark this as the same sample measured in another setup. Space after Tab or an arrow ticks several, and Enter marks them all." },
       ],
     },
     {
@@ -858,8 +858,10 @@ export function WorkspacePage(): JSX.Element {
       let groupState: AssignmentState = sample.assignment_state ?? "indexed";
       const parts = [];
       for (const step of bridgeSteps(sample, mates, keep)) {
+        if (bridgedWith(bridges, sampleId).includes(step.to)) continue;
         const mate = mates.find((m) => m.id === step.to)!;
         const states = { from: groupState, to: mate.assignment_state ?? "indexed" };
+        if (typeof step.keep === "number" && parts.length > 0) await ops.whenSaved();
         const lost = typeof step.keep === "number"
           ? await ops.read.call(step.keep === sampleId ? step.to : sampleId).then((c) => c.members, () => [])
           : [];

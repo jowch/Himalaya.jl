@@ -237,6 +237,21 @@ describe("workspacePalette", () => {
     expect(pickMany).toHaveBeenLastCalledWith([2, 3], 3);
   });
 
+  it("hints Same setup as on a row whose setup already has a tick, without refusing it", () => {
+    const a = { id: 2, name: "A" } as WorkspacePaletteInput["bridge"]["samples"][number];
+    const b = { id: 3, name: "B" } as WorkspacePaletteInput["bridge"]["samples"][number];
+    const c = { id: 4, name: "C" } as WorkspacePaletteInput["bridge"]["samples"][number];
+    const setups = new Map([[2, "Long pipe"], [3, "Long pipe"], [4, "Hot stage"]]);
+    const { pages } = workspacePalette(input({ setupOf: (id) => setups.get(id), bridge: {
+      samples: [a, b, c], pick: vi.fn(), choices: () => undefined, names: (id) => `${["", "", "A", "B", "C"][id]} in ${setups.get(id)}`, bridged: [], leave: vi.fn(), groupChoices: () => undefined, pickMany: vi.fn(),
+    } }));
+    const hint = pages.bridge!.multi!.hint!;
+    expect(hint("bridge-3", [])).toBeUndefined();
+    expect(hint("bridge-3", ["bridge-2"])).toBe("Same setup as A in Long pipe");
+    expect(hint("bridge-2", ["bridge-2"])).toBeUndefined();
+    expect(hint("bridge-4", ["bridge-2"])).toBeUndefined();
+  });
+
   it("finds the same-sample commands when typing merge, bridge, link or same", () => {
     const bridge = { samples: [], pick: vi.fn(), choices: () => undefined, names: (id: number) => `Sample ${id}`, bridged: ["B"], leave: vi.fn(), groupChoices: () => undefined, pickMany: vi.fn() };
     const { groups, pages } = workspacePalette(input({ bridge }));

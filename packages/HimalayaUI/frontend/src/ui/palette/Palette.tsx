@@ -16,6 +16,10 @@ interface Props {
   start?: PaletteForm | undefined;
 }
 
+function joinHint(a: string | undefined, b: string | undefined): string | undefined {
+  return [a, b].filter(Boolean).join(" · ") || undefined;
+}
+
 export function keepFocusInField(e: MouseEvent): void {
   if (!(e.target instanceof HTMLInputElement)) e.preventDefault();
 }
@@ -24,6 +28,7 @@ export function Palette({ groups, pages, onClose, onType, start }: Props): JSX.E
   const [stack, setStack] = useState<Level[]>(() => (start ? [{ form: start, query: "", cursor: 0 }] : []));
   const [query, setQuery] = useState("");
   const [ticked, setTicked] = useState<readonly string[]>([]);
+  const spaceTicks = useRef(false);
   const listId = useId();
   const list = useRef<HTMLDivElement | null>(null);
   const input = useRef<HTMLInputElement | null>(null);
@@ -86,12 +91,20 @@ export function Palette({ groups, pages, onClose, onType, start }: Props): JSX.E
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
     if (e.key === "Backspace" && e.repeat && heldBack.current) return e.preventDefault();
-    if (multi && e.key === "Enter" && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    const plain = !e.metaKey && !e.ctrlKey && !e.altKey && !e.nativeEvent.isComposing;
+    if (multi && plain && ((e.key === "Enter" && e.shiftKey) || (e.key === " " && (query === "" || spaceTicks.current)))) {
       e.preventDefault();
+      spaceTicks.current = true;
       const item = picks[highlight.at]?.item;
       if (item && !e.repeat) tick(item);
       return;
     }
+    if (multi && plain && e.key === "Enter" && ticked.length > 0) {
+      e.preventDefault();
+      if (!e.repeat) commitTicked();
+      return;
+    }
+    if (multi && (e.key === "Tab" || e.key === "ArrowDown" || e.key === "ArrowUp")) spaceTicks.current = true;
     if (highlight.onKeyDown(e)) return;
     if (e.key === "Backspace" && query === "" && page && !e.metaKey && !e.ctrlKey && !e.altKey) {
       e.preventDefault();
@@ -124,6 +137,7 @@ export function Palette({ groups, pages, onClose, onType, start }: Props): JSX.E
       value={query}
       onChange={(e) => {
         setQuery(e.target.value);
+        spaceTicks.current = false;
         onType?.(e.target.value);
         highlight.setAt(0);
       }}
@@ -170,8 +184,7 @@ export function Palette({ groups, pages, onClose, onType, start }: Props): JSX.E
                     key={`${path ?? ""}${item.id}`}
                     id={optionId(i)}
                     role="option"
-                    aria-selected={i === at}
-                    aria-checked={multi ? ticked.includes(item.id) : undefined}
+                    aria-selected={multi ? ticked.includes(item.id) : i === at}
                     aria-label={`${path ? `${path} › ` : ""}${item.label}${item.value !== undefined ? `, ${item.value || "None"}` : ""}${item.hint ? `, ${item.hint}` : ""}`}
                     data-palette-item={item.id}
                     onMouseEnter={() => highlight.setAt(i)}
@@ -210,7 +223,7 @@ export function Palette({ groups, pages, onClose, onType, start }: Props): JSX.E
                         </span>
                       </span>
                     )}
-                    <span className="max-w-[260px] truncate text-right text-xs text-ink-faint">{item.hint}</span>
+                    <span className="max-w-[260px] truncate text-right text-xs text-ink-faint">{joinHint(item.hint, multi?.hint?.(item.id, ticked))}</span>
                     <span className="flex justify-end text-ink-faint">{item.shortcut ? <Kbd>{item.shortcut}</Kbd> : item.page || item.form ? "›" : null}</span>
                   </div>
                 ))}
@@ -222,7 +235,7 @@ export function Palette({ groups, pages, onClose, onType, start }: Props): JSX.E
         <PaletteFooter
           keys={[
             ["↵", multi && ticked.length > 0 ? multi.verb(ticked.length) : page ? "pick" : "run"],
-            ...(multi ? [["⇧ ↵", "tick"] as const] : []),
+            ...(multi ? [["Space", "tick"] as const] : []),
             ["Tab", "move"],
             ["Esc", page ? "back" : "close"],
           ]}

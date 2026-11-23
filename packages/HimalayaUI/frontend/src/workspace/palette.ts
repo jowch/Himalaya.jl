@@ -87,6 +87,8 @@ export interface WorkspacePaletteInput extends AppActions {
   };
 }
 
+const bridgeId = (key: string): number => Number(key.slice("bridge-".length));
+
 const SAME_SAMPLE_WORDS: readonly string[] = ["merge", "bridge", "link"];
 
 const THEMES: readonly { theme: AppTheme; name: string }[] = [
@@ -303,8 +305,13 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
       }),
       multi: {
         verb: (n) => `mark ${n} as the same sample`,
+        hint: (key, keys) => {
+          const setup = p.setupOf(bridgeId(key));
+          const same = keys.filter((k) => k !== key && setup !== undefined && p.setupOf(bridgeId(k)) === setup);
+          return same.length > 0 ? `Same setup as ${same.map((k) => p.bridge.names(bridgeId(k))).join(", ")}` : undefined;
+        },
         commit: (keys) => {
-          const ids = keys.map((k) => Number(k.slice("bridge-".length)));
+          const ids = keys.map(bridgeId);
           const choices = p.bridge.groupChoices(ids);
           if (!choices) {
             p.bridge.pickMany(ids);

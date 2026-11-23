@@ -58,6 +58,7 @@ export interface PalettePage {
 export interface PaletteMulti {
   verb: (count: number) => string;
   commit: (ids: readonly string[]) => PaletteForm | undefined;
+  hint?: (id: string, ticked: readonly string[]) => string | undefined;
 }
 
 export type PaletteRow =
