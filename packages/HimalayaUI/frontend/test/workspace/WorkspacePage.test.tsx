@@ -2846,6 +2846,24 @@ describe("WorkspacePage", () => {
     expect(ringSets().length).toBe(2);
   });
 
+  it("draws a same sample's rings from another setup in that setup's geometry but in this sample's q units", () => {
+    const geometry = { beam_center_x: 421.409, beam_center_y: 836.946, pixel_size_um: 172, energy_kev: 9, flight_path_m: 1.8095 };
+    state.setups = [{ id: 1, name: "Short pipe", folder: "s1", included: true, ...geometry, q_units: "A-1" },
+      { id: 2, name: "Long pipe", folder: "s2", included: true, ...geometry, q_units: "nm-1" }];
+    state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
+    state.corpus = state.corpus.map((s) => (s.id === 10 ? { ...s, setup_id: 1 } : s.id === 12 ? { ...s, setup_id: 2, assignment_state: "indexed" } : s));
+    state.exposures = [exposure(100, { image_path: "/d/100.tif", image_version: "v" })];
+    state.mateExposures = new Map([[12, [exposure(200, { sample_id: 12, image_path: "/d/200.tif", image_version: "v" })]]]);
+    state.detectorSize = { width: 981, height: 1043 };
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.mouseEnter(within(screen.getByTestId("workspace-candidates")).getAllByRole("button")[1]!);
+    const radii = [...screen.getByTestId("workspace-exposures").querySelectorAll('[data-testid="detector-rings"]')]
+      .map((set) => Number(set.querySelector("circle")!.getAttribute("r")));
+    expect(radii).toHaveLength(2);
+    expect(radii[0]).toBeCloseTo(230.7, 0);
+    expect(radii[1]).toBeCloseTo(radii[0]!, 6);
+  });
+
   it("Space opens the enlarged image while a custom index is open, with the draft's rings, and Esc there keeps the draft", () => {
     state.setups = [{ id: 1, name: "setup1", folder: "setup1", included: true,
       beam_center_x: 421.409, beam_center_y: 836.946, pixel_size_um: 172, energy_kev: 9, flight_path_m: 1.8095, q_units: "A-1" }];
