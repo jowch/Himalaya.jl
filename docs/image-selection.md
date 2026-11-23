@@ -62,9 +62,11 @@ like one image. Images in one average must share a q grid.
 
 ## Migration
 
-`exposures_deselected_v1` adds the column. A sample with phase members or
-peak edits on an image starts with only the newest such image selected, so
-reviewed samples open where they were left. Others start fully selected.
+`exposures_deselected_v1` adds the column. A sample someone worked on starts
+with one kept image selected: the newest one holding the call's phase members,
+or, if no kept image holds members, the newest one with peak edits. Reviewed
+samples therefore open on the image their call rests on. Others start fully
+selected.
 On the first boot after `trace_median` is backfilled, `deselect_beam_off_once!`
 (`beam_off_deselected_v1`) leaves beam-off images out of every sample whose
 selection is still the untouched default.
