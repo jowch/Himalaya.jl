@@ -571,7 +571,10 @@ function _select_worked_images!(db::SQLite.DB)
         OR EXISTS (SELECT 1 FROM user_actions a WHERE a.entity_type = 'exposure'
                     AND a.entity_id = e.id AND a.action IN ($kinds))""" : ""
     worked = sqlrows(DBInterface.execute(db, """
-        SELECT e.sample_id AS sample_id, MAX(e.id) AS id FROM exposures e
+        SELECT e.sample_id AS sample_id,
+               COALESCE(MAX(CASE WHEN EXISTS (SELECT 1 FROM assignment_members m WHERE m.exposure_id = e.id)
+                                 THEN e.id END), MAX(e.id)) AS id
+          FROM exposures e
          WHERE e.kind = 'file' AND e.sample_id IS NOT NULL
            AND (e.status IS NULL OR e.status != 'rejected')
            AND (EXISTS (SELECT 1 FROM assignment_members m WHERE m.exposure_id = e.id) $actions)
