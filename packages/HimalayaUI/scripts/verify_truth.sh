@@ -140,22 +140,29 @@ step 13-bridge-selection log bash -c '
   set -e
   out=$1
   json() { node -e "let d=\"\";process.stdin.on(\"data\",c=>d+=c).on(\"end\",()=>process.stdout.write(String(($1)(JSON.parse(d)))))"; }
-  pair=$(bin/verify api GET "/api/samples?experiment_id=1" | json "r=>r.body.slice(0,2).map(s=>s.id).join(\" \")")
+  pair=$(bin/verify api GET "/api/experiments/1/bridges" | json "r=>{const g=new Map();for(const x of r.body)g.set(x.group_id,[...(g.get(x.group_id)??[]),x.sample_id]);const p=[...g.values()].find(m=>m.length>=2);return p?p.slice(0,2).join(\" \"):\"\"}")
+  [[ -n $pair ]] || { echo "no bridged pair to test: step 12 should have bridged two samples"; exit 1; }
   read -r a b <<< "$pair"
   name=$(bin/verify api GET "/api/samples?experiment_id=1" | json "r=>r.body.find(s=>s.id===$b).name")
+  call() { bin/verify api GET "/api/samples?experiment_id=1" | json "r=>{const s=r.body.find(s=>s.id===$1);return s.assignment_state+\":\"+[...(s.call_phases??[])].sort().join(\"+\")}"; }
   selected() { bin/verify api GET "/api/samples/$1/exposures" | json "r=>r.body.filter(e=>e.kind!==\"combined\"&&e.selected).map(e=>e.id).join(\",\")"; }
-  nth=$(bin/verify api GET "/api/samples/$b/exposures" | json "r=>r.body.filter(e=>e.kind!==\"combined\").findIndex(e=>e.selected)+1")
-  [[ $nth -gt 0 ]] || { echo "$name has no selected image to untick"; exit 1; }
-  own=$(selected $a); before=$(selected $b)
+  positions=$(bin/verify api GET "/api/samples/$b/exposures" | json "r=>r.body.filter(e=>e.kind!==\"combined\").map((e,i)=>e.selected?i+1:0).filter(Boolean).join(\" \")")
+  [[ -n $positions ]] || { echo "$name has no selected image, so emptying its selection would test nothing"; exit 1; }
+  own=$(selected $a); before=$(selected $b); called=$(call $b)
+  [[ $called == form_factor:* || $called != *: ]] || { echo "$name has no call ($called); step 13 needs the shared call to check that an empty selection keeps it"; exit 1; }
   bin/verify open "/experiments/1/workspace/$a" > "$out/13-selection-open.json"
-  bin/verify click --role checkbox --name "Analyze image $nth of $name" > "$out/13-selection-untick.json"
-  after=$(selected $b)
-  [[ $after != "$before" ]] || { echo "unticking image $nth of $name from sample $a left $name selecting [$before]"; exit 1; }
-  [[ $(selected $a) == "$own" ]] || { echo "unticking a same sample image changed sample $a selection from [$own] to [$(selected $a)]"; exit 1; }
-  bin/verify check-truth > "$out/13-selection-truth.json" || { echo "check-truth failed after the untick"; exit 1; }
-  bin/verify click --role checkbox --name "Analyze image $nth of $name" > "$out/13-selection-retick.json"
-  [[ $(selected $b) == "$before" ]] || { echo "ticking image $nth of $name again left [$(selected $b)], not [$before]"; exit 1; }
-  echo "image $nth of $name toggled from sample $a: [$before] -> [$after] -> [$before]; sample $a stayed [$own]"' _ "$OUT"
+  bin/verify click --role button --name "Select none of $name" > "$out/13-selection-none.json" || { echo "no Select none of $name in sample $a strip"; exit 1; }
+  [[ -z $(selected $b) ]] || { echo "Select none of $name left [$(selected $b)] selected"; exit 1; }
+  [[ $(selected $a) == "$own" ]] || { echo "Select none of $name changed sample $a selection from [$own] to [$(selected $a)]"; exit 1; }
+  [[ $(call $b) == "$called" ]] || { echo "emptying the selection of $name changed its call from $called to $(call $b)"; exit 1; }
+  bin/verify check-truth --ui > "$out/13-selection-none-truth.json" || { echo "check-truth --ui failed with nothing selected on $name"; exit 1; }
+  bin/verify open "/experiments/1/workspace/$a" > "$out/13-selection-reopen.json"
+  for n in $positions; do
+    bin/verify click --role checkbox --name "Analyze image $n of $name" > "$out/13-selection-tick-$n.json" || { echo "no checkbox for image $n of $name in sample $a strip"; exit 1; }
+  done
+  [[ $(selected $b) == "$before" ]] || { echo "ticking images $positions of $name again left [$(selected $b)], not [$before]"; exit 1; }
+  bin/verify check-truth > "$out/13-selection-truth.json" || { echo "check-truth failed after reticking $name"; exit 1; }
+  echo "from sample $a: Select none of $name emptied [$before] and kept its call $called; ticking images $positions brought back [$before]; sample $a stayed [$own]"' _ "$OUT"
 step 14-call-lost-in-place log bash -c '
   set -e
   out=$1 help=$2 label=$3
