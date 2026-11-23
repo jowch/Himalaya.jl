@@ -11,9 +11,10 @@ _known(x) = !(x === nothing || x === missing)
 
 # physics: a _tot.dat holds raw detector counts per pixel. A beam-off image records
 # physics: only the dark floor, so its median is ~0, while even a dim real image keeps
-# physics: ~10 counts. The detector decides when there is a trace. Without one, an I₀
-# physics: at or below zero (the electrometer's offset with the shutter closed) is the
-# physics: only evidence left.
+# physics: ~10 counts. The detector decides when there is a trace, whatever I₀ reads,
+# physics: because a frame with a negative I₀ can still hold real scattering. Without a
+# physics: trace, an I₀ at or below zero (the electrometer's offset with the shutter
+# physics: closed) is the only evidence left, so there it decides alone.
 const DARK_MEDIAN_COUNTS = 1.0
 
 function is_beam_off(median, analysis_error, incident_monitor)::Bool

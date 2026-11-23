@@ -84,7 +84,7 @@ export function SampleList({ samples, setupHeaders, currentId, filter, onFilter,
           const bridges = bridgeCounts?.get(s.id) ?? 0;
           const compareColor = compareColors?.get(s.id);
           const beamOff = s.beam_off_images ?? 0;
-          const beamOffText = beamOff === 1 ? "1 image looks beam-off" : `${beamOff} images look beam-off`;
+          const beamOffText = beamOff === 1 ? "1 image likely beam-off" : `${beamOff} images likely beam-off`;
           return (
             <Fragment key={s.id}>
             {header !== undefined && (

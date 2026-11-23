@@ -797,22 +797,29 @@ describe("WorkspacePage", () => {
     expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/11");
   });
 
-  it("says the detector recorded nothing when the shown frame's trace is dark, and adds I₀'s sign as support", () => {
+  it("says the beam was likely off when the server reads the shown frame as beam-off, and adds I₀'s sign as support", () => {
     state.trace = makeTrace(0.001);
-    state.exposures = [exposure(100, { incident_monitor: 1.5 }), exposure(101, { incident_monitor: -0.1 })];
+    state.exposures = [exposure(100, { incident_monitor: 1.5 }), exposure(101, { incident_monitor: -0.1, beam_off: true })];
     renderAt("/experiments/1/workspace/10");
     expect(screen.getByTestId("workspace-plot-notice")).toHaveTextContent(
-      "No counts on the detector: the beam was likely off or the shutter closed. I₀ also reads below zero.",
+      "Beam likely off: the detector recorded no counts, so the beam was off or the shutter closed. I₀ also reads below zero.",
     );
   });
 
-  it("says the detector recorded nothing on a dark trace even when I₀ looks fine", () => {
+  it("says the beam was likely off for a beam-off frame even when I₀ looks fine", () => {
     state.trace = makeTrace(0.001);
-    state.exposures = [exposure(101, { incident_monitor: 1.5 })];
+    state.exposures = [exposure(101, { incident_monitor: 1.5, beam_off: true })];
     renderAt("/experiments/1/workspace/10");
     expect(screen.getByTestId("workspace-plot-notice").textContent).toBe(
-      "No counts on the detector: the beam was likely off or the shutter closed.",
+      "Beam likely off: the detector recorded no counts, so the beam was off or the shutter closed.",
     );
+  });
+
+  it("leaves the beam-off call to the server, so a dark-looking trace the server reads as lit gets no caption", () => {
+    state.trace = makeTrace(0.001);
+    state.exposures = [exposure(101, { incident_monitor: -0.1, beam_off: false })];
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.queryByTestId("workspace-plot-notice")).toBeNull();
   });
 
   it("never calls a frame with counts beam-off, whatever I₀ reads", () => {

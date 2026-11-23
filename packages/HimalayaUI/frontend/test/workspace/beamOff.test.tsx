@@ -45,8 +45,8 @@ describe("SampleList beam-off dot", () => {
       { id: 3, name: "C", beam_off_images: 0 },
     ] as unknown as CorpusSample[];
     render(<SampleList samples={rows} currentId={3} filter="" onFilter={() => {}} onPick={() => {}} />);
-    expect(screen.getByRole("img", { name: "2 images look beam-off" })).toBeTruthy();
-    expect(screen.getByRole("img", { name: "1 image looks beam-off" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "2 images likely beam-off" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "1 image likely beam-off" })).toBeTruthy();
     expect(screen.getByRole("button", { name: /^C/ }).querySelector("[data-warned]")).toBeNull();
   });
 });
