@@ -44,7 +44,7 @@ import { helpKeyFromEmptyField, inDialog, isEditable, suppressGlobalKeys } from 
 import { useUndoHistory, type UndoEntry, type UndoStep } from "./undo";
 import {
   bridgeEntry, combinedEntry, settleCallEntry, customIndexEntry, dropEntry, excludeEntry, identify, labelEntry, noPhaseEntry, peakEntry,
-  experimentEntry, setupEntry, labelColorEntry, tickEntry, unbridgeEntry, untickEntry, compareEntry,
+  experimentEntry, setupEntry, labelColorEntry, tickEntry, unbridgeEntry, untickEntry, compareEntry, droppedByEdit, type PhaseIdentity,
 } from "./undoEntries";
 import { showToast } from "../lib/toast";
 import { useScanState } from "../hooks/useScanState";
@@ -67,6 +67,7 @@ import { usePrefetchNeighbours } from "./prefetch";
 import { CompareBar } from "../ui/CompareBar";
 import { ComparePicker } from "../ui/ComparePicker";
 import { SubtractToggle } from "../ui/SubtractToggle";
+import { PlotViewToggle } from "../ui/PlotViewToggle";
 import { PlotCard } from "../ui/PlotCard";
 import { HelpOverlay, type HelpSection } from "../ui/HelpOverlay";
 import { MOD_KEY } from "../lib/modKey";
@@ -75,7 +76,7 @@ import { Palette } from "../ui/palette/Palette";
 import { keepCallForm, workspacePalette, type PaletteSetup } from "./palette";
 import type { PaletteForm } from "../ui/palette/model";
 import { useAppTheme } from "../lib/theme";
-import { PLOT_VIEWS, usePlotView } from "./plotView";
+import { PLOT_VIEWS, stepView, usePlotView } from "./plotView";
 import { positiveExtent } from "../plot/projection";
 import { CustomIndexPanel, NUDGE_STEP, NUDGE_STEP_LARGE } from "../ui/CustomIndexPanel";
 import { IndexingPlot, type IndexSeries } from "../ui/IndexingPlot";
@@ -123,13 +124,13 @@ function helpSections(mod: string): HelpSection[] {
       ],
     },
     {
-      title: "Call",
+      title: "Assignment",
       rows: [
         { keys: ["1–9"], what: "Tick or untick a phase candidate" },
         { keys: ["0"], what: "Mark no phase (form factor), or clear it" },
         { keys: ["Tab", "⇧ Tab"], what: "Step through the phase choices, wrapping at the ends. Press Enter to tick the one in focus." },
         { keys: ["Esc"], what: "Leave the phase choices and let Tab reach every other control until you open another sample" },
-        { keys: ["I"], what: "Custom index: pick a symmetry and drag the lattice. Press Enter to add it or Esc to cancel." },
+        { keys: ["I"], what: "Custom index: pick a symmetry, then drag the lattice, nudge it with ← →, or click a peak to snap to it. Press Enter to add it or Esc to cancel." },
         { keys: ["L"], what: "Label the sample, e.g. Buffer. Press Enter to add it or Esc to close." },
       ],
     },
@@ -139,6 +140,7 @@ function helpSections(mod: string): HelpSection[] {
         { gesture: "Click", what: "Turn a peak off or on, remove one you added, or add one" },
         { gesture: "Scroll", what: "Zoom q" },
         { keys: [`${mod} 0`], what: "Reset the zoom" },
+        { keys: ["V"], what: "Next plot view: log, linear, log-log, q²I. ⇧ V goes back." },
         { keys: ["C"], what: "Compare with another sample" },
         { gesture: `${mod}-click a sample in the list`, what: "Compare with it, or stop comparing" },
         { gesture: "Click a comparison", what: "Hide or show its trace" },
@@ -347,6 +349,9 @@ export function WorkspacePage(): JSX.Element {
     return here;
   }, [assignment.data, otherMembers, candidates]);
   const [hoverIds, setHoverIds] = useState<readonly number[] | undefined>(undefined);
+  const hoverCandidates = useCallback((ids: readonly number[] | undefined) => {
+    setHoverIds((prev) => (prev?.length === ids?.length && (prev ?? []).every((id, i) => id === ids?.[i]) ? prev : ids));
+  }, []);
 
   const addPhase = useAddAssignmentPhase(exposure?.id ?? 0);
   const removePhase = useRemoveAssignmentPhase(exposure?.id ?? 0);
@@ -394,7 +399,9 @@ export function WorkspacePage(): JSX.Element {
   );
   const theme = useAppTheme();
   const [draft, setDraft] = useState<CustomDraft | null>(null);
+  const customPanel = useRef<HTMLDivElement>(null);
   useEffect(() => setDraft(null), [exposure?.id]);
+  useEffect(() => setHoverIds(undefined), [exposure?.id]);
   const commitCustom = useCommitCustomIndex(exposure?.id ?? 0);
   const bridgedNames = useMemo(() => {
     const names = new Map(inExperiment.map((s) => [s.id, s.name]));
@@ -431,18 +438,31 @@ export function WorkspacePage(): JSX.Element {
   const fetchRefs = useMemo(() => shownRefs.filter((r) => !hiddenRefs.has(r) || r === subRef), [shownRefs, hiddenRefs, subRef]);
   const compareTraces = useCompareTraces(fetchRefs);
 
+  const callOnFrame = useCallback(
+    (eid: number): PhaseIdentity[] => {
+      if (assignment.data?.exposure_id !== eid) return [];
+      const members = new Set(assignment.data.members);
+      return (indices.data ?? [])
+        .filter((ix) => members.has(ix.id))
+        .map((ix) => ({ exposureId: eid, phase: ix.phase, basis: ix.basis, kind: ix.kind }));
+    },
+    [assignment.data, indices.data],
+  );
+
   const onClickPeak = useCallback(
     (ref: PeakRef) => {
       const action = peakClick(peaks.data ?? [], ref);
       if (!action || !exposure || sampleId === undefined) return;
       const eid = exposure.id;
       const q = (peaks.data ?? []).find((pk) => samePeak(pk, ref))?.q;
+      const before = callOnFrame(eid);
       if (action.kind === "remove") {
         if (ref.id < 0) return;
         removePeak.mutate(ref.id);
         if (q !== undefined) {
           history.record(peakEntry(ops, {
             label: `removed a peak at q = ${q.toFixed(4)} on ${frameName(eid)}`, sampleId, exposureId: eid, q, added: false,
+            dropped: droppedByEdit(ops, before),
           }));
         }
         return;
@@ -451,11 +471,11 @@ export function WorkspacePage(): JSX.Element {
       if (q !== undefined) {
         history.record(excludeEntry(ops, {
           label: `${action.excluded ? "turned off" : "turned on"} a peak on ${frameName(eid)}`, sampleId, exposureId: eid, q,
-          excluded: action.excluded,
+          excluded: action.excluded, dropped: droppedByEdit(ops, before),
         }));
       }
     },
-    [peaks.data, removePeak, setExcluded, exposure, sampleId, history, ops, frameName],
+    [peaks.data, removePeak, setExcluded, exposure, sampleId, history, ops, frameName, callOnFrame],
   );
 
   const addPeakAt = useCallback(
@@ -465,9 +485,10 @@ export function WorkspacePage(): JSX.Element {
       addPeak.mutate(q);
       history.record(peakEntry(ops, {
         label: `added a peak at q = ${q.toFixed(4)} on ${frameName(eid)}`, sampleId, exposureId: eid, q, added: true,
+        dropped: droppedByEdit(ops, callOnFrame(eid)),
       }));
     },
-    [exposure, sampleId, addPeak, history, ops, frameName],
+    [exposure, sampleId, addPeak, history, ops, frameName, callOnFrame],
   );
 
 
@@ -886,6 +907,7 @@ export function WorkspacePage(): JSX.Element {
           target = pq;
         }
       }
+      customPanel.current?.focus();
       setDraftClamped({ ...draft, lattice: latticeForFirstOrderOnPeak(draft.phase, target) });
     },
     [draft, activePeakQs, setDraftClamped],
@@ -1056,6 +1078,10 @@ export function WorkspacePage(): JSX.Element {
           break;
         case "?":
           setHelpOpen(true);
+          break;
+        case "v":
+        case "V":
+          setView(stepView(view, ev.shiftKey ? -1 : 1));
           break;
         case "z":
         case "Z": {
@@ -1234,11 +1260,11 @@ export function WorkspacePage(): JSX.Element {
     elsewhere: { ...elsewhere, go: (path) => navigate(path) },
   });
 
+  const customIndexButton = <CustomIndexButton open={draft !== null} disabled={!canCall} onClick={draft ? () => setDraft(null) : openCustom} />;
   const indexingSection = (
     <Section
       title="Indexing"
       className="shrink-0"
-      aside={<CustomIndexButton open={draft !== null} disabled={!canCall} onClick={draft ? () => setDraft(null) : openCustom} />}
     >
       <IndexingPlot series={indexSeries} />
     </Section>
@@ -1361,7 +1387,7 @@ export function WorkspacePage(): JSX.Element {
               )}
             </div>
             <div className="mx-3.5">
-              <PlotCard {...(darkNotice ? { notice: darkNotice } : {})}>
+              <PlotCard {...(darkNotice ? { notice: darkNotice } : {})} corner={<PlotViewToggle options={PLOT_VIEWS} view={view} onChange={setView} />}>
                 <WorkspacePlot
                   trace={trace.data}
                   {...(noTraceMessage
@@ -1399,8 +1425,9 @@ export function WorkspacePage(): JSX.Element {
         <>
           <div className={callOpen ? "flex min-h-24 flex-1 flex-col overflow-y-auto" : "shrink-0"} data-testid="workspace-tools-middle">
             {draft && draftBounds ? (
-              <Section title="Custom index">
+              <Section title="Assignment" aside={customIndexButton} pinAside collapsible={shortWindow ? { open: true } : undefined}>
                 <CustomIndexPanel
+                  panelRef={customPanel}
                   draft={draft}
                   min={draftBounds.min}
                   max={draftBounds.max}
@@ -1413,7 +1440,7 @@ export function WorkspacePage(): JSX.Element {
                 />
               </Section>
             ) : (
-              <Section title="Call" collapsible={shortWindow ? { open: callOpen, onOpen: () => setOpenPanel("call") } : undefined}>
+              <Section title="Assignment" aside={customIndexButton} pinAside collapsible={shortWindow ? { open: callOpen, onOpen: () => setOpenPanel("call") } : undefined}>
                 {exposureDropped && <Note>This image is dropped. Restore it to call a phase.</Note>}
                 <CandidateList
                   rows={rows}
@@ -1423,7 +1450,7 @@ export function WorkspacePage(): JSX.Element {
                   onToggle={toggleCandidate}
                   onToggleGroup={toggleGroup}
                   onFormFactor={toggleFormFactor}
-                  onHover={setHoverIds}
+                  onHover={hoverCandidates}
                 />
               </Section>
             )}

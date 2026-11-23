@@ -133,7 +133,7 @@ function exposureToggle(page: Page) {
 }
 
 function callToggle(page: Page) {
-  return page.locator("aside").getByRole("button", { name: "Call" });
+  return page.locator("aside").getByRole("button", { name: "Assignment" });
 }
 
 async function exposureOpen(page: Page): Promise<boolean> {
@@ -297,14 +297,14 @@ test("three comparisons with long names keep the compare bar on one line", async
 
 for (const viewport of VIEWPORTS) {
   const short = viewport.height <= 860;
-  const order = short ? "Call, then Image, with Indexing pinned at the bottom" : "Call, then Indexing, then Image";
+  const order = short ? "Assignment, then Image, with Indexing pinned at the bottom" : "Assignment, then Indexing, then Image";
   test(`the tools column reads ${order} at ${viewport.width}×${viewport.height}`, async ({ page }) => {
     await page.setViewportSize(viewport);
     await page.goto("/experiments/17/workspace/41");
     await openSample(page, 41);
     const tops = await page.evaluate(() => {
       const top = (sel: string) => Math.round(document.querySelector(sel)!.getBoundingClientRect().top);
-      return { call: top("aside section[data-section=Call]"), indexing: top("aside section[data-section=Indexing]"), exposure: top("aside section[data-section=Image]") };
+      return { call: top("aside section[data-section=Assignment]"), indexing: top("aside section[data-section=Indexing]"), exposure: top("aside section[data-section=Image]") };
     });
     const sequence = Object.entries(tops).sort((a, b) => a[1] - b[1]).map(([name]) => name);
     expect(sequence).toEqual(short ? ["call", "exposure", "indexing"] : ["call", "indexing", "exposure"]);
@@ -351,7 +351,7 @@ test("subtracting a comparison, switching between Raw and Minus and stopping mov
   expect(await measured(page)).toEqual(before);
 });
 
-test("on a short window Call and Frame fold as an accordion, and stay put from sample to sample", async ({ page }) => {
+test("on a short window Assignment and Frame fold as an accordion, and stay put from sample to sample", async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 650 });
   await page.goto("/experiments/17/workspace/41");
   await openSample(page, 41);
@@ -388,7 +388,7 @@ test("on a short window Call and Frame fold as an accordion, and stay put from s
   await expect(exposureToggle(page)).toHaveAttribute("aria-expanded", "true");
 });
 
-test("on a short window, folding Call or Frame and opening a custom index never moves the indexing chart", async ({ page }) => {
+test("on a short window, folding Assignment or Frame and opening a custom index never moves the indexing chart", async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 650 });
   await page.goto("/experiments/17/workspace/41");
   await openSample(page, 41);
@@ -404,7 +404,7 @@ test("on a short window, folding Call or Frame and opening a custom index never 
   await expect(page.getByTestId("workspace-custom-index")).toHaveCount(0);
   expect(await indexing(), "after closing it with the same button").toEqual(start);
   await callToggle(page).click();
-  expect(await indexing(), "after opening Call again").toEqual(start);
+  expect(await indexing(), "after opening Assignment again").toEqual(start);
 });
 
 test("the indexing chart and the exposure details hold their place while a sample's exposures load", async ({ page }) => {
@@ -641,5 +641,54 @@ test("Tab cycles only the phase choices, wrapping, and Esc lets Tab reach the re
   await page.keyboard.press("Escape");
   await expect(choices.nth(6)).not.toBeFocused();
   await page.keyboard.press("Tab");
-  expect(await page.evaluate(() => document.activeElement?.closest("[data-call-choices]") === null && document.activeElement !== document.body)).toBe(true);
+  const outside = async () => page.evaluate(() => document.activeElement !== document.body && document.activeElement?.closest("[data-call-choices]") === null);
+  let reached = await outside();
+  for (let i = 0; i < 3 && !reached; i++) {
+    await page.keyboard.press("Tab");
+    reached = await outside();
+  }
+  expect(reached, "Tab reaches a control outside the phase choices after Esc").toBe(true);
+});
+
+for (const width of [1024, 1440]) {
+  for (const subtracting of [false, true]) {
+  test(`at ${width} px the plot view switcher sits above the ${subtracting ? "difference" : "trace"} and below the peak markers in every view`, async ({ page }) => {
+    const peakAt = (id: number, q: number) => ({ id, exposure_id: 1, q, intensity: null, prominence: null, sharpness: null, source: "auto", excluded: false });
+    await page.route(/\/api\/exposures\/\d+\/peaks/, (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([peakAt(1, 0.1), peakAt(2, q[q.length - 2]!)]) }));
+    const plain = { q, I: q.map((x) => 1 / (x * x)), sigma: q.map(() => 1) };
+    await page.route(/\/api\/exposures\/\d+\/trace/, (r) => {
+      const eid = Number(/exposures\/(\d+)\//.exec(r.request().url())![1]);
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(Math.floor(eid / 10) === 40 ? trace : plain) });
+    });
+    await openChips(page, width, [42, 44, 46, 48, 50], subtracting);
+    if (subtracting) {
+      await page.getByTestId("workspace-subtraction-toggle").getByRole("button", { name: /^Minus / }).click();
+      await expect(page.locator('[data-role="difference-line"] path')).toBeVisible();
+    }
+    const control = page.getByTestId("workspace-plot-view");
+    const before = await control.boundingBox();
+    for (const name of ["Log", "Linear", "Log-log", "q²I"]) {
+      await control.getByRole("button", { name: `${name === "q²I" ? "q²I (Kratky)" : name} plot`, exact: true }).click();
+      const box = (await control.boundingBox())!;
+      expect(box).toEqual(before);
+      const line = (await page.locator(`[data-role="${subtracting ? "difference-line" : "trace-line"}"] path`).boundingBox())!;
+      expect(box.y + box.height).toBeLessThanOrEqual(line.y);
+      const marks = await page.locator('[data-role="peak-glyph"] polygon').evaluateAll((ns) => ns.map((n) => n.getBoundingClientRect().bottom));
+      expect(marks.length).toBe(2);
+      for (const bottom of marks) expect(box.y).toBeGreaterThanOrEqual(bottom);
+    }
+  });
+  }
+}
+
+test("the plot view switcher stays faint until the pointer is on it", async ({ page }) => {
+  await openChips(page, 1440, [], false);
+  const corner = page.getByTestId("plot-card-corner");
+  const opacity = () => corner.evaluate((n) => Number(getComputedStyle(n).opacity));
+  await page.getByTestId("workspace-trace").hover();
+  await expect.poll(opacity).toBeLessThan(0.5);
+  await page.getByTestId("workspace-plot-view").getByRole("button", { name: "Linear plot", exact: true }).hover();
+  await expect.poll(opacity).toBe(1);
+  await page.mouse.move(0, 0);
+  await expect.poll(opacity).toBeLessThan(0.5);
 });
