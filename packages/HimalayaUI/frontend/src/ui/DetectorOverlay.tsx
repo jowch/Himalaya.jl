@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { Exposure } from "../api";
 import { imageUrl } from "../workspace/model";
 import { detectorLutFilter } from "../detector/detectorLut";
@@ -24,6 +25,8 @@ export function DetectorOverlay({ exposures, currentId, caption, onStep, onToggl
   const current = exposures[index];
   const dropped = current?.status === "rejected";
   const ringView = current && imageUrl(current, false) ? ringsOf?.(current) ?? null : null;
+  const [held, setHeld] = useState(false);
+  const release = (): void => setHeld(false);
   const onKey = (key: string, repeat: boolean): boolean => {
     if (key === "ArrowRight" || key === "ArrowLeft") {
       onStep(key === "ArrowRight" ? 1 : -1);
@@ -38,7 +41,14 @@ export function DetectorOverlay({ exposures, currentId, caption, onStep, onToggl
   return (
     <Overlay label="Detector image" onClose={onClose} testId="workspace-detector-big" closeKeys={CLOSE_KEYS} onKey={onKey}>
       <div className="flex flex-col items-center gap-2 p-3">
-        <div className="relative aspect-square w-[min(420px,80vw)] overflow-hidden rounded-[4px] bg-frame-edge">
+        <div
+          data-testid="workspace-detector-image"
+          onPointerDown={(ev) => { if (ev.button === 0) setHeld(true); }}
+          onPointerUp={release}
+          onPointerLeave={release}
+          onPointerCancel={release}
+          className="relative aspect-square w-[min(420px,80vw)] overflow-hidden rounded-[4px] bg-frame-edge"
+        >
           {exposures.map((e) => {
             const src = imageUrl(e, false);
             if (!src) return null;
@@ -55,7 +65,7 @@ export function DetectorOverlay({ exposures, currentId, caption, onStep, onToggl
               />
             );
           })}
-          {ringView && <DetectorRings view={ringView} fit="contain" />}
+          {ringView && !held && <DetectorRings view={ringView} fit="contain" />}
           {current && !imageUrl(current, false) && (
             <p className="absolute inset-0 m-0 flex items-center justify-center text-sm text-ink-faint">No detector image</p>
           )}
@@ -71,6 +81,7 @@ export function DetectorOverlay({ exposures, currentId, caption, onStep, onToggl
           <span><Kbd>←</Kbd> <Kbd>→</Kbd> images</span>
           {onToggleDrop && <span><Kbd>X</Kbd> {dropped ? "restore" : "drop"}</span>}
           <span><Kbd>Esc</Kbd> close</span>
+          <span className={ringView && ringView.rings.length > 0 ? undefined : "invisible"}>Press and hold the image to hide the rings.</span>
         </p>
       </div>
     </Overlay>
