@@ -75,6 +75,23 @@ describe("SampleList weights", () => {
   });
 });
 
+describe("SampleList selection", () => {
+  it("tints the current row flat, like an Assignment choice, with no accent bar", () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    render(
+      <SampleList samples={[sample(1, "JC001"), sample(2, "JC002")]} currentId={2} filter="" onFilter={() => {}} onPick={() => {}} />,
+    );
+    const cur = screen.getByRole("button", { name: /JC002/ }).className;
+    const other = screen.getByRole("button", { name: /JC001/ }).className;
+    expect(cur).toMatch(/\bbg-accent\/25\b/);
+    expect(cur).not.toMatch(/shadow-|border-l|ring-/);
+    expect(other).not.toMatch(/\bbg-accent\/25\b/);
+    expect(cur.replace(/\b(font-semibold|bg-accent\/25|hover:\S+)\b/g, "").split(/\s+/).sort()).toEqual(
+      other.replace(/\b(font-semibold|bg-accent\/25|hover:\S+)\b/g, "").split(/\s+/).sort(),
+    );
+  });
+});
+
 describe("SampleList comparisons", () => {
   it("marks compared rows", () => {
     Element.prototype.scrollIntoView = vi.fn();

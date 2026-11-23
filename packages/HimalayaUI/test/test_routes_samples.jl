@@ -201,3 +201,28 @@ end
         @test byname["all_dropped"].phase === nothing
     end
 end
+
+@testset "GET /api/samples counts each sample's kept beam-off images" begin
+    db = open_prepared_clone(mktempdir())
+    exp_id = HimalayaUI.init_experiment!(db; path="/t", data_dir="/t/d", analysis_dir="/t/a")
+    frames(name, n) = (s = HimalayaUI.create_sample!(db; experiment_id=exp_id, name=name);
+        [HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s, filename="$(name)$(i)") for i in 1:n])
+    median!(e, m) = DBInterface.execute(db, "UPDATE exposures SET trace_median = ? WHERE id = ?", [m, e])
+
+    lit = frames("lit", 2); median!.(lit, 40.0)
+    dark = frames("dark", 3); median!(dark[1], 0.0); median!(dark[2], 0.2); median!(dark[3], 35.0)
+    dropped = frames("dropped", 1); median!(dropped[1], 0.0)
+    DBInterface.execute(db, "UPDATE exposures SET status = 'rejected' WHERE id = ?", [dropped[1]])
+    no_trace = frames("no_trace", 1)
+    DBInterface.execute(db, "UPDATE exposures SET analysis_error = ?, incident_monitor = -0.1 WHERE id = ?",
+        [HimalayaUI.NO_TRACE, no_trace[1]])
+
+    with_inproc_routes(db) do call
+        byname = Dict(String(s.name) => s for s in JSON3.read(String(call("GET", "/api/samples").body)))
+        @test byname["lit"].beam_off_images == 0
+        @test byname["dark"].beam_off_images == 2
+        @test byname["dropped"].beam_off_images == 0
+        @test byname["no_trace"].beam_off_images == 1
+        @test !haskey(byname["dark"], :trace_median)
+    end
+end

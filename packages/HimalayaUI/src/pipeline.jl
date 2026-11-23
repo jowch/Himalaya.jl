@@ -1123,6 +1123,8 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
         end
         q_step === nothing || DBInterface.execute(db,
             "UPDATE exposures SET q_step = ? WHERE id = ?", [q_step, exposure_id])
+        DBInterface.execute(db,
+            "UPDATE exposures SET trace_median = ? WHERE id = ?", [trace_median(I), exposure_id])
         detected_peaks = use_model ? model_peaks.result : fresh_peaks_result
         peaks_before = force_detect ? auto_peak_qs(db, exposure_id) : nothing
         if !findpeaks_skipped
