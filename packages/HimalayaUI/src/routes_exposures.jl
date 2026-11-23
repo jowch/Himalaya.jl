@@ -79,22 +79,15 @@ function register_exposures_routes!()
         # identical to the header the client already cached against.
         vtoken = image_version_token(ip)
 
-        raw_w = 0; raw_h = 0
-        bytes = if is_thumb
-            raw_h, raw_w = raw_image_size(path)
-            ensure_thumb_cached(db, id, path; token = vtoken)
-        else
-            full = ensure_full_cached(db, id, path; token = vtoken)
-            raw_h, raw_w = full.raw_h, full.raw_w
-            full.bytes
-        end
+        img = is_thumb ? ensure_thumb_cached(db, id, path; token = vtoken) :
+                         ensure_full_cached(db, id, path; token = vtoken)
 
         hdrs = ["Content-Type"    => "image/png",
                 "Cache-Control"   => "private, max-age=31536000, immutable",
                 "X-Image-Version" => vtoken,
-                "X-Image-Width"   => string(raw_w),
-                "X-Image-Height"  => string(raw_h)]
-        HTTP.Response(200, hdrs, bytes)
+                "X-Image-Width"   => string(img.raw_w),
+                "X-Image-Height"  => string(img.raw_h)]
+        HTTP.Response(200, hdrs, img.bytes)
     end
 
     @patch "/api/exposures/{id}/status" function(req::HTTP.Request, id::Int)

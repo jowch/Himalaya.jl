@@ -58,11 +58,13 @@ function resize_to_fit(img, max_px::Int)
     imresize(img; ratio=scale)
 end
 
-function load_and_lognormalize_thumb(path::String, max_px::Int = 128)
+load_and_lognormalize_thumb(path::String, max_px::Int = 128) = _lognormalize_thumb(_photon_counts(path), max_px)
+
+function _lognormalize_thumb(counts::AbstractMatrix{Float32}, max_px::Int = 128)
     # physics: the clip points come from the downscaled raster, so a faint narrow
     # physics: Bragg ring can under-render. Fine for a 128 px preview, never for
     # physics: the full-size view.
-    img_small = resize_to_fit(colorview(Gray, _photon_counts(path)), max_px)
+    img_small = resize_to_fit(colorview(Gray, counts), max_px)
     lv = log1p.(Float32.(channelview(img_small)))
     colorview(Gray, _clip_normalize(lv))
 end
@@ -96,14 +98,27 @@ function ensure_thumb_cached(db::SQLite.DB, exposure_id::Integer, path::String;
     cache_path = thumb_cache_path(db, exposure_id, token)
 
     if cache_path !== nothing
-        hit = _read_cached(cache_path)
+        hit = _read_full_cached(cache_path)
         hit === nothing || return hit
+        bytes = _read_cached(cache_path)
+        if bytes !== nothing
+            raw_h, raw_w = raw_image_size(path)
+            _write_thumb_atomic(_full_size_path(cache_path), _size_bytes(raw_h, raw_w))
+            return (bytes = bytes, raw_h = raw_h, raw_w = raw_w)
+        end
     end
 
-    bytes = encode_png(load_and_lognormalize_thumb(path))
-    cache_path === nothing || _write_thumb_atomic(cache_path, bytes)
-    bytes
+    counts = _photon_counts(path)
+    raw_h, raw_w = size(counts)
+    bytes = encode_png(_lognormalize_thumb(counts))
+    if cache_path !== nothing
+        _write_thumb_atomic(_full_size_path(cache_path), _size_bytes(raw_h, raw_w))
+        _write_thumb_atomic(cache_path, bytes)
+    end
+    (bytes = bytes, raw_h = raw_h, raw_w = raw_w)
 end
+
+_size_bytes(raw_h::Integer, raw_w::Integer) = Vector{UInt8}(string(raw_h, " ", raw_w))
 
 function full_cache_path(db::SQLite.DB, exposure_id::Integer, token::AbstractString)
     dir = thumb_cache_dir(db)
@@ -196,7 +211,7 @@ end
 
 function _store_full!(cache_path::String, bytes::Vector{UInt8}, raw_h::Integer, raw_w::Integer, cap::Integer)
     root = dirname(dirname(dirname(cache_path)))
-    size_bytes = Vector{UInt8}(string(raw_h, " ", raw_w))
+    size_bytes = _size_bytes(raw_h, raw_w)
     lock(_IMAGE_CACHE_LOCK) do
         total = get!(() -> first(_cache_usage(root)), _CACHE_BYTES, root)
         total -= filesize(cache_path) + filesize(_full_size_path(cache_path))
@@ -244,7 +259,7 @@ function prewarm_thumbnails!(db::SQLite.DB; threads::Bool = true,
         end
         token = image_version_token(path)
         cached = thumb_cache_path(db, Int(row.id), token)
-        if cached !== nothing && isfile(cached)
+        if cached !== nothing && isfile(cached) && isfile(_full_size_path(cached))
             atomic_add!(n_warmed, 1)
             return
         end
