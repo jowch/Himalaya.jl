@@ -54,7 +54,7 @@ import { showToast } from "../lib/toast";
 import { useScanState } from "../hooks/useScanState";
 import { useMediaQuery } from "./useMediaQuery";
 import { isIngestStage, stageLabel } from "../lib/ingestStages";
-import { bridgeCounts, bridgedWith } from "../lib/bridges";
+import { bridgeCounts, bridgedWith, rankBridgeMates } from "../lib/bridges";
 import { callStatesSplit, keepChoices, type KeepCall } from "../lib/bridgeCall";
 import { bufferRole, buffersFirst, displayLabel, firstUnusedColor, labelColor, labelColorIsDefault, labelsFor, sameLabel, sampleMatchesFilter, labelVocabulary, labelKey } from "../lib/labels";
 import { analysisOf, imageFrames, keptExposures, MIN_COMBINED, newestKeptFrame } from "../lib/exposure";
@@ -143,6 +143,7 @@ function helpSections(mod: string): HelpSection[] {
         { keys: ["Esc"], what: "Leave the phase choices and let Tab reach every other control until you open another sample" },
         { keys: ["I"], what: "Custom index: press Tab or Shift+Tab to change the symmetry, then drag the lattice, nudge it with ← →, or click a peak to snap to it. Press Enter to add it or Esc to cancel." },
         { keys: ["L"], what: "Label the sample, e.g. Buffer. Press Enter to add it or Esc to close." },
+        { keys: [mod, "K"], what: "Open the commands and choose Same sample as… to mark this as the same sample measured in another setup" },
       ],
     },
     {
@@ -788,7 +789,10 @@ export function WorkspacePage(): JSX.Element {
     }
     return notes;
   }, [samples, labelList]);
-  const bridgePickable = useMemo(() => samples.filter((s) => s.id !== sampleId && !bridged.includes(s.id)), [samples, sampleId, bridged]);
+  const bridgePickable = useMemo(() => {
+    const others = samples.filter((s) => s.id !== sampleId && !bridged.includes(s.id));
+    return sample ? rankBridgeMates(sample, others) : others;
+  }, [samples, sample, sampleId, bridged]);
   useEffect(() => {
     setLabeling(false);
     setColoringLabel(undefined);

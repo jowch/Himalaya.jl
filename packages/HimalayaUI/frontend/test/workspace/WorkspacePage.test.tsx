@@ -2613,10 +2613,11 @@ describe("WorkspacePage", () => {
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "?", shiftKey: true });
     const help = screen.getByRole("dialog", { name: "Keyboard shortcuts" });
-    expect(document.activeElement).toBe(help);
-    fireEvent.keyDown(help, { key: "x" });
-    fireEvent.keyDown(help, { key: "z" });
-    fireEvent.keyDown(help, { key: "ArrowDown" });
+    const list = within(help).getByRole("region", { name: "Keyboard shortcuts" });
+    expect(document.activeElement).toBe(list);
+    fireEvent.keyDown(list, { key: "x" });
+    fireEvent.keyDown(list, { key: "z" });
+    fireEvent.keyDown(list, { key: "ArrowDown" });
     expect(calls).toEqual([]);
     expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/10");
   });
@@ -3580,6 +3581,20 @@ describe("WorkspacePage", () => {
     fireEvent.keyDown(input, { key: "Enter" });
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(calls).toContainEqual({ hook: "bridge", boundTo: 1, arg: { sampleId: 10, toSampleId: 13 } });
+  });
+
+  it("the same-sample page lists the samples of other setups first, the closest name on top", () => {
+    state.setups = [{ id: 1, name: "Short pipe", folder: "s", included: true }, { id: 2, name: "Long pipe", folder: "l", included: true }];
+    state.corpus = [
+      { ...sample(10, "MO_H2O"), setup_id: 1 },
+      { ...sample(11, "MO_PEG5"), setup_id: 1 },
+      { ...sample(12, "DOPC"), setup_id: 2 },
+      { ...sample(13, "MO_H2O"), setup_id: 2 },
+    ];
+    renderAt("/experiments/1/workspace/10");
+    runFromPalette("same sample as…");
+    const page = screen.getByRole("dialog", { name: "Same sample as" });
+    expect(within(page).getAllByRole("option").map((o) => o.getAttribute("data-palette-item"))).toEqual(["bridge-13", "bridge-12", "bridge-11"]);
   });
 
   it("bridging to a sample with a different call asks which call to keep and sends that choice", async () => {

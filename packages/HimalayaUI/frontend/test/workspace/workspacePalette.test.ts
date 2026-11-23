@@ -218,6 +218,15 @@ describe("workspacePalette", () => {
     expect(pick).toHaveBeenLastCalledWith(3, 3);
   });
 
+  it("finds the same-sample commands when typing merge, bridge, link or same", () => {
+    const bridge = { samples: [], pick: vi.fn(), choices: () => undefined, names: (id: number) => `Sample ${id}`, bridged: ["B"], leave: vi.fn() };
+    const { groups, pages } = workspacePalette(input({ bridge }));
+    for (const q of ["merge", "bridge", "link", "same"]) {
+      const ids = rootRows(groups, pages, q).flatMap((r) => (r.kind === "item" ? [r.item.id] : []));
+      expect(ids, q).toEqual(expect.arrayContaining(["bridge", "unbridge"]));
+    }
+  });
+
   it("lists each setup on the Settings page and saves a rename or a hide from its form", () => {
     const saveSetup = vi.fn();
     const setups = [

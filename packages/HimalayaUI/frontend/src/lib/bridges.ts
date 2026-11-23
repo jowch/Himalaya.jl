@@ -39,3 +39,32 @@ export function applyBridge(list: readonly SampleBridge[], a: number, b: number)
 export function applyUnbridge(list: readonly SampleBridge[], sampleId: number): SampleBridge[] {
   return dropSingletons(list.filter((r) => r.sample_id !== sampleId));
 }
+
+interface MateCandidate {
+  name: string;
+  setup_id?: number | null | undefined;
+}
+
+function nameKey(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function sharedPrefix(a: string, b: string): number {
+  let n = 0;
+  while (n < a.length && n < b.length && a[n] === b[n]) n++;
+  return n;
+}
+
+function mateRank(here: MateCandidate, other: MateCandidate): [number, number, number] {
+  const sameSetup = here.setup_id != null && other.setup_id === here.setup_id ? 1 : 0;
+  const a = nameKey(here.name);
+  const b = nameKey(other.name);
+  const tier = a === b ? 0 : a.length > 0 && b.length > 0 && (a.includes(b) || b.includes(a)) ? 1 : 2;
+  return [sameSetup, tier, -sharedPrefix(a, b)];
+}
+
+export function rankBridgeMates<T extends MateCandidate>(here: MateCandidate, others: readonly T[]): T[] {
+  const ranked = others.map((s, i) => ({ s, i, r: mateRank(here, s) }));
+  ranked.sort((x, y) => x.r[0] - y.r[0] || x.r[1] - y.r[1] || x.r[2] - y.r[2] || x.i - y.i);
+  return ranked.map((x) => x.s);
+}
