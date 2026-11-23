@@ -12,6 +12,7 @@ export interface CombLine {
   id: number;
   qs: readonly number[];
   color: string;
+  faded?: boolean;
 }
 
 export interface CompareLine {
@@ -32,6 +33,7 @@ export const COMPARE_DASH = "5 4";
 export const COMPARE_COLORS = [1, 2, 3, 4, 5].map((n) => `var(--color-compare-${n})`);
 export const PLOT_HEIGHT = 330;
 const Q_LABEL_ROOM = 70;
+const FADED_COMB_OPACITY = 0.35;
 
 interface Props {
   trace: Trace | undefined;
@@ -275,6 +277,7 @@ export function WorkspacePlot({
                       y1={10}
                       y2={dims.plotHeight}
                       stroke={c.color}
+                      {...(c.faded ? { strokeOpacity: FADED_COMB_OPACITY } : {})}
                       strokeDasharray="2 3"
                     />
                   )),
@@ -304,6 +307,8 @@ export function WorkspacePlot({
             <g data-role="peak-glyph">
               {shownPeaks.map((p) => {
                 const lit = highlight?.get(peakKey(p));
+                const grown = !lit && !p.excluded && p.source === "manual";
+                const glyphClass = [onClickPeak ? "cursor-pointer outline-none" : "", grown ? "peak-manual" : ""].filter(Boolean).join(" ");
                 return (
                   <polygon
                     key={peakKey(p)}
@@ -311,15 +316,15 @@ export function WorkspacePlot({
                     data-excluded={p.excluded || undefined}
                     points={peakPoints(x.to(p.q))}
                     fill={lit && !p.excluded ? lit : peakFill(p)}
-                    stroke={lit ? lit : p.excluded ? "var(--color-ink-faint)" : "none"}
+                    stroke={lit ? lit : p.excluded ? "var(--color-ink-faint)" : grown ? "var(--color-accent)" : "none"}
                     {...(highlight && !lit ? { opacity: 0.3 } : {})}
                     pointerEvents="all"
+                    {...(glyphClass ? { className: glyphClass } : {})}
                     {...(onClickPeak
                       ? {
                           role: "button",
                           tabIndex: 0,
                           "aria-label": `${p.source === "manual" ? "Manual" : "Auto"} peak at q = ${p.q.toFixed(4)} Å⁻¹${p.excluded ? ", off" : ""}`,
-                          className: "cursor-pointer outline-none",
                           onFocus: (ev: React.FocusEvent<SVGPolygonElement>) => {
                             if (keyboardFocus(ev.currentTarget)) setFocusedPeak(peakKey(p));
                           },
