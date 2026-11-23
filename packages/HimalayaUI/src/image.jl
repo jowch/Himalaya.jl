@@ -36,6 +36,15 @@ function _clip_normalize(lv::AbstractMatrix{Float32})
     clamp.((lv .- lo) ./ (hi - lo), 0f0, 1f0)
 end
 
+function raw_image_size(path::String)
+    sz = try
+        size(TiffImages.load(path; mmap = true))
+    catch
+        size(load(path))
+    end
+    (raw_h = Int(sz[1]), raw_w = Int(sz[2]))
+end
+
 function encode_png(img)
     buf = IOBuffer()
     FileIO.save(FileIO.Stream{FileIO.format"PNG"}(buf), img)
