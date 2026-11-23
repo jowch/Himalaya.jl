@@ -272,6 +272,23 @@ describe("WorkspacePlot", () => {
     expect(Number(faded.getAttribute("stroke-opacity"))).toBeLessThan(0.5);
   });
 
+  it("outlines an unlit manual marker in its own colour so it reads as large as an auto marker on a dark plot", () => {
+    const peaks = [
+      { id: 1, exposure_id: 1, q: 0.1, intensity: 50, prominence: null, sharpness: null, source: "auto" as const, excluded: false },
+      { id: 2, exposure_id: 1, q: 0.15, intensity: 50, prominence: null, sharpness: null, source: "manual" as const, excluded: false },
+      { id: 3, exposure_id: 1, q: 0.2, intensity: 50, prominence: null, sharpness: null, source: "manual" as const, excluded: true },
+    ];
+    const { rerender } = render(<WorkspacePlot trace={trace} peaks={peaks} combs={[]} />);
+    const glyph = (key: string): Element => screen.getByTestId("workspace-trace").querySelector(`[data-peak-key="${key}"]`)!;
+    expect(glyph("manual:2").getAttribute("stroke")).toBe("var(--color-accent)");
+    expect(glyph("manual:2").classList.contains("peak-manual")).toBe(true);
+    expect(glyph("auto:1").classList.contains("peak-manual")).toBe(false);
+    expect(glyph("manual:3").classList.contains("peak-manual")).toBe(false);
+    rerender(<WorkspacePlot trace={trace} peaks={peaks} combs={[]} highlight={new Map([["manual:2", "red"]])} />);
+    expect(glyph("manual:2").classList.contains("peak-manual")).toBe(false);
+    expect(glyph("manual:2").getAttribute("stroke")).toBe("red");
+  });
+
   it("shows a crosshair cursor exactly while the crosshair is drawn, and keeps the pointer on peak markers", () => {
     if (typeof window.PointerEvent === "undefined") vi.stubGlobal("PointerEvent", MouseEvent);
     const peaks = [{ id: 1, exposure_id: 1, q: 0.1, intensity: 50, prominence: null, sharpness: null, source: "auto" as const, excluded: false }];
