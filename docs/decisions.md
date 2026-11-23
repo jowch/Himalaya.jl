@@ -60,6 +60,7 @@ Every row also needs the date it was decided, as `YYYY-MM-DD`.
 | word-frame | The UI calls one detector image a "frame". | 2026-11-21 | superseded | word-image, 2026-11-22 (PR 480) |
 | word-label | "Tag" is renamed "Label". | 2026-11-21 | built | packages/HimalayaUI/frontend/test/eslint-ui-copy.test.ts › enforces the house vocabulary in user-facing copy only |
 | word-assignment | The tools column's Call section is titled "Assignment", with Custom index in its header. Other uses of "call" stay. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › the Custom index button sits in the Assignment header and stays there while the custom index it opens replaces the list |
+| word-page-title | The browser tab is titled "Himalaya". | 2026-11-23 | built | packages/HimalayaUI/frontend/test/pageTitle.test.ts › the browser tab is titled Himalaya |
 
 ## Look and layout
 
