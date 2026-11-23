@@ -76,10 +76,31 @@ async function calls() {
   return out;
 }
 
+async function callThenSelectOther(samples) {
+  for (const s of samples) {
+    const imgs = await imagesOf(s.id);
+    const phases = new Map();
+    for (const e of imgs) phases.set(e.id, new Set((await api("GET", `/api/exposures/${e.id}/indices`)).map((ix) => ix.phase)));
+    for (const a of imgs) {
+      const ix = await topCandidate(a.id);
+      if (!ix) continue;
+      const b = imgs.find((e) => e.id !== a.id && !phases.get(e.id).has(ix.phase));
+      if (!b) continue;
+      await api("POST", `/api/exposures/${a.id}/assignment/members`, { index_id: ix.id });
+      await api("PUT", `/api/samples/${s.id}/selection`, { exposure_ids: [b.id] });
+      return { sample: s.name, what: `called ${ix.phase} on one image, then selected only an image without it` };
+    }
+  }
+  throw new Error("no sample has an image whose top candidate's phase another kept image lacks, so the drill can't reach a call the selected curve doesn't offer");
+}
+
 if (mode === "review") {
-  const done = [];
+  const samples = await demoSamples();
+  const first = await callThenSelectOther(samples);
+  const done = [first];
   let next = 0;
-  for (const s of await demoSamples()) {
+  for (const s of samples) {
+    if (s.name === first.sample) continue;
     if (next >= SCENARIOS.length) break;
     const imgs = await imagesOf(s.id);
     const [what, least, run] = SCENARIOS[next];

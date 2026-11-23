@@ -43,7 +43,10 @@ for _ in $(seq 1 300); do
   sleep 1
 done
 (cd "$WT" && $JL --project=packages/HimalayaUI packages/HimalayaUI/scripts/demo_ingest.jl "$DEMO" --port "$PORT") > "$OUT/base-ingest.log" 2>&1
-node "$HISTORY" review "$PORT" "$OUT/calls-before.json"
+review="$WT/$HISTORY"
+[[ -f $review ]] || review="$HISTORY"
+echo "review script: ${review#$REPO/}"
+node "$review" review "$PORT" "$OUT/calls-before.json"
 kill "$base_pid"; wait "$base_pid" 2>/dev/null || true; base_pid=""
 
 export DEMO_DIR="$DEMO" DEMO_DB_DIR="$DB_DIR" DEMO_UI_MODE="${DEMO_UI_MODE:-build}"
@@ -62,5 +65,11 @@ node -e '
   if (bad) { console.log(JSON.stringify({ broken, unchecked, traces: r.traces, strays: r.strays }, null, 2)); process.exit(1); }
   console.log("every check-truth invariant was checked and held on the upgraded DB");' "$OUT/check-truth.json" \
   || { echo "FAILED  check-truth invariants on the upgraded DB (see $OUT/check-truth.json)"; failed=1; }
+missing=$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).reviewed[0].sample)' "$OUT/calls-before.json")
+sid=$(bin/verify api GET "/api/samples?experiment_id=1" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>process.stdout.write(String(JSON.parse(d).body.find(s=>s.name===process.argv[1])?.id??"")))' "$missing")
+bin/verify open "/experiments/1/workspace/$sid" > "$OUT/open-not-found.json"
+marked=$(bin/verify count --selector "[data-testid=workspace-candidates] [data-unsupported][aria-pressed=true]" | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>process.stdout.write(String(JSON.parse(d).count)))')
+if [[ $marked -ge 1 ]]; then echo "$missing shows its call ticked and marked Not found"
+else echo "FAILED  $missing's Assignment list has no ticked Not found row, so rail_matches_call never saw one"; failed=1; fi
 (( failed )) && exit 1
 echo "upgrade drill passed: $BASE_REF's DB with reviews opens on this head with the same calls and every check-truth invariant"

@@ -375,8 +375,7 @@ export function WorkspacePage(): JSX.Element {
     () => [...new Set(otherMembers.filter((m) => !offeredPhases.has(m.phase)).map((m) => m.exposure_id))],
     [otherMembers, offeredPhases],
   );
-  const unsupportedIndices = useFrameIndices(unsupportedFrames);
-  const unsupportedLattices = useMemo(() => unsupportedIndices.flatMap((q) => q.data ?? []), [unsupportedIndices]);
+  const unsupportedLattices = useFrameIndices(unsupportedFrames);
   const unsupported = useMemo(
     () => unsupportedCalls(otherMembers, candidates, unsupportedLattices),
     [otherMembers, candidates, unsupportedLattices],

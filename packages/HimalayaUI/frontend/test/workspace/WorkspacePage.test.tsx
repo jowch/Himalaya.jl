@@ -183,7 +183,7 @@ vi.mock("../../src/queries", () => ({
   useAssignment: () => ({ data: state.assignment, fetchStatus: "idle" }),
   useSampleCall: () => ({ data: state.sampleCall }),
   useFrameAssignments: (ids: number[]) => ids.map((id) => ({ data: state.frameAssignments.get(id) })),
-  useFrameIndices: (ids: number[]) => ids.map((id) => ({ data: state.frameIndices.get(id) })),
+  useFrameIndices: (ids: number[]) => ids.flatMap((id) => state.frameIndices.get(id) ?? []),
   useRemoveFramePhase: () => ({
     mutate: (exposureId: number, indexId: number) => calls.push({ hook: "removeFrame", boundTo: exposureId, arg: indexId }),
   }),

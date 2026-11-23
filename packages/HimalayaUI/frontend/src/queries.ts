@@ -229,12 +229,15 @@ export function useIndices(exposureId: number | undefined) {
   });
 }
 
-export function useFrameIndices(exposureIds: readonly number[]) {
+const flatIndices = (results: readonly { data: api.IndexEntry[] | undefined }[]): api.IndexEntry[] => results.flatMap((r) => r.data ?? []);
+
+export function useFrameIndices(exposureIds: readonly number[]): api.IndexEntry[] {
   return useQueries({
     queries: exposureIds.map((id) => ({
       queryKey: queryKeys.indices(id),
       queryFn: () => api.listIndices(id),
     })),
+    combine: flatIndices,
   });
 }
 
