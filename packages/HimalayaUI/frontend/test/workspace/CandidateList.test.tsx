@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { IndexEntry } from "../../src/api";
 import { CandidateList } from "../../src/ui/CandidateList";
@@ -57,31 +57,29 @@ describe("CandidateList", () => {
     expect(onToggle).toHaveBeenCalledWith(b);
   });
 
-  it("marks a group pressed only when every member is in the call, and shows only the selection bar while only some are", () => {
+  it("marks a group pressed only when every member is in the call, and tints it lighter while only some are", () => {
     const [a, b] = [candidate(1), candidate(2)];
     const { rerender } = render(
       <CandidateList rows={[{ kind: "group", members: [a!, b!], peaks: 8 }]} assigned={new Set()} disabled={false} formFactor={false}
         onToggle={() => {}} onToggleGroup={() => {}} onFormFactor={() => {}} onHover={() => {}} />,
     );
     expect(screen.getByTestId("workspace-bonnet-group")).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByTestId("workspace-bonnet-group").className).not.toContain("inset_3px");
-    expect(screen.getByTestId("workspace-bonnet-group").className).not.toContain("bg-row-cursor");
+    expect(screen.getByTestId("workspace-bonnet-group").className).not.toMatch(/(^| )bg-accent\//);
     rerender(
       <CandidateList rows={[{ kind: "group", members: [a!, b!], peaks: 8 }]} assigned={new Set([a!.id])} disabled={false} formFactor={false}
         onToggle={() => {}} onToggleGroup={() => {}} onFormFactor={() => {}} onHover={() => {}} />,
     );
     expect(screen.getByTestId("workspace-bonnet-group")).toHaveAttribute("aria-pressed", "mixed");
-    expect(screen.getByTestId("workspace-bonnet-group").className).toContain("inset_3px");
-    expect(screen.getByTestId("workspace-bonnet-group").className).not.toContain("bg-row-cursor");
+    expect(screen.getByTestId("workspace-bonnet-group").className).toMatch(/(^| )bg-accent\/10( |$)/);
     rerender(
       <CandidateList rows={[{ kind: "group", members: [a!, b!], peaks: 8 }]} assigned={new Set([a!.id, b!.id])} disabled={false} formFactor={false}
         onToggle={() => {}} onToggleGroup={() => {}} onFormFactor={() => {}} onHover={() => {}} />,
     );
     expect(screen.getByTestId("workspace-bonnet-group")).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByTestId("workspace-bonnet-group").className).toContain("bg-row-cursor");
+    expect(screen.getByTestId("workspace-bonnet-group").className).toMatch(/(^| )bg-accent\/25( |$)/);
   });
 
-  it("fills a ticked row like the current sample instead of outlining it, so selection never reads as keyboard focus", () => {
+  it("fills a ticked row instead of outlining it, so selection never reads as keyboard focus", () => {
     const [a, b] = [candidate(1), candidate(2)];
     render(
       <CandidateList rows={[a!, b!].map(one)} assigned={new Set([a!.id])} disabled={false} formFactor
@@ -90,12 +88,27 @@ describe("CandidateList", () => {
     const [on, off] = within(screen.getByTestId("workspace-candidates")).getAllByRole("button");
     const ff = screen.getByTestId("workspace-form-factor");
     for (const el of [on!, ff]) {
-      expect(el.className).toContain("bg-row-cursor");
+      expect(el.className).toContain("bg-accent/25");
+      expect(el.className).not.toContain("shadow-");
       expect(el.className).toContain("border-transparent");
       expect(el.className).not.toMatch(/border-ink/);
     }
-    expect(off!.className).not.toContain("bg-row-cursor");
+    expect(off!.className).not.toContain("bg-accent/");
     expect(off!.className).not.toMatch(/hover:border-/);
+  });
+
+  it("reports hover on pointer movement, so a row that appears under a resting pointer previews as soon as the pointer moves", () => {
+    const onHover = vi.fn();
+    const [a, b] = [candidate(1), candidate(2)];
+    render(
+      <CandidateList rows={[{ kind: "group", members: [a!, b!], peaks: 8 }]} assigned={new Set()} disabled={false} formFactor={false}
+        onToggle={() => {}} onToggleGroup={() => {}} onFormFactor={() => {}} onHover={onHover} />,
+    );
+    const [group, first] = within(screen.getByTestId("workspace-candidates")).getAllByRole("button");
+    fireEvent.mouseMove(first!);
+    expect(onHover).toHaveBeenLastCalledWith([a!.id]);
+    fireEvent.mouseMove(group!);
+    expect(onHover).toHaveBeenLastCalledWith([a!.id, b!.id]);
   });
 
   it("shows the mean Gaussian curvature in nm⁻² on bicontinuous cubic rows only, on one line", () => {

@@ -343,6 +343,9 @@ export function WorkspacePage(): JSX.Element {
     return here;
   }, [assignment.data, otherMembers, candidates]);
   const [hoverIds, setHoverIds] = useState<readonly number[] | undefined>(undefined);
+  const hoverCandidates = useCallback((ids: readonly number[] | undefined) => {
+    setHoverIds((prev) => (prev?.length === ids?.length && (prev ?? []).every((id, i) => id === ids?.[i]) ? prev : ids));
+  }, []);
 
   const addPhase = useAddAssignmentPhase(exposure?.id ?? 0);
   const removePhase = useRemoveAssignmentPhase(exposure?.id ?? 0);
@@ -391,6 +394,7 @@ export function WorkspacePage(): JSX.Element {
   const theme = useAppTheme();
   const [draft, setDraft] = useState<CustomDraft | null>(null);
   useEffect(() => setDraft(null), [exposure?.id]);
+  useEffect(() => setHoverIds(undefined), [exposure?.id]);
   const commitCustom = useCommitCustomIndex(exposure?.id ?? 0);
   const bridgedNames = useMemo(() => {
     const names = new Map(inExperiment.map((s) => [s.id, s.name]));
@@ -1389,7 +1393,7 @@ export function WorkspacePage(): JSX.Element {
                   onToggle={toggleCandidate}
                   onToggleGroup={toggleGroup}
                   onFormFactor={toggleFormFactor}
-                  onHover={setHoverIds}
+                  onHover={hoverCandidates}
                 />
               </Section>
             )}
