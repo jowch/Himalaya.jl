@@ -11,28 +11,29 @@ const TL: CollectionTimeline = {
 
 describe("CollectionRibbon", () => {
   it("draws one stretch per sample run, reviewed ones marked", () => {
-    const { container } = render(<CollectionRibbon timeline={TL} />);
+    const { container } = render(<CollectionRibbon timeline={TL} review={{ reviewed: 1, total: 4 }} />);
     const spans = Array.from(container.querySelectorAll("rect[data-reviewed]"));
     expect(spans.map((r) => r.getAttribute("data-reviewed"))).toEqual(["true", "false", "false"]);
     expect(container.querySelectorAll("rect[data-beam-off]")).toHaveLength(1);
   });
 
   it("places a stretch in proportion to when it was measured", () => {
-    const { container } = render(<CollectionRibbon timeline={TL} />);
+    const { container } = render(<CollectionRibbon timeline={TL} review={{ reviewed: 1, total: 4 }} />);
     const last = container.querySelectorAll("rect[data-reviewed]")[2]!;
     expect(Number(last.getAttribute("x"))).toBeCloseTo(1000 * 4500 / 5400, 3);
   });
 
-  it("captions the start, the length and what is left to review", () => {
-    render(<CollectionRibbon timeline={TL} />);
+  it("captions the start, the length and the review count of every sample, timed or not", () => {
+    render(<CollectionRibbon timeline={TL} review={{ reviewed: 1, total: 4 }} />);
     expect(screen.getByText("Sat 25 Apr 10:00 · 1 h 30 min")).toBeInTheDocument();
-    expect(screen.getByText("2 to review")).toBeInTheDocument();
-    expect(screen.getByRole("img")).toHaveAccessibleName(/1 of 3 samples reviewed/);
+    expect(screen.getByText("3 to review")).toBeInTheDocument();
+    expect(screen.getByRole("img")).toHaveAccessibleName(/1 of 4 samples reviewed/);
   });
 
-  it("keeps its row with an empty track when no image has a time", () => {
-    render(<CollectionRibbon timeline={null} />);
+  it("keeps its row and the review count with an empty track when no image has a time", () => {
+    render(<CollectionRibbon timeline={null} review={{ reviewed: 0, total: 2 }} />);
     expect(screen.getByTestId("collection-ribbon")).toHaveAttribute("data-empty", "true");
     expect(screen.getByText("No image times yet")).toBeInTheDocument();
+    expect(screen.getByText("2 to review")).toBeInTheDocument();
   });
 });

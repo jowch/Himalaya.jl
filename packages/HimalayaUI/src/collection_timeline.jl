@@ -27,11 +27,22 @@ function _timed_images(db::SQLite.DB, exp_id::Integer)
     images
 end
 
-function _reviewed_samples(db::SQLite.DB, sample_ids::Vector{Int})
+function reviewed_samples(db::SQLite.DB, sample_ids::Vector{Int})
     states = sample_call_states(db, sample_ids)
     members = sample_call_members(db, sample_ids)
     Set(sid for sid in sample_ids
         if export_call_state(get(states, sid, "indexed"), get(members, sid, [])) != "uncalled")
+end
+
+function shown_sample_ids(db::SQLite.DB, exp_id::Integer)
+    Int[Int(r.id) for r in sqlrows(DBInterface.execute(db, """
+        SELECT s.id FROM samples s LEFT JOIN setups st ON st.id = s.setup_id
+         WHERE s.experiment_id = ? AND (st.id IS NULL OR st.included = 1)""", [exp_id]))]
+end
+
+function review_progress(db::SQLite.DB, exp_id::Integer)
+    shown = shown_sample_ids(db, exp_id)
+    (reviewed = length(reviewed_samples(db, shown)), total = length(shown))
 end
 
 function collection_timeline(db::SQLite.DB, exp_id::Integer)
@@ -43,7 +54,7 @@ function collection_timeline(db::SQLite.DB, exp_id::Integer)
         a, b = get(spans, im.sample_id, (im.starts, im.ends))
         spans[im.sample_id] = (min(a, im.starts), max(b, im.ends))
     end
-    reviewed = _reviewed_samples(db, collect(keys(spans)))
+    reviewed = reviewed_samples(db, collect(keys(spans)))
     ordered = sort(collect(spans); by = kv -> (kv[2][1], kv[1]))
     (start = Dates.format(origin, _TIMELINE_FORMAT),
      samples = [[_seconds_between(origin, a), _seconds_between(origin, b), Int(sid in reviewed)]

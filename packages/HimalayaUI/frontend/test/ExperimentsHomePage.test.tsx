@@ -42,7 +42,7 @@ describe("ExperimentsHomePage (Phase E1)", () => {
 
   it("shows when each beamtime collected its samples and how many are left to review", async () => {
     const timeline: api.CollectionTimeline = { start: "2026-04-01T10:00:00", samples: [[0, 60, 1], [120, 180, 0]], beam_off: [] };
-    vi.spyOn(api, "listExperiments").mockResolvedValue([EXP({ stats: { ...EXP({}).stats!, timeline } })]);
+    vi.spyOn(api, "listExperiments").mockResolvedValue([EXP({ stats: { ...EXP({}).stats!, review: { reviewed: 1, total: 2 }, timeline } })]);
     renderPage();
     const card = await screen.findByTestId("experiment-card-7");
     expect(card.querySelector("[data-testid='collection-ribbon'] [role='img']")).toHaveAccessibleName(/1 of 2 samples reviewed/);

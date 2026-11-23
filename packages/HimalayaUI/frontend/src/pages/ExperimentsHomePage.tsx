@@ -213,7 +213,7 @@ export function ExperimentsHomePage(): JSX.Element {
                             {" loads"}
                           </div>
                         )}
-                        <CollectionRibbon timeline={stats?.timeline} className="mt-3" />
+                        <CollectionRibbon timeline={stats?.timeline} review={stats?.review} className="mt-3" />
                       </Card>
                     );
                   })}

@@ -184,6 +184,70 @@ end
     end
 end
 
+@testset "the card's review count is the workspace's reviewed rule over every shown sample" begin
+    tmp = mktempdir()
+    db = open_prepared_clone(tmp)
+    eid = HimalayaUI.create_experiment!(db; path = tmp, data_dir = "data", analysis_dir = "analysis")
+    timed(sid, at) = HimalayaUI.create_exposure!(db; experiment_id = eid, sample_id = sid,
+        filename = "f$(sid)_$(at)", timestamp = "2026-04-25T10:$(at):00")
+    form_factor = HimalayaUI.create_sample!(db; experiment_id = eid, name = "form_factor")
+    with_members = HimalayaUI.create_sample!(db; experiment_id = eid, name = "with_members")
+    no_members = HimalayaUI.create_sample!(db; experiment_id = eid, name = "no_members")
+    mate = HimalayaUI.create_sample!(db; experiment_id = eid, name = "mate")
+    untimed = HimalayaUI.create_sample!(db; experiment_id = eid, name = "untimed")
+    HimalayaUI.create_sample!(db; experiment_id = eid, name = "no_images")
+    timed(form_factor, 10); timed(no_members, 12); timed(mate, 13)
+    called_frame = timed(with_members, 11)
+    HimalayaUI.create_exposure!(db; experiment_id = eid, sample_id = untimed, filename = "untimed")
+    DBInterface.execute(db, "INSERT INTO indices (id, exposure_id, phase, basis, score) VALUES (90, ?, 'Pn3m', 0.1, 0.9)", [called_frame])
+    DBInterface.execute(db, "INSERT INTO assignment_members (exposure_id, index_id) VALUES (?, 90)", [called_frame])
+    DBInterface.execute(db, "INSERT INTO sample_calls (sample_id, state) VALUES (?, 'form_factor')", [form_factor])
+    DBInterface.execute(db, "INSERT INTO sample_calls (sample_id, state) VALUES (?, 'indexed')", [no_members])
+    DBInterface.execute(db, "INSERT INTO sample_bridges (sample_id, group_id) VALUES (?, 1), (?, 1)", [with_members, mate])
+    hidden = HimalayaUI.create_setup!(db; experiment_id = eid, folder = "hidden",
+        root_dir = tmp, data_dir = tmp, analysis_dir = tmp, included = false)
+    h = HimalayaUI.create_sample!(db; experiment_id = eid, name = "hidden", setup_id = hidden)
+    HimalayaUI.create_exposure!(db; experiment_id = eid, sample_id = h, setup_id = hidden,
+        filename = "h", timestamp = "2026-04-25T10:20:00")
+
+    with_inproc_routes(db) do call
+        exp = JSON3.read(String(call("GET", "/api/experiments/$eid").body))
+        shown_setups = Set(Int(st.id) for st in exp.setups if st.included)
+        listed = [s for s in JSON3.read(String(call("GET", "/api/samples?experiment_id=$eid").body))
+                  if s.setup_id === nothing || Int(s.setup_id) in shown_setups]
+        workspace_reviewed(s) = s.assignment_state == "form_factor" ||
+            (s.assignment_state == "indexed" && s.phase !== nothing)
+        @test exp.stats.review.total == length(listed) == 6
+        @test exp.stats.review.reviewed == count(workspace_reviewed, listed) == 3
+        @test [Int(x[3]) for x in exp.stats.timeline.samples] == [1, 1, 0, 1]
+    end
+end
+
+@testset "the ribbon marks beam-off images even after they are dropped" begin
+    tmp = mktempdir()
+    db = open_prepared_clone(tmp)
+    eid = HimalayaUI.create_experiment!(db; path = tmp, data_dir = "data", analysis_dir = "analysis")
+    s = HimalayaUI.create_sample!(db; experiment_id = eid, name = "s")
+    HimalayaUI.create_exposure!(db; experiment_id = eid, sample_id = s, filename = "on",
+        timestamp = "2026-04-25T10:00:00")
+    off = HimalayaUI.create_exposure!(db; experiment_id = eid, sample_id = s, filename = "off",
+        status = "rejected", timestamp = "2026-04-25T10:02:00")
+    DBInterface.execute(db, "UPDATE exposures SET trace_median = 0.1 WHERE id = ?", [off])
+    with_inproc_routes(db) do call
+        @test collect(Int, JSON3.read(String(call("GET", "/api/experiments/$eid").body)).stats.timeline.beam_off) == [120]
+    end
+end
+
+@testset "an experiment with no samples reviews nothing" begin
+    tmp = mktempdir()
+    db = open_prepared_clone(tmp)
+    eid = HimalayaUI.create_experiment!(db; path = tmp, data_dir = "data", analysis_dir = "analysis")
+    with_inproc_routes(db) do call
+        review = JSON3.read(String(call("GET", "/api/experiments/$eid").body)).stats.review
+        @test (review.reviewed, review.total) == (0, 0)
+    end
+end
+
 @testset "an experiment with no timed images has no timeline" begin
     tmp = mktempdir()
     db = open_prepared_clone(tmp)

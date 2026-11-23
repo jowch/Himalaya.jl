@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeRibbon, ribbonAt, ribbonLayout } from "../../src/lib/collectionRibbon";
+import { describeRibbon, reviewSummary, ribbonAt, ribbonLayout, toReview } from "../../src/lib/collectionRibbon";
 import type { CollectionTimeline } from "../../src/api";
 
 const TL: CollectionTimeline = {
@@ -36,11 +36,18 @@ describe("ribbonAt", () => {
 });
 
 describe("describeRibbon", () => {
-  it("gives the start, the length and how many samples are left to review", () => {
-    expect(describeRibbon(TL)).toEqual({ started: "Sat 25 Apr 10:00", length: "1 h 30 min", left: "2 to review" });
+  it("gives the start and the length", () => {
+    expect(describeRibbon(TL)).toEqual({ started: "Sat 25 Apr 10:00", length: "1 h 30 min" });
+  });
+});
+
+describe("toReview", () => {
+  it("gives how many samples are left to review", () => {
+    expect(toReview({ reviewed: 1, total: 3 })).toBe("2 to review");
   });
 
   it("says when every sample is reviewed", () => {
-    expect(describeRibbon({ ...TL, samples: [[0, 60, 1]] }).left).toBe("All reviewed");
+    expect(toReview({ reviewed: 3, total: 3 })).toBe("All reviewed");
+    expect(reviewSummary({ reviewed: 1, total: 1 })).toBe("1 of 1 sample reviewed");
   });
 });

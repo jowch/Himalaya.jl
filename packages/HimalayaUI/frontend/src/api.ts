@@ -46,7 +46,12 @@ export interface Experiment {
   ingest_status: IngestStatus;
   ingest_error?: string | null;
   setups?: Setup[];
-  stats?: { loads: number; samples: number; exposures: number; sessions: number; span_hours: number; started_at: string | null; timeline?: CollectionTimeline | null };
+  stats?: { loads: number; samples: number; exposures: number; sessions: number; span_hours: number; started_at: string | null; review?: ReviewProgress; timeline?: CollectionTimeline | null };
+}
+
+export interface ReviewProgress {
+  reviewed: number;
+  total: number;
 }
 
 export interface CollectionTimeline {

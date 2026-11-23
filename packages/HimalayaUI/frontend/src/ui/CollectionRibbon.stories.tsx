@@ -1,8 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { CollectionRibbon } from "./CollectionRibbon";
-import type { CollectionTimeline } from "../api";
+import type { CollectionTimeline, ReviewProgress } from "../api";
 
-function beamtime(samples: number, reviewedShare: number, nightAt: number | null): CollectionTimeline {
+function beamtime(samples: number, reviewedShare: number, nightAt: number | null): { timeline: CollectionTimeline; review: ReviewProgress } {
   const rows: CollectionTimeline["samples"] = [];
   let t = 0;
   for (let i = 0; i < samples; i++) {
@@ -11,7 +11,8 @@ function beamtime(samples: number, reviewedShare: number, nightAt: number | null
     rows.push([t, t + 520, i < samples * reviewedShare ? 1 : 0]);
     t += 540;
   }
-  return { start: "2026-04-25T17:40:00", samples: rows, beam_off: nightAt === null ? [] : [rows[40]![1]] };
+  const timeline = { start: "2026-04-25T17:40:00", samples: rows, beam_off: nightAt === null ? [] : [rows[40]![1]] };
+  return { timeline, review: { reviewed: rows.filter(([, , r]) => r === 1).length, total: samples } };
 }
 
 const meta = {
@@ -23,7 +24,7 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const PartlyCalled: Story = { args: { timeline: beamtime(275, 0.6, 120) } };
-export const AllCalled: Story = { args: { timeline: beamtime(300, 1, null) } };
-export const NothingCalled: Story = { args: { timeline: beamtime(13, 0, null) } };
-export const NoImageTimes: Story = { args: { timeline: null } };
+export const PartlyReviewed: Story = { args: beamtime(275, 0.6, 120) };
+export const AllReviewed: Story = { args: beamtime(300, 1, null) };
+export const NothingReviewed: Story = { args: beamtime(13, 0, null) };
+export const NoImageTimes: Story = { args: { timeline: null, review: { reviewed: 0, total: 4 } } };

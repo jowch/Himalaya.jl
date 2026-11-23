@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { MouseEvent, ReactNode } from "react";
-import type { CollectionTimeline } from "../api";
-import { clockTime, dayAndTime, describeRibbon, duration, ribbonAt, ribbonLayout } from "../lib/collectionRibbon";
+import type { CollectionTimeline, ReviewProgress } from "../api";
+import { clockTime, dayAndTime, describeRibbon, duration, reviewSummary, ribbonAt, ribbonLayout, toReview } from "../lib/collectionRibbon";
 import type { RibbonPoint } from "../lib/collectionRibbon";
 import { Tooltip } from "./Tooltip";
 
@@ -12,6 +12,7 @@ const MIN_MARK = 6;
 
 interface CollectionRibbonProps {
   timeline: CollectionTimeline | null | undefined;
+  review: ReviewProgress | undefined;
   className?: string;
 }
 
@@ -33,12 +34,16 @@ function pointCopy(tl: CollectionTimeline, p: RibbonPoint): ReactNode {
   );
 }
 
-function summary(tl: CollectionTimeline): string {
-  const reviewed = tl.samples.filter(([, , c]) => c === 1).length;
-  return `${reviewed} of ${plural(tl.samples.length, "sample")} reviewed`;
+function Caption({ left, review }: { left: string; review: ReviewProgress | undefined }): JSX.Element {
+  return (
+    <div className="mt-1 flex justify-between gap-2 whitespace-nowrap text-xs text-ink-faint">
+      <span className="truncate">{left}</span>
+      {review && <span>{toReview(review)}</span>}
+    </div>
+  );
 }
 
-export function CollectionRibbon({ timeline, className }: CollectionRibbonProps): JSX.Element {
+export function CollectionRibbon({ timeline, review, className }: CollectionRibbonProps): JSX.Element {
   const [point, setPoint] = useState<RibbonPoint | null>(null);
   const caption = timeline ? describeRibbon(timeline) : null;
 
@@ -48,11 +53,12 @@ export function CollectionRibbon({ timeline, className }: CollectionRibbonProps)
         <svg className="block h-3 w-full" viewBox={`0 0 ${VIEW_W} ${VIEW_H + 2}`} preserveAspectRatio="none" aria-hidden="true">
           <rect className="fill-paper-sunk" x={0} y={1} width={VIEW_W} height={VIEW_H} />
         </svg>
-        <div className="mt-1 text-xs text-ink-faint">No image times yet</div>
+        <Caption left="No image times yet" review={review} />
       </div>
     );
   }
 
+  const collected = `Collected from ${caption.started} over ${caption.length}.`;
   const { spans, end } = ribbonLayout(timeline);
   const total = Math.max(end, 1);
   const x = (t: number): number => (t / total) * VIEW_W;
@@ -65,14 +71,14 @@ export function CollectionRibbon({ timeline, className }: CollectionRibbonProps)
 
   return (
     <div className={className} data-testid="collection-ribbon">
-      <Tooltip content={point ? pointCopy(timeline, point) : summary(timeline)}>
+      <Tooltip content={point ? pointCopy(timeline, point) : collected}>
         <svg
           className="block h-3 w-full"
           viewBox={`0 0 ${VIEW_W} ${VIEW_H + 2}`}
           preserveAspectRatio="none"
           shapeRendering="crispEdges"
           role="img"
-          aria-label={`${summary(timeline)}. Collected from ${caption.started} over ${caption.length}.`}
+          aria-label={review ? `${reviewSummary(review)}. ${collected}` : collected}
           onMouseMove={onMove}
           onMouseLeave={() => setPoint(null)}
         >
@@ -93,10 +99,7 @@ export function CollectionRibbon({ timeline, className }: CollectionRibbonProps)
           ))}
         </svg>
       </Tooltip>
-      <div className="mt-1 flex justify-between gap-2 whitespace-nowrap text-xs text-ink-faint">
-        <span className="truncate">{caption.started} · {caption.length}</span>
-        <span>{caption.left}</span>
-      </div>
+      <Caption left={`${caption.started} · ${caption.length}`} review={review} />
     </div>
   );
 }

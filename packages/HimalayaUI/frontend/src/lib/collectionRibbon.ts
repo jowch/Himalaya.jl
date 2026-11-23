@@ -1,4 +1,4 @@
-import type { CollectionTimeline } from "../api";
+import type { CollectionTimeline, ReviewProgress } from "../api";
 
 export const JOIN_GAP_S = 600;
 
@@ -62,11 +62,15 @@ export function duration(seconds: number): string {
   return m % 60 === 0 ? `${m / 60} h` : `${Math.floor(m / 60)} h ${m % 60} min`;
 }
 
-export function describeRibbon(tl: CollectionTimeline): { started: string; length: string; left: string } {
-  const left = tl.samples.filter(([, , reviewed]) => reviewed !== 1).length;
-  return {
-    started: dayAndTime(tl.start, 0),
-    length: duration(ribbonLayout(tl).end),
-    left: left === 0 ? "All reviewed" : `${left} to review`,
-  };
+export function toReview(review: ReviewProgress): string {
+  const left = review.total - review.reviewed;
+  return left === 0 ? "All reviewed" : `${left} to review`;
+}
+
+export function reviewSummary(review: ReviewProgress): string {
+  return `${review.reviewed} of ${review.total} ${review.total === 1 ? "sample" : "samples"} reviewed`;
+}
+
+export function describeRibbon(tl: CollectionTimeline): { started: string; length: string } {
+  return { started: dayAndTime(tl.start, 0), length: duration(ribbonLayout(tl).end) };
 }

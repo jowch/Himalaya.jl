@@ -24,7 +24,7 @@ function _experiment_stats(db::SQLite.DB, exp_id::Integer)
     started_at = (t === missing || t === nothing) ? nothing : String(t)
     (loads = Int(loads), samples = Int(samples), exposures = Int(exposures),
      sessions = Int(sessions), span_hours = span_hours, started_at = started_at,
-     timeline = collection_timeline(db, exp_id))
+     review = review_progress(db, exp_id), timeline = collection_timeline(db, exp_id))
 end
 
 function _setup_row_to_json(row::NamedTuple)
