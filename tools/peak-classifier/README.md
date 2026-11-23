@@ -80,11 +80,14 @@ detector, as numerator/denominator and rate:
 - **add recall**: your added peaks the detector finds. Adds in the top 7% of
   the q range are not scored (the hybrid trims it); their count is printed.
 - **excludes detected**: excluded peaks the detector still outputs (lower is better).
-- **oracle** (a ceiling, not a detector): the user's own final peaks for each
+- **oracle** (a reference, not a detector): the user's own final peaks for each
   labelled exposure (kept auto peaks and adds, snapped to the nearest grid point,
-  excludes removed), through the same scoring. Its add recall is 1 by construction.
-  Its phase top-1 is the highest any detector can reach on this metric. Its
-  peaks/exposure counts only labelled exposures' peaks, so ignore that row.
+  excludes removed), through the same scoring. Its add recall is close to 1, not
+  exactly 1: adds within match tolerance of an exclude are dropped with it, and
+  adds outside the trace's q range cannot be placed. Its phase top-1 is not an
+  upper bound: a detector's different peak set can make `auto_group`'s first pick
+  match a call the user's peaks miss. Its peaks/exposure counts only labelled
+  exposures' peaks, so ignore that row.
 - **peaks/exposure** over all loaded exposures, and **peaks/form-factor** over
   form-factor exposures.
 
@@ -109,7 +112,7 @@ Biases to keep in mind:
   threshold's numbers as optimistic and compare detectors at a threshold fixed
   beforehand.
 - With few experiments the folds are large and per-phase counts are small.
-- The phase metric has a ceiling below 100% even with the user's own peaks:
+- The phase metric stays well below 100% even with the user's own peaks:
   it needs the first `auto_group` pick to match a confirmed call within 2% of
   its basis, and confirmed calls (custom indices, coexisting phases) often do
   not satisfy that. A phase that scores 0 for every detector may be near 0 for
