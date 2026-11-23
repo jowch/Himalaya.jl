@@ -1,5 +1,5 @@
 import { refreshPeaks } from "./refreshPeaks";
-import { refetchListsWithoutCombined } from "./combinedLists";
+import { patchListsWith, refetchListsWith, refetchSelection } from "./selectionLists";
 import type { QueryClient } from "@tanstack/react-query";
 import type { SseEvent, CurationPostState, AssignmentPostState, SampleCallPostState } from "./types";
 import { writeSampleCall, invalidateOtherFrameAssignments, invalidateSampleCalls } from "./sampleCall";
@@ -253,23 +253,17 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
     }
     case "set_exposure_status": {
       const status = payload?.status as Exposure["status"];
-      qc.setQueriesData<Exposure[]>(
-        { predicate: (q) => q.queryKey[0] === "sample" && q.queryKey[2] === "exposures" },
-        (list) => list?.some((e) => e.id === id)
-          ? list.map((e) => (e.id === id ? { ...e, status } : e))
-          : list,
-      );
-      refetchListsWithoutCombined(qc, id);
+      patchListsWith<Exposure>(qc, (q) => q.queryKey[0] === "sample" && q.queryKey[2] === "exposures", id, (e) => ({ ...e, status }));
+      refetchListsWith(qc, id);
       qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
       break;
     }
+    case "set_selection": {
+      refetchSelection(qc, id);
+      break;
+    }
     case "update_sample": {
-      qc.setQueriesData<Sample[]>(
-        { predicate: (q) => q.queryKey[0] === "experiment" && q.queryKey[2] === "samples" },
-        (list) => list?.some((s) => s.id === id)
-          ? list.map((s) => (s.id === id ? { ...s, ...(payload ?? {}) } : s))
-          : list,
-      );
+      patchListsWith<Sample>(qc, (q) => q.queryKey[0] === "experiment" && q.queryKey[2] === "samples", id, (s) => ({ ...s, ...(payload ?? {}) }));
       qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
       break;
     }
@@ -278,6 +272,7 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       const traceChanged = payload?.trace_hash_before !== payload?.trace_hash_after;
       if (traceChanged) qc.invalidateQueries({ queryKey: queryKeys.trace(id) });
       if (traceChanged || payload?.findpeaks_skipped === false) refreshPeaks(qc, id);
+      if (typeof payload?.average_of_sample === "number") refetchSelection(qc, payload.average_of_sample);
       break;
     }
     case "ingest_started":

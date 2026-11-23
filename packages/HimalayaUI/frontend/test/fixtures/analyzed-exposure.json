@@ -1,18 +1,26 @@
 [
-  { "case": "no frames", "frames": [], "representative": null },
-  { "case": "the newest frame when all are kept", "frames": [
-      { "id": 1, "status": null },
-      { "id": 2, "status": "accepted" }], "representative": 2 },
-  { "case": "the newest kept frame when the newest frame is dropped", "frames": [
-      { "id": 1, "status": null },
-      { "id": 2, "status": null },
-      { "id": 3, "status": "rejected" }], "representative": 2 },
-  { "case": "the newest kept frame past several dropped ones", "frames": [
-      { "id": 1, "status": null },
-      { "id": 2, "status": "rejected" },
-      { "id": 3, "status": null },
-      { "id": 4, "status": "rejected" }], "representative": 3 },
-  { "case": "none when every frame is dropped", "frames": [
-      { "id": 1, "status": "rejected" },
-      { "id": 2, "status": "rejected" }], "representative": null }
+  { "case": "no images", "frames": [], "analyzed": null },
+  { "case": "the only selected image", "frames": [
+      { "id": 1, "status": null, "kind": "file", "selected": false },
+      { "id": 2, "status": "accepted", "kind": "file", "selected": true }], "analyzed": 2 },
+  { "case": "one image alone, selected by default", "frames": [
+      { "id": 1, "status": null, "kind": "file" }], "analyzed": 1 },
+  { "case": "a dropped image is never analyzed", "frames": [
+      { "id": 1, "status": null, "kind": "file", "selected": true },
+      { "id": 2, "status": "rejected", "kind": "file", "selected": true }], "analyzed": 1 },
+  { "case": "two selected images are analyzed as their average", "frames": [
+      { "id": 1, "status": null, "kind": "file", "selected": true },
+      { "id": 2, "status": null, "kind": "file", "selected": true },
+      { "id": 3, "status": null, "kind": "file", "selected": false },
+      { "id": 9, "status": null, "kind": "combined", "sources": [1, 2, 3] },
+      { "id": 10, "status": null, "kind": "combined", "sources": [2, 1] }], "analyzed": 10 },
+  { "case": "nothing when the selected set has no average yet", "frames": [
+      { "id": 1, "status": null, "kind": "file", "selected": true },
+      { "id": 2, "status": null, "kind": "file", "selected": true }], "analyzed": null },
+  { "case": "nothing when nothing is selected", "frames": [
+      { "id": 1, "status": null, "kind": "file", "selected": false },
+      { "id": 2, "status": null, "kind": "file", "selected": false }], "analyzed": null },
+  { "case": "nothing when every image is dropped", "frames": [
+      { "id": 1, "status": "rejected", "kind": "file" },
+      { "id": 2, "status": "rejected", "kind": "file" }], "analyzed": null }
 ]

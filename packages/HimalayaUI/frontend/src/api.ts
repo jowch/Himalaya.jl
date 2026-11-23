@@ -68,14 +68,14 @@ export interface CorpusSample extends Sample {
   q_units: string;
   setup_id?: number | null;
   phase?: string | null;
-  /** The representative exposure's durable assignment state (`representative_exposure_id`:
-   *  the newest kept frame). Drives the contact-sheet status: `form_factor` shows a
+  /** The sample's durable call state. `analyzed_exposure_id` is the image the
+   *  selection resolves to: the one selected image, or the average of several. Drives the contact-sheet status: `form_factor` shows a
    *  distinct "Form factor" status, `indexed` with a `phase` shows the chip,
    *  everything else reads "Not indexed". Absent on older payloads → treated as
    *  unindexed. */
   assignment_state?: AssignmentState;
   call_phases?: string[];
-  representative_exposure_id?: number | null;
+  analyzed_exposure_id?: number | null;
 }
 
 export class ApiError extends Error {
@@ -378,7 +378,7 @@ export interface Exposure {
    */
   image_version: string;
   sources: { source_exposure_id: number; role: string }[];
-  included?: boolean;
+  selected?: boolean;
   trace_hash: string | null;
   analysis_inputs_hash: string | null;
   exposure_time: number | null;
@@ -394,6 +394,10 @@ export interface Exposure {
 
 export const listExposures = (sample_id: number, opts?: { signal?: AbortSignal }) =>
   request<Exposure[]>("GET", `/api/samples/${sample_id}/exposures`, undefined, opts);
+
+export const setSelection = (sampleId: number, exposureIds: readonly number[], opts?: AuthOpts) =>
+  request<{ sample_id: number; exposure_ids: number[]; analyzed_exposure_id: number | null }>(
+    "PUT", `/api/samples/${sampleId}/selection`, { exposure_ids: exposureIds }, opts);
 
 export const setExposureStatus = (
   id: number,

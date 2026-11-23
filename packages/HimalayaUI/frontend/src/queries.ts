@@ -6,6 +6,7 @@ import { getClientId } from "./lib/clientId";
 import { useQueueMutation } from "./lib/queue/useQueueMutation";
 import {
   setExposureStatusMutator,
+  setSelectionMutator,
 } from "./lib/queue/mutators/trivial";
 import { peakAddMutator } from "./lib/queue/mutators/peakAdd";
 import { peakRemoveMutator } from "./lib/queue/mutators/peakRemove";
@@ -353,6 +354,7 @@ export interface EditOps {
   removePhase: (exposureId: number, indexId: number) => void;
   setCallState: (sampleId: number, state: api.AssignmentState) => void;
   setStatus: (sampleId: number, exposureId: number, status: api.Exposure["status"]) => void;
+  setSelection: (sampleId: number, exposureIds: number[]) => void;
   addPeak: (exposureId: number, q: number) => void;
   removePeak: (exposureId: number, peakId: number) => void;
   setPeakExcluded: (exposureId: number, peakId: number, excluded: boolean) => void;
@@ -395,6 +397,7 @@ export function useEditOps(experimentId: number): EditOps {
   const remove = useQueueMutation(removeAssignmentPhaseMutator, { ...who, exposureId: 0 });
   const callState = useQueueMutation(setSampleCallStateMutator, { ...who, sampleId: 0 });
   const status = useQueueMutation(setExposureStatusMutator, { ...who, sampleId: 0 });
+  const selection = useQueueMutation(setSelectionMutator, { ...who, sampleId: 0 });
   const addPeak = useQueueMutation(peakAddMutator, { ...who, exposureId: 0 });
   const removePeak = useQueueMutation(peakRemoveMutator, { ...who, exposureId: 0 });
   const exclude = useQueueMutation(peakExcludeMutator, { ...who, exposureId: 0 });
@@ -418,6 +421,7 @@ export function useEditOps(experimentId: number): EditOps {
     removePhase: (exposureId, indexId) => remove.mutateIn({ ...who, exposureId }, { indexId }),
     setCallState: (sampleId, state) => callState.mutateIn({ ...who, sampleId }, { state }),
     setStatus: (sampleId, exposureId, next) => status.mutateIn({ ...who, sampleId }, { exposureId, status: next }),
+    setSelection: (sampleId, exposureIds) => selection.mutateIn({ ...who, sampleId }, { exposureIds }),
     addPeak: (exposureId, q) => addPeak.mutateIn({ ...who, exposureId }, { q }),
     removePeak: (exposureId, peakId) => removePeak.mutateIn({ ...who, exposureId }, { peakId }),
     setPeakExcluded: (exposureId, peakId, excluded) =>

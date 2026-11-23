@@ -1,3 +1,4 @@
+import { selectedFrames } from "../lib/exposure";
 import type { AssignmentState, Exposure, IndexEntry, Peak, SampleBridge, SampleCallMember, SampleLabel, SampleLabelState, LabelColor } from "../api";
 import type { KeepCall } from "../lib/bridgeCall";
 import type { EditOps } from "../queries";
@@ -124,6 +125,24 @@ export function dropEntry(
     const hit = (await ops.read.exposures(owner)).find((e) => e.id === at.exposureId);
     if (!hit || (hit.status ?? null) !== (from ?? null)) return 0;
     ops.setStatus(owner, at.exposureId, to);
+    return 1;
+  };
+  return {
+    ...at,
+    undo: () => set(at.next, at.prev),
+    redo: () => set(at.prev, at.next),
+  };
+}
+
+export function selectionEntry(
+  ops: EditOps,
+  at: Where & { exposureId: number | undefined; prev: readonly number[]; next: readonly number[] },
+): UndoEntry {
+  const key = (ids: readonly number[]): string => [...ids].sort((a, b) => a - b).join(",");
+  const set = async (from: readonly number[], to: readonly number[]): Promise<number> => {
+    const now = selectedFrames(await ops.read.exposures(at.sampleId)).map((e) => e.id);
+    if (key(now) !== key(from)) return 0;
+    ops.setSelection(at.sampleId, [...to]);
     return 1;
   };
   return {

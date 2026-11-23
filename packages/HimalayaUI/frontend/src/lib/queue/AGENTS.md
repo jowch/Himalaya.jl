@@ -52,3 +52,4 @@ lib/queue/
 - Fixing one layer of a queue bug requires regression tests at all six layers (see `docs/contract-testing.md`)
 
 - **Peak list settles by refetch, deferred.** `refreshPeaks.ts` invalidates an exposure's peaks only when no peak mutation for it is pending; an earlier refetch would erase later optimistic patches. Own `onSuccess` and `applyRemoteToCache` peak cases call it. Test: `test/queue/peakRefetchRace.test.tsx`.
+- **Never `setQueriesData` with a pass-through updater.** `setQueryData` marks a query fresh and clears its invalidation even when the updater returns the same list, so patching every list "in case" undoes an earlier `invalidateQueries` on the lists it didn't change. That hid a new average after a drop until a reload. Patch only the lists that hold the row: `patchListsWith` in `selectionLists.ts`. Test: `test/applyRemoteToCache.ingest.test.ts`.

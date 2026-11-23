@@ -24,7 +24,7 @@ import { nearestFirst, neighbourSamples, PREFETCH_DWELL_MS, SIBLING_DWELL_MS, us
 import { makeExposure } from "../helpers/exposure";
 
 function sample(id: number, over: Partial<CorpusSample> = {}): CorpusSample {
-  return { id, experiment_id: 1, name: `S${id}`, notes: null, q_units: "A^-1", representative_exposure_id: id * 10 + 1, ...over };
+  return { id, experiment_id: 1, name: `S${id}`, notes: null, q_units: "A^-1", analyzed_exposure_id: id * 10 + 1, ...over };
 }
 
 function exposure(id: number, sampleId: number): Exposure {
