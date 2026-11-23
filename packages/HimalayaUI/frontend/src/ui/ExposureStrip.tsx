@@ -16,9 +16,10 @@ interface Props {
   currentId: number | undefined;
   onPick: (id: number) => void;
   onToggleDrop: (e: Exposure) => void;
+  warningOf?: (e: Exposure) => string | undefined;
 }
 
-export function ExposureStrip({ groups, currentId, onPick, onToggleDrop }: Props): JSX.Element {
+export function ExposureStrip({ groups, currentId, onPick, onToggleDrop, warningOf }: Props): JSX.Element {
   return (
     <div className="flex flex-col gap-1.5" data-testid="workspace-exposures">
       {groups.map((g, gi) => (
@@ -33,10 +34,12 @@ export function ExposureStrip({ groups, currentId, onPick, onToggleDrop }: Props
               const cur = e.id === currentId;
               const dropped = e.status === "rejected";
               const src = imageUrl(e, true);
+              const warning = warningOf?.(e);
               const name = gi === 0 || g.title === undefined ? `Image ${i + 1}` : `Image ${i + 1} of ${g.title}`;
               return (
                 <li
                   key={e.id}
+                  data-warned={warning !== undefined ? "" : undefined}
                   className={
                     "group flex min-w-0 flex-col gap-1 rounded-sm border p-1 " +
                     (cur ? "border-hair-strong " : "border-transparent ") +
@@ -46,9 +49,12 @@ export function ExposureStrip({ groups, currentId, onPick, onToggleDrop }: Props
                   <button
                     type="button"
                     aria-current={cur ? "true" : undefined}
-                    aria-label={`${name}${dropped ? ", dropped" : ""}`}
+                    aria-label={`${name}${dropped ? ", dropped" : ""}${warning !== undefined ? `, ${warning.toLowerCase()}` : ""}`}
                     onClick={() => onPick(e.id)}
-                    className="relative grid aspect-square w-full place-items-center overflow-hidden rounded-[3px] bg-frame-edge"
+                    className={
+                      "relative grid aspect-square w-full place-items-center overflow-hidden rounded-[3px] bg-frame-edge" +
+                      (warning !== undefined ? " outline outline-2 -outline-offset-2 outline-warning" : "")
+                    }
                   >
                     {src ? (
                       <img src={src} alt="" loading="lazy" style={DETECTOR_COLOUR} className="h-full w-full object-cover" />
@@ -57,6 +63,7 @@ export function ExposureStrip({ groups, currentId, onPick, onToggleDrop }: Props
                     )}
                   </button>
                   {dropped && <span className="text-xs text-ink-soft line-through">dropped</span>}
+                  {warning !== undefined && <span aria-hidden="true" className="truncate text-xs text-warning">{warning}</span>}
                   <div className={(cur ? "visible" : "invisible group-hover:visible group-focus-within:visible") + " flex gap-1"}>
                     <button
                       type="button"

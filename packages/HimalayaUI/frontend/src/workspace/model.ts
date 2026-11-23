@@ -100,6 +100,10 @@ export function traceIsDark(trace: { I: readonly number[] } | undefined): boolea
 // physics: with the shutter closed the ion chamber's electrometer reads a negative
 // physics: offset, so I₀ at or below zero supports a beam-off reading but never
 // physics: decides it alone.
+export function beamOffWarning(e: Exposure): string | undefined {
+  return e.beam_off && e.status !== "rejected" ? "Beam likely off" : undefined;
+}
+
 export function i0BelowZero(frame: { incident_monitor: number | null } | undefined): boolean {
   const i0 = frame?.incident_monitor;
   return i0 != null && i0 <= 0;

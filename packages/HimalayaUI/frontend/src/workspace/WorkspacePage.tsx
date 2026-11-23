@@ -58,7 +58,7 @@ import { useCorpusPalette } from "../hooks/useCorpusPalette";
 import { allFrames, frameGroups, frameOf } from "./frameGroups";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
-import { firstUnreviewed, i0BelowZero, traceIsDark, imageUrl, nearestKeptExposure, nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
+import { beamOffWarning, firstUnreviewed, i0BelowZero, traceIsDark, imageUrl, nearestKeptExposure, nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
 import { samePeak, type PeakRef } from "../lib/peakRef";
 import { clampDomain, compareScale, COMPARES_FULL, MAX_COMPARES, scaledTrace, subtractTrace } from "./compare";
 import type { CompareScale } from "./compare";
@@ -1359,7 +1359,7 @@ export function WorkspacePage(): JSX.Element {
               </PlotCard>
             </div>
             <MainSection title="Images" hint={keptHint}>
-              <ExposureStrip groups={groups.map((g) => ({ key: g.sampleId, title: g.title, exposures: g.exposures }))} currentId={exposure?.id} onPick={setExposureId} onToggleDrop={toggleDrop} />
+              <ExposureStrip groups={groups.map((g) => ({ key: g.sampleId, title: g.title, exposures: g.exposures }))} currentId={exposure?.id} onPick={setExposureId} onToggleDrop={toggleDrop} warningOf={beamOffWarning} />
             </MainSection>
           </>
         ) : (
