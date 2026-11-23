@@ -25,7 +25,9 @@ const state = {
   experiments: [] as { id: number; name: string }[],
   allCorpus: [] as CorpusSample[],
   allCorpusEnabled: [] as boolean[],
-  setups: [] as { id: number; name: string; folder: string; included: boolean }[],
+  setups: [] as ({ id: number; name: string; folder: string; included: boolean } & Record<string, unknown>)[],
+  detectorSize: undefined as { width: number; height: number } | undefined,
+  sizeRequests: [] as string[],
   corpus: [] as CorpusSample[],
   exposures: [] as Exposure[],
   mateExposures: new Map<number, Exposure[]>(),
@@ -181,6 +183,10 @@ vi.mock("../../src/queries", () => ({
     mutate: (exposureId: number, indexId: number) => calls.push({ hook: "removeFrame", boundTo: exposureId, arg: indexId }),
   }),
   useBridges: () => ({ data: state.bridges }),
+  useDetectorSizes: (urls: readonly string[]) => {
+    state.sizeRequests.push(...urls);
+    return new Map(state.detectorSize ? urls.map((u) => [u, state.detectorSize!] as const) : []);
+  },
   useCompares: () => ({ data: useSyncExternalStore(subscribeCompares, () => compareStore.data) }),
   usePatchCompares: () => ({
     mutate: (arg: { sampleId: number; change: CompareChange }) => {
@@ -325,6 +331,8 @@ beforeEach(() => {
   state.allCorpus = [];
   state.allCorpusEnabled = [];
   state.setups = [];
+  state.detectorSize = undefined;
+  state.sizeRequests = [];
   state.corpus = [
     sample(10, "A1", { assignment_state: "indexed", phase: "Pn3m" }),
     sample(11, "A2"),
@@ -2814,6 +2822,41 @@ describe("WorkspacePage", () => {
     fireEvent.mouseLeave(screen.getByTestId("workspace-candidates"));
     expect(screen.getAllByTestId("workspace-indexing-fit").map((n) => n.textContent)).toEqual([expect.stringMatching(/^Pn3m/)]);
   });
+  it("hovering a candidate or drafting a custom index draws its predicted rings on every image, from that image's setup geometry", () => {
+    state.setups = [{ id: 1, name: "setup1", folder: "setup1", included: true,
+      beam_center_x: 421.409, beam_center_y: 836.946, pixel_size_um: 172, energy_kev: 9, flight_path_m: 1.8095, q_units: "A-1" }];
+    state.corpus = state.corpus.map((s) => (s.id === 10 ? { ...s, setup_id: 1 } : s));
+    state.exposures = [exposure(100, { image_path: "/d/100.tif", image_version: "v" }), exposure(101, { image_path: "/d/101.tif", image_version: "v" })];
+    state.detectorSize = { width: 981, height: 1043 };
+    renderAt("/experiments/1/workspace/10");
+    const strip = screen.getByTestId("workspace-exposures");
+    const ringSets = () => [...strip.querySelectorAll('[data-testid="detector-rings"]')];
+    expect(ringSets()).toHaveLength(0);
+    expect(new Set(state.sizeRequests)).toEqual(new Set(["/api/exposures/100/image?thumb=1&v=v", "/api/exposures/101/image?thumb=1&v=v"]));
+    const rows = within(screen.getByTestId("workspace-candidates")).getAllByRole("button");
+    fireEvent.mouseEnter(rows[1]!);
+    expect(ringSets()).toHaveLength(2);
+    const circles = [...ringSets()[0]!.querySelectorAll("circle")];
+    expect(circles).toHaveLength(2);
+    expect(Number(circles[0]!.getAttribute("r"))).toBeCloseTo(230.7, 0);
+    expect(circles[0]!.getAttribute("stroke")).toBe(phaseColor("Im3m"));
+    fireEvent.mouseLeave(screen.getByTestId("workspace-candidates"));
+    expect(ringSets()).toHaveLength(0);
+    fireEvent.keyDown(window, { key: "i" });
+    expect(ringSets().length).toBe(2);
+  });
+
+  it("draws no rings for a setup that lacks its geometry", () => {
+    state.setups = [{ id: 1, name: "setup1", folder: "setup1", included: true, beam_center_x: null }];
+    state.corpus = state.corpus.map((s) => (s.id === 10 ? { ...s, setup_id: 1 } : s));
+    state.exposures = [exposure(100, { image_path: "/d/100.tif", image_version: "v" })];
+    state.detectorSize = { width: 981, height: 1043 };
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.mouseEnter(within(screen.getByTestId("workspace-candidates")).getAllByRole("button")[1]!);
+    expect(screen.getByTestId("workspace-exposures").querySelectorAll('[data-testid="detector-rings"]')).toHaveLength(0);
+    expect(state.sizeRequests).toEqual([]);
+  });
+
   it("the plot keeps the called phase's reflections faded, and draws a hovered candidate's at full strength instead", () => {
     state.trace = makeTrace(1);
     state.peaks = [peak(7, 0.1, "auto")];
