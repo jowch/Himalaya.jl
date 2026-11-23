@@ -360,7 +360,7 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
   ];
   const current = p.views.options.find((o) => o.view === p.views.current)?.name;
   const plot: PaletteItem[] = [
-    { id: "view", label: "Plot view", hint: current, page: "view" },
+    { id: "view", label: "Plot view", hint: current, shortcut: "V", page: "view" },
     { id: "zoom", label: "Reset zoom", shortcut: `${p.modKey} 0`, run: p.resetZoom },
     { id: "refs", label: p.comparisons.shown ? "Hide comparisons" : "Show comparisons", run: p.comparisons.toggle },
     ...(p.difference ? [{ id: "difference", label: p.difference.on ? "Show the raw trace" : `Show minus ${p.difference.name}`, run: p.difference.toggle }] : []),
