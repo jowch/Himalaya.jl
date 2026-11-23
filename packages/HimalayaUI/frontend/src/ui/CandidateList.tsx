@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { IndexEntry } from "../api";
 import { PhaseChip } from "./PhaseChip";
 import type { CallRow } from "../workspace/bonnetGroups";
@@ -23,6 +23,7 @@ const look = (on: boolean) => (on ? "border-ink-soft bg-paper-sunk" : "border-tr
 
 export function CandidateList({ rows, assigned, disabled, formFactor, onToggle, onToggleGroup, onFormFactor, onHover }: Props): JSX.Element {
   const [pointerFocus, setPointerFocus] = useState(false);
+  const pointerDown = useRef(false);
   return (
     <div
       className="flex flex-col gap-1"
@@ -30,9 +31,19 @@ export function CandidateList({ rows, assigned, disabled, formFactor, onToggle, 
       aria-label="Phase choices"
       data-call-choices=""
       data-pointer-focus={pointerFocus ? "" : undefined}
-      onPointerDown={() => setPointerFocus(true)}
-      onKeyDown={(e) => {
-        if (e.key === "Tab") setPointerFocus(false);
+      onPointerDown={() => {
+        pointerDown.current = true;
+        setPointerFocus(true);
+      }}
+      onPointerUp={() => {
+        pointerDown.current = false;
+      }}
+      onPointerCancel={() => {
+        pointerDown.current = false;
+      }}
+      onFocus={() => {
+        setPointerFocus(pointerDown.current);
+        pointerDown.current = false;
       }}
       onBlur={(e) => {
         if (e.currentTarget.contains(e.relatedTarget)) return;

@@ -87,3 +87,14 @@ test("a phase choice reached with Tab shows the ring", async ({ page }) => {
   await page.keyboard.press("Tab");
   expect(await ring(page)).toMatchObject({ text: expect.stringMatching(/Pn3m/), outline: "solid" });
 });
+
+test("a mouse-focused choice replaced by opening another sample does not hide the next Tab ring", async ({ page }) => {
+  await page.goto("/experiments/17/workspace/40");
+  const choices = page.getByRole("group", { name: "Phase choices" });
+  await choices.getByRole("button", { name: /Im3m/ }).click();
+  await page.keyboard.press("ArrowDown");
+  await expect(page).toHaveURL(/\/workspace\/41$/);
+  await expect(choices.getByRole("button", { name: /Pn3m/ })).toBeVisible();
+  await page.keyboard.press("Tab");
+  expect(await ring(page)).toMatchObject({ text: expect.stringMatching(/Pn3m/), outline: "solid" });
+});
