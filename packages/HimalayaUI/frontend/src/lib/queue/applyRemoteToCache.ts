@@ -1,4 +1,5 @@
 import { refreshPeaks } from "./refreshPeaks";
+import { refetchListsWithoutCombined } from "./combinedLists";
 import type { QueryClient } from "@tanstack/react-query";
 import type { SseEvent, CurationPostState, AssignmentPostState, SampleCallPostState } from "./types";
 import { writeSampleCall, invalidateOtherFrameAssignments, invalidateSampleCalls } from "./sampleCall";
@@ -258,6 +259,7 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
           ? list.map((e) => (e.id === id ? { ...e, status } : e))
           : list,
       );
+      refetchListsWithoutCombined(qc, id);
       qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
       break;
     }

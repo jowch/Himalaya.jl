@@ -1,3 +1,4 @@
+import { refetchListsWithoutCombined } from "../combinedLists";
 import type { QueryClient } from "@tanstack/react-query";
 import * as api from "../../../api";
 import type {
@@ -76,7 +77,8 @@ export const setExposureStatusMutator: Mutator<
     return { restore: restoreExposures };
   },
   request: (p) => api.setExposureStatus(p.exposureId, p.status, buildAuthOpts(p)),
-  onSuccess: (_p, _r, qc) => {
+  onSuccess: (p, _r, qc) => {
+    refetchListsWithoutCombined(qc, p.exposureId);
     qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
   },
 };

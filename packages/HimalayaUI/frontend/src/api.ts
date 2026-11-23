@@ -367,7 +367,7 @@ export interface Exposure {
   id: number;
   sample_id: number;
   filename: string | null;
-  kind: "file" | "averaged" | "background_subtracted";
+  kind: "file" | "combined" | "averaged" | "background_subtracted";
   status: "accepted" | "rejected" | null;
   image_path: string | null;
   /**
@@ -377,7 +377,8 @@ export interface Exposure {
    * cache key changes when the image content actually changes.
    */
   image_version: string;
-  sources: unknown[];
+  sources: { source_exposure_id: number; role: string }[];
+  included?: boolean;
   trace_hash: string | null;
   analysis_inputs_hash: string | null;
   exposure_time: number | null;

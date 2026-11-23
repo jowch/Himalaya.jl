@@ -1022,12 +1022,13 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     t0 = time()
 
     rows = sqlrows(DBInterface.execute(db,
-        "SELECT filename FROM exposures WHERE id = ?", [Int(exposure_id)]))
+        "SELECT filename, kind FROM exposures WHERE id = ?", [Int(exposure_id)]))
     isempty(rows) && error("exposure $exposure_id not found")
     filename      = rows[1].filename
+    combined      = is_combined_kind(rows[1].kind)
 
     integration_pattern = integration_pattern_for_exposure(db, exposure_id)
-    dat_path = joinpath(analysis_dir, replace(integration_pattern, "{name}" => filename))
+    dat_path = combined ? "" : joinpath(analysis_dir, replace(integration_pattern, "{name}" => filename))
 
     current_version = read_analysis_version(db, exposure_id) == ANALYSIS_VERSION ||
         (!force_detect && peak_reviewed(db, exposure_id))
@@ -1059,19 +1060,22 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
         end
     end
 
-    resolved = resolve_trace_path(analysis_dir, integration_pattern, String(filename))
-    resolved === nothing && error("dat file not found: $dat_path")
-    dat_path = resolved
+    if !combined
+        resolved = resolve_trace_path(analysis_dir, integration_pattern, String(filename))
+        resolved === nothing && error("dat file not found: $dat_path")
+        dat_path = resolved
+    end
 
     if new_trace_hash === nothing
-        new_trace_hash = hash_trace_file(dat_path)
+        new_trace_hash = combined ? combined_trace_hash(db, exposure_id) : hash_trace_file(dat_path)
+        new_trace_hash === nothing && error("fewer than $MIN_COMBINED_SOURCES images to combine")
         # #300: hash match alone (mirrors the #297 indexpeaks predicate) —
         # never-analyzed exposures can't match (stored is nothing).
         findpeaks_skipped = stored_trace_hash == new_trace_hash
     end
     force_detect && (findpeaks_skipped = false)
 
-    q, I, σ = load_dat(dat_path)
+    q, I, σ = combined ? load_combined_trace(db, exposure_id) : load_dat(dat_path)
     q_step = grid_step(q)
     fresh_peaks_result = findpeaks_skipped ? nothing : Himalaya.findpeaks(q, I, σ; method = :hybrid)
     production, model_peaks = fresh_peaks_result === nothing ? (nothing, nothing) :

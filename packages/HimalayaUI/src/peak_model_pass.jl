@@ -25,7 +25,7 @@ function peak_model_pass_ids(db::SQLite.DB, model_id::Integer)
     failed = lock(() -> copy(PEAK_MODEL_PASS.failed), PEAK_MODEL_PASS.lock)
     Int[Int(r.id) for r in sqlrows(DBInterface.execute(db, """
         SELECT id FROM exposures
-         WHERE reviewed_at IS NULL AND trace_hash IS NOT NULL AND filename IS NOT NULL
+         WHERE reviewed_at IS NULL AND trace_hash IS NOT NULL AND (filename IS NOT NULL OR kind = 'combined')
            AND analysis_error IS NULL AND analysis_version = ?
            AND peak_model_version IS NOT ?
          ORDER BY experiment_id DESC, id""", [ANALYSIS_VERSION, Int(model_id)]))

@@ -23,6 +23,12 @@ export interface CompareLine {
   emphasis: boolean;
 }
 
+export interface MemberLine {
+  id: number;
+  q: readonly number[];
+  I: readonly number[];
+}
+
 export interface DifferenceLine {
   q: readonly number[];
   d: readonly number[];
@@ -38,6 +44,7 @@ interface Props {
   peaks: readonly Peak[];
   combs: readonly CombLine[];
   compares?: readonly CompareLine[];
+  members?: readonly MemberLine[];
   xDomain?: [number, number] | null;
   view?: PlotView;
   onXDomain?: (d: [number, number] | null) => void;
@@ -99,6 +106,7 @@ export function WorkspacePlot({
   peaks,
   combs,
   compares = [],
+  members = [],
   xDomain = null,
   view = "log",
   onXDomain,
@@ -164,7 +172,8 @@ export function WorkspacePlot({
   const diffAxis = difference ? differenceAxis(view, lineQ, viewed, shownX, peaks.filter((p) => !p.excluded).map((p) => p.q)) : null;
   const I = diffAxis ? viewed.map(diffAxis.to) : viewed;
   const shownCompares = difference ? [] : compares.map((c) => ({ ...c, I: c.I.map((v, i) => viewIntensity(view, c.q[i]!, v)) }));
-  const yDomain = diffAxis ? diffAxis.domain : fitYDomain({ q: trace.q, I }, shownCompares, shownX, yType);
+  const shownMembers = difference ? [] : members.map((m) => ({ ...m, I: m.I.map((v, i) => viewIntensity(view, m.q[i]!, v)) }));
+  const yDomain = diffAxis ? diffAxis.domain : fitYDomain({ q: trace.q, I }, [...shownCompares, ...shownMembers], shownX, yType);
   const yLabel = viewLabel(view);
 
   const lowX = Math.min(...shownX);
@@ -255,6 +264,11 @@ export function WorkspacePlot({
                     strokeWidth={c.emphasis ? 1.6 : 1.1}
                     strokeDasharray={COMPARE_DASH}
                   />
+                ))}
+              </g>
+              <g data-testid="workspace-members" stroke="var(--color-ink-soft)" strokeOpacity={0.45} strokeWidth={1} fill="none">
+                {shownMembers.map((m) => (
+                  <path key={m.id} data-member={m.id} d={linePath(m.q, m.I, x, y)} />
                 ))}
               </g>
               {difference && (

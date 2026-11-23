@@ -31,6 +31,7 @@ const MIGRATION_DROP_SCAN_SIGNATURE = "drop_scan_signature_v1"
 const MIGRATION_EXPOSURES_BEAM_MONITORS = "exposures_beam_monitors_v1"
 const MIGRATION_EXPOSURES_PIPE_LENGTH = "exposures_pipe_length_v1"
 const MIGRATION_EXPOSURES_Q_STEP = "exposures_q_step_v1"
+const MIGRATION_EXPOSURES_COMBINE_EXCLUDED = "exposures_combine_excluded_v1"
 
 const MIGRATION_EXPOSURES_INGEST_STATE = "exposures_ingest_state_v1"
 
@@ -156,7 +157,8 @@ CREATE TABLE IF NOT EXISTS exposures (
     analysis_trace_stat  TEXT,
     setup_id             INTEGER REFERENCES setups(id),
     reviewed_at          TEXT,
-    peak_model_version   INTEGER
+    peak_model_version   INTEGER,
+    combine_excluded     INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS exposure_sources (
@@ -545,6 +547,17 @@ function migrate_schema!(db::SQLite.DB)
     migrate_exposures_q_step!(db)
     migrate_peak_provenance!(db)
     migrate_peak_models!(db)
+    migrate_exposures_combine_excluded!(db)
+end
+
+function migrate_exposures_combine_excluded!(db::SQLite.DB)
+    _migrated(db, MIGRATION_EXPOSURES_COMBINE_EXCLUDED) && return nothing
+    SQLite.transaction(db) do
+        "combine_excluded" in cols_of(db, "exposures") ||
+            DBInterface.execute(db, "ALTER TABLE exposures ADD COLUMN combine_excluded INTEGER NOT NULL DEFAULT 0")
+        _record_migration!(db, MIGRATION_EXPOSURES_COMBINE_EXCLUDED)
+    end
+    nothing
 end
 
 function migrate_label_colors!(db::SQLite.DB)

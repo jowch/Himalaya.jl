@@ -37,6 +37,8 @@ function register_exposures_routes!()
             delete!(d, :q_step)
             delete!(d, :reviewed_at)
             delete!(d, :peak_model_version)
+            d[:included] = coalesce(e.combine_excluded, 0) == 0
+            delete!(d, :combine_excluded)
             d[:sources]       = rows_to_json(srcs)
             d[:image_version] = image_version_token(e.image_path)
             merge!(d, prp_details(e.prp_path))
@@ -131,12 +133,15 @@ function register_exposures_routes!()
         end
 
         rows = sqlrows(DBInterface.execute(db,
-            "SELECT id FROM exposures WHERE id = ?", [id]))
+            "SELECT id, sample_id, kind FROM exposures WHERE id = ?", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
             JSON3.write(Dict(:error => "image not found")))
+        is_combined_kind(rows[1].kind) && return HTTP.Response(422,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "the combined image can't be dropped")))
 
-        return with_idempotency(db, req) do
+        resp = with_idempotency(db, req) do
             DBInterface.execute(db,
                 "UPDATE exposures SET status = ? WHERE id = ?", [status, id])
 
@@ -149,6 +154,40 @@ function register_exposures_routes!()
             HTTP.Response(200, ["Content-Type" => "application/json"],
                 JSON3.write(Dict(:id => id, :status => status)))
         end
+        _refresh_combined_after!(db, resp, rows[1].sample_id)
+        resp
+    end
+
+    @patch "/api/exposures/{id}/included" function(req::HTTP.Request, id::Int)
+        db   = current_db()
+        body = json(req)
+        included = get(body, :included, nothing)
+        included isa Bool || return HTTP.Response(422,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "included must be true or false")))
+
+        rows = sqlrows(DBInterface.execute(db,
+            "SELECT id, sample_id, kind FROM exposures WHERE id = ?", [id]))
+        isempty(rows) && return HTTP.Response(404,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "image not found")))
+        is_combined_kind(rows[1].kind) && return HTTP.Response(422,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "the combined image is not one of its own sources")))
+
+        resp = with_idempotency(db, req) do
+            DBInterface.execute(db,
+                "UPDATE exposures SET combine_excluded = ? WHERE id = ?", [included ? 0 : 1, id])
+            result = apply_event!(InTransaction(), db, req;
+                kind = "set_exposure_included",
+                entity_type = "exposure", entity_id = id,
+                payload = Dict(:included => included))
+            _enqueue_broadcast_from_result!(result, "set_exposure_included", "exposure", id)
+            HTTP.Response(200, ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:id => id, :included => included)))
+        end
+        _refresh_combined_after!(db, resp, rows[1].sample_id)
+        resp
     end
 
     @post "/api/exposures/{id}/analyze" function(req::HTTP.Request, id::Int)
@@ -246,4 +285,10 @@ function register_exposures_routes!()
                 )))
         end
     end
+end
+
+function _refresh_combined_after!(db::SQLite.DB, resp::HTTP.Response, sample_id)
+    (resp.status == 200 && !ismissing(sample_id)) || return nothing
+    refresh_combined!(db, Int(sample_id))
+    nothing
 end

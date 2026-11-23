@@ -154,6 +154,7 @@ export async function readWorkspace(page, cfg, experimentId, samples, { reload =
     let rail = null;
     let plot = null;
     let notice = null;
+    let members = [];
     if (await row.count()) {
       const how = openSampleBy(page.url(), experimentId, s.id);
       if (how.reopen) {
@@ -170,11 +171,13 @@ export async function readWorkspace(page, cfg, experimentId, samples, { reload =
         kept = await workspaceKept(page);
       }
       frame = await currentWorkspaceFrame(page, s.frameOrder);
+      members = await page.locator("[data-testid='workspace-members'] [data-member]").evaluateAll((els) => els.map((e) => Number(e.getAttribute("data-member"))));
+      if (members.length) frame = "combined";
       rail = await workspaceRail(page);
       plot = await plotMessage(page);
       notice = await textOrNull(page, "[data-testid='workspace-ingest-status']");
     }
-    out.set(s.id, { workspace_text: texts.get(s.id) ?? null, workspace: frame, workspace_kept: kept, workspace_rail: rail, workspace_reused: start.reuse, workspace_plot: plot, workspace_notice: notice });
+    out.set(s.id, { workspace_text: texts.get(s.id) ?? null, workspace: frame, workspace_kept: kept, workspace_rail: rail, workspace_reused: start.reuse, workspace_plot: plot, workspace_notice: notice, workspace_members: members });
   }
   return out;
 }

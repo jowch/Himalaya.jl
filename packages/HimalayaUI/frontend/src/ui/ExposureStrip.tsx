@@ -14,11 +14,18 @@ export interface ExposureStripGroup {
 interface Props {
   groups: readonly ExposureStripGroup[];
   currentId: number | undefined;
+  onlyId?: number | undefined;
+  canShowOnly?: boolean;
   onPick: (id: number) => void;
   onToggleDrop: (e: Exposure) => void;
+  onToggleOnly?: (id: number) => void;
 }
 
-export function ExposureStrip({ groups, currentId, onPick, onToggleDrop }: Props): JSX.Element {
+const ACTION = "flex-1 rounded-[4px] border py-0.5 text-xs ";
+const ACTION_OFF = "border-hair bg-paper text-ink hover:border-hair-strong";
+const ACTION_ON = "border-ink bg-ink text-paper";
+
+export function ExposureStrip({ groups, currentId, onlyId, canShowOnly = false, onPick, onToggleDrop, onToggleOnly }: Props): JSX.Element {
   return (
     <div className="flex flex-col gap-1.5" data-testid="workspace-exposures">
       {groups.map((g, gi) => (
@@ -61,10 +68,20 @@ export function ExposureStrip({ groups, currentId, onPick, onToggleDrop }: Props
                     <button
                       type="button"
                       onClick={() => onToggleDrop(e)}
-                      className="flex-1 rounded-[4px] border border-hair bg-paper py-0.5 text-xs text-ink hover:border-hair-strong"
+                      className={ACTION + ACTION_OFF}
                     >
                       {dropped ? "Restore" : "Drop"}
                     </button>
+                    {canShowOnly && onToggleOnly && (
+                      <button
+                        type="button"
+                        aria-pressed={e.id === onlyId}
+                        onClick={() => onToggleOnly(e.id)}
+                        className={ACTION + (e.id === onlyId ? ACTION_ON : ACTION_OFF)}
+                      >
+                        Show only
+                      </button>
+                    )}
                   </div>
                 </li>
               );

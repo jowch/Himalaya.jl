@@ -32,7 +32,9 @@ function register_samples_routes!()
             ph   = join(fill("?", length(sids)), ",")
             grouped_exps = Dict{Int, Vector{NamedTuple}}()
             for e in sqlrows(DBInterface.execute(db,
-                    "SELECT id, sample_id, status FROM exposures
+                    "SELECT id, sample_id, status, kind,
+                            (SELECT COUNT(*) FROM exposure_sources s WHERE s.averaged_exposure_id = exposures.id) AS sources
+                       FROM exposures
                      WHERE sample_id IN ($ph) ORDER BY sample_id ASC, id ASC", sids))
                 push!(get!(grouped_exps, Int(e.sample_id), NamedTuple[]), e)
             end

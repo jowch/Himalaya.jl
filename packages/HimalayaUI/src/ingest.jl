@@ -189,6 +189,10 @@ function _scan_setup!(db::SQLite.DB, experiment_id::Int, setup;
             end
         end
         on_progress === nothing || on_progress(n_new, n_new, "analyzing")
+        for r in sqlrows(DBInterface.execute(db,
+                "SELECT id FROM samples WHERE setup_id = ? ORDER BY id", [setup_id]))
+            refresh_combined!(db, Int(r.id))
+        end
     end
 
     return (

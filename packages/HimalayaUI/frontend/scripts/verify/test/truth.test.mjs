@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bridgeCallDrift, bridgeLabelDrift, compareTruth, normalizeCall, railMismatch, shownStatus } from "../truth.mjs";
+import { bridgeCallDrift, bridgeLabelDrift, combinedMembers, compareTruth, normalizeCall, railMismatch, shownStatus } from "../truth.mjs";
 
 const TRUTH = [
   { sample: "MO_H2O", bases: "MO_H2O_S1 MO_H2O_S2", phases: "Pn3m", auto: "Pn3m", drop: "", note: "" },
@@ -13,8 +13,16 @@ function frame(filename, autoPhases, extra = {}) {
   return { id: Number(filename.at(-1)), filename, status: null, autoPhases, assignment: { state: "indexed", phases: [] }, ...extra };
 }
 
-function sample(id, name, frames, shown = {}) {
-  return { id, name, frames, shown: { ...NOT_INDEXED, representative_id: frames.at(-1).id, ...shown } };
+function combinedOf(id, frames) {
+  const sources = combinedMembers(frames);
+  if (!sources.length) return null;
+  const autoPhases = sources.find((f) => f.autoPhases.length)?.autoPhases ?? [];
+  return { id: 100 + id, filename: "combined", sources, autoPhases, assignment: { state: "indexed", phases: [] } };
+}
+
+function sample(id, name, frames, shown = {}, combined = combinedOf(id, frames)) {
+  const rep = combined ? combined.id : frames.at(-1).id;
+  return { id, name, frames, combined, shown: { ...NOT_INDEXED, representative_id: rep, ...shown } };
 }
 
 function app(overrides = {}) {
@@ -201,7 +209,7 @@ test("representative_kept: the corpus status describes a dropped frame while a k
 
 function withViews(samples, views, workspaceText = "Unreviewed", workspaceKept = {}, rails = {}) {
   return samples.map((s) => {
-    const last = s.frames.at(-1).filename;
+    const last = s.combined ? "combined" : s.frames.at(-1).filename;
     return {
       ...s,
       views: views[s.id] ?? { workspace: last },
@@ -235,7 +243,7 @@ test("views_agree compares the API status frame with the frame the workspace ope
   const split = compareTruth(TRUTH, withViews(app(), { 1: { workspace: "MO_H2O_S1" } }));
   assert.equal(split.invariants.views_agree.ok, false);
   assert.deepEqual(split.invariants.views_agree.violations, [
-    { sample: "MO_H2O", corpus_api: "MO_H2O_S2", workspace: "MO_H2O_S1" },
+    { sample: "MO_H2O", corpus_api: "combined", workspace: "MO_H2O_S1" },
   ]);
   assert.deepEqual(split.samples[0].views, { workspace: "MO_H2O_S1" });
 });
@@ -369,4 +377,69 @@ test("bridged_calls_match is unchecked without a bridge and fails on a sample wh
   drifted[0].callDrift = [{ mate: "B", mine: { state: "indexed", phases: ["Pn3m"] }, theirs: { state: "form_factor", phases: [] } }];
   const r = compareTruth(TRUTH, drifted);
   assert.deepEqual(r.summary.invariants_failed, ["bridged_calls_match"]);
+});
+
+test("plot_shows_combined: two kept images need a combined image the status describes", () => {
+  const ok = compareTruth(TRUTH, app());
+  assert.equal(ok.invariants.plot_shows_combined.ok, true);
+  assert.equal(ok.invariants.plot_shows_combined.checked, true);
+
+  const h2o = [frame("MO_H2O_S1", ["Pn3m"]), frame("MO_H2O_S2", ["Pn3m"])];
+  const missing = compareTruth(TRUTH, [sample(1, "MO_H2O_S1 (S01P01)", h2o, {}, null), app()[1]]);
+  assert.deepEqual(missing.invariants.plot_shows_combined.violations, [
+    { sample: "MO_H2O", expected: "MO_H2O_S1 MO_H2O_S2", combined: null },
+  ]);
+
+  const notShown = compareTruth(TRUTH, app({ h2oShown: { representative_id: 2 } }));
+  assert.deepEqual(notShown.invariants.plot_shows_combined.violations, [
+    { sample: "MO_H2O", expected: "the sample status describes the combined curve", representative: "MO_H2O_S2" },
+  ]);
+
+  const stale = [frame("MO_H2O_S1", ["Pn3m"]), frame("MO_H2O_S2", ["Pn3m"], dropped), frame("MO_H2O_S3", ["Pn3m"])];
+  const staleApp = app({ h2o: stale });
+  staleApp[0].combined = { ...staleApp[0].combined, sources: stale };
+  const r = compareTruth([{ ...TRUTH[0], bases: "MO_H2O_S1 MO_H2O_S2 MO_H2O_S3" }, TRUTH[1]], staleApp);
+  assert.deepEqual(r.invariants.plot_shows_combined.violations, [
+    { sample: "MO_H2O", expected: "MO_H2O_S1 MO_H2O_S3", combined: "MO_H2O_S1 MO_H2O_S2 MO_H2O_S3" },
+  ]);
+});
+
+test("plot_shows_combined: a left-out or held image is not combined, and one image left means one curve", () => {
+  const out = [frame("MO_H2O_S1", ["Pn3m"]), frame("MO_H2O_S2", ["Pn3m"], { included: false })];
+  const r = compareTruth(TRUTH, app({ h2o: out }));
+  assert.equal(r.samples[0].shown.frame, "MO_H2O_S2");
+  assert.equal(r.invariants.plot_shows_combined.ok, true);
+  assert.equal(app({ h2o: out })[0].combined, null);
+});
+
+test("plot_shows_combined: with --ui the workspace draws one faint line per combined image", () => {
+  const drawn = withViews(app(), {});
+  drawn[0].workspaceMembers = [1, 2];
+  drawn[1].workspaceMembers = [];
+  assert.equal(compareTruth(TRUTH, drawn).invariants.plot_shows_combined.ok, true);
+
+  const single = withViews(app(), {});
+  single[0].workspaceMembers = [];
+  single[1].workspaceMembers = [];
+  assert.deepEqual(compareTruth(TRUTH, single).invariants.plot_shows_combined.violations, [
+    { sample: "MO_H2O", expected_plot: "faint lines for MO_H2O_S1 MO_H2O_S2 under their mean", drawn: [] },
+  ]);
+});
+
+test("the combined curve's auto call may add a TRUTH phase but must keep the auto call", () => {
+  const peg = [frame("MO_PEG5_S3", ["Im3m"]), frame("MO_PEG5_S4", ["Im3m"])];
+  const truth = [TRUTH[0], { ...TRUTH[1], bases: "MO_PEG5_S3 MO_PEG5_S4" }];
+  const better = app({ peg });
+  better[1].combined = { ...better[1].combined, autoPhases: ["Im3m", "Pn3m"] };
+  assert.equal(compareTruth(truth, better).ok, true);
+
+  const lost = app({ peg });
+  lost[1].combined = { ...lost[1].combined, autoPhases: [] };
+  const r = compareTruth(truth, lost);
+  assert.equal(r.ok, false);
+  assert.match(r.samples[1].problems[0], /combined=none/);
+
+  const extra = app({ peg });
+  extra[1].combined = { ...extra[1].combined, autoPhases: ["Im3m", "Ia3d"] };
+  assert.equal(compareTruth(truth, extra).ok, false);
 });
