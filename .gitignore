@@ -89,4 +89,5 @@ LocalPreferences.toml
 # Peak classifier: trained models and feature dumps are lab data. Keep them out of the repo.
 tools/peak-classifier/models/
 tools/peak-classifier/features/
+tools/peak-classifier/evaluations/
 *.pcmodel

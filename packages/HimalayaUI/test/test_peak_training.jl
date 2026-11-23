@@ -185,3 +185,25 @@ end
         DBInterface.close!(ro)
     end
 end
+
+@testset "peak_eval keeps per-exposure phase rows alongside the summary" begin
+    mktempdir() do dir
+        b = _pt_db(dir)
+        DBInterface.close!(b.db)
+        ro = HimalayaUI.open_readonly_db(b.path)
+        exps = HimalayaUI.labeled_exposures(ro; include_unlabelled = true, io = devnull)
+        ctx = HimalayaUI.eval_context(ro, exps)
+        @test length(ctx.label_ids) == 36 && length(ctx.targets) == 36
+        picks = [HimalayaUI.Himalaya.findpeaks(e.q, e.I, e.σ; method = :hybrid).indices for e in exps]
+        ev = HimalayaUI.peak_eval(exps, picks; ctx.targets, ctx.label_ids)
+        @test isequal(ev.summary, HimalayaUI.peak_summary(exps, picks; ctx.targets, ctx.label_ids))
+        @test length(ev.phase_rows) == ev.summary.phase[2] == 36
+        @test count(r -> r.ok, ev.phase_rows) == ev.summary.phase[1]
+        @test all(r -> r.phase == "Lamellar", ev.phase_rows)
+        @test Set(r.id for r in ev.phase_rows) == Set(b.eids)
+        @test ev.peak_count == sum(length, picks) && ev.ff_peak_count == 0
+        none = HimalayaUI.peak_eval(exps, [Int[] for _ in exps]; ctx.targets, ctx.label_ids)
+        @test none.summary.phase == (0, 36) && all(r -> !r.ok, none.phase_rows)
+        DBInterface.close!(ro)
+    end
+end

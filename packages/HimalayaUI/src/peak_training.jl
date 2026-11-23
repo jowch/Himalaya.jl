@@ -66,6 +66,13 @@ function top_call_matches(q::AbstractVector, sharpness::AbstractVector, confirme
     any(p == name && abs(Himalaya.basis(top) / b - 1) < PHASE_BASIS_TOL for (p, b) in confirmed)
 end
 
+function eval_context(db::SQLite.DB, exps; phase_auto::Symbol = :user_events)
+    shown = no_model_shown_ids(db)
+    label_ids = intersect(Set(e.id for e in exps if e.labelled), shown)
+    targets = confirmed_calls(db, [e.id for e in exps if e.labelled && e.id in shown]; auto = phase_auto)
+    (; label_ids, targets)
+end
+
 function confirmed_calls(db::SQLite.DB, exposure_ids; auto::Symbol = :user_events)
     auto in (:user_events, :all) || throw(ArgumentError("auto must be :user_events or :all"))
     out = Dict{Int, Vector{Tuple{String, Float64}}}()
@@ -107,8 +114,13 @@ function _near(x, set, step)
     any(p -> abs(x - p) <= tol, set)
 end
 
-function peak_summary(exps, picks; targets = Dict{Int, Vector{Tuple{String, Float64}}}(),
-                      label_ids = Set(e.id for e in exps if e.labelled))
+function peak_summary(exps, picks; kwargs...)
+    peak_eval(exps, picks; kwargs...).summary
+end
+
+function peak_eval(exps, picks; targets = Dict{Int, Vector{Tuple{String, Float64}}}(),
+                   label_ids = Set(e.id for e in exps if e.labelled))
+    phase_rows = NamedTuple{(:id, :phase, :ok), Tuple{Int, String, Bool}}[]
     adds_hit = adds_n = band = excl_hit = excl_n = 0
     phase_ok = phase_n = 0
     ff_n = 0; ff_sum = 0
@@ -132,14 +144,16 @@ function peak_summary(exps, picks; targets = Dict{Int, Vector{Tuple{String, Floa
         calls = get(targets, e.id, nothing)
         if calls !== nothing
             keep = [i for i in pk if !_near(e.q[i], e.excluded, step)]
-            phase_n += 1
-            phase_ok += top_call_matches(e.q[keep], _sharpness_at(Himalaya.sharpness(e.I), keep), calls)
+            ok = top_call_matches(e.q[keep], _sharpness_at(Himalaya.sharpness(e.I), keep), calls)
+            phase_n += 1; phase_ok += ok
+            push!(phase_rows, (id = e.id, phase = first(calls)[1], ok = ok))
         end
     end
-    (peaks = isempty(exps) ? NaN : sum(length, picks) / length(exps),
-     ff_peaks = ff_n == 0 ? NaN : ff_sum / ff_n,
-     phase = (phase_ok, phase_n), adds = (adds_hit, adds_n), excluded = (excl_hit, excl_n),
-     adds_in_band = band, exposures = length(exps), form_factor = ff_n)
+    summary = (peaks = isempty(exps) ? NaN : sum(length, picks) / length(exps),
+               ff_peaks = ff_n == 0 ? NaN : ff_sum / ff_n,
+               phase = (phase_ok, phase_n), adds = (adds_hit, adds_n), excluded = (excl_hit, excl_n),
+               adds_in_band = band, exposures = length(exps), form_factor = ff_n)
+    (; summary, phase_rows, peak_count = sum(length, picks; init = 0), ff_peak_count = ff_sum)
 end
 
 function _json_safe(x)
@@ -197,9 +211,7 @@ function run_peak_training(db::SQLite.DB; recipe::HimalayaPeakModel.Recipe = Him
     for (r, k) in enumerate(ds.exposure); push!(rows_of[k], r); end
     picks_at(thr) = [ds.cand[k][HimalayaPeakModel.select_peaks(ds.cand[k], oof[rows_of[k]], thr, recipe.nms)]
                      for k in eachindex(exps)]
-    shown = no_model_shown_ids(db)
-    label_ids = intersect(Set(e.id for e in exps if e.labelled), shown)
-    targets = confirmed_calls(db, [e.id for e in exps if e.labelled && e.id in shown]; auto = phase_auto)
+    (; label_ids, targets) = eval_context(db, exps; phase_auto)
     hybrid = peak_summary(exps, ds.hybrid; targets, label_ids)
 
     sweep = [(threshold = t, summary = peak_summary(exps, picks_at(t); label_ids)) for t in THRESHOLD_GRID]
