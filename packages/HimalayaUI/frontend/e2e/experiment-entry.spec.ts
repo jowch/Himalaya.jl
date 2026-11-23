@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "./fixtures";
+import { expectDialogFitsAndScrolls } from "./dialogScroll";
 
 const EXPERIMENT_ID = 7;
 
@@ -183,3 +184,19 @@ test("a live rescan SSE frame shows its progress in the workspace", async ({ pag
   await page.goto("/experiments/7");
   await expect(page.getByTestId("workspace-ingest-status")).toHaveText("Analyzing 5 of 10");
 });
+
+for (const viewport of [{ width: 1366, height: 650 }, { width: 480, height: 800 }]) {
+  test(`a long problem list fits the window and scrolls to its last row at ${viewport.width}×${viewport.height}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    const exposures = Array.from({ length: 30 }, (_, i) => ({
+      exposure_id: 400 + i, filename: `sample_${i}`, sample_id: 101, sample_name: "Sample 2", problem: "failed", reason: "could not read the trace header",
+    }));
+    await mockExperiment(page, { id: 7, ingest_status: "complete", samples: 3, problems: { ingest_error: null, exposures } });
+    await page.goto("/experiments/7");
+    await page.getByTestId("workspace-notice").getByRole("button", { name: "Details" }).click();
+    const problems = page.getByTestId("workspace-problems");
+    await expect(problems.getByTestId("problem-row")).toHaveCount(30);
+    expect(await problems.getByTestId("overlay-body").evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+    await expectDialogFitsAndScrolls(page, problems, problems.getByTestId("problem-row").last());
+  });
+}

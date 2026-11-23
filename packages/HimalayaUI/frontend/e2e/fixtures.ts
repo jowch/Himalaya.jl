@@ -25,4 +25,4 @@ export const test = base.extend<{ unmockedRequests: string[] }>({
 });
 
 export { expect };
-export type { Page, Route } from "@playwright/test";
+export type { Locator, Page, Route } from "@playwright/test";

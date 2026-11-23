@@ -62,9 +62,30 @@ describe("Overlay", () => {
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Last" }));
   });
 
-  it("focuses the panel when it holds nothing focusable", () => {
-    open({ empty: true });
-    expect(document.activeElement).toBe(screen.getByRole("dialog"));
+  it("focuses its body when it holds nothing focusable, so keys scroll it, and Tab keeps it there", () => {
+    const opener = open({ empty: true });
+    const body = screen.getByTestId("overlay-body");
+    expect(document.activeElement).toBe(body);
+    expect(body.tabIndex).toBe(0);
+    fireEvent.keyDown(body, { key: "Tab" });
+    expect(document.activeElement).toBe(body);
+    fireEvent.keyDown(body, { key: "Escape" });
+    expect(document.activeElement).toBe(opener);
+  });
+
+  it("keeps its body out of the Tab order when it holds something focusable", () => {
+    open();
+    expect(screen.getByTestId("overlay-body").tabIndex).toBe(-1);
+  });
+
+  it("with a heading, names the dialog by its visible title once and offers a Close button", () => {
+    const onClose = vi.fn();
+    render(<Overlay label="Things" heading onClose={onClose}><p>x</p></Overlay>);
+    const dialog = screen.getByRole("dialog", { name: "Things" });
+    expect(dialog.getAttribute("aria-label")).toBeNull();
+    expect(screen.getAllByText("Things")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it("closes on a press on the backdrop but not on one inside the panel", () => {
