@@ -44,7 +44,7 @@ import { helpKeyFromEmptyField, inDialog, isEditable, suppressGlobalKeys } from 
 import { useUndoHistory, type UndoEntry, type UndoStep } from "./undo";
 import {
   bridgeEntry, combinedEntry, settleCallEntry, customIndexEntry, dropEntry, excludeEntry, identify, labelEntry, noPhaseEntry, peakEntry,
-  experimentEntry, setupEntry, labelColorEntry, tickEntry, unbridgeEntry, untickEntry, compareEntry, type PhaseIdentity,
+  experimentEntry, setupEntry, labelColorEntry, tickEntry, unbridgeEntry, untickEntry, compareEntry, droppedByEdit, type PhaseIdentity,
 } from "./undoEntries";
 import { showToast } from "../lib/toast";
 import { useScanState } from "../hooks/useScanState";
@@ -447,13 +447,14 @@ export function WorkspacePage(): JSX.Element {
       if (!action || !exposure || sampleId === undefined) return;
       const eid = exposure.id;
       const q = (peaks.data ?? []).find((pk) => samePeak(pk, ref))?.q;
-      const call = callOnFrame(eid);
+      const before = callOnFrame(eid);
       if (action.kind === "remove") {
         if (ref.id < 0) return;
         removePeak.mutate(ref.id);
         if (q !== undefined) {
           history.record(peakEntry(ops, {
-            label: `removed a peak at q = ${q.toFixed(4)} on ${frameName(eid)}`, sampleId, exposureId: eid, q, added: false, call,
+            label: `removed a peak at q = ${q.toFixed(4)} on ${frameName(eid)}`, sampleId, exposureId: eid, q, added: false,
+            dropped: droppedByEdit(ops, before),
           }));
         }
         return;
@@ -462,7 +463,7 @@ export function WorkspacePage(): JSX.Element {
       if (q !== undefined) {
         history.record(excludeEntry(ops, {
           label: `${action.excluded ? "turned off" : "turned on"} a peak on ${frameName(eid)}`, sampleId, exposureId: eid, q,
-          excluded: action.excluded, call,
+          excluded: action.excluded, dropped: droppedByEdit(ops, before),
         }));
       }
     },
@@ -476,7 +477,7 @@ export function WorkspacePage(): JSX.Element {
       addPeak.mutate(q);
       history.record(peakEntry(ops, {
         label: `added a peak at q = ${q.toFixed(4)} on ${frameName(eid)}`, sampleId, exposureId: eid, q, added: true,
-        call: callOnFrame(eid),
+        dropped: droppedByEdit(ops, callOnFrame(eid)),
       }));
     },
     [exposure, sampleId, addPeak, history, ops, frameName, callOnFrame],

@@ -145,18 +145,38 @@ async function setManualPeak(ops: EditOps, exposureId: number, q: number, presen
   return 1;
 }
 
-async function thenRetick(ops: EditOps, sent: number, call: readonly PhaseIdentity[] | undefined): Promise<number> {
-  if (sent === 0 || !call?.length) return sent;
-  await ops.whenSaved();
-  return sent + (await setEach(ops, call, true));
+async function stillTicked(ops: EditOps, id: PhaseIdentity): Promise<boolean> {
+  const [indices, assignment] = await Promise.all([ops.read.indices(id.exposureId), ops.read.assignment(id.exposureId)]);
+  const members = new Set(assignment.members);
+  return matchIndex(indices, id.phase, id.basis, (ix) => ix.kind === id.kind && members.has(ix.id)) !== undefined;
 }
 
-type PeakEdit = Where & { exposureId: number; q: number; call?: readonly PhaseIdentity[] };
+export async function droppedByEdit(ops: EditOps, before: readonly PhaseIdentity[]): Promise<PhaseIdentity[]> {
+  if (before.length === 0) return [];
+  try {
+    await ops.whenSaved();
+    const out: PhaseIdentity[] = [];
+    for (const id of before) if (!(await stillTicked(ops, id))) out.push(id);
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+async function thenRetick(ops: EditOps, sent: number, dropped: Promise<readonly PhaseIdentity[]> | undefined): Promise<number> {
+  if (sent === 0 || !dropped) return sent;
+  const lost = await dropped;
+  if (lost.length === 0) return sent;
+  await ops.whenSaved();
+  return sent + (await setEach(ops, lost, true));
+}
+
+type PeakEdit = Where & { exposureId: number; q: number; dropped?: Promise<readonly PhaseIdentity[]> };
 
 export function peakEntry(ops: EditOps, at: PeakEdit & { added: boolean }): UndoEntry {
   return {
     ...at,
-    undo: async () => thenRetick(ops, await setManualPeak(ops, at.exposureId, at.q, !at.added), at.call),
+    undo: async () => thenRetick(ops, await setManualPeak(ops, at.exposureId, at.q, !at.added), at.dropped),
     redo: () => setManualPeak(ops, at.exposureId, at.q, at.added),
   };
 }
@@ -168,7 +188,7 @@ export function excludeEntry(ops: EditOps, at: PeakEdit & { excluded: boolean })
     ops.setPeakExcluded(at.exposureId, hit.id, excluded);
     return 1;
   };
-  return { ...at, undo: async () => thenRetick(ops, await set(!at.excluded), at.call), redo: () => set(at.excluded) };
+  return { ...at, undo: async () => thenRetick(ops, await set(!at.excluded), at.dropped), redo: () => set(at.excluded) };
 }
 
 export function customIndexEntry(

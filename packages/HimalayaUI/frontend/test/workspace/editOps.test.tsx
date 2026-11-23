@@ -279,6 +279,12 @@ describe("undo against the server", () => {
     expect(await dropped).toEqual([{ exposureId: 101, phase: "Pn3m", basis: 0.07, kind: "auto" }]);
   });
 
+  it("names no dropped phase when the server cannot be read after the edit, so undo re-ticks nothing", async () => {
+    mocked(api.listIndices).mockRejectedValueOnce(new Error("offline"));
+    const { result } = setup();
+    expect(await droppedByEdit(result.current.ops, [{ exposureId: 101, phase: "Im3m", basis: 0.0455, kind: "auto" }])).toEqual([]);
+  });
+
   it("undoing a peak edit leaves alone a phase the edit kept, even when another tab unticked it since", async () => {
     const { result } = setup();
     server.peaks = [auto(3, 0.0644, false)];
