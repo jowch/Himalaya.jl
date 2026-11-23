@@ -28,6 +28,11 @@ Environment=PATH=/home/jonathanchen/.julia/juliaup/bin:/usr/local/sbin:/usr/loca
 WorkingDirectory=/opt/Himalaya.jl
 ExecStart=/opt/Himalaya.jl/bin/himalaya serve
 
+# The server starts a peak-model training child process. Julia's atexit hooks do
+# not run on SIGTERM, so the child dies with the server only because systemd
+# stops the whole control group. Do not change this to process or mixed.
+KillMode=control-group
+
 Restart=on-failure
 RestartSec=5
 

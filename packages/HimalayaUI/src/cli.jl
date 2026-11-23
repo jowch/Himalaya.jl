@@ -232,6 +232,36 @@ function cli_merge(args; io::IO = stdout, db::Union{SQLite.DB,Nothing} = nothing
     plan
 end
 
+function parse_train_peak_model_args(args)
+    s = ArgParseSettings(prog = "himalaya train-peak-model")
+    @add_arg_table! s begin
+        "--db"
+            default = nothing
+        "--trees"
+            arg_type = Int
+            default  = 200
+        "--no-cache"
+            dest_name = "no_cache"
+            action = :store_true
+    end
+    parse_args(args, s; as_symbols = true)
+end
+
+function cli_train_peak_model(args; io::IO = stdout, log::IO = stderr)
+    p = parse_train_peak_model_args(args)
+    path = p[:db] === nothing ? default_db_path() : String(p[:db])
+    isfile(path) || error("no database at $path")
+    db = open_readonly_db(path)
+    try
+        result = run_peak_training(db; recipe = HimalayaPeakModel.default_recipe(n_trees = p[:trees]),
+            cache_dir = p[:no_cache] ? nothing : peak_feature_cache_dir(path), io = log)
+        JSON3.write(io, result)
+        println(io)
+    finally
+        close(db)
+    end
+end
+
 const _USAGE = """
 Usage: himalaya <command> [options]
 
@@ -241,6 +271,8 @@ Commands:
   serve    [--port N] [--host H]            Start the web server
   merge    <experiment>... [--name N] [--path P] [--apply]
                                             Merge per-setup experiments into one beamtime
+  train-peak-model [--db PATH] [--trees N] [--no-cache]
+                                            Train and evaluate a peak model read-only; prints one JSON object
 
 Ingestion is performed via the HTTP scan API (`POST /api/experiments/{id}/scan`),
 not the CLI. `-e <experiment>` accepts an id, name, or path; when omitted it
@@ -265,6 +297,8 @@ function main(args = copy(ARGS))
         cli_serve(args)
     elseif cmd == "merge"
         cli_merge(args)
+    elseif cmd == "train-peak-model"
+        cli_train_peak_model(args)
     else
         println("Unknown command: $cmd")
         println()

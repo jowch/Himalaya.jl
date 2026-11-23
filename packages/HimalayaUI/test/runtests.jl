@@ -18,12 +18,12 @@ const GROUPS = [
     ("db",       ["test_http.jl","test_config.jl","test_db.jl",
                   "test_migrate_speculative_durability.jl","test_migrate_hex_sqrt11.jl",
                   "test_migrate_ratio_position_int.jl",
-                  "test_ingestion_schema.jl"]),
+                  "test_ingestion_schema.jl","test_peak_models.jl"]),
     ("pipeline", ["test_http.jl","test_datfile.jl","test_hash.jl","test_hash_peak_set_memoization.jl",
                   "test_pipeline.jl","test_auto_group_peak_id_claiming.jl",
                   "test_effective_peaks_sharpness_passthrough.jl","test_ingestion_core.jl",
                   "test_ingest_reconcile.jl","test_setups.jl","test_beamtime.jl","test_routes_setups.jl","test_json.jl","test_image.jl","test_demo_data.jl",
-                  "test_peak_labels.jl"]),
+                  "test_peak_labels.jl","test_peak_training.jl"]),
     ("routes",   ["test_http.jl","test_routes_experiments.jl","test_experiments_patch.jl",
                   "test_routes_samples.jl","test_routes_exposures.jl","test_routes_image.jl",
                   "test_routes_peaks.jl","test_peak_matching.jl","test_routes_trace.jl","test_routes_export.jl",
@@ -40,7 +40,7 @@ const GROUPS = [
                   "test_idempotency_sse_suppression.jl","test_peak_provenance.jl"]),
     ("wire",     ["test_http.jl","test_routes_health.jl","test_routes_status.jl",
                   "test_sse.jl","test_routes_sse_broadcast.jl","test_spa_fallback.jl",
-                  "test_precompile_workload.jl"]),
+                  "test_precompile_workload.jl","test_peak_training_service.jl"]),
     ("migration", ["test_http.jl","test_migration_upgrade.jl"]),
 ]
 
@@ -52,13 +52,13 @@ GROUP == "All" || GROUP in first.(GROUPS) ||
 const ALL_ORDER = ["test_config.jl","test_db.jl",
                    "test_migrate_speculative_durability.jl","test_migrate_hex_sqrt11.jl",
                   "test_migrate_ratio_position_int.jl",
-                   "test_ingestion_schema.jl",
+                   "test_ingestion_schema.jl","test_peak_models.jl",
                    "test_datfile.jl","test_hash.jl",
                    "test_hash_peak_set_memoization.jl","test_pipeline.jl",
                    "test_auto_group_peak_id_claiming.jl",
                    "test_effective_peaks_sharpness_passthrough.jl","test_ingestion_core.jl",
                    "test_ingest_reconcile.jl","test_setups.jl","test_beamtime.jl","test_routes_setups.jl","test_fast_skip.jl",
-                   "test_json.jl","test_demo_data.jl","test_peak_labels.jl","test_http.jl","test_inproc_equivalence.jl",
+                   "test_json.jl","test_demo_data.jl","test_peak_labels.jl","test_peak_training.jl","test_http.jl","test_inproc_equivalence.jl",
                    "test_routes_health.jl","test_routes_users.jl","test_routes_experiments.jl",
                    "test_experiments_patch.jl",
                    "test_ingestion_scan_api.jl",
@@ -74,7 +74,7 @@ const ALL_ORDER = ["test_config.jl","test_db.jl",
                    "test_concurrent_writes.jl","test_db_connections.jl","test_idempotency_sse_suppression.jl",
                    "test_routes_bridges.jl","test_bridge_calls.jl","test_routes_compares.jl","test_routes_labels.jl","test_routes_label_colors.jl","test_label_suggestions.jl",
                    "test_routes_fs.jl",
-                   "test_peak_provenance.jl","test_spa_fallback.jl","test_precompile_workload.jl","test_migration_upgrade.jl"]
+                   "test_peak_provenance.jl","test_spa_fallback.jl","test_precompile_workload.jl","test_peak_training_service.jl","test_migration_upgrade.jl"]
 
 # Drift guard: the buckets and ALL_ORDER must cover the identical file set, so a
 # parallel / GROUP=<name> run can never silently skip (or double-run) a file

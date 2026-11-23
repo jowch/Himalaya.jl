@@ -28,7 +28,7 @@ function _latest_snapshot(db::SQLite.DB, exposure_id)
 end
 
 function labeled_exposures(db::SQLite.DB; group_by::Symbol = :experiment,
-                           include_form_factor::Bool = true, io::IO = stderr)
+                           include_form_factor::Bool = true, include_unlabelled::Bool = false, io::IO = stderr)
     group_by in (:experiment, :sample) || throw(ArgumentError("group_by must be :experiment or :sample"))
     _table_exists(db, "peak_reviews") ||
         error("the database has no review snapshots; open it once with the current HimalayaUI to migrate it")
@@ -41,7 +41,7 @@ function labeled_exposures(db::SQLite.DB; group_by::Symbol = :experiment,
                           WHERE sc.sample_id = e.sample_id), 0) AS ff
           FROM exposures e
          WHERE e.status IS NOT 'rejected' AND e.kind = 'file'
-           AND (labelled OR ($(include_form_factor ? 1 : 0) AND ff))
+           AND ($(include_unlabelled ? 1 : 0) OR labelled OR ($(include_form_factor ? 1 : 0) AND ff))
          ORDER BY e.id"""))
     for r in rows
         try
@@ -55,12 +55,13 @@ function labeled_exposures(db::SQLite.DB; group_by::Symbol = :experiment,
             aq = Float64[p.q for p in seen]
             fl = curation_flags(db, r.id, aq)
             left = .!fl.excluded .& .!fl.superseded
-            kept = [p.q for (p, ok) in zip(seen, left) if ok && p.found_by != "model"]
-            kept_model = [p.q for (p, ok) in zip(seen, left) if ok && p.found_by == "model"]
-            excl = Float64[x.q for x in sqlrows(DBInterface.execute(db,
-                "SELECT q FROM peak_curations WHERE exposure_id = ? AND kind = 'exclude' ORDER BY id", [r.id]))]
+            curated = r.labelled == 1 || r.ff == 1
+            kept = [p.q for (p, ok) in zip(seen, left) if curated && ok && p.found_by != "model"]
+            kept_model = [p.q for (p, ok) in zip(seen, left) if curated && ok && p.found_by == "model"]
+            excl = curated ? Float64[x.q for x in sqlrows(DBInterface.execute(db,
+                "SELECT q FROM peak_curations WHERE exposure_id = ? AND kind = 'exclude' ORDER BY id", [r.id]))] : Float64[]
             push!(out, HimalayaPeakModel.LabeledExposure(r.id, Int(key), q, I, σ,
-                Float64[a.q for a in fl.adds], kept, excl, r.labelled == 1, r.ff == 1, kept_model))
+                curated ? Float64[a.q for a in fl.adds] : Float64[], kept, excl, r.labelled == 1, r.ff == 1, kept_model))
         catch err
             err isa SkipExposure || rethrow()
             skips[err.reason] = get(skips, err.reason, 0) + 1

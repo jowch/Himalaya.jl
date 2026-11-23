@@ -308,3 +308,110 @@ end
     ds = build_dataset(synth_set(groups = 1:2))
     @test_throws ErrorException train(Recipe(DefaultFeatures(), LogisticLearner(lr = 1e300, steps = 50)), ds)
 end
+
+@testset "feature cache" begin
+    exps = synth_set(groups = 1:2)
+    mktempdir() do dir
+        key(e) = "trace$(e.id)"
+        cache = DiskFeatureCache(dir, feature_version(DefaultFeatures()), key)
+        ds = build_dataset(exps; cache)
+        files = readdir(dir)
+        @test length(files) == length(exps)
+        ds2 = build_dataset(exps; cache)
+        @test ds2.X == ds.X && ds2.cand == ds.cand && ds2.hybrid == ds.hybrid && ds2.label == ds.label
+        @test ds.X == Float64.(Float32.(ds.X))
+
+        path = HPM.cache_path(cache, exps[1])
+        idx, X, hyb = HPM.read_features(path, length(feature_names(DefaultFeatures())))
+        @test idx == ds.cand[1] && hyb == ds.hybrid[1] && X == ds.X[ds.exposure .== 1, :]
+        HPM.write_features(path, idx, X .+ 1, hyb)
+        @test build_dataset(exps; cache).X[ds.exposure .== 1, :] == Float64.(Float32.(X .+ 1))
+
+        write(path, read(path)[1:end - 3])
+        @test HPM.read_features(path, size(X, 2)) === nothing
+        @test build_dataset(exps; cache).X == ds.X
+        @test HPM.read_features(path, size(X, 2) + 1) === nothing
+        write(path, "junk")
+        @test HPM.read_features(path, size(X, 2)) === nothing
+
+        other = DiskFeatureCache(dir, "another-version", key)
+        build_dataset(exps; cache = other)
+        @test length(readdir(dir)) == 2length(exps)
+        @test HPM.cache_path(other, exps[1]) != path
+
+        none = DiskFeatureCache(dir, cache.version, e -> nothing)
+        @test HPM.cache_path(none, exps[1]) === nothing
+        @test build_dataset(exps; cache = none).X == ds.X
+        @test length(readdir(dir)) == 2length(exps)
+
+        blocked = joinpath(dir, "not-a-dir"); write(blocked, "x")
+        @test build_dataset(exps; cache = DiskFeatureCache(joinpath(blocked, "sub"), "v", key)).X == ds.X
+
+        pruned = HPM.prune!(cache, Set(key(e) for e in exps[1:2]))
+        @test pruned == length(exps) - 2 + length(exps)
+        @test sort(readdir(dir)) == sort(vcat(basename.(HPM.cache_path.(Ref(cache), exps[1:2])), "not-a-dir"))
+    end
+end
+
+@testset "out-of-fold probabilities" begin
+    exps = synth_set(groups = 1:3)
+    recipe = default_recipe(n_trees = 20)
+    ds = build_dataset(exps; features = recipe.features)
+    oof = oof_proba(recipe, ds)
+    @test length(oof) == length(ds.label) && !any(isnan, oof)
+    r = cross_validate(exps, recipe; ds, oof, verbose = false)
+    r2 = cross_validate(exps, recipe; ds, verbose = false)
+    @test r.by_threshold == r2.by_threshold && r.oof == oof
+    @test_throws ErrorException oof_proba(recipe, build_dataset(synth_set(groups = 1:1)))
+end
+
+@testset "groups without labelled candidates are predicted by one model trained on everything" begin
+    exps = synth_set(groups = 1:3)
+    e = exps[1]
+    extra = [LabeledExposure(900 + g, 90 + g, e.q, e.I, e.σ, Float64[], Float64[], Float64[], false, false) for g in 1:3]
+    recipe = default_recipe(n_trees = 20)
+    ds = build_dataset([exps; extra]; features = recipe.features)
+    oof = oof_proba(recipe, ds)
+    rows = findall(>(90), ds.group)
+    @test !isempty(rows) && !any(isnan, oof)
+    @test oof[rows] == HPM.proba(train(recipe, ds), ds, rows)
+    @test oof[findall(<=(3), ds.group)] == oof_proba(recipe, build_dataset(exps; features = recipe.features))
+end
+
+@testset "prune tolerates an unwritable directory and removes stale temporary files" begin
+    exps = synth_set(groups = 1:2, per = 2)
+    key(e) = "trace$(e.id)"
+    mktempdir() do dir
+        cache = DiskFeatureCache(dir, "v", key)
+        build_dataset(exps; cache)
+        tmp = joinpath(dir, "trace1-v.f32.123.1.tmp"); write(tmp, "partial")
+        fresh = joinpath(dir, "trace2-v.f32.123.1.tmp"); write(fresh, "in progress")
+        run(`touch -d "2 hours ago" $tmp`)
+        write(joinpath(dir, "notes.txt"), "keep")
+        @test HPM.prune!(cache, Set(key(e) for e in exps)) == 1
+        @test "notes.txt" in readdir(dir) && basename(tmp) ∉ readdir(dir) && basename(fresh) in readdir(dir)
+        rm(fresh)
+
+        stale = DiskFeatureCache(dir, "older", key)
+        build_dataset(exps; cache = stale)
+        chmod(dir, 0o500)
+        try
+            @test HPM.prune!(cache, Set(key(e) for e in exps)) == 0
+        finally
+            chmod(dir, 0o700)
+        end
+        @test HPM.prune!(cache, Set(key(e) for e in exps)) == length(exps)
+    end
+end
+
+@testset "features are rounded to Float32 with or without a cache" begin
+    exps = synth_set(groups = 1:2, per = 2)
+    plain = build_dataset(exps)
+    rounded = build_dataset(exps; float32 = true)
+    @test rounded.X == Float64.(Float32.(plain.X)) && rounded.X != plain.X
+    mktempdir() do dir
+        cached = build_dataset(exps; cache = DiskFeatureCache(dir, "v", e -> "t$(e.id)"))
+        @test cached.X == rounded.X
+        @test build_dataset(exps; cache = DiskFeatureCache(dir, "v", e -> "t$(e.id)"), float32 = false).X == rounded.X
+    end
+end

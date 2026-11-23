@@ -543,6 +543,7 @@ function migrate_schema!(db::SQLite.DB)
     migrate_exposures_pipe_length!(db)
     migrate_exposures_q_step!(db)
     migrate_peak_provenance!(db)
+    migrate_peak_models!(db)
 end
 
 function migrate_label_colors!(db::SQLite.DB)
