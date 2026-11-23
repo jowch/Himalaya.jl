@@ -57,6 +57,18 @@ describe("useDetectorSizes", () => {
     }));
   });
 
+  it("reloads an image the browser cached before the server sent its size", async () => {
+    const seen: [string, RequestCache | undefined][] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      seen.push([url, init?.cache]);
+      const h = init?.cache === "reload" ? { "X-Image-Width": "981", "X-Image-Height": "1043" } : {};
+      return { ok: true, headers: new Headers(h), body: null };
+    }));
+    const { getDetectorSize } = await import("../../src/api");
+    expect(await getDetectorSize("/api/exposures/1/image?thumb=1")).toEqual({ width: 981, height: 1043 });
+    expect(seen.map((s) => s[1])).toEqual(["default", "reload"]);
+  });
+
   it("reads each image's raw detector size from its response headers, once per image", async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
@@ -65,6 +77,6 @@ describe("useDetectorSizes", () => {
     await waitFor(() => expect(result.current.get(urls[0]!)).toEqual({ width: 981, height: 1043 }));
     expect(result.current.has(urls[1]!)).toBe(false);
     rerender();
-    expect(fetched).toEqual(urls);
+    expect(fetched).toEqual([urls[0], urls[1], urls[1]]);
   });
 });

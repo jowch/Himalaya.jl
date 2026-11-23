@@ -2846,6 +2846,22 @@ describe("WorkspacePage", () => {
     expect(ringSets().length).toBe(2);
   });
 
+  it("Space opens the enlarged image while a custom index is open, with the draft's rings, and Esc there keeps the draft", () => {
+    state.setups = [{ id: 1, name: "setup1", folder: "setup1", included: true,
+      beam_center_x: 421.409, beam_center_y: 836.946, pixel_size_um: 172, energy_kev: 9, flight_path_m: 1.8095, q_units: "A-1" }];
+    state.corpus = state.corpus.map((s) => (s.id === 10 ? { ...s, setup_id: 1 } : s));
+    state.exposures = [exposure(100, { image_path: "/d/100.tif", image_version: "v" }), exposure(101, { image_path: "/d/101.tif", image_version: "v" })];
+    state.detectorSize = { width: 981, height: 1043 };
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "i" });
+    fireEvent.keyDown(window, { key: " " });
+    const big = screen.getByTestId("workspace-detector-big");
+    expect(big.querySelectorAll('[data-testid="detector-rings"] circle').length).toBeGreaterThan(0);
+    fireEvent.keyDown(big, { key: "Escape" });
+    expect(screen.queryByTestId("workspace-detector-big")).toBeNull();
+    expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
+  });
+
   it("draws no rings for a setup that lacks its geometry", () => {
     state.setups = [{ id: 1, name: "setup1", folder: "setup1", included: true, beam_center_x: null }];
     state.corpus = state.corpus.map((s) => (s.id === 10 ? { ...s, setup_id: 1 } : s));
