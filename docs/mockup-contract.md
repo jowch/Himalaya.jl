@@ -42,7 +42,7 @@ When the mock-up changes, extract its behaviours again from the code and update 
 |---|---|---|---|
 | img-arrows | ← → move between images | built | test/workspace/WorkspacePage.test.tsx › arrow keys step from this sample's last frame into the same sample's frames |
 | img-drop | X or the card's Drop button drops or restores the image | built | test/workspace/WorkspacePage.test.tsx › X drops the shown frame and shows the nearest kept frame, so a phase key calls there |
-| img-keep-one | Dropping the last kept image is refused ("Keep at least one exposure") | contradicted | PR 519: PATCH /api/exposures/:id/status (routes_exposures.jl) allows dropping the last image and the sample row says why; superseded once Jonathan confirms, or the code changes |
+| img-keep-one | Dropping the last kept image is refused ("Keep at least one exposure") | superseded | combine-drop-last in docs/decisions.md, 2026-11-23 |
 | img-kept-hint | The section header says "k of N kept" once one is dropped | built | test/workspace/WorkspacePage.test.tsx › a dropped card offers Restore and the header counts the kept frames |
 | img-dropped-card | A dropped card fades and says "dropped" | built | test/workspace/WorkspacePage.test.tsx › a dropped card offers Restore and the header counts the kept frames |
 | img-enlarge | Space enlarges the image; Space or Esc closes it | built | test/workspace/WorkspacePage.test.tsx › Space enlarges the shown frame's detector image, and Space or Esc closes it |

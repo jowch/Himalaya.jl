@@ -128,7 +128,10 @@ Every row also needs the date it was decided, as `YYYY-MM-DD`.
 |---|---|---|---|---|
 | combine-include-toggle | Each image has an include toggle; the combined trace is a time-weighted sum, or the median. | 2026-11-20 | superseded | combine-select, 2026-11-23 |
 | combine-select | What you select is what is analysed. Images are selected by a checkbox, Shift-click or ⌘-click; one image is that image, several are their monitor-normalised average with its own peaks, keyed by the set. Every kept image starts selected, with Select all and Select none. A plain click only views. The call stays with the sample. | 2026-11-23 | built | packages/HimalayaUI/test/test_combine.jl › refresh_selection! averages every selected image, one curve per set |
-| combine-keep-one | Dropping the last kept image is refused. | 2026-11-23 | contradicted | PR 519: PATCH /api/exposures/:id/status (routes_exposures.jl) allows dropping the last image and the sample row says why; waiting on Jonathan |
+| combine-keep-one | Dropping the last kept image is refused. | 2026-11-23 | superseded | combine-drop-last, 2026-11-23 |
+| combine-drop-last | The last kept image can be dropped. Nothing is analysed, and the sample row says why ("All dropped" or "None selected") instead of blocking the drop. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/workspace/SampleList.test.tsx › says on the row why nothing is analyzed |
+| combine-restore-unselected | A dropped image that is restored comes back unselected, unless nothing else is selected. Undo of a drop puts back the selection it had. | 2026-11-23 | built | packages/HimalayaUI/test/test_combine.jl › selection, drop and restore routes |
+| combine-beam-off-deselected | Beam-off images start deselected, so they are averaged in only when ticked. | 2026-11-23 | built | packages/HimalayaUI/test/test_ingest_reconcile.jl › a beam-off image starts left out of the selection, at ingest and when its trace lands late |
 | combine-no-cross-setup | Images never combine across setups. | 2026-11-22 | built | packages/HimalayaUI/test/test_combine.jl › a bridged sample averages only its own images |
 
 ## Bridges and beamtimes
