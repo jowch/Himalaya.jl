@@ -1,10 +1,10 @@
 # Per-database peak model
 
-Status: design. Steps 1 (packaging), 2 (provenance and pinning) and 3 (training service) are implemented: the features, labels,
+Status: design. Steps 1 (packaging), 2 (provenance and pinning), 3 (training service) and 4 (model-written auto peaks) are implemented: the features, labels,
 model and cross-validation live in `packages/HimalayaPeakModel`, the database
 loader is `HimalayaUI.labeled_exposures` (reading review snapshots), `tools/peak-classifier/` (#486)
 is the command-line tool on top of both, and the server trains and records runs in the background
-(see "Training service (step 3)"). No model is active yet, so peaks are unchanged. This document describes how HimalayaUI trains such a model for its own
+(see "Training service (step 3)"), promotes a passing run and writes its peaks (see "Model-written peaks (step 4)"). This document describes how HimalayaUI trains such a model for its own
 database, keeps it up to date as users curate, and uses it.
 
 ## Goal
@@ -280,8 +280,7 @@ A passing run trains the final model on all rows. A rejected run trains nothing.
 **Metrics JSON.** `cv` (the `cross_validate` tables per threshold, hybrid and candidate-pool rows, AUC), `comparison` (chosen threshold, model and
 hybrid summaries, phase target count), `sweep` (per threshold: peaks, form-factor peaks, adds, within caps), `gate` (passed, checks, reasons, caps) and `seconds`.
 
-**Not done here.** Promotion (`active`), the 25% label-growth rule, retraining after a core bump, `shown_model_id`
-written by snapshots, and prediction in `analyze_exposure!` are step 4.
+Promotion, the 25% label-growth rule, `shown_model_id` and prediction in `analyze_exposure!` are step 4.
 
 ## Swapping the model
 
@@ -356,7 +355,7 @@ production stays.
   `feature_version`, `core_version`, `recipe_json` (the recipe's `to_dict`), `recipe_id`,
   and `fitted_json`. A run that passes the gate is `passed` (the design's earlier `pending`);
   `failed` is a crashed or unreadable run, whose `metrics_json` holds `{"error": <stderr tail>}`.
-  Step 3 writes only `passed`, `rejected` and `failed`.
+  Step 3 writes only `passed`, `rejected` and `failed`; promotion (step 4) moves rows to `active` and `retired`.
 - The fitted model is `to_dict` of the learner's `Fitted` object, stored as JSON
   in a TEXT column, only for the newest `passed` row and any `active` row; it is NULL
   on `rejected`, `failed` and `retired` rows, and inserting a `passed` row clears it from older `passed` ones. For the random forest each tree is nested split
@@ -400,9 +399,10 @@ production stays.
   clients replace stale auto peak ids, so a later exclude does not hit a
   deleted row. No assignment-dropped toast can follow, since reviewed
   exposures are never in the pass.
-- After a core version bump, boot re-analysis of unreviewed exposures waits
-  for the boot retrain (and its gate) to finish, so they go to the new model,
-  or to the hybrid, once instead of hybrid then model. Reviewed exposures are
+- After a core version bump, boot re-analysis of unreviewed exposures was
+  designed to wait for the boot retrain (and its gate), so they go to the new
+  model, or to the hybrid, once instead of hybrid then model. Step 4 does not
+  wait (see "Model-written peaks (step 4)"). Reviewed exposures are
   re-analysed straight away with the hybrid.
 - The model's output uses the pipeline's peak shape: indices on the trace
   grid, sharpness from `sharpness_full` with the hybrid's fallback (the median
@@ -412,6 +412,69 @@ production stays.
   hybrid's peaks, not an analysis error.
 - Prediction reuses the hybrid result (including `z`) that
   `analyze_exposure!` already computed instead of rerunning `findpeaks`.
+
+## Model-written peaks (step 4)
+
+What is built, and where it differs from "Analysis with a model" above.
+
+**Resolver.** `production_detector(db)` returns the newest `active` row as a `ProductionModel` (id and
+`TrainedModel`) or `nothing` for the hybrid. It reads the active id with one query per call and keeps the
+parsed model in memory per database file, keyed by that id, so a promotion, a retire or an edit to the row is
+seen on the next call without a hook (`invalidate_peak_model_cache!` also empties it). The model is rebuilt
+from the row: the recipe, the fitted learner and the stored feature version. A row whose feature version differs from
+`feature_version` of its recipe's features, or that cannot be parsed, is not used (a warning is logged and the
+hybrid is the detector). That is what keeps `bin/himalaya analyze` and the ingest pass from using a stale model after a core
+upgrade, whatever order the server boots in.
+
+**Analysis.** `analyze_exposure!` runs the hybrid, then, for an exposure whose `reviewed_at` is NULL, the model
+over the same candidate pool (the hybrid result is passed in, so `findpeaks` runs once). The peaks use the pipeline shape: grid indices,
+sharpness from the hybrid's `sharpness_full` with the median-positive fallback (the function the gate uses), prominence from `persistence`
+or 0 off a local maximum. `found_by` is `both` when a hybrid peak is within `peak_match_tol` and `model` otherwise,
+`auto_peaks.model_id` is the model and `exposures.peak_model_version` is set (NULL when the hybrid wrote the
+peaks). Every detection now passes `found_by` explicitly, so a re-detection by the hybrid rewrites a row's provenance
+to `hybrid`. Falls back to the hybrid, with a warning and never an analysis error, when prediction throws and when the trace
+is shorter than the feature code's minimum (`MIN_POINTS`, where the candidate pool is empty). The decision is
+checked again inside the write transaction: an exposure that was pinned meanwhile, or whose active model changed, gets the hybrid's peaks
+(or, in the pass, is skipped). `peak_model_version` is not on the wire (the exposure list strips it like `reviewed_at`).
+
+**Snapshots.** `record_review!` writes `shown_model_id` from the exposure's `peak_model_version` at event time.
+
+**Promotion.** The server records a `passed` run and promotes it in the same `_DB_WRITE_LOCK` section
+(`promote_peak_model!`): when nothing usable is active, or when the run's `counts.curations` (add and exclude
+rows, counted by the cold-start check at the run's own watermark) is at least 25% above the active run's
+(`PEAK_MODEL_GROWTH`; an active run with no count is replaced by any run with one). The previous active row
+becomes `retired` and loses its fitted JSON. A run whose model fails to load is left `passed`. Newest `passed` and
+`active` keep their fitted JSON, as before. A passing run that is not promoted stays `passed` and is replaced
+by the next `passed` run, so promotion compares each run only with the model in use.
+
+**Model pass.** `start_peak_model_pass!` (after a promotion, and at boot when a model is active) starts one background task
+(`PEAK_MODEL_PASS`: lock, `running`, `pending`, `stopped`). A start during a pass sets `pending`, and the pass
+sweeps again when it ends, so a promotion during a sweep is never missed. A sweep lists exposures with `reviewed_at IS NULL`, a trace hash,
+the current `ANALYSIS_VERSION`, no analysis error and `peak_model_version` different from the active id, newest experiment first,
+and handles them one at a time on its own connection, yielding between exposures. Each goes through
+`analyze_exposure!(...; force_detect = true, only_unreviewed = true, log_event = false)`. `force_detect` re-detects despite
+matching hashes. `only_unreviewed` re-checks `reviewed_at` and the active id inside the transaction and skips the
+exposure otherwise (so a curation that lands during the prediction is never overwritten, and a prediction failure leaves the
+exposure for the next sweep rather than writing hybrid peaks). `log_event = false` writes no `user_actions` row. The pass sends no ingest frames. It does send the
+`analyze_run` frame, with entity id and `id` 0 (no event row), so open clients replace stale peak ids. An error on
+one exposure is logged and does not stop the sweep, and the pass does not write `analysis_error`. `stop_peak_model_pass!` sets `stopped` (cleared by
+`start_background!` when it resumes work) and waits for the task. The frame needed a client change: `applyRemoteToCache` invalidated the
+peaks cache of an `analyze_run` frame only when the trace hash changed, and now also when `findpeaks_skipped` is false (detection ran).
+
+**Boot and retrain.** `start_background!` calls `boot_peak_model!` when it resumes work: it retires `active` rows whose
+feature version is out of date (`retire_stale_peak_models!`) and starts a pass if a model is active. A retrain is due, with no new
+label events and once per process, when the newest non-failed `peak_models` row has a feature version other than the current one
+and labels exist (`peak_training_stale`).
+
+Deviation: the design waited for the boot retrain before re-analysing unreviewed exposures after a core bump, so they go
+to the new model once. This build does not wait. Boot analysis of stale exposures runs straight away with the
+hybrid (the stale model is retired or unusable), and the retrain, which takes minutes in a child process, promotes a model that the pass then applies. Unreviewed
+exposures are therefore analysed twice after a core bump, but ingest and the first view never wait on training, and a failed
+or rejected retrain leaves the hybrid in place without any extra state.
+
+**Cold start.** The precompile workload builds a three-tree model, promotes it and runs a pass over a synthetic trace, and fails
+the build if the model did not write that exposure's peaks. Model JSON is read through `JSON3.read(::String)`: with an abstract
+`AbstractString` the precompiled analysis code was thrown away at load (see "Cold start" in `packages/HimalayaUI/src/AGENTS.md`).
 
 ## No model UI
 
@@ -449,7 +512,7 @@ cache are lab data like the rest of the database and are never exported.
    promoted, so peaks do not change. Done; see "Training service (step 3)".
 4. Model-written auto peaks: `peak_model_version`, prediction from the stored JSON model,
    the model pass with `force_detect`, boot ordering after a core bump, and
-   the one detector resolver for server and CLI.
+   the one detector resolver for server and CLI. Done; see "Model-written peaks (step 4)".
 
 ## Evidence
 

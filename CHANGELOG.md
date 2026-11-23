@@ -7,6 +7,18 @@ under `Unreleased` are application-level unless stated otherwise.
 
 ## Unreleased
 
+### Added
+
+- **Per-database peak model writes auto peaks.** When the background training run
+  passes its checks, the server promotes the model, and unreviewed exposures
+  (no peak, assignment, sample-call or status edit yet) get the model's peaks
+  instead of the hybrid detector's, with each peak's source recorded. Reviewed
+  exposures keep their peaks. A background pass re-detects existing unreviewed
+  exposures after a promotion without an "Analyzing" badge or ingest notice and
+  without writing history. A model replaces the active one only after 25% more
+  curations, and a model trained before a core upgrade is retired and retrained.
+  See `docs/peak-model.md`.
+
 ### Changed
 
 - **The analysis pipeline uses the hybrid peak detector.** `analyze_exposure!` calls
