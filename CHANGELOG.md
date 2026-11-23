@@ -21,6 +21,11 @@ under `Unreleased` are application-level unless stated otherwise.
 
 ### Changed
 
+- **The peak-model gate ignores unreachable phase calls.** Its phase check scores only
+  confirmed calls that `indexpeaks` over the user's own final peaks can produce
+  (a candidate of the called phase with a basis within 2%); the metrics JSON
+  reports reachable and all counts. The peak classifier's `evaluate` command
+  does the same, with `--phase-targets all` for the old behaviour.
 - **The analysis pipeline uses the hybrid peak detector.** `analyze_exposure!` calls
   `findpeaks(...; method = :hybrid)`, so weak peaks and shoulders on steep
   backgrounds are detected and phase calls change. The core default stays

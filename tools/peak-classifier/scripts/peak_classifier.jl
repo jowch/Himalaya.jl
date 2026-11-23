@@ -3,7 +3,7 @@
 #   julia --threads=auto --project=. scripts/peak_classifier.jl train DB --out models/lab.json
 #   julia --threads=auto --project=. scripts/peak_classifier.jl predict MODEL TRACE.dat
 #   julia --threads=auto --project=. scripts/peak_classifier.jl evaluate DB [--detector hybrid,persistence,recipe]
-#       [--threshold X|sweep] [--phase-auto user_events|all] [--group-by experiment|sample] [--json out.json]
+#       [--threshold X|sweep] [--phase-auto user_events|all] [--phase-targets reachable|all] [--group-by experiment|sample] [--json out.json]
 # Shared options for cv and train: --learner rf|logistic --threshold 0.5 --nms 8 --trees 200 --no-form-factor --no-detector-features
 using PeakClassifier, HimalayaUI
 using HimalayaPeakModel: recipe_id
@@ -50,6 +50,7 @@ function main(args)
         detectors = Symbol.(split(get(opt, "detector", "hybrid"), ','; keepempty = false))
         r = evaluate_database(pos[1]; detectors, recipe, thresholds = sweep ? :sweep : haskey(opt, "threshold") ? recipe.threshold : nothing,
                               phase_auto = Symbol(get(opt, "phase-auto", "user_events")),
+                              phase_targets = Symbol(get(opt, "phase-targets", "reachable")),
                               group_by = haskey(opt, "group-by") ? Symbol(opt["group-by"]) : nothing)
         println()
         print_evaluation(stdout, r)
