@@ -43,6 +43,8 @@ const SHARED_PEAK_BAND = 0.003
 # physics: the peaks it still owns; a peak's residual is its relative distance from
 # physics: that lattice's prediction, so it measures fit to the whole series rather
 # physics: than to the observed peak the candidate happened to take as its basis.
+# physics: the fit includes the contested peak itself, for every member alike; a member
+# physics: owning only minpeaks peaks leans on it more, which is accepted as symmetric.
 function fitted_residuals(idx::Himalaya.Index, claims::Vector, owned::Set{K}) where {K}
     P = Himalaya.phase(idx)
     ratios = Himalaya.phaseratios(P; normalize = true)
