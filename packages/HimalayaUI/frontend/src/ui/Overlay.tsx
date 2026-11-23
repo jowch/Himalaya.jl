@@ -1,5 +1,6 @@
-import { useRef, type ReactNode } from "react";
-import { useFocusTrap } from "../hooks/useFocusTrap";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { FOCUSABLE, useFocusTrap } from "../hooks/useFocusTrap";
+import { IconButton } from "./IconButton";
 
 interface Props {
   label: string;
@@ -8,11 +9,53 @@ interface Props {
   testId?: string;
   closeKeys?: readonly string[];
   onKey?: (key: string, repeat: boolean) => boolean;
+  heading?: boolean;
 }
 
-export function Overlay({ label, onClose, children, testId, closeKeys = ["Escape"], onKey }: Props): JSX.Element {
+function useBodyScroll(body: React.RefObject<HTMLDivElement | null>): { more: boolean; bare: boolean } {
+  const [state, setState] = useState({ more: false, bare: false });
+  const measure = useRef((): void => {
+    const el = body.current;
+    if (!el) return;
+    const more = el.scrollTop + el.clientHeight < el.scrollHeight - 1;
+    const bare = el.querySelector(FOCUSABLE) === null;
+    setState((s) => (s.more === more && s.bare === bare ? s : { more, bare }));
+  }).current;
+  useLayoutEffect(measure);
+  useEffect(() => {
+    const el = body.current;
+    if (!el) return;
+    window.addEventListener("resize", measure);
+    el.addEventListener("scroll", measure, { passive: true });
+    const sizes = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    const watch = (): void => {
+      if (!sizes) return;
+      sizes.disconnect();
+      sizes.observe(el);
+      for (const child of Array.from(el.children)) sizes.observe(child);
+    };
+    watch();
+    const kids = typeof MutationObserver === "undefined" ? null : new MutationObserver(() => { watch(); measure(); });
+    kids?.observe(el, { childList: true, subtree: true });
+    return () => {
+      window.removeEventListener("resize", measure);
+      el.removeEventListener("scroll", measure);
+      sizes?.disconnect();
+      kids?.disconnect();
+    };
+  }, [body, measure]);
+  return state;
+}
+
+export function Overlay({ label, onClose, children, testId, closeKeys = ["Escape"], onKey, heading = false }: Props): JSX.Element {
   const panel = useRef<HTMLDivElement | null>(null);
+  const body = useRef<HTMLDivElement | null>(null);
+  const headingId = useId();
   useFocusTrap(panel, true);
+  const { more, bare } = useBodyScroll(body);
+  useEffect(() => {
+    if (body.current && body.current.querySelector(FOCUSABLE) === null) body.current.focus();
+  }, []);
   return (
     <div
       className="fixed inset-0 z-40 flex items-start justify-center bg-scrim px-4 pt-[12vh]"
@@ -24,11 +67,12 @@ export function Overlay({ label, onClose, children, testId, closeKeys = ["Escape
         ref={panel}
         role="dialog"
         aria-modal="true"
-        aria-label={label}
+        aria-label={heading ? undefined : label}
+        aria-labelledby={heading ? headingId : undefined}
         data-keys-trap
         data-testid={testId}
         tabIndex={-1}
-        className="w-full max-w-xl overflow-hidden rounded-sm border border-hair bg-plate text-ink shadow-lg outline-none"
+        className="flex max-h-[calc(88vh-1.5rem)] w-full max-w-xl flex-col overflow-hidden rounded-sm border border-hair bg-plate text-ink shadow-lg outline-none"
         onKeyDown={(e) => {
           if (closeKeys.includes(e.key)) {
             e.preventDefault();
@@ -38,7 +82,25 @@ export function Overlay({ label, onClose, children, testId, closeKeys = ["Escape
           }
         }}
       >
-        {children}
+        {heading && (
+          <header data-testid="overlay-header" className="flex shrink-0 items-center justify-between gap-4 border-b border-hair py-2 pl-5 pr-3">
+            <h2 id={headingId} className="text-label text-ink-soft">{label}</h2>
+            <IconButton label="Close" dismiss onClick={onClose} />
+          </header>
+        )}
+        <div
+          ref={body}
+          data-testid="overlay-body"
+          data-more={more || undefined}
+          tabIndex={bare ? 0 : -1}
+          role={bare ? "region" : undefined}
+          aria-labelledby={bare && heading ? headingId : undefined}
+          aria-label={bare && !heading ? label : undefined}
+          className="min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain outline-none"
+        >
+          {children}
+          {more && <div aria-hidden="true" data-testid="overlay-more" className="pointer-events-none sticky bottom-0 -mt-8 h-8 bg-linear-to-t from-plate to-transparent" />}
+        </div>
       </div>
     </div>
   );
