@@ -111,17 +111,14 @@ describe("CandidateList", () => {
     expect(onHover).toHaveBeenLastCalledWith([a!.id, b!.id]);
   });
 
-  it("shows the mean Gaussian curvature in nm⁻² on bicontinuous cubic rows only, on one line", () => {
+  it("leaves the curvature off single candidate rows, cubic or not", () => {
     render(
-      <CandidateList rows={[candidate(1, "Pn3m", 108), candidate(2, "Im3m", 138.5), candidate(3, "Hexagonal", 60), candidate(4, "Ia3d", null)].map(one)}
+      <CandidateList rows={[candidate(1, "Pn3m", 108), candidate(2, "Im3m", 138.5), candidate(3, "Hexagonal", 60)].map(one)}
         assigned={new Set([1])} disabled={false} formFactor={false} onToggle={() => {}} onToggleGroup={() => {}} onFormFactor={() => {}} onHover={() => {}} />,
     );
     const rows = within(screen.getByTestId("workspace-candidates")).getAllByRole("button");
-    expect(rows[0]).toHaveTextContent(/108\.0 Å\s*κ −0\.0561 nm⁻²/);
-    expect(rows[1]).toHaveTextContent(/138\.5 Å\s*κ −0\.0559 nm⁻²/);
-    expect(rows[2]).not.toHaveTextContent("κ");
-    expect(rows[3]).not.toHaveTextContent("κ");
-    expect(rows[0]!.querySelector("[data-testid=workspace-candidate-curvature]")?.parentElement).toHaveClass("whitespace-nowrap");
+    expect(rows[0]).toHaveTextContent("108.0 Å");
+    for (const row of rows) expect(row).not.toHaveTextContent("κ");
   });
 
   it("shows the group's shared curvature on its header", () => {
@@ -130,5 +127,6 @@ describe("CandidateList", () => {
         assigned={new Set()} disabled={false} formFactor={false} onToggle={() => {}} onToggleGroup={() => {}} onFormFactor={() => {}} onHover={() => {}} />,
     );
     expect(screen.getByTestId("workspace-bonnet-curvature")).toHaveTextContent("κ −0.0560 nm⁻²");
+    for (const member of within(screen.getByTestId("workspace-candidates")).getAllByRole("button").slice(1)) expect(member).not.toHaveTextContent("κ");
   });
 });

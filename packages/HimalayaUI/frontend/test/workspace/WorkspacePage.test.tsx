@@ -2689,8 +2689,27 @@ describe("WorkspacePage", () => {
     ];
     renderAt("/experiments/1/workspace/10");
     const plot = screen.getByTestId("workspace-indexing");
-    expect(within(plot).getByTestId("workspace-indexing-fit")).toHaveTextContent("Pn3m a = 100.0 Å R² 0.9900 2/2 on peaks");
+    expect(within(plot).getByTestId("workspace-indexing-fit")).toHaveTextContent("Pn3m a = 100.0 Å κ −0.0655 nm⁻² R² 0.9900");
+    expect(within(plot).getByTestId("workspace-indexing-fit")).not.toHaveTextContent("on peaks");
     expect(plot.querySelectorAll("[data-observed]")).toHaveLength(2);
+  });
+
+  it("the indexing legend leaves κ off phases that are not bicontinuous cubics", () => {
+    state.trace = makeTrace(1);
+    state.peaks = [peak(7, 0.1, "auto"), peak(8, 0.2, "auto")];
+    state.indices = [
+      {
+        ...index(2, "Lamellar", 0.9),
+        peaks: [
+          { peak_id: 7, ratio_position: 1, residual: 0, q_observed: 0.1 },
+          { peak_id: 8, ratio_position: 2, residual: 0, q_observed: 0.2 },
+        ],
+      },
+    ];
+    renderAt("/experiments/1/workspace/10");
+    const fit = within(screen.getByTestId("workspace-indexing")).getByTestId("workspace-indexing-fit");
+    expect(fit).toHaveTextContent("Lamellar");
+    expect(fit).not.toHaveTextContent("κ");
   });
 
   it("the indexing plot waits for the trace before counting reflections", () => {
@@ -2844,7 +2863,7 @@ describe("WorkspacePage", () => {
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "i" });
     expect(screen.getByTestId("workspace-custom-landed")).toHaveTextContent("2 of 9");
-    expect(screen.getByTestId("workspace-indexing-fit")).toHaveTextContent("2/9 on peaks");
+    expect(screen.getByTestId("workspace-indexing").querySelectorAll("[data-observed]")).toHaveLength(2);
     const combIds = Array.from(screen.getByTestId("workspace-combs").querySelectorAll("[data-comb]")).map((l) => l.getAttribute("data-comb"));
     expect(new Set(combIds)).toEqual(new Set(["-1"]));
   });
@@ -3145,7 +3164,7 @@ describe("WorkspacePage", () => {
     state.peaks = [peak(7, 0.1, "auto"), peak(8, 0.14, "auto")];
     state.indices = [{ ...index(2, "Pn3m", 0.9), peaks: [{ peak_id: 7, ratio_position: 1, residual: 0, q_observed: 0.1 }] }];
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByTestId("workspace-indexing-fit")).toHaveTextContent("1/2 on peaks");
+    expect(screen.getByTestId("workspace-indexing").querySelectorAll("[data-observed]")).toHaveLength(1);
   });
   it("Enter on a focused button outside the custom panel does not add the index", () => {
     renderAt("/experiments/1/workspace/10");
