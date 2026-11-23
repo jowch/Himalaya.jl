@@ -1,7 +1,7 @@
 using Test
 using Himalaya
 using Himalaya: indexpeaks, Index, peaks, score
-using HimalayaUI: auto_group
+using HimalayaUI: auto_group, reassign_contested
 using SparseArrays
 
 @testset "auto_group claims by peak_id, not float equality" begin
@@ -145,4 +145,42 @@ end
     for group in _both(cands, _eff(q, sh))
         @test _phases(group) == ["Im3m"]
     end
+end
+
+function _index(P, basis, rpos, q)
+    n = length(Himalaya.phaseratios(P))
+    Index{P}(basis, sparsevec(UInt8.(rpos), q, n), sparsevec(UInt8.(rpos), ones(length(q)), n))
+end
+_claims(rpos, q, ids) = [(claim = id, q = x, rpos = r) for (r, x, id) in zip(rpos, q, ids)]
+
+@testset "reassign_contested gives a contested peak to the best fit, shares one inside the band, and drops a member left below minpeaks" begin
+    rim, rpn = Himalaya.phaseratios(Himalaya.Im3m; normalize = true), Himalaya.phaseratios(Himalaya.Pn3m; normalize = true)
+    a, b = 0.06445, 0.08225
+    function run(im_pos, im_q, pn_pos, pn_q)
+        cands = [_index(Himalaya.Im3m, a, im_pos, im_q), _index(Himalaya.Pn3m, b, pn_pos, pn_q)]
+        claims = [_claims(im_pos, im_q, vcat(1:length(im_pos)-1, 100)),
+                  _claims(pn_pos, pn_q, [p == pn_pos[end] ? 100 : 10 + p for p in pn_pos])]
+        owned = Dict(m => Set(c.claim for c in claims[m]) for m in eachindex(cands))
+        kept = reassign_contested([1, 2], cands, claims, owned)
+        kept, owned
+    end
+
+    pn_pos = [1, 2, 3, 5, 4]; pn_q = b .* rpn[pn_pos]
+    im_pos = [1, 2, 3, 5]; im_q = vcat(a .* rim[[1, 2, 3]], b * rpn[4])
+    kept, owned = run(im_pos, im_q, pn_pos, pn_q)
+    @test kept == [2]
+    @test 100 in owned[2]
+
+    pn_pos = [1, 2, 3, 5, 7]; pn_q = b .* rpn[pn_pos]
+    im_pos = [1, 2, 3, 4, 8]; im_q = vcat(a .* rim[1:4], b * rpn[7])
+    kept, owned = run(im_pos, im_q, pn_pos, pn_q)
+    @test kept == [1, 2]
+    @test !(100 in owned[1]) && 100 in owned[2]
+
+    shared = (a * rim[9] + b * rpn[8]) / 2
+    pn_pos = [1, 2, 3, 5, 8]; pn_q = vcat(b .* rpn[[1, 2, 3, 5]], shared)
+    im_pos = [1, 2, 3, 4, 9]; im_q = vcat(a .* rim[1:4], shared)
+    kept, owned = run(im_pos, im_q, pn_pos, pn_q)
+    @test kept == [1, 2]
+    @test 100 in owned[1] && 100 in owned[2]
 end
