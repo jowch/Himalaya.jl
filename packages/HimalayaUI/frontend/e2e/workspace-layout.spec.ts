@@ -682,3 +682,24 @@ test("the plot view switcher stays faint until the pointer is on it", async ({ p
   await page.mouse.move(0, 0);
   await expect.poll(opacity).toBeLessThan(0.5);
 });
+
+async function tileWidths(page: Page): Promise<number[]> {
+  return page.locator("[data-testid=workspace-exposures] li").evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().width)));
+}
+
+for (const viewport of [{ width: 800, height: 1300 }, { width: 1024, height: 1300 }, { width: 1100, height: 1400 }, { width: 1440, height: 900 }]) {
+  test(`image tiles keep their usual size and wrap at ${viewport.width}×${viewport.height}, with the sample list shown or hidden`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await page.goto("/experiments/17/workspace/44");
+    await openSample(page, 44);
+    for (const hidden of [false, true]) {
+      if (hidden) {
+        await page.keyboard.press("[");
+        await expect(page.getByTestId("sample-list-handle")).toBeVisible();
+      }
+      const widths = await tileWidths(page);
+      expect(widths, `sample list ${hidden ? "hidden" : "shown"}`).toHaveLength(7);
+      expect(new Set(widths), `sample list ${hidden ? "hidden" : "shown"}`).toEqual(new Set([136]));
+    }
+  });
+}

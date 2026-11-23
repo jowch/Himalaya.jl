@@ -69,7 +69,7 @@ export function ExposureStrip({ groups, currentId, selection, onPick, onToggleDr
               <h4 data-testid="frame-group-header" className="m-0 truncate text-xs font-semibold text-ink-soft">{g.title}</h4>
             </Tooltip>
           )}
-          <ul className="m-0 grid list-none grid-cols-6 gap-2 p-0">
+          <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,136px)] gap-2 p-0">
             {g.exposures.map((e, i) => {
               const cur = e.id === currentId;
               const stop = cur || (!hasCurrent && gi === 0 && i === 0) ? 0 : -1;

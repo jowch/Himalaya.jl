@@ -81,6 +81,7 @@ import { keepCallForm, workspacePalette, type PaletteSetup } from "./palette";
 import type { PaletteForm } from "../ui/palette/model";
 import { useAppTheme } from "../lib/theme";
 import { PLOT_VIEWS, stepView, usePlotView } from "./plotView";
+import { useSampleListHidden } from "./sampleListHidden";
 import { positiveExtent } from "../plot/projection";
 import { CustomIndexPanel, NUDGE_STEP, NUDGE_STEP_LARGE } from "../ui/CustomIndexPanel";
 import { IndexingPlot, type IndexSeries } from "../ui/IndexingPlot";
@@ -117,6 +118,7 @@ function helpSections(mod: string): HelpSection[] {
         { keys: ["↑", "↓"], what: "Previous or next sample in the list" },
         { keys: ["Z"], what: "Next unreviewed sample" },
         { keys: ["/"], what: "Filter samples by name or label. Press Tab to move through the matches and Enter to open one." },
+        { keys: ["["], what: "Hide or show the sample list. While it is hidden, rest the pointer on the left edge to look at it." },
       ],
     },
     {
@@ -404,6 +406,7 @@ export function WorkspacePage(): JSX.Element {
 
   const [xDomain, setXDomain] = useState<[number, number] | null>(null);
   const [view, setView] = usePlotView();
+  const [sampleListHidden, setSampleListHidden] = useSampleListHidden();
   const comparesQuery = useCompares(experimentId);
   const patchCompares = usePatchCompares(experimentId);
   const saved = useMemo(() => comparesOf(comparesQuery.data ?? EMPTY_COMPARES, sampleId ?? -1), [comparesQuery.data, sampleId]);
@@ -1169,6 +1172,9 @@ export function WorkspacePage(): JSX.Element {
           if (eid !== undefined) setExposureId(eid);
           break;
         }
+        case "[":
+          setSampleListHidden(!sampleListHidden);
+          break;
         case "c":
         case "C":
           setPicking(true);
@@ -1225,7 +1231,7 @@ export function WorkspacePage(): JSX.Element {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [visible, sampleId, goSample, exposureList, tile, toggleDrop, keyed, toggleCandidate, toggleGroup, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor, view, setView, sample, openLabeling, applyHistory, callOpen]);
+  }, [visible, sampleId, goSample, exposureList, tile, toggleDrop, keyed, toggleCandidate, toggleGroup, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor, view, setView, sample, openLabeling, applyHistory, callOpen, sampleListHidden, setSampleListHidden]);
 
   const droppedCount = ownFrames.filter((e) => e.status === "rejected").length;
   const keptHint = droppedCount > 0 ? `${ownFrames.length - droppedCount} of ${ownFrames.length} kept` : undefined;
@@ -1381,6 +1387,8 @@ export function WorkspacePage(): JSX.Element {
   return (
     <WorkspaceLayout
       theme={theme.theme}
+      navHidden={sampleListHidden}
+      onShowNav={() => setSampleListHidden(false)}
       overlay={
         <>
           {helpOpen && <HelpOverlay sections={HELP} onClose={() => setHelpOpen(false)} />}
@@ -1427,7 +1435,7 @@ export function WorkspacePage(): JSX.Element {
           onHelp={() => setHelpOpen(true)}
         />
       }
-      nav={<SampleList samples={visible} setupHeaders={setupHeaders} currentId={sampleId} filter={filter} onFilter={setFilter} onPick={goSample} onToggleCompare={toggleCompare} compareColors={compareColors} hiddenCompares={shownCompareSet} bridgeCounts={counts} notice={<ExperimentNotice progress={ingestProgress} ingestFailed={ingestFailed} waiting={waitingForTrace} failed={failedAnalyses} unrecognized={unrecognizedSetups} onDetails={() => setProblemsOpen(true)} />} />}
+      nav={<SampleList samples={visible} setupHeaders={setupHeaders} currentId={sampleId} filter={filter} onFilter={setFilter} onPick={goSample} onToggleCompare={toggleCompare} compareColors={compareColors} hiddenCompares={shownCompareSet} bridgeCounts={counts} listHidden={sampleListHidden} onToggleList={() => setSampleListHidden(!sampleListHidden)} notice={<ExperimentNotice progress={ingestProgress} ingestFailed={ingestFailed} waiting={waitingForTrace} failed={failedAnalyses} unrecognized={unrecognizedSetups} onDetails={() => setProblemsOpen(true)} />} />}
       main={
         sample ? (
           <>

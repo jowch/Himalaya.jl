@@ -719,6 +719,49 @@ describe("WorkspacePage", () => {
     expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/11");
   });
 
+  it("[ hides the sample list behind a handle at the left edge, and [ or the handle brings it back, remembered on reload", () => {
+    try {
+      const view = renderAt("/experiments/1/workspace/10");
+      const nav = screen.getByRole("navigation", { name: "Samples" });
+      expect(nav.dataset.peek).toBeUndefined();
+      expect(screen.queryByTestId("sample-list-handle")).toBeNull();
+      fireEvent.keyDown(window, { key: "[" });
+      expect(screen.getByRole("button", { name: "Show the sample list" })).toBeInTheDocument();
+      expect(nav.className).toContain("-translate-x-full");
+      fireEvent.keyDown(window, { key: "ArrowDown" });
+      expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/11");
+      view.unmount();
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.click(screen.getByRole("button", { name: "Show the sample list" }));
+      expect(screen.queryByTestId("sample-list-handle")).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Hide the sample list" }));
+      expect(screen.getByTestId("sample-list-handle")).toBeInTheDocument();
+      fireEvent.keyDown(window, { key: "[" });
+      expect(screen.queryByTestId("sample-list-handle")).toBeNull();
+    } finally {
+      window.localStorage.removeItem("himalaya-ui:workspace-sample-list-hidden");
+    }
+  });
+
+  it("/ shows a hidden sample list to filter it, and the ? list explains the [ key", () => {
+    try {
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "[" });
+      const nav = screen.getByRole("navigation", { name: "Samples" });
+      expect(nav.dataset.peek).toBeUndefined();
+      fireEvent.keyDown(window, { key: "/" });
+      expect(document.activeElement).toBe(screen.getByRole("searchbox", { name: "Filter samples" }));
+      expect(nav.dataset.peek).toBe("true");
+      fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+      expect(document.activeElement).not.toBe(screen.getByRole("searchbox", { name: "Filter samples" }));
+      expect(nav.dataset.peek).toBeUndefined();
+      fireEvent.keyDown(window, { key: "?" });
+      expect(screen.getByRole("dialog")).toHaveTextContent("Hide or show the sample list");
+    } finally {
+      window.localStorage.removeItem("himalaya-ui:workspace-sample-list-hidden");
+    }
+  });
+
   it("J and R are no longer shortcuts", () => {
     state.trace = makeTrace(1);
     state.compareTraces = new Map([[11, makeTrace(2)]]);
