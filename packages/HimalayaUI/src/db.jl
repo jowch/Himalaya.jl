@@ -908,9 +908,6 @@ function migrate_exposures_ingest_state!(db::SQLite.DB)
         for name in ("analysis_version", "analysis_error", "analysis_trace_stat")
             name in existing || DBInterface.execute(db, "ALTER TABLE exposures ADD COLUMN $name TEXT")
         end
-        DBInterface.execute(db,
-            "UPDATE exposures SET analysis_version = ? WHERE trace_hash IS NOT NULL AND analysis_version IS NULL",
-            [ANALYSIS_VERSION])
         _record_migration!(db, MIGRATION_EXPOSURES_INGEST_STATE)
     end
     nothing

@@ -113,6 +113,27 @@ const _T0 = DateTime(2026, 4, 26, 23, 0, 0)
         @test _n(db, "SELECT COUNT(*) AS n FROM user_actions WHERE action = 'analyze_run'") == 2
     end
 
+    @testset "an analysis from before versions were recorded is re-analyzed after the upgrade" begin
+        dir, data, ana = _recon_tree()
+        _recon_exposure!(data, ana, "A_S0001_0_001"; t = _T0, h = 58.9)
+        db, id = _recon_db(dir, data, ana)
+        HimalayaUI.scan_and_group!(db, id)
+        path = db.file
+        DBInterface.execute(db, "ALTER TABLE exposures DROP COLUMN analysis_trace_stat")
+        DBInterface.execute(db, "ALTER TABLE exposures DROP COLUMN analysis_error")
+        DBInterface.execute(db, "ALTER TABLE exposures DROP COLUMN analysis_version")
+        DBInterface.execute(db, "DELETE FROM schema_migrations WHERE name = ?", [HimalayaUI.MIGRATION_EXPOSURES_INGEST_STATE])
+        DBInterface.close!(db)
+        db = HimalayaUI.open_db(path)
+        @test _n(db, "SELECT COUNT(*) AS n FROM exposures WHERE experiment_id = ? AND trace_hash IS NOT NULL", [id]) == 1
+        @test _n(db, "SELECT COUNT(*) AS n FROM exposures WHERE experiment_id = ? AND analysis_version IS NULL", [id]) == 1
+        @test HimalayaUI.ingest_has_work(db, id)
+        HimalayaUI.scan_and_group!(db, id)
+        @test _n(db, "SELECT COUNT(*) AS n FROM exposures WHERE experiment_id = ? AND analysis_version = ?",
+                 [id, HimalayaUI.ANALYSIS_VERSION]) == 1
+        DBInterface.close!(db)
+    end
+
     @testset "a failed analysis is retried when its trace file changes" begin
         dir, data, ana = _recon_tree()
         _recon_exposure!(data, ana, "A_S0001_0_001"; t = _T0, h = 58.9, dat = false)

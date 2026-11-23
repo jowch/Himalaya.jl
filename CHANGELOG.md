@@ -7,6 +7,14 @@ under `Unreleased` are application-level unless stated otherwise.
 
 ## Unreleased
 
+### Fixed
+
+- **Upgrading from a release before per-exposure analysis versions now re-analyzes
+  existing exposures.** The migration that adds `exposures.analysis_version` used
+  to stamp the current version on every analyzed exposure, so a database upgraded
+  across several analysis changes kept its old peaks. It now leaves the version
+  empty, and the first pass after the upgrade re-analyzes those exposures.
+
 ### Added
 
 - **Per-database peak model writes auto peaks.** When the background training run
