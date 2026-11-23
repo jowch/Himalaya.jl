@@ -4,6 +4,7 @@ import { sampleStatus } from "../workspace/model";
 import { COMPARE_DASH } from "./WorkspacePlot";
 import { SELECTED_ROW } from "./selectedRow";
 import { Tooltip } from "./Tooltip";
+import { isShortened, PhaseShortName } from "./PhaseName";
 import { useListHighlight } from "./useListHighlight";
 import { Dot } from "./Dot";
 import { IconButton } from "./IconButton";
@@ -33,16 +34,13 @@ const ANALYSIS_GAP = {
 function StatusMark({ s }: { s: CorpusSample }): JSX.Element {
   const st = sampleStatus(s);
   if (st.kind === "phase") {
-    return (
-      <span data-testid="workspace-status" className="flex gap-1 text-xs font-semibold text-ink">
-        {st.phases.map((p, i) => (
-          <Fragment key={p}>
-            {i > 0 && <span className="sr-only"> + </span>}
-            <span>{p}</span>
-          </Fragment>
-        ))}
+    const name = st.phases.join(" + ");
+    const mark = (
+      <span data-testid="workspace-status" role="img" aria-label={name} className="flex gap-1 text-xs font-semibold text-ink">
+        {st.phases.map((p) => <PhaseShortName key={p} phase={p} />)}
       </span>
     );
+    return st.phases.some(isShortened) ? <Tooltip content={name}>{mark}</Tooltip> : mark;
   }
   if (st.kind === "form_factor") return <span data-testid="workspace-status" className="text-xs text-ink-faint">Form factor</span>;
   const gap = s.analysis_gap ? ANALYSIS_GAP[s.analysis_gap] : null;
