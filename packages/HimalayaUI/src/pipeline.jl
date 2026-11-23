@@ -1022,7 +1022,7 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     t0 = time()
 
     rows = sqlrows(DBInterface.execute(db,
-        "SELECT filename, kind FROM exposures WHERE id = ?", [Int(exposure_id)]))
+        "SELECT filename, kind, sample_id FROM exposures WHERE id = ?", [Int(exposure_id)]))
     isempty(rows) && error("exposure $exposure_id not found")
     filename      = rows[1].filename
     combined      = is_combined_kind(rows[1].kind)
@@ -1197,6 +1197,7 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
             :effective_peaks_count => length(eff.q),
             :post_state_size_bytes => post_state_size_bytes,
         )
+        combined && !ismissing(rows[1].sample_id) && (payload[:average_of_sample] = Int(rows[1].sample_id))
         # Use the caller's request when supplied so the durable analyze_run row
         # carries the originating client_op_id (review issue #15: the route's
         # MAX(id)-sentinel filter is racy under concurrent analyze; filtering by

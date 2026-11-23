@@ -6,11 +6,12 @@ const COMBINED_KIND = "combined"
 const Q_GRID_RTOL = 1e-6
 
 # physics: each _tot.dat holds raw ring-averaged counts accumulated over its own
-# physics: exposure, so summing counts weights every image by its exposure time
-# physics: (total counts over total time). Dividing the sum by the number of images
-# physics: keeps the combined curve on the scale of a single image without changing
-# physics: that weighting, so peak finding, overlays and comparisons read it like
-# physics: any other image. Errors add in quadrature: σ = √(Σσᵢ²) / N.
+# physics: exposure. The pooled estimate of intensity per monitor count is ΣIᵢ / ΣTᵢ,
+# physics: which stays unbiased when the beam decays between images. Multiplying by
+# physics: the mean monitor ΣTᵢ / N puts it back on the scale of one image, and that
+# physics: product is ΣIᵢ / N. Normalising each image first and taking an unweighted
+# physics: mean would overweight short or weak images. Errors add in quadrature:
+# physics: σ = √(Σσᵢ²) / N.
 function combine_traces(traces::AbstractVector)
     isempty(traces) && throw(ArgumentError("nothing to combine"))
     q = traces[1][1]
@@ -26,21 +27,26 @@ end
 
 is_combined_kind(kind) = kind isa AbstractString && kind == COMBINED_KIND
 
-function combine_eligible_ids(db::SQLite.DB, sample_id::Int)::Vector{Int}
+function selected_image_ids(db::SQLite.DB, sample_id::Int)::Vector{Int}
     Int[Int(r.id) for r in sqlrows(DBInterface.execute(db, """
         SELECT id FROM exposures
          WHERE sample_id = ? AND kind = 'file'
            AND (status IS NULL OR status != 'rejected')
-           AND combine_excluded = 0
-           AND trace_hash IS NOT NULL
+           AND deselected = 0
          ORDER BY id""", [sample_id]))]
 end
 
-function combined_exposure_id(db::SQLite.DB, sample_id::Int)::Union{Int,Nothing}
-    rows = sqlrows(DBInterface.execute(db,
-        "SELECT id FROM exposures WHERE sample_id = ? AND kind = 'combined' ORDER BY id LIMIT 1",
-        [sample_id]))
-    isempty(rows) ? nothing : Int(rows[1].id)
+function _all_traced(db::SQLite.DB, ids::Vector{Int})::Bool
+    isempty(ids) && return false
+    ph = join(fill("?", length(ids)), ",")
+    n = first(sqlrows(DBInterface.execute(db,
+        "SELECT COUNT(*) AS n FROM exposures WHERE id IN ($ph) AND trace_hash IS NOT NULL", ids))).n
+    Int(n) == length(ids)
+end
+
+function combined_exposure_ids(db::SQLite.DB, sample_id::Int)::Vector{Int}
+    Int[Int(r.id) for r in sqlrows(DBInterface.execute(db,
+        "SELECT id FROM exposures WHERE sample_id = ? AND kind = 'combined' ORDER BY id", [sample_id]))]
 end
 
 function combined_source_ids(db::SQLite.DB, combined_id::Int)::Vector{Int}
@@ -49,38 +55,49 @@ function combined_source_ids(db::SQLite.DB, combined_id::Int)::Vector{Int}
         [combined_id]))]
 end
 
-function sync_combined!(db::SQLite.DB, sample_id::Int)::Union{Int,Nothing}
+function combined_for_set(db::SQLite.DB, sample_id::Int, ids::Vector{Int})::Union{Int,Nothing}
+    want = sort(ids)
+    for cid in combined_exposure_ids(db, sample_id)
+        combined_source_ids(db, cid) == want && return cid
+    end
+    nothing
+end
+
+function analyzed_exposure_id(db::SQLite.DB, sample_id::Int)::Union{Int,Nothing}
+    sel = selected_image_ids(db, sample_id)
+    isempty(sel) && return nothing
+    length(sel) == 1 && return sel[1]
+    combined_for_set(db, sample_id, sel)
+end
+
+function ensure_combined!(db::SQLite.DB, sample_id::Int, ids::Vector{Int})::Union{Int,Nothing}
+    length(ids) < MIN_COMBINED_SOURCES && return nothing
     lock(_DB_WRITE_LOCK) do
         SQLite.transaction(db) do
-            _sync_combined_inner!(db, sample_id)
+            existing = combined_for_set(db, sample_id, ids)
+            existing === nothing || return existing
+            _create_combined!(db, sample_id, sort(ids))
         end
     end
 end
 
-function _sync_combined_inner!(db::SQLite.DB, sample_id::Int)::Union{Int,Nothing}
-    eligible = combine_eligible_ids(db, sample_id)
-    cid = combined_exposure_id(db, sample_id)
-    if cid === nothing
-        length(eligible) < MIN_COMBINED_SOURCES && return nothing
-        sample = first(sqlrows(DBInterface.execute(db,
-            "SELECT experiment_id, setup_id, load_id FROM samples WHERE id = ?", [sample_id])))
-        exp_id = Int(sample.experiment_id)
-        cid = create_exposure!(db;
-            experiment_id = exp_id,
-            setup_id      = ismissing(sample.setup_id) ? default_setup_id(db, exp_id) : Int(sample.setup_id),
-            sample_id     = sample_id,
-            kind          = COMBINED_KIND,
-            load_id       = ismissing(sample.load_id) ? nothing : Int(sample.load_id),
-            monitors_read = true)
-    end
-    combined_source_ids(db, cid) == eligible && return cid
-    DBInterface.execute(db, "DELETE FROM exposure_sources WHERE averaged_exposure_id = ?", [cid])
-    for sid in eligible
+function _create_combined!(db::SQLite.DB, sample_id::Int, sources::Vector{Int})::Int
+    sample = first(sqlrows(DBInterface.execute(db,
+        "SELECT experiment_id, setup_id, load_id FROM samples WHERE id = ?", [sample_id])))
+    exp_id = Int(sample.experiment_id)
+    cid = create_exposure!(db;
+        experiment_id = exp_id,
+        setup_id      = ismissing(sample.setup_id) ? default_setup_id(db, exp_id) : Int(sample.setup_id),
+        sample_id     = sample_id,
+        kind          = COMBINED_KIND,
+        load_id       = ismissing(sample.load_id) ? nothing : Int(sample.load_id),
+        monitors_read = true)
+    for sid in sources
         DBInterface.execute(db,
             "INSERT INTO exposure_sources (averaged_exposure_id, source_exposure_id, role) VALUES (?, ?, 'signal')",
             [cid, sid])
     end
-    _refresh_combined_metadata!(db, cid, eligible)
+    _refresh_combined_metadata!(db, cid, sources)
     cid
 end
 
@@ -158,9 +175,11 @@ function combined_due(db::SQLite.DB, cid::Int)::Bool
     coalesce(row.analysis_version, "") != ANALYSIS_VERSION && !peak_reviewed(db, cid)
 end
 
-function refresh_combined!(db::SQLite.DB, sample_id::Int)
-    cid = sync_combined!(db, sample_id)
-    cid === nothing && return nothing
+function refresh_selection!(db::SQLite.DB, sample_id::Int)::Union{Int,Nothing}
+    sel = selected_image_ids(db, sample_id)
+    length(sel) < MIN_COMBINED_SOURCES && return isempty(sel) ? nothing : sel[1]
+    _all_traced(db, sel) || return nothing
+    cid = ensure_combined!(db, sample_id, sel)
     combined_due(db, cid) || return cid
     try
         analyze_exposure!(db, cid)

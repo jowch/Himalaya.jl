@@ -177,6 +177,7 @@ function _scan_setup!(db::SQLite.DB, experiment_id::Int, setup;
         end
     end
 
+    _keep_custom_selections!(db, new_exposure_ids)
     if analyze
         to_analyze = vcat(new_exposure_ids,
             setdiff(_pending_setup_ids(db, setup; retry_failed), new_exposure_ids))
@@ -191,7 +192,7 @@ function _scan_setup!(db::SQLite.DB, experiment_id::Int, setup;
         on_progress === nothing || on_progress(n_new, n_new, "analyzing")
         for r in sqlrows(DBInterface.execute(db,
                 "SELECT id FROM samples WHERE setup_id = ? ORDER BY id", [setup_id]))
-            refresh_combined!(db, Int(r.id))
+            refresh_selection!(db, Int(r.id))
         end
     end
 
@@ -372,4 +373,20 @@ function _fill_unset_geometry!(db::SQLite.DB, setup_id::Int, geo::NamedTuple)
     DBInterface.execute(db,
         "UPDATE setups SET $cols WHERE id = ?",
         vcat(vals, [setup_id]))
+end
+
+function _keep_custom_selections!(db::SQLite.DB, new_ids)
+    isempty(new_ids) && return nothing
+    ph = join(fill("?", length(new_ids)), ",")
+    for r in sqlrows(DBInterface.execute(db, """
+            SELECT DISTINCT n.sample_id AS sid FROM exposures n
+             WHERE n.id IN ($ph) AND n.sample_id IS NOT NULL
+               AND EXISTS (SELECT 1 FROM exposures o
+                            WHERE o.sample_id = n.sample_id AND o.kind = 'file' AND o.deselected = 1
+                              AND (o.status IS NULL OR o.status != 'rejected')
+                              AND o.id NOT IN ($ph))""", vcat(new_ids, new_ids)))
+        DBInterface.execute(db,
+            "UPDATE exposures SET deselected = 1 WHERE sample_id = ? AND id IN ($ph)", vcat(Int(r.sid), new_ids))
+    end
+    nothing
 end

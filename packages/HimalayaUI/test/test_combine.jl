@@ -38,12 +38,16 @@ _sources(db, cid) = HimalayaUI.combined_source_ids(db, cid)
 _kind_count(db, s_id) = Int(first(HimalayaUI.sqlrows(DBInterface.execute(db,
     "SELECT COUNT(*) AS n FROM exposures WHERE sample_id = ? AND kind = 'combined'", [s_id]))).n)
 
-@testset "refresh_combined! builds and analyses one combined image per sample" begin
+_select!(db, ids) = DBInterface.execute(db,
+    "UPDATE exposures SET deselected = CASE WHEN id IN ($(join(ids, ","))) THEN 0 ELSE 1 END WHERE kind = 'file'")
+
+@testset "refresh_selection! averages every selected image, one curve per set" begin
     fx = _combine_fixture()
     db = fx.db
-    @test HimalayaUI.combined_exposure_id(db, fx.s_id) === nothing
-    cid = HimalayaUI.refresh_combined!(db, fx.s_id)
+    @test HimalayaUI.selected_image_ids(db, fx.s_id) == fx.ids
+    cid = HimalayaUI.refresh_selection!(db, fx.s_id)
     @test cid isa Int
+    @test HimalayaUI.analyzed_exposure_id(db, fx.s_id) == cid
     @test _sources(db, cid) == fx.ids
     row = first(HimalayaUI.sqlrows(DBInterface.execute(db,
         "SELECT kind, status, filename, exposure_time, trace_hash, analysis_version, analysis_error FROM exposures WHERE id = ?", [cid])))
@@ -54,8 +58,13 @@ _kind_count(db, s_id) = Int(first(HimalayaUI.sqlrows(DBInterface.execute(db,
     @test row.analysis_version == HimalayaUI.ANALYSIS_VERSION
     @test ismissing(row.analysis_error)
     @test HimalayaUI.count_auto_peaks(db, cid) > 0
-
-    @test HimalayaUI.refresh_combined!(db, fx.s_id) == cid
+    run = first(HimalayaUI.sqlrows(DBInterface.execute(db,
+        "SELECT payload FROM user_actions WHERE action = 'analyze_run' AND entity_id = ? ORDER BY id DESC LIMIT 1", [cid])))
+    @test JSON3.read(run.payload).average_of_sample == fx.s_id
+    single = first(HimalayaUI.sqlrows(DBInterface.execute(db,
+        "SELECT payload FROM user_actions WHERE action = 'analyze_run' AND entity_id = ? ORDER BY id DESC LIMIT 1", [fx.ids[1]])))
+    @test !haskey(JSON3.read(single.payload), :average_of_sample)
+    @test HimalayaUI.refresh_selection!(db, fx.s_id) == cid
     @test _kind_count(db, fx.s_id) == 1
     @test !HimalayaUI.combined_due(db, cid)
 
@@ -64,98 +73,176 @@ _kind_count(db, s_id) = Int(first(HimalayaUI.sqlrows(DBInterface.execute(db,
     _, I, σ = HimalayaUI.load_combined_trace(db, cid)
     @test I ≈ (2 .* a[2] .+ b[2]) ./ 3
     @test σ ≈ sqrt.(2 .* a[3] .^ 2 .+ b[3] .^ 2) ./ 3
+
+    _select!(db, fx.ids[1:2])
+    pair = HimalayaUI.refresh_selection!(db, fx.s_id)
+    @test pair != cid
+    @test _sources(db, pair) == fx.ids[1:2]
+    @test _sources(db, cid) == fx.ids
+    @test _kind_count(db, fx.s_id) == 2
+
+    _select!(db, fx.ids)
+    @test HimalayaUI.refresh_selection!(db, fx.s_id) == cid
+    @test _kind_count(db, fx.s_id) == 2
 end
 
-@testset "a sample with one image gets no combined image" begin
+@testset "one selected image is analyzed as itself, none selected analyzes nothing" begin
     fx = _combine_fixture()
     db = fx.db
-    DBInterface.execute(db, "UPDATE exposures SET status = 'rejected' WHERE id IN (?, ?)", fx.ids[1:2])
-    @test HimalayaUI.refresh_combined!(db, fx.s_id) === nothing
+    _select!(db, [fx.ids[2]])
+    @test HimalayaUI.refresh_selection!(db, fx.s_id) == fx.ids[2]
+    @test HimalayaUI.analyzed_exposure_id(db, fx.s_id) == fx.ids[2]
     @test _kind_count(db, fx.s_id) == 0
+    _select!(db, Int[0])
+    @test HimalayaUI.refresh_selection!(db, fx.s_id) === nothing
+    @test HimalayaUI.analyzed_exposure_id(db, fx.s_id) === nothing
 end
 
-@testset "images without a trace yet are left out of the combination" begin
+@testset "a set with an image not yet analyzed gets no average yet" begin
     fx = _combine_fixture()
     db = fx.db
     DBInterface.execute(db, "UPDATE exposures SET trace_hash = NULL WHERE id = ?", [fx.ids[3]])
-    cid = HimalayaUI.refresh_combined!(db, fx.s_id)
-    @test _sources(db, cid) == fx.ids[1:2]
+    @test HimalayaUI.refresh_selection!(db, fx.s_id) === nothing
+    @test _kind_count(db, fx.s_id) == 0
 end
 
-@testset "drop, restore and include routes keep the combined image in step" begin
+@testset "selection, drop and restore routes" begin
     fx = _combine_fixture()
     db = fx.db
-    cid = HimalayaUI.refresh_combined!(db, fx.s_id)
-    first_hash = HimalayaUI.read_trace_hash(db, cid)
+    cid = HimalayaUI.refresh_selection!(db, fx.s_id)
     json_hdr = ["Content-Type" => "application/json"]
-    rep() = only(filter(s -> s.id == fx.s_id, JSON3.read(String(
-        HimalayaUI.sqlrows === nothing ? "" : ""))))
+    put(ids) = call -> call("PUT", "/api/samples/$(fx.s_id)/selection";
+        body = JSON3.write(Dict(:exposure_ids => ids)), headers = json_hdr)
+    status(call, id, st) = call("PATCH", "/api/exposures/$id/status";
+        body = JSON3.write(Dict(:status => st)), headers = json_hdr)
     with_inproc_routes(db) do call
-        representative() = only(filter(s -> s.id == fx.s_id,
-            JSON3.read(String(call("GET", "/api/samples?experiment_id=$(fx.exp_id)").body)))).representative_exposure_id
-        @test representative() == cid
+        analyzed() = only(filter(s -> s.id == fx.s_id,
+            JSON3.read(String(call("GET", "/api/samples?experiment_id=$(fx.exp_id)").body)))).analyzed_exposure_id
+        listing() = JSON3.read(String(call("GET", "/api/samples/$(fx.s_id)/exposures").body))
+        @test analyzed() == cid
 
-        listing = JSON3.read(String(call("GET", "/api/samples/$(fx.s_id)/exposures").body))
-        combined = only(filter(e -> e.id == cid, listing))
+        combined = only(filter(e -> e.id == cid, listing()))
         @test combined.kind == "combined"
+        @test !haskey(combined, :selected)
         @test sort([Int(s.source_exposure_id) for s in combined.sources]) == fx.ids
-        @test all(e -> e.included === true, listing)
-        @test !any(e -> haskey(e, :combine_excluded), listing)
+        @test all(e -> e.selected === true, filter(e -> e.kind == "file", listing()))
+        @test !any(e -> haskey(e, :deselected), listing())
 
         tr = JSON3.read(String(call("GET", "/api/exposures/$cid/trace").body))
         @test sort(collect(tr.sources)) == fx.ids
         @test tr.monitors.transmitted_counts ≈ 1000.0
-        @test tr.monitors.exposure_time ≈ 1.0 && tr.monitors.counting_time ≈ 1.0
 
-        r = call("PATCH", "/api/exposures/$(fx.ids[2])/status"; body = JSON3.write(Dict(:status => "rejected")), headers = json_hdr)
+        r = put([fx.ids[3], fx.ids[1]])(call)
         @test r.status == 200
-        @test _sources(db, cid) == [fx.ids[1], fx.ids[3]]
-        @test HimalayaUI.read_trace_hash(db, cid) != first_hash
-        @test HimalayaUI.read_trace_hash(db, cid) == HimalayaUI.combined_trace_hash(db, cid)
+        body = JSON3.read(String(r.body))
+        @test collect(body.exposure_ids) == [fx.ids[1], fx.ids[3]]
+        pair = body.analyzed_exposure_id
+        @test _sources(db, pair) == [fx.ids[1], fx.ids[3]]
+        @test analyzed() == pair
+        @test only(filter(e -> e.id == fx.ids[2], listing())).selected === false
 
-        r = call("PATCH", "/api/exposures/$(fx.ids[3])/included"; body = JSON3.write(Dict(:included => false)), headers = json_hdr)
+        r = put([fx.ids[2]])(call)
+        @test JSON3.read(String(r.body)).analyzed_exposure_id == fx.ids[2]
+        @test analyzed() == fx.ids[2]
+
+        r = put(Int[])(call)
         @test r.status == 200
-        @test _sources(db, cid) == [fx.ids[1]]
-        @test representative() == fx.ids[3]
-        @test call("GET", "/api/exposures/$cid/trace").status == 404
-        listing = JSON3.read(String(call("GET", "/api/samples/$(fx.s_id)/exposures").body))
-        @test only(filter(e -> e.id == fx.ids[3], listing)).included === false
+        @test JSON3.read(String(r.body)).analyzed_exposure_id === nothing
+        @test analyzed() === nothing
 
-        call("PATCH", "/api/exposures/$(fx.ids[2])/status"; body = JSON3.write(Dict(:status => "accepted")), headers = json_hdr)
-        call("PATCH", "/api/exposures/$(fx.ids[3])/included"; body = JSON3.write(Dict(:included => true)), headers = json_hdr)
-        @test _sources(db, cid) == fx.ids
-        @test HimalayaUI.read_trace_hash(db, cid) == first_hash
-        @test representative() == cid
-        @test _kind_count(db, fx.s_id) == 1
+        put(fx.ids)(call)
+        @test analyzed() == cid
+        @test status(call, fx.ids[2], "rejected").status == 200
+        @test HimalayaUI.selected_image_ids(db, fx.s_id) == [fx.ids[1], fx.ids[3]]
+        @test analyzed() == HimalayaUI.combined_for_set(db, fx.s_id, [fx.ids[1], fx.ids[3]])
 
-        @test call("PATCH", "/api/exposures/$cid/status"; body = JSON3.write(Dict(:status => "rejected")), headers = json_hdr).status == 422
-        @test call("PATCH", "/api/exposures/$cid/included"; body = JSON3.write(Dict(:included => false)), headers = json_hdr).status == 422
-        @test call("PATCH", "/api/exposures/$(fx.ids[1])/included"; body = JSON3.write(Dict(:included => "no")), headers = json_hdr).status == 422
-        @test call("PATCH", "/api/exposures/99999/included"; body = JSON3.write(Dict(:included => true)), headers = json_hdr).status == 404
+        @test status(call, fx.ids[2], "accepted").status == 200
+        @test only(filter(e -> e.id == fx.ids[2], listing())).selected === false
+        @test analyzed() == HimalayaUI.combined_for_set(db, fx.s_id, [fx.ids[1], fx.ids[3]])
+
+        @test put([fx.ids[2]])(call).status == 200
+        @test status(call, fx.ids[1], "rejected").status == 200
+        @test status(call, fx.ids[3], "rejected").status == 200
+        @test status(call, fx.ids[2], "rejected").status == 200
+        @test isempty(HimalayaUI.selected_image_ids(db, fx.s_id))
+        @test analyzed() === nothing
+        @test put(Int[])(call).status == 200
+        @test status(call, fx.ids[1], "accepted").status == 200
+        @test HimalayaUI.selected_image_ids(db, fx.s_id) == [fx.ids[1]]
+
+        @test status(call, cid, "rejected").status == 422
+        @test put([fx.ids[3]])(call).status == 422
+        @test put([cid])(call).status == 422
+        @test call("PUT", "/api/samples/$(fx.s_id)/selection"; body = JSON3.write(Dict(:exposure_ids => "all")), headers = json_hdr).status == 422
+        @test call("PUT", "/api/samples/99999/selection"; body = JSON3.write(Dict(:exposure_ids => Int[])), headers = json_hdr).status == 404
     end
 end
 
-@testset "a combined image whose sources disagree on q records the error once" begin
+@testset "a rescan keeps a custom selection and grows an all-selected one" begin
+    fx = _combine_fixture()
+    db = fx.db
+    other = HimalayaUI.create_sample!(db; experiment_id = fx.exp_id, name = "T")
+    o1 = HimalayaUI.create_exposure!(db; experiment_id = fx.exp_id, sample_id = other, filename = "o1")
+    _select!(db, vcat(fx.ids[1:2], [o1]))
+    n1 = HimalayaUI.create_exposure!(db; experiment_id = fx.exp_id, sample_id = fx.s_id, filename = "n1")
+    n2 = HimalayaUI.create_exposure!(db; experiment_id = fx.exp_id, sample_id = other, filename = "n2")
+    HimalayaUI._keep_custom_selections!(db, [n1, n2])
+    @test HimalayaUI.selected_image_ids(db, fx.s_id) == fx.ids[1:2]
+    @test HimalayaUI.selected_image_ids(db, other) == [o1, n2]
+end
+
+@testset "an average whose images disagree on q records the error once" begin
     fx = _combine_fixture()
     db = fx.db
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
        joinpath(fx.analysis_dir, "c_tot.dat"); force = true)
     HimalayaUI.analyze_exposure!(db, fx.ids[3])
-    cid = HimalayaUI.refresh_combined!(db, fx.s_id)
+    cid = HimalayaUI.refresh_selection!(db, fx.s_id)
     err = first(HimalayaUI.sqlrows(DBInterface.execute(db,
         "SELECT analysis_error FROM exposures WHERE id = ?", [cid]))).analysis_error
     @test occursin("q grids", err)
     @test !HimalayaUI.combined_due(db, cid)
 end
 
-@testset "migration adds combine_excluded to an old exposures table" begin
-    db = SQLite.DB()
-    HimalayaUI.create_schema!(db)
+@testset "migration adds deselected and keeps reviewed samples on the image they were worked on" begin
+    fx = _combine_fixture()
+    db = fx.db
+    plain = HimalayaUI.create_sample!(db; experiment_id = fx.exp_id, name = "P")
+    p = [HimalayaUI.create_exposure!(db; experiment_id = fx.exp_id, sample_id = plain, filename = "p$i") for i in 1:2]
+    ix = Int(DBInterface.lastrowid(DBInterface.execute(db,
+        "INSERT INTO indices (exposure_id, phase, basis, score) VALUES (?, 'Pn3m', 0.1, 0.9)", [fx.ids[2]])))
+    DBInterface.execute(db, "INSERT INTO assignment_members (exposure_id, index_id) VALUES (?, ?)", [fx.ids[2], ix])
+    DBInterface.execute(db, "ALTER TABLE exposures DROP COLUMN deselected")
+    DBInterface.execute(db, "DELETE FROM schema_migrations WHERE name = ?", [HimalayaUI.MIGRATION_EXPOSURES_DESELECTED])
     HimalayaUI.migrate_schema!(db)
-    DBInterface.execute(db, "ALTER TABLE exposures DROP COLUMN combine_excluded")
-    DBInterface.execute(db, "DELETE FROM schema_migrations WHERE name = ?", [HimalayaUI.MIGRATION_EXPOSURES_COMBINE_EXCLUDED])
+    @test "deselected" in HimalayaUI.cols_of(db, "exposures")
+    @test HimalayaUI.selected_image_ids(db, fx.s_id) == [fx.ids[2]]
+    @test HimalayaUI.selected_image_ids(db, plain) == p
     HimalayaUI.migrate_schema!(db)
-    @test "combine_excluded" in HimalayaUI.cols_of(db, "exposures")
-    HimalayaUI.migrate_schema!(db)
-    @test "combine_excluded" in HimalayaUI.cols_of(db, "exposures")
+    @test HimalayaUI.selected_image_ids(db, fx.s_id) == [fx.ids[2]]
+end
+
+@testset "analyze skips averages of an earlier selection" begin
+    fx = _combine_fixture()
+    db = fx.db
+    stale = HimalayaUI.refresh_selection!(db, fx.s_id)
+    _select!(db, fx.ids[1:2])
+    current = HimalayaUI.refresh_selection!(db, fx.s_id)
+    @test current != stale
+    DBInterface.execute(db, "UPDATE exposures SET status = 'rejected' WHERE id = ?", [fx.ids[3]])
+    DBInterface.execute(db, "UPDATE exposures SET trace_hash = NULL, analysis_inputs_hash = NULL WHERE experiment_id = ?", [fx.exp_id])
+    out = mktemp() do path, io
+        skipped = redirect_stdout(io) do
+            HimalayaUI._analyze_experiment!(db, fx.exp_id)
+        end
+        @test skipped == 0
+        close(io)
+        read(path, String)
+    end
+    @test occursin("average of 3 images (not the current selection)", out)
+    @test occursin("Analyzing S / average of 2 images ... done", out)
+    hashed(id) = !ismissing(first(HimalayaUI.sqlrows(DBInterface.execute(db,
+        "SELECT analysis_inputs_hash AS h FROM exposures WHERE id = ?", [id]))).h)
+    @test hashed(current)
+    @test !hashed(stale)
 end

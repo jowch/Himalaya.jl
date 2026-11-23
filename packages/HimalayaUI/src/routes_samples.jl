@@ -30,16 +30,23 @@ function register_samples_routes!()
         sids = [Int(sm.id) for sm in samples]
         if !isempty(samples)
             ph   = join(fill("?", length(sids)), ",")
+            sources = Dict{Int, Vector{Int}}()
+            for r in sqlrows(DBInterface.execute(db, """
+                    SELECT s.averaged_exposure_id AS cid, s.source_exposure_id AS sid
+                      FROM exposure_sources s JOIN exposures e ON e.id = s.averaged_exposure_id
+                     WHERE e.sample_id IN ($ph)""", sids))
+                push!(get!(sources, Int(r.cid), Int[]), Int(r.sid))
+            end
             grouped_exps = Dict{Int, Vector{NamedTuple}}()
             for e in sqlrows(DBInterface.execute(db,
-                    "SELECT id, sample_id, status, kind,
-                            (SELECT COUNT(*) FROM exposure_sources s WHERE s.averaged_exposure_id = exposures.id) AS sources
-                       FROM exposures
+                    "SELECT id, sample_id, status, kind, deselected FROM exposures
                      WHERE sample_id IN ($ph) ORDER BY sample_id ASC, id ASC", sids))
-                push!(get!(grouped_exps, Int(e.sample_id), NamedTuple[]), e)
+                push!(get!(grouped_exps, Int(e.sample_id), NamedTuple[]),
+                    (id = Int(e.id), status = e.status, kind = e.kind, deselected = e.deselected,
+                     sources = get(sources, Int(e.id), Int[])))
             end
             for (sid, exps) in grouped_exps
-                rep = representative_exposure_id(exps)
+                rep = analyzed_exposure_id(exps)
                 rep === nothing || (rep_by_sample[sid] = rep)
             end
         end
@@ -50,7 +57,7 @@ function register_samples_routes!()
             d          = row_to_json(sm)
             d[:q_units] = ismissing(sm.setup_id) ? "A-1" :
                 get(qunits_by_setup, Int(sm.setup_id), "A-1")
-            d[:representative_exposure_id] = get(rep_by_sample, Int(sm.id), nothing)
+            d[:analyzed_exposure_id] = get(rep_by_sample, Int(sm.id), nothing)
             state = get(call_states, Int(sm.id), "indexed")
             summary = call_summary(state, get(call_members, Int(sm.id), []))
             d[:assignment_state] = state

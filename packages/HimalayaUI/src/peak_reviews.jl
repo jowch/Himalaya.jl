@@ -1,6 +1,5 @@
 const REVIEW_EXPOSURE_KINDS = ("peak_added", "peak_removed", "peak_excluded", "peak_unexcluded",
-    "assignment_add", "assignment_remove", "assignment_set_state", "speculative_created", "set_exposure_status",
-    "set_exposure_included")
+    "assignment_add", "assignment_remove", "assignment_set_state", "speculative_created", "set_exposure_status")
 const DIRECT_REVIEW_KINDS = ("peak_added", "peak_removed", "peak_excluded", "peak_unexcluded",
     "assignment_add", "assignment_remove", "assignment_set_state", "speculative_created")
 const REVIEW_SAMPLE_KINDS = ("sample_call_set_state",)
