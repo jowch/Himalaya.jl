@@ -1506,6 +1506,47 @@ describe("WorkspacePage", () => {
       expect(toasts.at(-1)).toBe("Nothing to undo.");
     });
 
+    it("ticks several samples on the same-sample page, bridges them with one Enter, and undoes them in one step", async () => {
+      renderAt("/experiments/1/workspace/10");
+      runFromPalette("same sample as…");
+      const input = screen.getByRole("combobox", { name: "Sample" });
+      fireEvent.change(input, { target: { value: "a2" } });
+      fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+      fireEvent.change(input, { target: { value: "a4" } });
+      fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+      fireEvent.keyDown(input, { key: "Enter" });
+      await settle();
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(calls.filter((c) => c.hook === "bridge").map((c) => c.arg)).toEqual([{ sampleId: 10, toSampleId: 11 }, { sampleId: 10, toSampleId: 13 }]);
+      state.bridges = [{ sample_id: 10, group_id: 1 }, { sample_id: 11, group_id: 1 }, { sample_id: 13, group_id: 1 }];
+      calls.length = 0;
+      await undo();
+      expect(ops().filter((o) => o[0] === "unbridge")).toEqual([["unbridge", 13], ["unbridge", 10]]);
+      expect(toasts.at(-1)).toBe("Undone: marked A1 as the same sample as A2, A4");
+    });
+
+    it("asks once which call to keep for the whole group, and keeps it through every step", async () => {
+      state.corpus = state.corpus.map((s) => (s.id === 13 ? { ...s, assignment_state: "indexed", phase: "Im3m", call_phases: ["Im3m"] } : s));
+      renderAt("/experiments/1/workspace/10");
+      runFromPalette("same sample as…");
+      const input = screen.getByRole("combobox", { name: "Sample" });
+      for (const name of ["a2", "a4"]) {
+        fireEvent.change(input, { target: { value: name } });
+        fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+      }
+      fireEvent.keyDown(input, { key: "Enter" });
+      const form = screen.getByRole("dialog", { name: "Same sample as A2, A4" });
+      const keep = within(form).getByRole("combobox", { name: "Keep the call of" });
+      expect(keep).toHaveTextContent("A1: Pn3m");
+      fireEvent.keyDown(keep, { key: "ArrowDown" });
+      fireEvent.keyDown(keep, { key: "Enter" });
+      await settle();
+      await waitFor(() => expect(calls.filter((c) => c.hook === "bridge").map((c) => c.arg)).toEqual([
+        { sampleId: 10, toSampleId: 11 },
+        { sampleId: 10, toSampleId: 13, keepCall: 13 },
+      ]));
+    });
+
     it("undoes saying a sample is not the same sample after all", async () => {
       state.bridges = [{ sample_id: 10, group_id: 1 }, { sample_id: 11, group_id: 1 }];
       renderAt("/experiments/1/workspace/11");

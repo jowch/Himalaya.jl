@@ -457,3 +457,59 @@ describe("cycleOption", () => {
     expect(submitted).toEqual([{ name: "buffer", color: "teal" }]);
   });
 });
+
+describe("Palette multi-select page", () => {
+  function openMulti(commit: (ids: readonly string[]) => PaletteForm | undefined): { onClose: ReturnType<typeof vi.fn> } {
+    ran.length = 0;
+    const onClose = vi.fn();
+    const pages: Record<string, PalettePage> = {
+      same: {
+        title: "Same sample as",
+        arg: "Sample",
+        items: ["B1", "B2", "B3"].map((n) => ({ id: `same-${n}`, label: n, run: run(`same ${n}`) })),
+        multi: { verb: (n) => `mark ${n}`, commit },
+      },
+    };
+    const groups: PaletteGroup[] = [{ title: "This sample", items: [{ id: "same", label: "Same sample as…", page: "same" }] }];
+    render(<Palette groups={groups} pages={pages} onClose={onClose} />);
+    fireEvent.keyDown(field(), { key: "Enter" });
+    return { onClose };
+  }
+  const checked = (): string[] => screen.getAllByRole("option").filter((o) => o.getAttribute("aria-checked") === "true").map((o) => o.getAttribute("data-palette-item")!);
+
+  it("Shift+Enter ticks the highlighted row, ticks survive a new filter, and Enter commits every ticked row at once", () => {
+    const commit = vi.fn(() => undefined);
+    const { onClose } = openMulti(commit);
+    expect(screen.getByRole("listbox", { name: "Same sample as" })).toHaveAttribute("aria-multiselectable", "true");
+    fireEvent.keyDown(field(), { key: "Enter", shiftKey: true });
+    expect(checked()).toEqual(["same-B1"]);
+    expect(screen.getByTestId("workspace-palette")).toHaveTextContent("mark 1");
+    fireEvent.change(field(), { target: { value: "b3" } });
+    fireEvent.keyDown(field(), { key: "Enter", shiftKey: true });
+    fireEvent.change(field(), { target: { value: "" } });
+    expect(checked()).toEqual(["same-B1", "same-B3"]);
+    fireEvent.keyDown(field(), { key: "Enter" });
+    expect(commit).toHaveBeenCalledWith(["same-B1", "same-B3"]);
+    expect(ran).toEqual([]);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("with nothing ticked, Enter picks the highlighted row as before; once one is ticked a click ticks instead of picking", () => {
+    const commit = vi.fn(() => undefined);
+    openMulti(commit);
+    fireEvent.click(screen.getByRole("option", { name: "B2" }).querySelector("[data-tick]")!);
+    expect(checked()).toEqual(["same-B2"]);
+    fireEvent.click(screen.getByRole("option", { name: "B2" }));
+    expect(checked()).toEqual([]);
+    fireEvent.keyDown(field(), { key: "Enter" });
+    expect(ran).toEqual(["same B1"]);
+    expect(commit).not.toHaveBeenCalled();
+  });
+
+  it("opens the form the commit asks for, such as which call to keep", () => {
+    openMulti(() => newLabel("x"));
+    fireEvent.keyDown(field(), { key: "Enter", shiftKey: true });
+    fireEvent.keyDown(field(), { key: "Enter" });
+    expect(screen.getByRole("dialog", { name: "New label" })).toBeInTheDocument();
+  });
+});
