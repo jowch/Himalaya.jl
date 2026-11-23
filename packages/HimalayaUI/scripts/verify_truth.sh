@@ -136,6 +136,28 @@ step 13-calls-match log bash -c '
     if (!inv.checked) { console.log(\"bridged_calls_match did not run: check-truth saw no bridge\"); process.exit(1); }
     if (!inv.ok) { console.log(JSON.stringify(inv.violations, null, 2)); process.exit(1); }
     console.log(\"bridged_calls_match checked and held\");" "$out/13-bridged.json"' _ "$OUT"
+step 14-call-lost-in-place log bash -c '
+  set -e
+  out=$1 help=$2 label=$3
+  json() { node -e "let d=\"\";process.stdin.on(\"data\",c=>d+=c).on(\"end\",()=>process.stdout.write(String(($1)(JSON.parse(d)))))"; }
+  read -r sid eid < <(node "$help" target "$out/5-confirmed.json" "$label")
+  phases() { bin/verify api GET "/api/samples/$sid/call" | json "r=>r.body.call_phases.join(\"+\")"; }
+  [[ -n $(phases) ]] || { echo "$label has no call to lose"; exit 1; }
+  bin/verify open "/experiments/1/workspace/$sid" > /dev/null
+  for q in $(bin/verify api GET "/api/exposures/$eid/peaks" | json "r=>r.body.filter(p=>p.source===\"auto\"&&!p.excluded).map(p=>p.q.toFixed(4)).join(\" \")"); do
+    bin/verify click --role button --name "Auto peak at q = $q Å⁻¹" --exact > /dev/null
+    [[ -z $(phases) ]] && break
+  done
+  [[ -z $(phases) ]] || { echo "excluding every auto peak of $label left its call $(phases); the step cannot test a lost call"; exit 1; }
+  echo "turning peaks off dropped the call of $label"
+  bin/verify check-truth --ui > "$out/14-in-place.json" || true
+  node -e "
+    const r = JSON.parse(require(\"fs\").readFileSync(process.argv[1], \"utf8\"));
+    const inv = r.invariants.workspace_status_matches;
+    if (r.workspace_read !== \"in place\") { console.log(\"check-truth reloaded the workspace (\" + r.workspace_read + \"), so it cannot see a stale list\"); process.exit(1); }
+    if (!inv.checked || !inv.ok) { console.log(JSON.stringify(inv, null, 2)); process.exit(1); }
+    console.log(\"the open workspace list dropped the lost call without a reload\");" "$out/14-in-place.json"' _ "$OUT" "$HELP" "$CONFIRM_SAMPLE"
+
 if (( ${#failed[@]} )); then
   echo "verify-truth failed: ${failed[*]}"
   exit 1
