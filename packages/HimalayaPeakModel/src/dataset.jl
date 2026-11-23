@@ -99,21 +99,30 @@ struct Dataset
     group::Vector{Int}
     cand::Vector{Vector{Int}}     # candidate grid indices per exposure
     hybrid::Vector{Vector{Int}}   # hybrid detector peaks per exposure
+    feature_names::Vector{String} # columns of X
 end
 
-function build_dataset(exps::AbstractVector{LabeledExposure}; verbose::Bool = false)
+"""
+    build_dataset(exps; features = DefaultFeatures()) -> Dataset
+
+Candidates, features and labels for each exposure. A recipe can train on a
+dataset whose columns include all of its feature names.
+"""
+function build_dataset(exps::AbstractVector{LabeledExposure}; features::FeatureSet = DefaultFeatures(),
+                       verbose::Bool = false)
     parts = Vector{Any}(undef, length(exps))
     Threads.@threads for k in eachindex(exps)
         e = exps[k]
-        idx, X, hyb = candidate_features(e.q, e.I, e.σ)
+        idx, X, hyb = candidates_and_features(features, e.q, e.I, e.σ)
         lab = label_candidates(e.q, idx, e.adds, e.kept, e.excluded, e.labelled, e.form_factor;
                               kept_model = e.kept_model)
-        parts[k] = (idx, X, lab, hyb)
+        parts[k] = (idx, X, lab, hyb === nothing ? Int[] : hyb.indices)
     end
     Xs = [p[2] for p in parts]
     exposure = reduce(vcat, [fill(k, length(parts[k][1])) for k in eachindex(parts)]; init = Int[])
     group = [exps[k].group for k in exposure]
-    Dataset(isempty(Xs) ? zeros(0, length(FEATURE_NAMES)) : reduce(vcat, Xs),
+    names = feature_names(features)
+    Dataset(isempty(Xs) ? zeros(0, length(names)) : reduce(vcat, Xs),
             reduce(vcat, [p[3] for p in parts]; init = Int[]),
-            exposure, group, [p[1] for p in parts], [p[4] for p in parts])
+            exposure, group, [p[1] for p in parts], [p[4] for p in parts], names)
 end

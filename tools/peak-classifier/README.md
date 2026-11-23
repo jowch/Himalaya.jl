@@ -26,20 +26,27 @@ From `tools/peak-classifier/`, once: `julia --project=. -e 'using Pkg; Pkg.insta
 
 ```
 julia --threads=auto --project=. scripts/peak_classifier.jl cv    DB
-julia --threads=auto --project=. scripts/peak_classifier.jl train DB --out models/lab.jls
-julia --project=. scripts/peak_classifier.jl predict models/lab.jls TRACE_tot.dat
+julia --threads=auto --project=. scripts/peak_classifier.jl train DB --out models/lab.json
+julia --project=. scripts/peak_classifier.jl predict models/lab.json TRACE_tot.dat
 ```
 
-Options for `cv` and `train`: `--threshold` (default 0.5), `--nms` (8 grid
-points), `--trees` (200), `--group-by experiment|sample` (cross-validation
+Options for `cv` and `train`: `--learner rf|logistic` (default `rf`), `--threshold` (default 0.5), `--nms` (8 grid
+points), `--trees` (200, forest only), `--group-by experiment|sample` (cross-validation
 fold key), `--no-form-factor`, `--no-detector-features` (drop the
 `in_persistence` and `in_hybrid` features; see "Reading the metrics").
 `predict` prints one peak q per line. From Julia:
 `predict_peaks(load_model(path), q, I, σ)`.
 
-A model file is a Julia `Serialization` dump: it loads only on the same Julia
-and DecisionTree.jl versions, and only with the version of this tool that wrote it (model files from before the HimalayaPeakModel package cannot be read). Retrain after upgrading. Loading it runs
-arbitrary code from the file, so load only models you trained yourself. Pass
+A model file is JSON: `{"file_version": 3, "model": ...}`, where `model` is
+`HimalayaPeakModel.to_dict` of the trained model (recipe, recipe id, feature
+names, threshold, NMS window and the fitted model, each tree as nested split and
+leaf nodes). Loading reads data only and runs no code from the file, and it does
+not depend on the Julia version (it is rebuilt into DecisionTree.jl 0.12's
+tree structs). A file from an older version of the tool (a `Serialization`
+dump, or file version below 3), or one trained with a different feature
+version (for example after a core Himalaya upgrade), is refused with "retrain it". Any learner kind registered in `HimalayaPeakModel`
+(`register_learner!`) can be saved and loaded; `--learner` selects among the
+built-in `rf` (random forest) and `logistic`. Pass
 the trace's `σ` to `predict_peaks` when you have it; without it `σ` is
 estimated, and predictions can differ from what was validated.
 
@@ -78,7 +85,10 @@ Tests: `julia --project=. -e 'using Pkg; Pkg.test()'` (synthetic data only; CI j
    by HimalayaUI) and `HimalayaUI.curation_flags`, the app's own code. The
    database must have been opened once by a HimalayaUI that has review
    snapshots (`peak_reviews`); the tool does not migrate.
-4. **Model.** Random forest (DecisionTree.jl). Prediction keeps candidates with
+4. **Model.** A recipe (`HimalayaPeakModel.Recipe`): feature set, learner,
+   label options and decision rule. The default is the random forest
+   (DecisionTree.jl); `--learner logistic` swaps in a logistic regression.
+   Prediction keeps candidates with
    probability at or above the threshold, then thins them by non-maximum
    suppression.
 

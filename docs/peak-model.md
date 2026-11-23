@@ -179,7 +179,7 @@ when omitted); inserts default to `hybrid` and NULL.
   Training therefore runs in a separate `julia` process, started with the
   server's sysimage so it does not spend minutes compiling, that opens the
   database read-only (`mode=ro`), trains and cross-validates, and prints the
-  forest and metrics as JSON. The server writes the result under
+  fitted model, recipe and metrics as JSON. The server writes the result under
   `_DB_WRITE_LOCK`.
 - **Trigger.** A watermark: the largest `user_actions.id` among the label
   kinds (the direct labelling events above). Training is due when at
@@ -201,6 +201,34 @@ when omitted); inserts default to `hybrid` and NULL.
   experiments). Kept hybrid peaks are plentiful and say little, so they do not
   count towards this. Until then the hybrid alone is used, and the run's row
   records why.
+
+## Swapping the model
+
+The model is a recipe (`HimalayaPeakModel.Recipe`) made of three parts that
+can each change without touching the rest:
+
+- **Learner** (`Learner`/`Fitted`: `fit`, `predict_proba`, `to_dict`,
+  `from_dict`). The package has `RandomForestLearner` and `LogisticLearner`.
+  A new learner is a new type plus one `register_learner!` entry (from the
+  defining package's `__init__`; a duplicate kind is an error). Nothing else
+  changes: training, cross-validation, the gate and storage take any learner,
+  and old rows keep loading by their `kind`.
+- **Feature set** (`FeatureSet`: `feature_names`, `feature_version`,
+  `candidates_and_features`). `DefaultFeatures` is today's. A new feature set
+  has a new feature version, so cached features are rebuilt and models trained
+  on the old one are retrained from the stored labels.
+- **Recipe**: feature set, learner, label options (`weak_keep`), threshold and
+  NMS window, with a stable `recipe_id` (hash of its dict). Changing any
+  setting is a new recipe and a new id.
+
+Scope: a recipe describes a per-candidate classifier (candidate rows, a
+probability threshold, NMS). A model of another shape, such as a whole-trace
+model, would need `Recipe` and `TrainedModel` to become abstract with their own
+`train` and `predict_peaks`.
+
+A swap does not decide anything by itself. A model trained from a new recipe
+is a pending candidate and the promotion gate below decides whether it replaces
+the active one, using the same hybrid comparison for every recipe.
 
 ## Evaluation and promotion
 
@@ -244,15 +272,21 @@ production stays.
   `pending`, `rejected`, `retired`), label watermark, counts, threshold and
   non-maximum-suppression window,
   metrics JSON (the cross-validated tables and the production comparison),
-  feature version, core version, and the forest.
-- The forest is stored as JSON (each tree as nested split and leaf nodes) in
-  a TEXT column, only for the active and a pending model; it is set to NULL on
-  rejected and retired rows. JSON trees load without running code (a
-  `Serialization` file runs code when loaded, and the directory next to the
-  database is group-writable) and do not depend on the Julia or DecisionTree
-  version. Prediction walks the JSON trees with the same split comparison as
-  DecisionTree, and a test checks that its probabilities equal DecisionTree's
-  on the same forest.
+  feature version, core version, the recipe (its `to_dict` as JSON), the
+  recipe id, and the fitted model.
+- The fitted model is `to_dict` of the learner's `Fitted` object, stored as JSON
+  in a TEXT column, only for the active and a pending model; it is set to NULL
+  on rejected and retired rows. For the random forest each tree is nested split
+  nodes (exact Float64 thresholds) and leaves holding the majority class and the
+  training count per class. JSON loads without running code (a `Serialization`
+  file runs code when loaded, and the directory next to the database is
+  group-writable) and does not depend on the Julia version. Loading dispatches
+  on the dictionary's `kind` through a registry and rebuilds DecisionTree 0.12's
+  own tree structs, so prediction is DecisionTree's code. That ties the stored
+  forest format to DecisionTree 0.12's struct layout; `[compat]` holds the
+  bound, and the round-trip tests (identical forest and per-tree
+  probabilities) must pass on any upgrade. The recipe row is enough to retrain
+  the same model from the stored labels.
 - The feature version includes `pkgversion(Himalaya)`, because candidates and
   the detector-agreement features come from `findpeaks`. After a core upgrade
   the server retrains from the stored labels at boot and runs the gate, so a
@@ -306,7 +340,7 @@ deployment.
 ## Packaging
 
 Done in step 1. The features, labels, model and cross-validation live in
-`packages/HimalayaPeakModel`, which depends only on Himalaya and DecisionTree.
+`packages/HimalayaPeakModel`, which depends only on Himalaya, DecisionTree and stdlib packages.
 The database loader is `HimalayaUI.labeled_exposures(db)`, taking an open
 handle. The command-line tool `tools/peak-classifier/` sits on top of both and
 keeps its read-only open. HimalayaUI depends on HimalayaPeakModel, so
@@ -326,10 +360,11 @@ cache are lab data like the rest of the database and are never exported.
    no longer match an auto peak now count as negatives.
 2. Provenance and pinning: `found_by`, `model_id`, `reviewed_at`, review
    snapshots and the snapshot-based labels. No peak changes.
-3. Training service: `peak_models` table, feature cache, child-process
+3. Training service: `peak_models` table (recipe, recipe id and fitted model
+   as JSON), feature cache, child-process
    training, watermark trigger and the gate. Runs are recorded but nothing is
    promoted, so peaks do not change.
-4. Model-written auto peaks: `peak_model_version`, JSON forest prediction,
+4. Model-written auto peaks: `peak_model_version`, prediction from the stored JSON model,
    the model pass with `force_detect`, boot ordering after a core bump, and
    the one detector resolver for server and CLI.
 

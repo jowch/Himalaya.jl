@@ -19,18 +19,19 @@ const FEATURE_NAMES = vcat(WIDTH_NAMES, ["zraw", "z_best", "best_width", "n_widt
 const DETECTOR_FEATURES = ["in_persistence", "in_hybrid"]
 
 """
-    candidate_indices(q, I, σ) -> (idx, Z, zraw, blocked, base, hyb)
+    candidate_indices(q, I, σ; hybrid = nothing) -> (idx, Z, zraw, blocked, base, hyb, hybrid)
 
 Union of the persistence detector, the hybrid detector, and local maxima of the
 matched-filter z above `MF_Z_FLOOR`. Empty `idx` for traces shorter than
-`MIN_POINTS`.
+`MIN_POINTS`. Pass `hybrid`, the result of `findpeaks(q, I, σ; method = :hybrid)`
+on the same trace, to skip running the detector again.
 """
-function candidate_indices(q, I, σ)
+function candidate_indices(q, I, σ; hybrid = nothing)
     n = length(I)
     n < MIN_POINTS && return (idx = Int[], Z = zeros(0, 0), zraw = Float64[],
-                              blocked = falses(0), base = Int[], hyb = Int[])
+                              blocked = falses(0), base = Int[], hyb = Int[], hybrid = nothing)
     base = Himalaya.findpeaks(q, I, σ; method = :persistence, q_trim_high = Q_TRIM_HIGH)
-    hyb  = Himalaya.findpeaks(q, I, σ; method = :hybrid)
+    hyb  = hybrid === nothing ? Himalaya.findpeaks(q, I, σ; method = :hybrid) : hybrid
     Z, zraw, blocked = Himalaya.mf_width_z(I, σ)
     z  = Himalaya.mf_best(Z)
     wb = Himalaya.mf_best_width(Z)
@@ -45,7 +46,7 @@ function candidate_indices(q, I, σ)
         all(j -> abs(i - j) > CAND_SEP, keep) && push!(keep, i)
     end
     (idx = sort!(keep), Z = Z, zraw = zraw, blocked = blocked,
-     base = base.indices, hyb = hyb.indices)
+     base = base.indices, hyb = hyb.indices, hybrid = hyb)
 end
 
 # Least-squares quadratic over ±h points around i; returns (slope, curvature).
@@ -63,17 +64,18 @@ end
 nz(x) = isfinite(x) ? Float64(x) : 0.0
 
 """
-    candidate_features(q, I, σ) -> (idx, X, hyb)
+    candidate_features(q, I, σ; hybrid = nothing) -> (idx, X, hybrid)
 
-`hyb` is the hybrid detector's peak indices, from the same candidate pass.
+`hybrid` is the hybrid detector's result from the same candidate pass (the
+argument when given, `nothing` for a trace too short to analyse).
 `X` is `length(idx) × length(FEATURE_NAMES)`. Matched-filter responses are
 scale-free (noise-normalised), and the remaining features are ratios or
 logs, so the values do not depend on intensity units.
 """
-function candidate_features(q, I, σ)
-    c = candidate_indices(q, I, σ)
+function candidate_features(q, I, σ; hybrid = nothing)
+    c = candidate_indices(q, I, σ; hybrid)
     idx = c.idx
-    isempty(idx) && return idx, zeros(0, length(FEATURE_NAMES)), c.hyb
+    isempty(idx) && return idx, zeros(0, length(FEATURE_NAMES)), c.hybrid
     n = length(I)
     s = let p = filter(x -> isfinite(x) && x > 0, σ); isempty(p) ? 1.0 : median(p) end
     B  = Himalaya.snip_background(I, s)
@@ -113,5 +115,5 @@ function candidate_features(q, I, σ)
             nstrong, nd, nj,
             i in c.base ? 1.0 : 0.0, i in c.hyb ? 1.0 : 0.0, any(view(c.blocked, w)) ? 1.0 : 0.0])
     end
-    idx, X, c.hyb
+    idx, X, c.hybrid
 end
