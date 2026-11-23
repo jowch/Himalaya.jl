@@ -57,6 +57,7 @@ export interface WorkspacePaletteInput extends AppActions {
   };
   customIndex: () => void;
   formFactor: { on: boolean; toggle: () => void };
+  image?: { selected: boolean; toggle: () => void };
   views: { options: readonly PlotViewOption[]; current: PlotView; set: (v: PlotView) => void };
   resetZoom: () => void;
   comparisons: { shown: boolean; toggle: () => void };
@@ -357,6 +358,7 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
     ...(p.canEdit ? [{ id: "bridge", label: "Same sample as…", keywords: SAME_SAMPLE_WORDS, page: "bridge" }] : []),
     ...(p.canEdit && p.bridge.bridged.length > 0 ? [{ id: "unbridge", label: `Not the same sample as ${p.bridge.bridged.join(", ")}`, keywords: SAME_SAMPLE_WORDS, run: p.bridge.leave }] : []),
     ...(pages.tick ? [{ id: "tick", label: "Tick a candidate", hint: `${n} candidate${n === 1 ? "" : "s"}`, page: "tick" }] : []),
+    ...(p.image ? [{ id: "select-image", label: p.image.selected ? "Take this image out of the selection" : "Select this image to analyze", shortcut: "Enter", run: p.image.toggle }] : []),
     { id: "custom", label: "Custom index", shortcut: "I", run: p.customIndex },
     ...(p.canEdit ? [{ id: "form-factor", label: p.formFactor.on ? "Clear no phase (form factor)" : "Mark no phase (form factor)", shortcut: "0", run: p.formFactor.toggle }] : []),
   ];
