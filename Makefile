@@ -1,7 +1,7 @@
 FRONTEND_DIR := packages/HimalayaUI/frontend
 BUILD_DIR    := build
 
-.PHONY: all frontend sysimage check-sysimage deploy clean test-parallel setup dev-setup demo-data demo-large-data demo demo-large demo-empty demo-clean verify-truth lint
+.PHONY: all frontend sysimage check-sysimage deploy clean test-parallel setup dev-setup demo-data demo-large-data demo demo-large demo-empty demo-clean verify-truth upgrade-drill lint
 
 all: frontend sysimage
 
@@ -165,6 +165,9 @@ demo-empty:
 
 verify-truth:
 	$(LOAD_ENV) packages/HimalayaUI/scripts/verify_truth.sh
+
+upgrade-drill:
+	$(LOAD_ENV) packages/HimalayaUI/scripts/upgrade_drill.sh
 
 # Deletes DEMO_DIR only when it is a demo tree (has TRUTH.csv), and DEMO_LARGE_DIR
 # only when it holds nothing but large_NN folders and the completion marker, so a
