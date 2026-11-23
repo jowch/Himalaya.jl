@@ -2,6 +2,7 @@ import type { MouseEvent } from "react";
 import type { Exposure } from "../api";
 import { imageUrl } from "../workspace/model";
 import { detectorLutFilter } from "../detector/detectorLut";
+import { Button } from "./Button";
 import { Checkbox } from "./Checkbox";
 import { Tooltip } from "./Tooltip";
 import { releaseMouseFocus, useRovingFocus } from "../hooks/useRovingFocus";
@@ -32,7 +33,6 @@ interface Props {
 }
 
 const ACTION = "flex-1 rounded-[4px] border border-hair bg-paper py-0.5 text-xs text-ink hover:border-hair-strong";
-const TOOL = "rounded-[4px] border border-hair bg-paper px-2 py-0.5 text-xs text-ink hover:border-hair-strong disabled:opacity-40 disabled:hover:border-hair";
 
 function selectionCaption(selection: ExposureSelection): string {
   const n = selection.selectedIds.size;
@@ -57,8 +57,8 @@ export function ExposureStrip({ groups, currentId, selection, onPick, onToggleDr
       {selection && (
         <div className="flex items-center gap-1.5" data-testid="exposure-selection-tools">
           <span className="mr-auto text-xs text-ink-soft" data-testid="exposure-selection-caption">{selectionCaption(selection)}</span>
-          <button type="button" className={TOOL} disabled={all} onClick={selection.onAll}>Select all</button>
-          <button type="button" className={TOOL} disabled={selection.selectedIds.size === 0} onClick={selection.onNone}>Select none</button>
+          <Button type="button" variant="outline" disabled={all} onClick={selection.onAll}>Select all</Button>
+          <Button type="button" variant="outline" disabled={selection.selectedIds.size === 0} onClick={selection.onNone}>Select none</Button>
         </div>
       )}
       {groups.map((g, gi) => (
@@ -83,7 +83,7 @@ export function ExposureStrip({ groups, currentId, selection, onPick, onToggleDr
                   data-selected={selected ? "true" : undefined}
                   className={
                     "group flex min-w-0 flex-col gap-1 rounded-sm p-1 " +
-                    (cur ? "bg-row-cursor shadow-[inset_3px_0_0_var(--color-accent)] " : "") +
+                    (cur ? "bg-row-cursor " : "") +
                     (dropped ? "opacity-50" : "")
                   }
                 >

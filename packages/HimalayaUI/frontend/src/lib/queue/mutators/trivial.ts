@@ -61,6 +61,7 @@ function patchOf(p: { name?: string; notes?: string }): { name?: string; notes?:
 export type SetExposureStatusInput = {
   exposureId: number;
   status: "accepted" | "rejected" | null;
+  selected?: boolean;
 };
 type SetExposureStatusScope = BaseScope & { sampleId: number };
 
@@ -71,12 +72,12 @@ export const setExposureStatusMutator: Mutator<
   onMutate: (p, qc): RollbackContext => {
     const restoreExposures = rewriteExposureLists(qc, p.sampleId, (list) =>
       list.map((e) =>
-        e.id === p.exposureId ? { ...e, status: p.status } : e,
+        e.id === p.exposureId ? { ...e, status: p.status, ...(p.selected === undefined ? {} : { selected: p.selected }) } : e,
       ),
     );
     return { restore: restoreExposures };
   },
-  request: (p) => api.setExposureStatus(p.exposureId, p.status, buildAuthOpts(p)),
+  request: (p) => api.setExposureStatus(p.exposureId, p.status, buildAuthOpts(p), p.selected),
   onSuccess: (p, _r, qc) => {
     refetchListsWith(qc, p.exposureId);
     qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });

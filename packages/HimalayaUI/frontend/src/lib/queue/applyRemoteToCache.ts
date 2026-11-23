@@ -1,5 +1,5 @@
 import { refreshPeaks } from "./refreshPeaks";
-import { patchListsWith, refetchListsWith, refetchSelection } from "./selectionLists";
+import { patchListsWith, refetchAverage, refetchListsWith, refetchSelection } from "./selectionLists";
 import type { QueryClient } from "@tanstack/react-query";
 import type { SseEvent, CurationPostState, AssignmentPostState, SampleCallPostState } from "./types";
 import { writeSampleCall, invalidateOtherFrameAssignments, invalidateSampleCalls } from "./sampleCall";
@@ -283,7 +283,7 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       const traceChanged = payload?.trace_hash_before !== payload?.trace_hash_after;
       if (traceChanged) qc.invalidateQueries({ queryKey: queryKeys.trace(id) });
       if (traceChanged || payload?.findpeaks_skipped === false) refreshPeaks(qc, id);
-      if (typeof payload?.average_of_sample === "number") refetchSelection(qc, payload.average_of_sample);
+      if (typeof payload?.average_of_sample === "number") refetchAverage(qc, payload.average_of_sample);
       break;
     }
     case "ingest_started":

@@ -76,6 +76,7 @@ export interface CorpusSample extends Sample {
   assignment_state?: AssignmentState;
   call_phases?: string[];
   analyzed_exposure_id?: number | null;
+  analysis_gap?: "all_dropped" | "none_selected" | null;
 }
 
 export class ApiError extends Error {
@@ -403,8 +404,9 @@ export const setExposureStatus = (
   id: number,
   status: "accepted" | "rejected" | null,
   opts?: AuthOpts,
+  selected?: boolean,
 ) => request<{ id: number; status: string | null }>(
-  "PATCH", `/api/exposures/${id}/status`, { status }, opts);
+  "PATCH", `/api/exposures/${id}/status`, selected === undefined ? { status } : { status, selected }, opts);
 
 // Trace
 export interface TraceMonitors {

@@ -171,6 +171,23 @@ describe("selection cache arms", () => {
     expect(keysOf(spy)).toContain(JSON.stringify(["sample", 6, "exposures"]));
   });
 
+  it("a burst of averages refetches the sample lists once, not once per average", () => {
+    vi.useFakeTimers();
+    try {
+      const qc = new QueryClient();
+      const spy = vi.spyOn(qc, "invalidateQueries");
+      for (const sid of [6, 7, 8]) {
+        applyRemoteToCache(frame("analyze_run", "exposure", 40 + sid, { trace_hash_before: null, trace_hash_after: "h", average_of_sample: sid }), qc);
+      }
+      for (const sid of [6, 7, 8]) expect(keysOf(spy)).toContain(JSON.stringify(["sample", sid, "exposures"]));
+      expect(keysOf(spy)).not.toContain(JSON.stringify(queryKeys.corpusSamples));
+      vi.advanceTimersByTime(1000);
+      expect(keysOf(spy).filter((k) => k === JSON.stringify(queryKeys.corpusSamples))).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("an analyze_run on a single image leaves the image lists alone", () => {
     const qc = new QueryClient();
     const spy = vi.spyOn(qc, "invalidateQueries");

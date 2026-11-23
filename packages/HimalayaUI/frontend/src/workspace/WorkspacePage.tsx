@@ -591,6 +591,7 @@ export function WorkspacePage(): JSX.Element {
       else ops.setStatus(owner, e.id, next);
       history.record(dropEntry(ops, {
         label: `${next ? "dropped" : "restored"} ${frameName(e.id)}`, sampleId, exposureId: e.id, owner, prev, next,
+        ...(next === "rejected" ? { selected: e.selected !== false } : {}),
       }));
     },
     [setStatus, sampleId, history, ops, frameName, exposureList, tile],

@@ -95,3 +95,18 @@ describe("SampleList tooltips", () => {
     expect(screen.getByText("⇄2").parentElement).not.toHaveAttribute("aria-describedby");
   });
 });
+
+describe("SampleList analysis gaps", () => {
+  it("says on the row why nothing is analyzed", () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    const rows = [
+      { ...sample(1, "JC001"), analysis_gap: "all_dropped" },
+      { ...sample(2, "JC002"), analysis_gap: "none_selected" },
+      sample(3, "JC003"),
+    ] as CorpusSample[];
+    render(<SampleList samples={rows} currentId={3} filter="" onFilter={() => {}} onPick={() => {}} />);
+    expect(screen.getByRole("img", { name: "Unreviewed. Every image is dropped, so nothing is analyzed." })).toHaveTextContent("All dropped");
+    expect(screen.getByRole("img", { name: "Unreviewed. No image is selected, so nothing is analyzed." })).toHaveTextContent("None selected");
+    expect(screen.getByRole("img", { name: "Unreviewed" })).toHaveTextContent("○");
+  });
+});

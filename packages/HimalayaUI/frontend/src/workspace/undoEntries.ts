@@ -118,19 +118,20 @@ export function noPhaseEntry(
 
 export function dropEntry(
   ops: EditOps,
-  at: Where & { exposureId: number; owner?: number; prev: Exposure["status"]; next: Exposure["status"] },
+  at: Where & { exposureId: number; owner?: number; prev: Exposure["status"]; next: Exposure["status"]; selected?: boolean },
 ): UndoEntry {
   const owner = at.owner ?? at.sampleId;
-  const set = async (from: Exposure["status"], to: Exposure["status"]): Promise<number> => {
+  const set = async (from: Exposure["status"], to: Exposure["status"], selected?: boolean): Promise<number> => {
     const hit = (await ops.read.exposures(owner)).find((e) => e.id === at.exposureId);
     if (!hit || (hit.status ?? null) !== (from ?? null)) return 0;
-    ops.setStatus(owner, at.exposureId, to);
+    if (selected === undefined) ops.setStatus(owner, at.exposureId, to);
+    else ops.setStatus(owner, at.exposureId, to, selected);
     return 1;
   };
   return {
     ...at,
-    undo: () => set(at.next, at.prev),
-    redo: () => set(at.prev, at.next),
+    undo: () => set(at.next, at.prev, at.next === "rejected" ? at.selected : undefined),
+    redo: () => set(at.prev, at.next, at.prev === "rejected" ? at.selected : undefined),
   };
 }
 

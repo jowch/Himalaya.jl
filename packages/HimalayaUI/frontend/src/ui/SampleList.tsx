@@ -19,6 +19,11 @@ interface Props {
   notice?: ReactNode;
 }
 
+const ANALYSIS_GAP = {
+  all_dropped: { mark: "All dropped", why: "Every image is dropped, so nothing is analyzed.", label: "Unreviewed. Every image is dropped, so nothing is analyzed." },
+  none_selected: { mark: "None selected", why: "No image is selected, so nothing is analyzed.", label: "Unreviewed. No image is selected, so nothing is analyzed." },
+} as const;
+
 function StatusMark({ s }: { s: CorpusSample }): JSX.Element {
   const st = sampleStatus(s);
   if (st.kind === "phase") {
@@ -34,6 +39,14 @@ function StatusMark({ s }: { s: CorpusSample }): JSX.Element {
     );
   }
   if (st.kind === "form_factor") return <span data-testid="workspace-status" className="text-xs text-ink-faint">Form factor</span>;
+  const gap = s.analysis_gap ? ANALYSIS_GAP[s.analysis_gap] : null;
+  if (gap) {
+    return (
+      <Tooltip content={gap.why}>
+        <span data-testid="workspace-status" role="img" aria-label={gap.label} className="text-xs text-ink-faint">{gap.mark}</span>
+      </Tooltip>
+    );
+  }
   return (
     <Tooltip content="Unreviewed">
       <span data-testid="workspace-status" role="img" aria-label="Unreviewed" className="text-xs text-ink-faint">○</span>

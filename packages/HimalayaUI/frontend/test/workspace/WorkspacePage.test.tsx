@@ -85,9 +85,9 @@ const server = {
   experiment: { name: "BL-19", description: null as string | null },
   callMembers: new Map<number, SampleCallMember[]>(),
 };
-const serverStatus = (sid: number, eid: number, status: Exposure["status"]) => {
+const serverStatus = (sid: number, eid: number, status: Exposure["status"], ...selected: boolean[]) => {
   server.status.set(eid, status);
-  calls.push({ hook: "op:setStatus", boundTo: 0, arg: [sid, eid, status] });
+  calls.push({ hook: "op:setStatus", boundTo: 0, arg: [sid, eid, status, ...selected] });
 };
 const serverColor = (label: string, color: LabelColor | null) => {
   server.colors.set(label.toLowerCase(), color);
@@ -1155,15 +1155,24 @@ describe("WorkspacePage", () => {
       server.saving = false;
       server.saved?.();
       await settle();
-      expect(ops()).toEqual([["setStatus", 10, 101, null]]);
+      expect(ops()).toEqual([["setStatus", 10, 101, null, true]]);
       expect(toasts.at(-1)).toBe("Undone: dropped image 2 of A1");
+    });
+
+    it("undoes a drop of an image left out of the analysis by restoring it still left out", async () => {
+      state.exposures = [exposure(100, { selected: true }), exposure(101, { selected: false })];
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.click(screen.getByRole("button", { name: "Image 2" }));
+      fireEvent.keyDown(window, { key: "x" });
+      await press({ key: "z", metaKey: true });
+      expect(ops()).toEqual([["setStatus", 10, 101, null, false]]);
     });
 
     it("undoes a drop by restoring the frame", async () => {
       renderAt("/experiments/1/workspace/10");
       fireEvent.keyDown(window, { key: "x" });
       await press({ key: "z", metaKey: true });
-      expect(ops()).toEqual([["setStatus", 10, 101, null]]);
+      expect(ops()).toEqual([["setStatus", 10, 101, null, true]]);
       expect(toasts.at(-1)).toBe("Undone: dropped image 2 of A1");
     });
 
@@ -1242,7 +1251,7 @@ describe("WorkspacePage", () => {
       await press({ key: "z", ctrlKey: true, repeat: true });
       expect(ops()).toEqual([]);
       await undo();
-      expect(ops()).toEqual([["setStatus", 10, 101, null]]);
+      expect(ops()).toEqual([["setStatus", 10, 101, null, true]]);
     });
 
     it("goes back to the sample the undone edit was made on", async () => {
@@ -1252,7 +1261,7 @@ describe("WorkspacePage", () => {
       expect(screen.getByTestId("where")).toHaveTextContent("/experiments/1/workspace/11");
       await undo();
       expect(screen.getByTestId("where")).toHaveTextContent("/experiments/1/workspace/10");
-      expect(ops()).toEqual([["setStatus", 10, 101, null]]);
+      expect(ops()).toEqual([["setStatus", 10, 101, null, true]]);
     });
 
     it("undoes peak edits made on the plot, finding each peak by q on the server", async () => {
@@ -1510,7 +1519,7 @@ describe("WorkspacePage", () => {
       fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "undo" } });
       fireEvent.click(screen.getByRole("option", { name: /Undo: dropped image 2 of A1/ }));
       await settle();
-      expect(ops()).toEqual([["setStatus", 10, 101, null]]);
+      expect(ops()).toEqual([["setStatus", 10, 101, null, true]]);
     });
   });
 
@@ -3093,7 +3102,7 @@ describe("WorkspacePage", () => {
     expect(calls.filter((c) => c.hook === "op:setStatus").map((c) => c.arg)).toEqual([[12, 200, "rejected"]]);
     expect(calls.filter((c) => c.hook === "status")).toHaveLength(0);
     await act(async () => { fireEvent.keyDown(window, { key: "z", ctrlKey: true }); for (let i = 0; i < 10; i++) await Promise.resolve(); });
-    expect(calls.filter((c) => c.hook === "op:setStatus").map((c) => c.arg)).toEqual([[12, 200, "rejected"], [12, 200, null]]);
+    expect(calls.filter((c) => c.hook === "op:setStatus").map((c) => c.arg)).toEqual([[12, 200, "rejected"], [12, 200, null, true]]);
   });
 
   it("an unbridged sample's frames have no group heading", () => {

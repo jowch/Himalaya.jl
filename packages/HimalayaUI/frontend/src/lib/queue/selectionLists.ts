@@ -17,6 +17,19 @@ export function refetchSelection(qc: QueryClient, sampleId: number): void {
   void qc.invalidateQueries({ predicate: (q) => q.queryKey[0] === "experiment" && q.queryKey[2] === "samples" });
 }
 
+const LIST_COALESCE_MS = 250;
+const pendingListRefetch = new WeakMap<QueryClient, ReturnType<typeof setTimeout>>();
+
+export function refetchAverage(qc: QueryClient, sampleId: number): void {
+  void qc.invalidateQueries({ queryKey: ["sample", sampleId, "exposures"] });
+  if (pendingListRefetch.has(qc)) return;
+  pendingListRefetch.set(qc, setTimeout(() => {
+    pendingListRefetch.delete(qc);
+    void qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
+    void qc.invalidateQueries({ predicate: (q) => q.queryKey[0] === "experiment" && q.queryKey[2] === "samples" });
+  }, LIST_COALESCE_MS));
+}
+
 export function patchListsWith<T extends { id: number }>(
   qc: QueryClient,
   predicate: (q: Query) => boolean,
