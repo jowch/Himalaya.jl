@@ -14,7 +14,7 @@ const rings = (root: ParentNode) => [...root.querySelectorAll<SVGSVGElement>('[d
 
 describe("predicted rings on the detector images", () => {
   it("draws each ring as a half-circle on its side of the beam, so the other half shows the data", () => {
-    const halves = (side: "left" | "right") => {
+    const halves = (side: "left" | "right" | "top" | "bottom") => {
       const { container, unmount } = render(
         <ExposureStrip groups={[{ key: 1, title: undefined, exposures: [exp(1)] }]} currentId={1} onPick={() => {}} onToggleDrop={() => {}}
           ringsOf={() => ({ ...view, side, rings: [{ r: 100, color: "red" }] })} />,
@@ -27,6 +27,8 @@ describe("predicted rings on the detector images", () => {
     };
     expect(halves("right")).toBe("M 421.9 105.6 A 100 100 0 0 1 421.9 305.6");
     expect(halves("left")).toBe("M 421.9 105.6 A 100 100 0 0 0 421.9 305.6");
+    expect(halves("top")).toBe("M 321.9 205.6 A 100 100 0 0 1 521.9 205.6");
+    expect(halves("bottom")).toBe("M 321.9 205.6 A 100 100 0 0 0 521.9 205.6");
   });
 
   it("draws the rings on every image card, cropped the way the card crops the image", () => {
@@ -41,6 +43,7 @@ describe("predicted rings on the detector images", () => {
       const arcs = [...svg.querySelectorAll('[data-role="det-ring"]')];
       expect(arcs.map((a) => a.getAttribute("d")!.split(" ")[4])).toEqual(["115", "230", "461"]);
       expect(arcs[0]!.getAttribute("stroke")).toBe("red");
+      expect(arcs[0]!.getAttribute("stroke-dasharray")).toBe("4 3");
     }
   });
 

@@ -60,6 +60,14 @@ describe("ringCircles", () => {
     expect(ringCircles([0.1], "A-1", g(1100), size)!.side).toBe("right");
   });
 
+  it("cuts a wide image across its height, so the rings and the bare image both span its full width", () => {
+    const wide = { width: 1475, height: 195 };
+    const g = (y: number) => detectorGeometry(setup({ beam_center_x: 700, beam_center_y: y }))!;
+    expect(ringCircles([0.1], "A-1", g(150), wide)!.side).toBe("top");
+    expect(ringCircles([0.1], "A-1", g(40), wide)!.side).toBe("bottom");
+    expect(ringCircles([0.1], "A-1", g(300), wide)!.side).toBe("top");
+  });
+
   it("skips orders past backscatter and returns nothing without a size", () => {
     const c = ringCircles([0.1, 100], "A-1", detectorGeometry(setup())!, size)!;
     expect(c.radii).toHaveLength(1);

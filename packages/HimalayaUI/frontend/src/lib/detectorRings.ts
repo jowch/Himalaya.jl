@@ -13,7 +13,7 @@ export interface ImageSize {
   height: number;
 }
 
-export type RingSide = "left" | "right";
+export type RingSide = "left" | "right" | "top" | "bottom";
 
 export interface RingCircles {
   cx: number;
@@ -59,5 +59,9 @@ export function ringCircles(
   const toAngstrom = perAngstrom(qUnits);
   const radii = qs.map((q) => radiusPx(q * toAngstrom, g)).filter((r): r is number => r !== null);
   const cx = g.beamX + 0.5;
-  return { cx, cy: size.height - g.beamY - 0.5, side: cx < size.width - cx ? "left" : "right", radii };
+  const cy = size.height - g.beamY - 0.5;
+  const side: RingSide = size.width >= size.height
+    ? (cy < size.height - cy ? "top" : "bottom")
+    : (cx < size.width - cx ? "left" : "right");
+  return { cx, cy, side, radii };
 }
