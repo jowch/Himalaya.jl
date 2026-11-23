@@ -103,8 +103,15 @@ export function railMismatch(rail, call) {
   const ticked = normalizeCall(rail.ticked);
   if (call === "none") return rail.form_factor && ticked === "none" ? null : { rail: rail.form_factor ? `form_factor+${ticked}` : ticked, call };
   const offered = new Set(rail.candidates);
-  const expected = call === null ? "none" : normalizeCall(call.split("+").filter((p) => offered.has(p)));
-  return !rail.form_factor && ticked === expected ? null : { rail: rail.form_factor ? "form_factor" : ticked, call: call ?? "unreviewed", expected };
+  const flagged = new Set(rail.unsupported ?? []);
+  const expected = call === null ? "none" : normalizeCall(call);
+  const unmarked = rail.ticked.filter((p) => !offered.has(p) && !flagged.has(p));
+  const marked = [...flagged].filter((p) => offered.has(p) || !rail.ticked.includes(p));
+  if (!rail.form_factor && ticked === expected && !unmarked.length && !marked.length) return null;
+  return {
+    rail: rail.form_factor ? "form_factor" : ticked, call: call ?? "unreviewed", expected,
+    ...(unmarked.length ? { unmarked } : {}), ...(marked.length ? { marked } : {}),
+  };
 }
 
 function railViolation(app, kept, call) {
@@ -197,7 +204,7 @@ function sampleInvariants(app, frames, held = new Set()) {
 
 export const INVARIANTS = {
   status_matches_assignment: "A sample's confirmed call is the phases assigned on any of its frames, kept or dropped, or the sample's form-factor state. A sample with none is shown as unreviewed; a sample with one is shown with that call.",
-  rail_matches_call: "The workspace's Call list ticks exactly the sample's called phases that the opened frame offers as candidates, and marks form factor only for a form-factor call (needs --ui).",
+  rail_matches_call: "The workspace's Assignment list ticks every one of the sample's called phases, marks as not found exactly the ticked phases the analyzed curve doesn't offer as candidates, and marks form factor only for a form-factor call (needs --ui).",
   analyzed_kept: "The image the sample status describes (corpus_api) or the workspace plots (--ui) is never a dropped image while the sample has a kept one.",
   views_agree: "The sample status (corpus_api) and the workspace describe the same curve of a sample: the average of its selected images, or its one selected image (needs --ui).",
   workspace_status_matches: "The workspace sample list shows the same status as GET /api/samples (needs --ui).",
