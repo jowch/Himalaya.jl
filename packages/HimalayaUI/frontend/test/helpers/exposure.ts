@@ -21,6 +21,7 @@ export function makeExposure(over: Partial<Exposure> = {}): Exposure {
     pipe_length_m: null,
     detector: null,
     setup_id: null,
+    beam_off: false,
     ...over,
   };
 }

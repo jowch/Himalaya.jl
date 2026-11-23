@@ -85,21 +85,14 @@ export function peakClick(
   return p.source === "auto" ? { kind: "exclude", excluded: !p.excluded } : { kind: "remove" };
 }
 
-// physics: a _tot.dat holds raw detector counts per pixel. A beam-off frame records
-// physics: only the dark floor, so its median is ~0, while even a dim real frame keeps
-// physics: ~10 counts. The detector decides; the ion chamber can't, because a frame
-// physics: with a negative I₀ can still hold real scattering.
-export const DARK_MEDIAN_COUNTS = 1;
-
-export function traceIsDark(trace: { I: readonly number[] } | undefined): boolean {
-  if (!trace || trace.I.length === 0) return false;
-  const sorted = [...trace.I].sort((a, b) => a - b);
-  return sorted[Math.floor(sorted.length / 2)]! < DARK_MEDIAN_COUNTS;
+export function beamOffWarning(e: Exposure): string | undefined {
+  return e.beam_off && e.status !== "rejected" ? "Beam likely off" : undefined;
 }
 
 // physics: with the shutter closed the ion chamber's electrometer reads a negative
-// physics: offset, so I₀ at or below zero supports a beam-off reading but never
-// physics: decides it alone.
+// physics: offset. While a trace exists the detector decides beam-off (the server's
+// physics: is_beam_off) and I₀ is only shown as support; with no trace, I₀ is the
+// physics: only evidence left, so there the server lets it decide.
 export function i0BelowZero(frame: { incident_monitor: number | null } | undefined): boolean {
   const i0 = frame?.incident_monitor;
   return i0 != null && i0 <= 0;

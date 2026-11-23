@@ -62,7 +62,7 @@ import { useCorpusPalette } from "../hooks/useCorpusPalette";
 import { allFrames, frameGroups, frameOf } from "./frameGroups";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
-import { firstUnreviewed, i0BelowZero, traceIsDark, imageUrl, nearestKeptExposure, nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
+import { beamOffWarning, firstUnreviewed, i0BelowZero, imageUrl, nearestKeptExposure, nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
 import { samePeak, type PeakRef } from "../lib/peakRef";
 import { clampDomain, compareScale, COMPARES_FULL, MAX_COMPARES, scaledTrace, subtractTrace } from "./compare";
 import type { CompareScale } from "./compare";
@@ -84,7 +84,7 @@ import { PLOT_VIEWS, stepView, usePlotView } from "./plotView";
 import { positiveExtent } from "../plot/projection";
 import { CustomIndexPanel, NUDGE_STEP, NUDGE_STEP_LARGE } from "../ui/CustomIndexPanel";
 import { IndexingPlot, type IndexSeries } from "../ui/IndexingPlot";
-import { clampLattice, draftCommit, draftPrediction, indexFit, initialDraft, latticeParam, storedFit, type CustomDraft } from "./indexing";
+import { clampLattice, stepSymmetry, draftCommit, draftPrediction, indexFit, initialDraft, latticeParam, storedFit, type CustomDraft } from "./indexing";
 import { latticeBounds, latticeForFirstOrderOnPeak } from "../lib/customIndex";
 
 import { WorkspaceHeader } from "../ui/WorkspaceHeader";
@@ -116,7 +116,7 @@ function helpSections(mod: string): HelpSection[] {
       rows: [
         { keys: ["↑", "↓"], what: "Previous or next sample in the list" },
         { keys: ["Z"], what: "Next unreviewed sample" },
-        { keys: ["/"], what: "Filter samples by name or label" },
+        { keys: ["/"], what: "Filter samples by name or label. Press Tab to move through the matches and Enter to open one." },
       ],
     },
     {
@@ -136,7 +136,7 @@ function helpSections(mod: string): HelpSection[] {
         { keys: ["0"], what: "Mark no phase (form factor), or clear it" },
         { keys: ["Tab", "⇧ Tab"], what: "Step through the phase choices, wrapping at the ends. Press Enter to tick the one in focus." },
         { keys: ["Esc"], what: "Leave the phase choices and let Tab reach every other control until you open another sample" },
-        { keys: ["I"], what: "Custom index: pick a symmetry, then drag the lattice, nudge it with ← →, or click a peak to snap to it. Press Enter to add it or Esc to cancel." },
+        { keys: ["I"], what: "Custom index: press Tab or Shift+Tab to change the symmetry, then drag the lattice, nudge it with ← →, or click a peak to snap to it. Press Enter to add it or Esc to cancel." },
         { keys: ["L"], what: "Label the sample, e.g. Buffer. Press Enter to add it or Esc to close." },
       ],
     },
@@ -323,8 +323,8 @@ export function WorkspacePage(): JSX.Element {
   const trace = useTrace(exposure?.id);
   const noTrace = trace.error instanceof ApiError && trace.error.status === 404;
   const i0Hint = i0BelowZero(exposure);
-  const darkNotice = traceIsDark(trace.data)
-    ? `No counts on the detector: the beam was likely off or the shutter closed.${i0Hint ? " I₀ also reads below zero." : ""}`
+  const darkNotice = exposure?.beam_off && trace.data
+    ? `Beam likely off: the detector recorded no counts, so the beam was off or the shutter closed.${i0Hint ? " I₀ also reads below zero." : ""}`
     : undefined;
   const tracePending = problemRows.some((p) => p.problem === "no_trace" && p.exposure_id === exposure?.id);
   const selectionMessage = !exposures.data || ownFrames.length === 0
@@ -1120,6 +1120,9 @@ export function WorkspacePage(): JSX.Element {
           ev.preventDefault();
           const step = (ev.key === "ArrowRight" ? 1 : -1) * (ev.shiftKey ? NUDGE_STEP_LARGE : NUDGE_STEP);
           setDraftClamped({ ...draft, lattice: draft.lattice + step });
+        } else if (ev.key === "Tab") {
+          ev.preventDefault();
+          setDraftClamped({ ...draft, phase: stepSymmetry(draft.phase, ev.shiftKey ? -1 : 1) });
         } else if (ev.key === "?") {
           ev.preventDefault();
           setHelpOpen(true);
@@ -1521,7 +1524,7 @@ export function WorkspacePage(): JSX.Element {
               </PlotCard>
             </div>
             <MainSection title="Images" hint={keptHint}>
-              <ExposureStrip groups={groups.map((g) => ({ key: g.sampleId, title: g.title, exposures: g.exposures }))} currentId={tile?.id} selection={username ? { selectedIds, selectableIds, onToggle: toggleSelect, onRange: selectRange, onAll: selectAll, onNone: selectNone } : undefined} onPick={setExposureId} onToggleDrop={toggleDrop} ringsOf={ringsOf} />
+              <ExposureStrip groups={groups.map((g) => ({ key: g.sampleId, title: g.title, exposures: g.exposures }))} currentId={tile?.id} selection={username ? { selectedIds, selectableIds, onToggle: toggleSelect, onRange: selectRange, onAll: selectAll, onNone: selectNone } : undefined} onPick={setExposureId} onToggleDrop={toggleDrop} warningOf={beamOffWarning} ringsOf={ringsOf} />
             </MainSection>
           </>
         ) : (

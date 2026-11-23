@@ -190,6 +190,7 @@ function _scan_setup!(db::SQLite.DB, experiment_id::Int, setup;
             end
         end
         on_progress === nothing || on_progress(n_new, n_new, "analyzing")
+        deselect_beam_off!(db, to_analyze)
         for r in sqlrows(DBInterface.execute(db,
                 "SELECT id FROM samples WHERE setup_id = ? ORDER BY id", [setup_id]))
             refresh_selection!(db, Int(r.id))
@@ -378,15 +379,18 @@ end
 function _keep_custom_selections!(db::SQLite.DB, new_ids)
     isempty(new_ids) && return nothing
     ph = join(fill("?", length(new_ids)), ",")
+    custom = Set{Int}()
     for r in sqlrows(DBInterface.execute(db, """
-            SELECT DISTINCT n.sample_id AS sid FROM exposures n
-             WHERE n.id IN ($ph) AND n.sample_id IS NOT NULL
-               AND EXISTS (SELECT 1 FROM exposures o
-                            WHERE o.sample_id = n.sample_id AND o.kind = 'file' AND o.deselected = 1
-                              AND (o.status IS NULL OR o.status != 'rejected')
-                              AND o.id NOT IN ($ph))""", vcat(new_ids, new_ids)))
+            SELECT o.sample_id AS sid, o.trace_median, o.analysis_error, o.incident_monitor FROM exposures o
+             WHERE o.sample_id IN (SELECT n.sample_id FROM exposures n WHERE n.id IN ($ph) AND n.sample_id IS NOT NULL)
+               AND o.kind = 'file' AND o.deselected = 1
+               AND (o.status IS NULL OR o.status != 'rejected')
+               AND o.id NOT IN ($ph)""", vcat(new_ids, new_ids)))
+        is_beam_off(r.trace_median, r.analysis_error, r.incident_monitor) || push!(custom, Int(r.sid))
+    end
+    for sid in sort!(collect(custom))
         DBInterface.execute(db,
-            "UPDATE exposures SET deselected = 1 WHERE sample_id = ? AND id IN ($ph)", vcat(Int(r.sid), new_ids))
+            "UPDATE exposures SET deselected = 1 WHERE sample_id = ? AND id IN ($ph)", vcat(sid, new_ids))
     end
     nothing
 end

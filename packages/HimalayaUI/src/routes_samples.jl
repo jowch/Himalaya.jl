@@ -28,6 +28,7 @@ function register_samples_routes!()
 
         rep_by_sample = Dict{Int, Int}()
         gap_by_sample = Dict{Int, String}()
+        beam_off_by_sample = Dict{Int, Int}()
         sids = [Int(sm.id) for sm in samples]
         if !isempty(samples)
             ph   = join(fill("?", length(sids)), ",")
@@ -40,11 +41,13 @@ function register_samples_routes!()
             end
             grouped_exps = Dict{Int, Vector{NamedTuple}}()
             for e in sqlrows(DBInterface.execute(db,
-                    "SELECT id, sample_id, status, kind, deselected FROM exposures
+                    "SELECT id, sample_id, status, kind, deselected, trace_median, analysis_error, incident_monitor FROM exposures
                      WHERE sample_id IN ($ph) ORDER BY sample_id ASC, id ASC", sids))
                 push!(get!(grouped_exps, Int(e.sample_id), NamedTuple[]),
                     (id = Int(e.id), status = e.status, kind = e.kind, deselected = e.deselected,
                      sources = get(sources, Int(e.id), Int[])))
+                is_kept_exposure(e) && e.kind == "file" && is_beam_off(e.trace_median, e.analysis_error, e.incident_monitor) &&
+                    (beam_off_by_sample[Int(e.sample_id)] = get(beam_off_by_sample, Int(e.sample_id), 0) + 1)
             end
             for (sid, exps) in grouped_exps
                 rep = analyzed_exposure_id(exps)
@@ -62,6 +65,7 @@ function register_samples_routes!()
                 get(qunits_by_setup, Int(sm.setup_id), "A-1")
             d[:analyzed_exposure_id] = get(rep_by_sample, Int(sm.id), nothing)
             d[:analysis_gap] = get(gap_by_sample, Int(sm.id), nothing)
+            d[:beam_off_images] = get(beam_off_by_sample, Int(sm.id), 0)
             state = get(call_states, Int(sm.id), "indexed")
             summary = call_summary(state, get(call_members, Int(sm.id), []))
             d[:assignment_state] = state

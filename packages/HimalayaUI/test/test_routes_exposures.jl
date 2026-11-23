@@ -41,6 +41,11 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test list[1].beam_energy_ev === nothing
         @test list[1].pipe_length_m === nothing
         @test list[1].detector === nothing
+        @test list[1].beam_off === false
+        @test !haskey(list[1], :trace_median)
+        DBInterface.execute(db, "UPDATE exposures SET trace_median = 0.0 WHERE id = ?", [e2])
+        @test JSON3.read(String(call("GET", "/api/samples/$s_id/exposures").body))[2].beam_off === true
+        DBInterface.execute(db, "UPDATE exposures SET trace_median = NULL WHERE id = ?", [e2])
 
         r = call("GET", "/api/samples/$s2_id/exposures")
         @test r.status == 200

@@ -32,6 +32,8 @@ const MIGRATION_EXPOSURES_BEAM_MONITORS = "exposures_beam_monitors_v1"
 const MIGRATION_EXPOSURES_PIPE_LENGTH = "exposures_pipe_length_v1"
 const MIGRATION_EXPOSURES_Q_STEP = "exposures_q_step_v1"
 const MIGRATION_EXPOSURES_DESELECTED = "exposures_deselected_v1"
+const MIGRATION_EXPOSURES_TRACE_MEDIAN = "exposures_trace_median_v1"
+const MIGRATION_BEAM_OFF_DESELECTED = "beam_off_deselected_v1"
 
 const MIGRATION_EXPOSURES_INGEST_STATE = "exposures_ingest_state_v1"
 
@@ -152,6 +154,7 @@ CREATE TABLE IF NOT EXISTS exposures (
     monitors_read        INTEGER NOT NULL DEFAULT 0,
     pipe_length_m        REAL,
     q_step               REAL,
+    trace_median         REAL,
     analysis_version     TEXT,
     analysis_error       TEXT,
     analysis_trace_stat  TEXT,
@@ -545,6 +548,7 @@ function migrate_schema!(db::SQLite.DB)
     migrate_setups!(db)
     migrate_exposures_pipe_length!(db)
     migrate_exposures_q_step!(db)
+    migrate_exposures_trace_median!(db)
     migrate_peak_provenance!(db)
     migrate_peak_models!(db)
     migrate_exposures_deselected!(db)
@@ -930,6 +934,16 @@ function migrate_exposures_q_step!(db::SQLite.DB)
         "q_step" in cols_of(db, "exposures") ||
             DBInterface.execute(db, "ALTER TABLE exposures ADD COLUMN q_step REAL")
         _record_migration!(db, MIGRATION_EXPOSURES_Q_STEP)
+    end
+    nothing
+end
+
+function migrate_exposures_trace_median!(db::SQLite.DB)
+    _migrated(db, MIGRATION_EXPOSURES_TRACE_MEDIAN) && return nothing
+    SQLite.transaction(db) do
+        "trace_median" in cols_of(db, "exposures") ||
+            DBInterface.execute(db, "ALTER TABLE exposures ADD COLUMN trace_median REAL")
+        _record_migration!(db, MIGRATION_EXPOSURES_TRACE_MEDIAN)
     end
     nothing
 end
