@@ -574,6 +574,7 @@ export function WorkspacePage(): JSX.Element {
     () => new Map(inExperiment.map((s) => [s.id, setups.find((st) => st.id === s.setup_id)] as const)),
     [inExperiment, setups],
   );
+  const qUnits = setupOfSample.get(sampleId ?? -1)?.q_units;
   const geometryOf = useCallback((e: Exposure) => detectorGeometry(setupOfSample.get(e.sample_id ?? -1)), [setupOfSample]);
   const sizeUrls = useMemo(
     () => exposureList.flatMap((e) => {
@@ -589,12 +590,12 @@ export function WorkspacePage(): JSX.Element {
       const g = geometryOf(e);
       const url = imageUrl(e, true);
       const size = url ? detectorSizes.get(url) : undefined;
-      const centre = g ? ringCircles([], g, size) : null;
+      const centre = g ? ringCircles([], qUnits, g, size) : null;
       if (!g || !size || !centre) return null;
-      const rings = ringSets.flatMap((set) => (ringCircles(set.qs, g, size)?.radii ?? []).map((r) => ({ r, color: set.color })));
+      const rings = ringSets.flatMap((set) => (ringCircles(set.qs, qUnits, g, size)?.radii ?? []).map((r) => ({ r, color: set.color })));
       return { size, cx: centre.cx, cy: centre.cy, rings };
     },
-    [ringSets, geometryOf, detectorSizes],
+    [ringSets, geometryOf, detectorSizes, qUnits],
   );
 
   const highlight = useMemo(
