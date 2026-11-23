@@ -54,4 +54,11 @@ describe("callCombs", () => {
   it("keeps the stored predictions when the phase claims no peak", () => {
     expect(callCombs([entry(4, "Pn3m", [0.1, 0.12])], undefined, new Set([4]), null)[0]!.qs).toEqual([0.1, 0.12]);
   });
+
+  it("keeps a custom index's lines on the lattice the user chose, even when its claimed peaks sit off them", () => {
+    const predicted = [0.1, 0.1 * Math.sqrt(1.5), 0.1 * Math.sqrt(2)];
+    const custom = { ...entry(5, "Pn3m", predicted, [0.101, 0.1 * Math.sqrt(1.5) * 1.015, 0.1 * Math.sqrt(2) * 1.02]), kind: "speculative" } as IndexEntry;
+    expect(callCombs([custom], undefined, new Set([5]), null)[0]!.qs).toEqual(predicted);
+    expect(callCombs([custom], [5], new Set(), null)[0]!.qs).toEqual(predicted);
+  });
 });
