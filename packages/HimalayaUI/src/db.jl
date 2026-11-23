@@ -31,7 +31,9 @@ const MIGRATION_DROP_SCAN_SIGNATURE = "drop_scan_signature_v1"
 const MIGRATION_EXPOSURES_BEAM_MONITORS = "exposures_beam_monitors_v1"
 const MIGRATION_EXPOSURES_PIPE_LENGTH = "exposures_pipe_length_v1"
 const MIGRATION_EXPOSURES_Q_STEP = "exposures_q_step_v1"
+const MIGRATION_EXPOSURES_DESELECTED = "exposures_deselected_v1"
 const MIGRATION_EXPOSURES_TRACE_MEDIAN = "exposures_trace_median_v1"
+const MIGRATION_BEAM_OFF_DESELECTED = "beam_off_deselected_v1"
 
 const MIGRATION_EXPOSURES_INGEST_STATE = "exposures_ingest_state_v1"
 
@@ -158,7 +160,8 @@ CREATE TABLE IF NOT EXISTS exposures (
     analysis_trace_stat  TEXT,
     setup_id             INTEGER REFERENCES setups(id),
     reviewed_at          TEXT,
-    peak_model_version   INTEGER
+    peak_model_version   INTEGER,
+    deselected           INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS exposure_sources (
@@ -548,6 +551,37 @@ function migrate_schema!(db::SQLite.DB)
     migrate_exposures_trace_median!(db)
     migrate_peak_provenance!(db)
     migrate_peak_models!(db)
+    migrate_exposures_deselected!(db)
+end
+
+function migrate_exposures_deselected!(db::SQLite.DB)
+    _migrated(db, MIGRATION_EXPOSURES_DESELECTED) && return nothing
+    SQLite.transaction(db) do
+        "deselected" in cols_of(db, "exposures") ||
+            DBInterface.execute(db, "ALTER TABLE exposures ADD COLUMN deselected INTEGER NOT NULL DEFAULT 0")
+        _select_worked_images!(db)
+        _record_migration!(db, MIGRATION_EXPOSURES_DESELECTED)
+    end
+    nothing
+end
+
+function _select_worked_images!(db::SQLite.DB)
+    kinds = join(("'" * k * "'" for k in DIRECT_REVIEW_KINDS), ",")
+    actions = _table_exists(db, "user_actions") ? """
+        OR EXISTS (SELECT 1 FROM user_actions a WHERE a.entity_type = 'exposure'
+                    AND a.entity_id = e.id AND a.action IN ($kinds))""" : ""
+    worked = sqlrows(DBInterface.execute(db, """
+        SELECT e.sample_id AS sample_id, MAX(e.id) AS id FROM exposures e
+         WHERE e.kind = 'file' AND e.sample_id IS NOT NULL
+           AND (e.status IS NULL OR e.status != 'rejected')
+           AND (EXISTS (SELECT 1 FROM assignment_members m WHERE m.exposure_id = e.id) $actions)
+         GROUP BY e.sample_id"""))
+    for w in worked
+        DBInterface.execute(db,
+            "UPDATE exposures SET deselected = CASE WHEN id = ? THEN 0 ELSE 1 END WHERE sample_id = ? AND kind = 'file'",
+            [Int(w.id), Int(w.sample_id)])
+    end
+    nothing
 end
 
 function migrate_label_colors!(db::SQLite.DB)

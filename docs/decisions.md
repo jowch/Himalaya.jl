@@ -60,6 +60,7 @@ Every row also needs the date it was decided, as `YYYY-MM-DD`.
 | word-frame | The UI calls one detector image a "frame". | 2026-11-21 | superseded | word-image, 2026-11-22 (PR 480) |
 | word-label | "Tag" is renamed "Label". | 2026-11-21 | built | packages/HimalayaUI/frontend/test/eslint-ui-copy.test.ts › enforces the house vocabulary in user-facing copy only |
 | word-assignment | The tools column's Call section is titled "Assignment", with Custom index in its header. Other uses of "call" stay. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › the Custom index button sits in the Assignment header and stays there while the custom index it opens replaces the list |
+| word-page-title | The browser tab is titled "Himalaya". | 2026-11-23 | built | packages/HimalayaUI/frontend/test/pageTitle.test.ts › the browser tab is titled Himalaya |
 
 ## Look and layout
 
@@ -127,16 +128,22 @@ Every row also needs the date it was decided, as `YYYY-MM-DD`.
 | id | Decision | Decided | Status | Evidence |
 |---|---|---|---|---|
 | combine-include-toggle | Each image has an include toggle; the combined trace is a time-weighted sum, or the median. | 2026-11-20 | superseded | combine-select, 2026-11-23 |
-| combine-select | What you select is what is analysed. Images are selected by a checkbox, Shift-click or ⌘-click; one image is that image, several are their monitor-normalised average with its own peaks, keyed by the set. Every kept image starts selected, with Select all and Select none. A plain click only views. The call stays with the sample. | 2026-11-23 | planned | thread "Show combined curve by default" |
-| combine-keep-one | Dropping the last kept image is refused. | 2026-11-23 | planned | thread "Show combined curve by default" |
-| combine-no-cross-setup | Images never combine across setups. | 2026-11-22 | planned | thread "Show combined curve by default" |
+| combine-select | What you select is what is analysed. Images are selected by a checkbox, Shift-click or ⌘-click; one image is that image, several are their monitor-normalised average with its own peaks, keyed by the set. Every kept image starts selected, with Select all and Select none. A plain click only views. The call stays with the sample. | 2026-11-23 | built | packages/HimalayaUI/test/test_combine.jl › refresh_selection! averages every selected image, one curve per set |
+| combine-keep-one | Dropping the last kept image is refused. | 2026-11-23 | superseded | combine-drop-last, 2026-11-23 |
+| combine-drop-last | The last kept image can be dropped. Nothing is analysed, and the sample row says why ("All dropped" or "None selected") instead of blocking the drop. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/workspace/SampleList.test.tsx › says on the row why nothing is analyzed |
+| combine-restore-unselected | A dropped image that is restored comes back unselected, unless nothing else is selected. Undo of a drop puts back the selection it had. | 2026-11-23 | built | packages/HimalayaUI/test/test_combine.jl › selection, drop and restore routes |
+| combine-beam-off-deselected | Beam-off images start deselected, so they are averaged in only when ticked. | 2026-11-23 | built | packages/HimalayaUI/test/test_ingest_reconcile.jl › a beam-off image starts left out of the selection, at ingest and when its trace lands late |
+| combine-no-cross-setup | Images never combine across setups. | 2026-11-22 | built | packages/HimalayaUI/test/test_combine.jl › a bridged sample averages only its own images |
+| img-half-rings | Predicted rings are dashed half-circles. The cut runs through the beam centre along the image's long axis (top/bottom on a wide image, left/right on a tall one), and the rings take the narrower half, so the bare half shows the image out to the highest q. When the beam lies off the image along the cut, the rings take the half that faces the image. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/lib/detectorRings.test.ts › cuts a wide image across its height, so the rings and the bare image both span its full width |
+| img-rings-enlarged | Predicted rings show only on the enlarged image, never on the image cards, which are too small to judge them. They are drawn for the selected phases, including a committed custom index, plus the custom index draft while it is open. Hovering a candidate does not draw rings. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › the enlarged image draws half-rings for the ticked phases only, never for a hovered candidate, and the image cards draw none |
+| img-rings-hold | Pressing and holding the enlarged image hides the rings until the button comes up, to compare against the bare image. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/workspace/detectorRings.test.tsx › pressing and holding the image hides the rings until the button comes up or the pointer leaves |
 
 ## Bridges and beamtimes
 
 | id | Decision | Decided | Status | Evidence |
 |---|---|---|---|---|
 | bridge-is-merge | A bridge says two samples are the same sample measured in two setups. It is not a comparison and takes no comparison slot. | 2026-11-22 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › the same sample takes no comparison slot, so a fifth comparison goes in past a bridge |
-| bridge-note | A bridged sample shows "Same as X in SETUP" and its mate's images under their own setup heading. | 2026-11-22 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › shows a same sample's frames under their own heading after this sample's, and picking one shows it |
+| bridge-note | A bridged sample shows "Same as X in SETUP" and its mate's images under their own setup heading. | 2026-11-22 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › shows a same sample's frames under their own heading after this sample's, and picking one shows its image |
 | bridge-hidden-setup | A bridge to a sample in a hidden setup stays stored but is not drawn. | 2026-11-21 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › draws no bridge to a sample whose setup is hidden, and draws it again once the setup is shown |
 | bridge-shared-call | Bridged samples share one call and their labels, except flight paths. | 2026-11-22 | built | packages/HimalayaUI/test/test_bridge_calls.jl › bridged samples share one call |
 | bridge-keep-call | Opening a bridged pair whose calls differ asks once which call to keep. | 2026-11-22 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › opening a bridged sample whose call state differs from its mate's asks once which call to keep |
@@ -150,7 +157,9 @@ Every row also needs the date it was decided, as `YYYY-MM-DD`.
 
 | id | Decision | Decided | Status | Evidence |
 |---|---|---|---|---|
-| phase-curvature | Bicontinuous cubic calls show the mean Gaussian curvature in nm⁻². | 2026-11-22 | built | packages/HimalayaUI/frontend/test/workspace/CandidateList.test.tsx › shows the mean Gaussian curvature in nm⁻² on bicontinuous cubic rows only, on one line |
+| phase-curvature | Bicontinuous cubic calls show the mean Gaussian curvature in nm⁻². | 2026-11-22 | superseded | 2026-11-23: phase-curvature-legend and phase-curvature-bonnet |
+| phase-curvature-legend | Each indexing plot legend line reads phase, lattice, κ in nm⁻² (bicontinuous cubics only) and R², on one line. It drops the reflections-on-peaks count, which both plots already show. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › the indexing plot shows the assigned candidate's fit against the peaks |
+| phase-curvature-bonnet | In the Assignment list only a Bonnet group's header shows κ. Single candidate rows and group members show none. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/workspace/CandidateList.test.tsx › leaves the curvature off single candidate rows, cubic or not |
 | phase-bonnet-groups | Bonnet-related cubics that share peaks are offered as one group, ticked whole or one member at a time. | 2026-11-22 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › ticks a Bonnet group whole with its number key and undoes it as one edit |
 | phase-contested-best-fit | A peak two auto-called lattices both match goes to the lattice that predicts it most closely, so coexisting cubics are both called. The real cubic fixture now auto-calls Im3m + Pn3m, which is not yet verified. | 2026-11-23 | built | packages/HimalayaUI/test/test_auto_group_peak_id_claiming.jl › auto_group: coexisting Im3m and Pn3m each keep the peaks their lattice fits best |
 

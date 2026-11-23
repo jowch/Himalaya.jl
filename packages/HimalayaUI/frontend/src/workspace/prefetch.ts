@@ -164,7 +164,7 @@ export function neighbourSamples(samples: readonly CorpusSample[], currentId: nu
 }
 
 const encodeNeighbours = (samples: CorpusSample[]): string =>
-  samples.map((s) => `${s.id}:${s.representative_exposure_id ?? ""}`).join(",");
+  samples.map((s) => `${s.id}:${s.analyzed_exposure_id ?? ""}`).join(",");
 
 const decodeNeighbours = (key: string): Neighbour[] =>
   key === ""

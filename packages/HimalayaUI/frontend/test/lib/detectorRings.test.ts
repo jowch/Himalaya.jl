@@ -51,6 +51,30 @@ describe("ringCircles", () => {
     expect(otherSetup.radii[0]).toBeCloseTo(a.radii[0]!, 6);
   });
 
+  it("puts the rings on the narrower side of the beam, so the wider side shows the image out to the highest q", () => {
+    const g = (x: number) => detectorGeometry(setup({ beam_center_x: x }))!;
+    expect(ringCircles([0.1], "A-1", g(421.409), size)!.side).toBe("left");
+    expect(ringCircles([0.1], "A-1", g(700), size)!.side).toBe("right");
+    expect(ringCircles([0.1], "A-1", g(490), size)!.side).toBe("right");
+    expect(ringCircles([0.1], "A-1", g(-12.5), size)!.side).toBe("right");
+    expect(ringCircles([0.1], "A-1", g(1100), size)!.side).toBe("left");
+  });
+
+  it("faces the rings toward the image when the beam lies off it along the cut", () => {
+    const g = (x: number) => detectorGeometry(setup({ beam_center_x: x }))!;
+    expect(ringCircles([0.1], "A-1", g(-0.5), size)!.side).toBe("right");
+    expect(ringCircles([0.1], "A-1", g(980.5), size)!.side).toBe("left");
+  });
+
+  it("cuts a wide image across its height, so the rings and the bare image both span its full width", () => {
+    const wide = { width: 1475, height: 195 };
+    const g = (y: number) => detectorGeometry(setup({ beam_center_x: 700, beam_center_y: y }))!;
+    expect(ringCircles([0.1], "A-1", g(150), wide)!.side).toBe("top");
+    expect(ringCircles([0.1], "A-1", g(40), wide)!.side).toBe("bottom");
+    expect(ringCircles([0.1], "A-1", g(300), wide)!.side).toBe("bottom");
+    expect(ringCircles([0.1], "A-1", g(-20), wide)!.side).toBe("top");
+  });
+
   it("skips orders past backscatter and returns nothing without a size", () => {
     const c = ringCircles([0.1, 100], "A-1", detectorGeometry(setup())!, size)!;
     expect(c.radii).toHaveLength(1);

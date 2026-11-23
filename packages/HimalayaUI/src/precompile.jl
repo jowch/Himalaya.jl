@@ -83,7 +83,7 @@ function _workload_call(send, method::AbstractString, target::AbstractString, bo
     isempty(res.body) || !json_body ? nothing : JSON3.read(res.body)
 end
 
-function _workload_requests(send, experiment::Int, sample::Int, other::Int, exposure::Int, mixed::Int)
+function _workload_requests(send, experiment::Int, sample::Int, other::Int, exposure::Int, mixed::Int, sibling::Int)
     _workload_call(send, "GET", "/api/health")
     _workload_call(send, "GET", "/api/users")
     _workload_call(send, "GET", "/api/experiments")
@@ -125,6 +125,12 @@ function _workload_requests(send, experiment::Int, sample::Int, other::Int, expo
 
     _workload_call(send, "PATCH", "/api/exposures/$exposure/status", Dict(:status => "rejected"))
     _workload_call(send, "PATCH", "/api/exposures/$exposure/status", Dict(:status => nothing))
+    _workload_call(send, "PUT", "/api/samples/$sample/selection", Dict(:exposure_ids => Int[]))
+    averaged = _workload_call(send, "PUT", "/api/samples/$sample/selection", Dict(:exposure_ids => [exposure, sibling]))
+    for part in ("trace", "peaks", "indices", "assignment")
+        _workload_call(send, "GET", "/api/exposures/$(averaged.analyzed_exposure_id)/$part")
+    end
+    _workload_call(send, "PUT", "/api/samples/$sample/selection", Dict(:exposure_ids => [exposure]))
 
     indices = _workload_call(send, "GET", "/api/exposures/$exposure/indices")
     if !isempty(indices)
@@ -220,6 +226,7 @@ function run_route_workload(dir::AbstractString; record = nothing)
     data_dir = joinpath(dir, "data")
     mkpath(analysis_dir); mkpath(data_dir)
     _workload_trace(joinpath(analysis_dir, replace(DEFAULT_INTEGRATION_PATTERN, "{name}" => "frame")))
+    _workload_trace(joinpath(analysis_dir, replace(DEFAULT_INTEGRATION_PATTERN, "{name}" => "frame_b")))
     _workload_trace(joinpath(analysis_dir, replace(DEFAULT_INTEGRATION_PATTERN, "{name}" => "frame_mixed")),
                     _workload_mixed_centers())
     image = joinpath(data_dir, "frame.tif")
@@ -236,12 +243,13 @@ function run_route_workload(dir::AbstractString; record = nothing)
                                     filename = "frame", image_path = image, prp_path = prp,
                                     exposure_time = 1.0, transmitted_counts = 1000.0,
                                     incident_monitor = 1.5, counting_time = 1.05)
-        create_exposure!(db; experiment_id = experiment, sample_id = sample,
+        sibling = create_exposure!(db; experiment_id = experiment, sample_id = sample,
                          filename = "frame_b", image_path = image, prp_path = prp,
                          timestamp = "2026-01-01T00:00:00", exposure_time = 1.0, horizontal_position = 1.0,
                          scan_id = 1, frame_no = 1, transmitted_counts = 1.0, incident_monitor = 1.0,
                          counting_time = 1.0)
         analyze_exposure!(db, exposure, analysis_dir)
+        analyze_exposure!(db, sibling, analysis_dir)
         mixed = create_exposure!(db; experiment_id = experiment, sample_id = other,
                                  filename = "frame_mixed", image_path = image)
         analyze_exposure!(db, mixed, analysis_dir)
@@ -253,7 +261,7 @@ function run_route_workload(dir::AbstractString; record = nothing)
 
         inproc = _recording(_workload_inproc, record)
         _workload_call(inproc, "POST", "/api/users", Dict(:username => "precompile"))
-        _workload_requests(inproc, experiment, sample, other, exposure, mixed)
+        _workload_requests(inproc, experiment, sample, other, exposure, mixed, sibling)
         _workload_peak_model!(db, experiment, sample, image, analysis_dir)
         _gc_sweep(db, 3600)
         _boot_background_work(db, false)
@@ -263,7 +271,7 @@ function run_route_workload(dir::AbstractString; record = nothing)
                      middleware = [db_connection_middleware])
         try
             _wait_for_server(port)
-            _workload_requests(_recording(_workload_socket(port), record), experiment, sample, other, exposure, mixed)
+            _workload_requests(_recording(_workload_socket(port), record), experiment, sample, other, exposure, mixed, sibling)
         finally
             Oxygen.terminate()
         end

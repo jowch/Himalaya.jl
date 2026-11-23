@@ -13,9 +13,12 @@ export interface ImageSize {
   height: number;
 }
 
+export type RingSide = "left" | "right" | "top" | "bottom";
+
 export interface RingCircles {
   cx: number;
   cy: number;
+  side: RingSide;
   radii: number[];
 }
 
@@ -48,6 +51,12 @@ function radiusPx(qPerAngstrom: number, g: DetectorGeometry): number | null {
   return (g.distanceM * Math.tan(2 * Math.asin(s))) / g.pixelM;
 }
 
+function narrower(before: number, after: number, a: RingSide, b: RingSide): RingSide {
+  if (before <= 0) return b;
+  if (after <= 0) return a;
+  return before < after ? a : b;
+}
+
 // physics: setup_info gives the beam centre in detector pixels from the bottom-left corner with y up; the image's rows run top-down.
 export function ringCircles(
   qs: readonly number[], qUnits: string | null | undefined, g: DetectorGeometry, size: ImageSize | undefined,
@@ -55,5 +64,10 @@ export function ringCircles(
   if (!size || !(size.width > 0) || !(size.height > 0)) return null;
   const toAngstrom = perAngstrom(qUnits);
   const radii = qs.map((q) => radiusPx(q * toAngstrom, g)).filter((r): r is number => r !== null);
-  return { cx: g.beamX + 0.5, cy: size.height - g.beamY - 0.5, radii };
+  const cx = g.beamX + 0.5;
+  const cy = size.height - g.beamY - 0.5;
+  const side: RingSide = size.width >= size.height
+    ? narrower(cy, size.height - cy, "top", "bottom")
+    : narrower(cx, size.width - cx, "left", "right");
+  return { cx, cy, side, radii };
 }

@@ -240,9 +240,9 @@ _label_states(db, sid) = Dict(String(r.label) => String(r.state) for r in Tables
             @test isempty(rows["setup1/lone"].bridged_with)
             csv = String(call("GET", "/api/experiments/$exp_id/export?format=csv").body)
             header = split(first(split(csv, '\n')), ',')
-            @test header[end-1:end] == ["setup", "bridged_with"]
+            @test header[end-2:end] == ["setup", "bridged_with", "analyzed"]
             lines = [split(l, ',') for l in split(strip(csv), '\n')[2:end]]
-            by = Dict((l[1], l[end-1]) => l[end] for l in lines)
+            by = Dict((l[1], l[end-2]) => l[end-1] for l in lines)
             @test by[("DOPE_H2O", "setup1")] == "DOPE_H2O (long pipe)"
             @test by[("DOPE_H2O", "long pipe")] == "DOPE_H2O (setup1)"
             @test by[("lone", "setup1")] == ""

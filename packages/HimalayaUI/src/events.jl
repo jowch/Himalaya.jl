@@ -448,6 +448,7 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
     kind == "experiment_updated" && return nothing
     kind == "setup_updated" && return nothing
     kind == "set_exposure_status" && return nothing
+    kind == "set_selection" && return nothing
 
     if kind == "sample_bridged"
         DBInterface.execute(db,

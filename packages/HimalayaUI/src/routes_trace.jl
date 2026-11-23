@@ -12,6 +12,7 @@ function register_trace_routes!()
             ["Content-Type" => "application/json"],
             JSON3.write(Dict(:error => "image not found")))
         row = rows[1]
+        is_combined_kind(row.kind) && return _combined_trace_response(db, id)
         String(row.kind) == "file" || return HTTP.Response(400,
             ["Content-Type" => "application/json"],
             JSON3.write(Dict(:error => "trace not available for derived images")))
@@ -33,4 +34,17 @@ function register_trace_routes!()
         HTTP.Response(200, ["Content-Type" => "application/json"],
             JSON3.write(Dict(:q => q, :I => I, :sigma => σ, :monitors => monitors)))
     end
+end
+
+function _combined_trace_response(db::SQLite.DB, id::Int)
+    q, I, σ = try
+        load_combined_trace(db, id)
+    catch err
+        err isa ArgumentError || rethrow()
+        return HTTP.Response(404, ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => err.msg)))
+    end
+    HTTP.Response(200, ["Content-Type" => "application/json"],
+        JSON3.write(Dict(:q => q, :I => I, :sigma => σ, :monitors => combined_monitors(db, id),
+                         :sources => combined_source_ids(db, id))))
 end

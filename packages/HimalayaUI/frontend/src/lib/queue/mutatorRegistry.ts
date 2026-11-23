@@ -2,6 +2,7 @@ import type { OpKind, Mutator } from "./types";
 import {
   updateSampleMutator,
   setExposureStatusMutator,
+  setSelectionMutator,
 } from "./mutators/trivial";
 import { peakAddMutator } from "./mutators/peakAdd";
 import { peakRemoveMutator } from "./mutators/peakRemove";
@@ -37,6 +38,8 @@ export function resolveMutator(
       return updateSampleMutator;
     case "set_exposure_status":
       return setExposureStatusMutator;
+    case "set_selection":
+      return setSelectionMutator;
     case "peak_added":
       return peakAddMutator;
     case "peak_removed":
@@ -90,6 +93,7 @@ export function resolveMutatorForEvent(
     case "sample_call_set_state":  return setSampleCallStateMutator;
     case "update_sample":       return updateSampleMutator;
     case "set_exposure_status": return setExposureStatusMutator;
+    case "set_selection":       return setSelectionMutator;
     case "sample_bridged":           return bridgeSamplesMutator;
     case "sample_unbridged":         return unbridgeSampleMutator;
     case "compares_changed":         return patchComparesMutator;

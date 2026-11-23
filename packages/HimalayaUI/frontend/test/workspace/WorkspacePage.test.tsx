@@ -42,6 +42,7 @@ const state = {
   traceFetching: false,
   peaks: [] as Peak[],
   compareTraces: new Map<number, Trace>(),
+  memberTraces: new Map<number, Trace>(),
   bridges: [] as SampleBridge[],
   labels: [] as SampleLabel[],
   problems: { ingest_error: null as string | null, exposures: [] as ProblemExposure[] },
@@ -72,6 +73,7 @@ function recorder(hook: string) {
 
 const toasts: string[] = [];
 const compareFetches: number[][] = [];
+const memberFetches: number[][] = [];
 vi.mock("../../src/lib/toast", () => ({ showToast: (msg: string) => toasts.push(msg) }));
 
 let mateCache: (Exposure[] | undefined)[] = [];
@@ -85,9 +87,9 @@ const server = {
   experiment: { name: "BL-19", description: null as string | null },
   callMembers: new Map<number, SampleCallMember[]>(),
 };
-const serverStatus = (sid: number, eid: number, status: Exposure["status"]) => {
+const serverStatus = (sid: number, eid: number, status: Exposure["status"], ...selected: boolean[]) => {
   server.status.set(eid, status);
-  calls.push({ hook: "op:setStatus", boundTo: 0, arg: [sid, eid, status] });
+  calls.push({ hook: "op:setStatus", boundTo: 0, arg: [sid, eid, status, ...selected] });
 };
 const serverColor = (label: string, color: LabelColor | null) => {
   server.colors.set(label.toLowerCase(), color);
@@ -99,6 +101,7 @@ const editOps = {
   removePhase: editOp("removePhase"),
   setCallState: editOp("setCallState"),
   setStatus: serverStatus,
+  setSelection: editOp("setSelection"),
   addPeak: editOp("addPeak"),
   removePeak: editOp("removePeak"),
   setPeakExcluded: editOp("setPeakExcluded"),
@@ -164,7 +167,7 @@ vi.mock("../../src/queries", () => ({
     mutate: (_: unknown, cb?: { onSuccess?: () => void }) => { removals.push(experimentId); cb?.onSuccess?.(); },
     reset: () => {}, isPending: false, error: null,
   }),
-  useExposures: () => ({ data: state.exposures }),
+  useExposures: () => ({ data: withSelection(state.exposures) }),
   useSamplesExposures: (ids: readonly number[]) => {
     const next = ids.map((id) => state.mateExposures.get(id));
     if (next.length !== mateCache.length || next.some((d, i) => d !== mateCache[i])) mateCache = next;
@@ -230,6 +233,13 @@ vi.mock("../../src/workspace/prefetch", () => ({
   },
 }));
 
+vi.mock("../../src/workspace/useMemberTraces", () => ({
+  useMemberTraces: (ids: readonly number[]) => {
+    memberFetches.push([...ids]);
+    return ids.flatMap((id) => (state.memberTraces.has(id) ? [{ id, ...state.memberTraces.get(id)! }] : []));
+  },
+}));
+
 vi.mock("../../src/workspace/useCompareTraces", () => ({
   useCompareTraces: (ids: readonly number[]) => {
     compareFetches.push([...ids]);
@@ -279,6 +289,19 @@ function sample(id: number, name: string, extra: Partial<CorpusSample> = {}): Co
   return { id, experiment_id: 1, name, notes: null, q_units: "A-1", ...extra } as CorpusSample;
 }
 
+let selectionCache: { from: Exposure[] | undefined; to: Exposure[] | undefined } = { from: undefined, to: undefined };
+function withSelection(list: Exposure[] | undefined): Exposure[] | undefined {
+  if (list === selectionCache.from) return selectionCache.to;
+  let to = list;
+  if (list && !list.some((e) => e.selected !== undefined)) {
+    const kept = list.filter((e) => e.kind !== "combined" && e.status !== "rejected");
+    const newest = kept.reduce<number | undefined>((m, e) => (m === undefined || e.id > m ? e.id : m), undefined);
+    to = list.map((e) => (e.kind === "combined" ? e : { ...e, selected: e.id === newest }));
+  }
+  selectionCache = { from: list, to };
+  return to;
+}
+
 function exposure(id: number, extra: Partial<Exposure> = {}): Exposure {
   return makeExposure({ id, sample_id: 10, filename: `f${id}.dat`, ...extra });
 }
@@ -324,6 +347,8 @@ beforeEach(() => {
   calls.length = 0;
   toasts.length = 0;
   compareFetches.length = 0;
+  memberFetches.length = 0;
+  state.memberTraces = new Map();
   prefetchTargets.length = 0;
   state.username = "jc";
   state.experimentLoaded = true;
@@ -878,9 +903,69 @@ describe("WorkspacePage", () => {
     expect(screen.getByTestId("workspace-trace-empty").textContent).toBe("No integrated trace for this image.");
   });
 
-  it("opens on the representative frame", () => {
+  it("opens looking at the first selected image", () => {
     renderAt("/experiments/1/workspace/10");
     expect(currentFrame()).toBe("Image 2");
+  });
+
+  it("plots the average of the selected images over a faint line for each, and names the average", () => {
+    state.trace = makeTrace(1);
+    state.memberTraces = new Map([[100, makeTrace(1)], [101, makeTrace(2)]]);
+    state.exposures = [
+      exposure(100, { selected: true }), exposure(101, { selected: true }), exposure(102, { selected: false }),
+      exposure(900, { kind: "combined", filename: null, sources: [{ source_exposure_id: 100, role: "signal" }, { source_exposure_id: 101, role: "signal" }] }),
+    ];
+    renderAt("/experiments/1/workspace/10");
+    expect(memberFetches.at(-1)).toEqual([100, 101]);
+    expect([...screen.getByTestId("workspace-members").querySelectorAll("[data-member]")].map((p) => p.getAttribute("data-member"))).toEqual(["100", "101"]);
+    expect(screen.getAllByText("Average of 2 images")).toHaveLength(2);
+    expect(screen.getByTestId("exposure-selection-caption")).toHaveTextContent("Average of 2 images");
+    fireEvent.keyDown(window, { key: "2" });
+    expect(calls).toEqual([{ hook: "add", boundTo: 900, arg: 1 }]);
+  });
+
+  it("says what to do when nothing is selected, and edits nothing", () => {
+    state.trace = undefined;
+    state.exposures = [exposure(100, { selected: false }), exposure(101, { selected: false })];
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByText("Select an image to analyze.")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "2" });
+    expect(calls).toEqual([]);
+  });
+
+  it("says it is averaging while the selected set has no average yet", () => {
+    state.trace = undefined;
+    state.exposures = [exposure(100, { selected: true, trace_hash: "a" }), exposure(101, { selected: true, trace_hash: "b" })];
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByText("Averaging the selected images…")).toBeInTheDocument();
+  });
+
+  it("selects with the tile checkbox, ⌘-click and shift-click, and Select all or none start clean", () => {
+    state.exposures = [exposure(100, { selected: false }), exposure(101, { selected: true }), exposure(102, { selected: false }), exposure(103, { status: "rejected", selected: false })];
+    renderAt("/experiments/1/workspace/10");
+    const strip = screen.getByTestId("workspace-exposures");
+    expect(within(strip).getAllByRole("checkbox").map((c) => c.getAttribute("aria-label"))).toEqual(["Analyze image 1", "Analyze image 2", "Analyze image 3"]);
+    fireEvent.click(within(strip).getByRole("checkbox", { name: "Analyze image 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Image 3" }), { metaKey: true });
+    fireEvent.click(screen.getByRole("button", { name: "Image 1" }), { shiftKey: true });
+    fireEvent.click(screen.getByRole("button", { name: "Select all" }));
+    fireEvent.click(screen.getByRole("button", { name: "Select none" }));
+    expect(calls.filter((c) => c.hook === "op:setSelection").map((c) => c.arg)).toEqual([
+      [10, [101, 100]], [10, [101, 102]], [10, [101, 100, 102]], [10, [100, 101, 102]], [10, []],
+    ]);
+    expect(currentFrame()).toBe("Image 2");
+    fireEvent.click(screen.getByRole("button", { name: "Image 3" }));
+    expect(currentFrame()).toBe("Image 3");
+    expect(calls.filter((c) => c.hook === "op:setSelection")).toHaveLength(5);
+  });
+
+  it("undoes a selection change by restoring the previous selection", async () => {
+    state.exposures = [exposure(100, { selected: false }), exposure(101, { selected: true })];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.click(screen.getByRole("button", { name: "Select all" }));
+    state.exposures = [exposure(100, { selected: true }), exposure(101, { selected: true })];
+    fireEvent.keyDown(window, { key: "z", metaKey: true });
+    await waitFor(() => expect(calls.filter((c) => c.hook === "op:setSelection").map((c) => c.arg)).toEqual([[10, [100, 101]], [10, [101]]]));
   });
 
   it("ranks candidates by score and number keys toggle them on the shown exposure", () => {
@@ -896,11 +981,12 @@ describe("WorkspacePage", () => {
     ]);
   });
 
-  it("on an unselected frame, adds the phase to that frame without selecting it", () => {
+  it("a phase call goes to the selected image, not to the image being looked at", () => {
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "ArrowLeft" });
+    expect(currentFrame()).toBe("Image 1");
     fireEvent.keyDown(window, { key: "2" });
-    expect(calls).toEqual([{ hook: "add", boundTo: 100, arg: 1 }]);
+    expect(calls).toEqual([{ hook: "add", boundTo: 101, arg: 1 }]);
   });
 
   it("X drops the shown frame and shows the nearest kept frame, so a phase key calls there", () => {
@@ -1084,15 +1170,24 @@ describe("WorkspacePage", () => {
       server.saving = false;
       server.saved?.();
       await settle();
-      expect(ops()).toEqual([["setStatus", 10, 101, null]]);
+      expect(ops()).toEqual([["setStatus", 10, 101, null, true]]);
       expect(toasts.at(-1)).toBe("Undone: dropped image 2 of A1");
+    });
+
+    it("undoes a drop of an image left out of the analysis by restoring it still left out", async () => {
+      state.exposures = [exposure(100, { selected: true }), exposure(101, { selected: false })];
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.click(screen.getByRole("button", { name: "Image 2" }));
+      fireEvent.keyDown(window, { key: "x" });
+      await press({ key: "z", metaKey: true });
+      expect(ops()).toEqual([["setStatus", 10, 101, null, false]]);
     });
 
     it("undoes a drop by restoring the frame", async () => {
       renderAt("/experiments/1/workspace/10");
       fireEvent.keyDown(window, { key: "x" });
       await press({ key: "z", metaKey: true });
-      expect(ops()).toEqual([["setStatus", 10, 101, null]]);
+      expect(ops()).toEqual([["setStatus", 10, 101, null, true]]);
       expect(toasts.at(-1)).toBe("Undone: dropped image 2 of A1");
     });
 
@@ -1171,7 +1266,7 @@ describe("WorkspacePage", () => {
       await press({ key: "z", ctrlKey: true, repeat: true });
       expect(ops()).toEqual([]);
       await undo();
-      expect(ops()).toEqual([["setStatus", 10, 101, null]]);
+      expect(ops()).toEqual([["setStatus", 10, 101, null, true]]);
     });
 
     it("goes back to the sample the undone edit was made on", async () => {
@@ -1181,7 +1276,7 @@ describe("WorkspacePage", () => {
       expect(screen.getByTestId("where")).toHaveTextContent("/experiments/1/workspace/11");
       await undo();
       expect(screen.getByTestId("where")).toHaveTextContent("/experiments/1/workspace/10");
-      expect(ops()).toEqual([["setStatus", 10, 101, null]]);
+      expect(ops()).toEqual([["setStatus", 10, 101, null, true]]);
     });
 
     it("undoes peak edits made on the plot, finding each peak by q on the server", async () => {
@@ -1439,7 +1534,7 @@ describe("WorkspacePage", () => {
       fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "undo" } });
       fireEvent.click(screen.getByRole("option", { name: /Undo: dropped image 2 of A1/ }));
       await settle();
-      expect(ops()).toEqual([["setStatus", 10, 101, null]]);
+      expect(ops()).toEqual([["setStatus", 10, 101, null, true]]);
     });
   });
 
@@ -1451,14 +1546,13 @@ describe("WorkspacePage", () => {
     expect(screen.getByText("1 of 2 kept")).toBeInTheDocument();
   });
 
-  it("refuses a phase call on a dropped frame and says why", () => {
+  it("looking at a dropped image still calls the phase on the selected one", () => {
     state.exposures = [exposure(100), exposure(101, { status: "rejected" })];
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "ArrowRight" });
     expect(currentFrame()).toBe("Image 2, dropped");
     fireEvent.keyDown(window, { key: "2" });
-    expect(calls).toEqual([]);
-    expect(screen.getByText("This image is dropped. Restore it to call a phase.")).toBeInTheDocument();
+    expect(calls).toEqual([{ hook: "add", boundTo: 100, arg: 1 }]);
   });
 
   it("ticks a phase called on another frame and unticks it there, even when that frame is dropped", () => {
@@ -1844,14 +1938,15 @@ describe("WorkspacePage", () => {
     expect(calls).toEqual([]);
   });
 
-  it("does not edit peaks on a dropped frame", () => {
+  it("a plot click adds a peak to the plotted selection while a dropped image is being looked at", () => {
     state.trace = makeTrace(1);
     state.exposures = [exposure(100), exposure(101, { status: "rejected" })];
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "ArrowRight" });
     expect(currentFrame()).toBe("Image 2, dropped");
     clickPlotAt(0.15);
-    expect(calls).toEqual([]);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ boundTo: 100 });
   });
 
   it("the palette steps through log, linear, log-log and q²I", () => {
@@ -2563,26 +2658,18 @@ describe("WorkspacePage", () => {
     expect(calls).toEqual([]);
   });
 
-  it("a custom index on an unselected frame lands on that frame without selecting it", () => {
+  it("a custom index lands on the selected image, not on the image being looked at", () => {
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "ArrowLeft" });
     fireEvent.keyDown(window, { key: "i" });
     fireEvent.click(within(screen.getByTestId("workspace-custom-index")).getByRole("button", { name: /^Add/ }));
     expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({ hook: "custom", boundTo: 100 });
+    expect(calls[0]).toMatchObject({ hook: "custom", boundTo: 101 });
   });
 
-  it("does not open a custom index on a dropped frame or before a user is set", () => {
+  it("does not open a custom index before a user is set", () => {
     state.username = undefined;
-    const { unmount } = renderAt("/experiments/1/workspace/10");
-    fireEvent.keyDown(window, { key: "i" });
-    expect(screen.queryByTestId("workspace-custom-index")).toBeNull();
-    unmount();
-    state.username = "jc";
-    state.exposures = [exposure(100), exposure(101, { status: "rejected" })];
     renderAt("/experiments/1/workspace/10");
-    fireEvent.keyDown(window, { key: "ArrowRight" });
-    expect(currentFrame()).toBe("Image 2, dropped");
     fireEvent.keyDown(window, { key: "i" });
     expect(screen.queryByTestId("workspace-custom-index")).toBeNull();
   });
@@ -2602,8 +2689,27 @@ describe("WorkspacePage", () => {
     ];
     renderAt("/experiments/1/workspace/10");
     const plot = screen.getByTestId("workspace-indexing");
-    expect(within(plot).getByTestId("workspace-indexing-fit")).toHaveTextContent("Pn3m a = 100.0 Å R² 0.9900 2/2 on peaks");
+    expect(within(plot).getByTestId("workspace-indexing-fit")).toHaveTextContent("Pn3m a = 100.0 Å κ −0.0655 nm⁻² R² 0.9900");
+    expect(within(plot).getByTestId("workspace-indexing-fit")).not.toHaveTextContent("on peaks");
     expect(plot.querySelectorAll("[data-observed]")).toHaveLength(2);
+  });
+
+  it("the indexing legend leaves κ off phases that are not bicontinuous cubics", () => {
+    state.trace = makeTrace(1);
+    state.peaks = [peak(7, 0.1, "auto"), peak(8, 0.2, "auto")];
+    state.indices = [
+      {
+        ...index(2, "Lamellar", 0.9),
+        peaks: [
+          { peak_id: 7, ratio_position: 1, residual: 0, q_observed: 0.1 },
+          { peak_id: 8, ratio_position: 2, residual: 0, q_observed: 0.2 },
+        ],
+      },
+    ];
+    renderAt("/experiments/1/workspace/10");
+    const fit = within(screen.getByTestId("workspace-indexing")).getByTestId("workspace-indexing-fit");
+    expect(fit).toHaveTextContent("Lamellar");
+    expect(fit).not.toHaveTextContent("κ");
   });
 
   it("the indexing plot waits for the trace before counting reflections", () => {
@@ -2757,7 +2863,7 @@ describe("WorkspacePage", () => {
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "i" });
     expect(screen.getByTestId("workspace-custom-landed")).toHaveTextContent("2 of 9");
-    expect(screen.getByTestId("workspace-indexing-fit")).toHaveTextContent("2/9 on peaks");
+    expect(screen.getByTestId("workspace-indexing").querySelectorAll("[data-observed]")).toHaveLength(2);
     const combIds = Array.from(screen.getByTestId("workspace-combs").querySelectorAll("[data-comb]")).map((l) => l.getAttribute("data-comb"));
     expect(new Set(combIds)).toEqual(new Set(["-1"]));
   });
@@ -2849,12 +2955,12 @@ describe("WorkspacePage", () => {
     expect(calls).toEqual([]);
   });
 
-  it("moving to another frame closes the custom index", () => {
+  it("looking at another image keeps the custom index open", () => {
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "i" });
     fireEvent.click(screen.getByRole("button", { name: "Image 1" }));
     expect(currentFrame()).toBe("Image 1");
-    expect(screen.queryByTestId("workspace-custom-index")).toBeNull();
+    expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
   });
 
 
@@ -2869,28 +2975,54 @@ describe("WorkspacePage", () => {
     fireEvent.mouseLeave(screen.getByTestId("workspace-candidates"));
     expect(screen.getAllByTestId("workspace-indexing-fit").map((n) => n.textContent)).toEqual([expect.stringMatching(/^Pn3m/)]);
   });
-  it("hovering a candidate or drafting a custom index draws its predicted rings on every image, from that image's setup geometry", () => {
+  it("the enlarged image draws half-rings for the ticked phases only, never for a hovered candidate, and the image cards draw none", () => {
+    state.indices = [...state.indices, { ...index(3, "Ia3d", 0.2), kind: "speculative" }];
+    state.assignment = { exposure_id: 101, state: "indexed", members: [2, 3] };
     state.setups = [{ id: 1, name: "setup1", folder: "setup1", included: true,
       beam_center_x: 421.409, beam_center_y: 836.946, pixel_size_um: 172, energy_kev: 9, flight_path_m: 1.8095, q_units: "A-1" }];
     state.corpus = state.corpus.map((s) => (s.id === 10 ? { ...s, setup_id: 1 } : s));
     state.exposures = [exposure(100, { image_path: "/d/100.tif", image_version: "v" }), exposure(101, { image_path: "/d/101.tif", image_version: "v" })];
     state.detectorSize = { width: 981, height: 1043 };
     renderAt("/experiments/1/workspace/10");
-    const strip = screen.getByTestId("workspace-exposures");
-    const ringSets = () => [...strip.querySelectorAll('[data-testid="detector-rings"]')];
-    expect(ringSets()).toHaveLength(0);
     expect(new Set(state.sizeRequests)).toEqual(new Set(["/api/exposures/100/image?thumb=1&v=v", "/api/exposures/101/image?thumb=1&v=v"]));
-    const rows = within(screen.getByTestId("workspace-candidates")).getAllByRole("button");
-    fireEvent.mouseEnter(rows[1]!);
-    expect(ringSets()).toHaveLength(2);
-    const circles = [...ringSets()[0]!.querySelectorAll("circle")];
-    expect(circles).toHaveLength(2);
-    expect(Number(circles[0]!.getAttribute("r"))).toBeCloseTo(230.7, 0);
-    expect(circles[0]!.getAttribute("stroke")).toBe(phaseColor("Im3m"));
-    fireEvent.mouseLeave(screen.getByTestId("workspace-candidates"));
-    expect(ringSets()).toHaveLength(0);
-    fireEvent.keyDown(window, { key: "i" });
-    expect(ringSets().length).toBe(2);
+    fireEvent.mouseEnter(within(screen.getByTestId("workspace-candidates")).getAllByRole("button")[1]!);
+    expect(document.querySelectorAll('[data-testid="detector-rings"]')).toHaveLength(0);
+    fireEvent.keyDown(window, { key: " " });
+    const big = screen.getByTestId("workspace-detector-big");
+    expect(document.querySelectorAll('[data-testid="detector-rings"]')).toHaveLength(1);
+    const arcs = [...big.querySelectorAll('[data-role="det-ring"]')];
+    expect(arcs.length).toBeGreaterThan(0);
+    expect(new Set(arcs.map((a) => a.getAttribute("stroke")))).toEqual(new Set([phaseColor("Pn3m"), phaseColor("Ia3d")]));
+    const [, x0, y0, , r, , , , sweep, x1, y1] = arcs[0]!.getAttribute("d")!.split(" ");
+    expect(sweep).toBe("0");
+    expect([x1, Number(y1) - Number(y0)]).toEqual([x0, 2 * Number(r)]);
+    expect(within(screen.getByTestId("workspace-exposures")).queryByTestId("detector-rings")).toBeNull();
+  });
+
+  it("draws the average's ticked phases as rings on the enlarged image being looked at, in that image's geometry", () => {
+    state.setups = [{ id: 1, name: "setup1", folder: "setup1", included: true,
+      beam_center_x: 421.409, beam_center_y: 836.946, pixel_size_um: 172, energy_kev: 9, flight_path_m: 1.8095, q_units: "A-1" }];
+    state.corpus = state.corpus.map((s) => (s.id === 10 ? { ...s, setup_id: 1 } : s));
+    state.trace = makeTrace(1);
+    state.memberTraces = new Map([[100, makeTrace(1)], [101, makeTrace(2)]]);
+    state.exposures = [
+      exposure(100, { selected: true, image_path: "/d/100.tif", image_version: "v" }),
+      exposure(101, { selected: true, image_path: "/d/101.tif", image_version: "v" }),
+      exposure(900, { kind: "combined", filename: null, sources: [{ source_exposure_id: 100, role: "signal" }, { source_exposure_id: 101, role: "signal" }] }),
+    ];
+    state.detectorSize = { width: 981, height: 1043 };
+    renderAt("/experiments/1/workspace/10");
+    const strip = screen.getByTestId("workspace-exposures");
+    fireEvent.click(within(strip).getByRole("button", { name: "Image 2" }));
+    expect(within(strip).getByRole("button", { name: "Image 2" })).toHaveAttribute("aria-current", "true");
+    fireEvent.keyDown(window, { key: " " });
+    const big = screen.getByTestId("workspace-detector-big");
+    expect(screen.getByTestId("workspace-detector-caption").textContent).toMatch(/Image 2/);
+    const arc = big.querySelector('[data-testid="detector-rings"] [data-role="det-ring"]');
+    expect(arc).not.toBeNull();
+    expect(Number(arc!.getAttribute("d")!.split(" ")[4])).toBeCloseTo(230.7, 0);
+    expect(arc!.getAttribute("stroke")).toBe(phaseColor("Pn3m"));
+    expect(strip.querySelectorAll('[data-testid="detector-rings"]')).toHaveLength(0);
   });
 
   it("draws a same sample's rings from another setup in that setup's geometry but in this sample's q units", () => {
@@ -2903,28 +3035,54 @@ describe("WorkspacePage", () => {
     state.mateExposures = new Map([[12, [exposure(200, { sample_id: 12, image_path: "/d/200.tif", image_version: "v" })]]]);
     state.detectorSize = { width: 981, height: 1043 };
     renderAt("/experiments/1/workspace/10");
-    fireEvent.mouseEnter(within(screen.getByTestId("workspace-candidates")).getAllByRole("button")[1]!);
-    const radii = [...screen.getByTestId("workspace-exposures").querySelectorAll('[data-testid="detector-rings"]')]
-      .map((set) => Number(set.querySelector("circle")!.getAttribute("r")));
-    expect(radii).toHaveLength(2);
-    expect(radii[0]).toBeCloseTo(230.7, 0);
-    expect(radii[1]).toBeCloseTo(radii[0]!, 6);
+    fireEvent.keyDown(window, { key: " " });
+    const radius = () => Number(screen.getByTestId("workspace-detector-big").querySelector('[data-role="det-ring"]')!.getAttribute("d")!.split(" ")[4]);
+    const first = radius();
+    expect(first).toBeGreaterThan(0);
+    fireEvent.keyDown(screen.getByTestId("workspace-detector-big"), { key: "ArrowRight" });
+    expect(screen.getByTestId("workspace-detector-caption").textContent).toMatch(/200|Image 2/);
+    expect(radius()).toBeCloseTo(first, 6);
   });
 
-  it("Space opens the enlarged image while a custom index is open, with the draft's rings, and Esc there keeps the draft", () => {
+  it("Space opens the enlarged image while a custom index is open, with the draft's rings beside the ticked ones, and Esc there keeps the draft", () => {
     state.setups = [{ id: 1, name: "setup1", folder: "setup1", included: true,
       beam_center_x: 421.409, beam_center_y: 836.946, pixel_size_um: 172, energy_kev: 9, flight_path_m: 1.8095, q_units: "A-1" }];
     state.corpus = state.corpus.map((s) => (s.id === 10 ? { ...s, setup_id: 1 } : s));
     state.exposures = [exposure(100, { image_path: "/d/100.tif", image_version: "v" }), exposure(101, { image_path: "/d/101.tif", image_version: "v" })];
     state.detectorSize = { width: 981, height: 1043 };
     renderAt("/experiments/1/workspace/10");
+    const arcs = () => screen.getByTestId("workspace-detector-big").querySelectorAll('[data-testid="detector-rings"] [data-role="det-ring"]').length;
+    fireEvent.keyDown(window, { key: " " });
+    const ticked = arcs();
+    expect(ticked).toBeGreaterThan(0);
+    fireEvent.keyDown(screen.getByTestId("workspace-detector-big"), { key: "Escape" });
     fireEvent.keyDown(window, { key: "i" });
     fireEvent.keyDown(window, { key: " " });
     const big = screen.getByTestId("workspace-detector-big");
-    expect(big.querySelectorAll('[data-testid="detector-rings"] circle').length).toBeGreaterThan(0);
+    expect(arcs()).toBeGreaterThan(ticked);
     fireEvent.keyDown(big, { key: "Escape" });
     expect(screen.queryByTestId("workspace-detector-big")).toBeNull();
     expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
+  });
+
+  it("Space during a custom index enlarges the image being looked at when an average is analyzed", () => {
+    state.setups = [{ id: 1, name: "setup1", folder: "setup1", included: true,
+      beam_center_x: 421.409, beam_center_y: 836.946, pixel_size_um: 172, energy_kev: 9, flight_path_m: 1.8095, q_units: "A-1" }];
+    state.corpus = state.corpus.map((s) => (s.id === 10 ? { ...s, setup_id: 1 } : s));
+    state.trace = makeTrace(1);
+    state.memberTraces = new Map([[100, makeTrace(1)], [101, makeTrace(2)]]);
+    state.exposures = [
+      exposure(100, { selected: true, image_path: "/d/100.tif", image_version: "v" }),
+      exposure(101, { selected: true, image_path: "/d/101.tif", image_version: "v" }),
+      exposure(900, { kind: "combined", filename: null, sources: [{ source_exposure_id: 100, role: "signal" }, { source_exposure_id: 101, role: "signal" }] }),
+    ];
+    state.detectorSize = { width: 981, height: 1043 };
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "i" });
+    fireEvent.keyDown(window, { key: " " });
+    const big = screen.getByTestId("workspace-detector-big");
+    expect(big.querySelector("img:not(.invisible)")).not.toBeNull();
+    expect(big.querySelectorAll('[data-testid="detector-rings"] [data-role="det-ring"]').length).toBeGreaterThan(0);
   });
 
   it("draws no rings for a setup that lacks its geometry", () => {
@@ -2933,8 +3091,9 @@ describe("WorkspacePage", () => {
     state.exposures = [exposure(100, { image_path: "/d/100.tif", image_version: "v" })];
     state.detectorSize = { width: 981, height: 1043 };
     renderAt("/experiments/1/workspace/10");
-    fireEvent.mouseEnter(within(screen.getByTestId("workspace-candidates")).getAllByRole("button")[1]!);
-    expect(screen.getByTestId("workspace-exposures").querySelectorAll('[data-testid="detector-rings"]')).toHaveLength(0);
+    fireEvent.keyDown(window, { key: " " });
+    expect(screen.getByTestId("workspace-detector-big")).toBeInTheDocument();
+    expect(document.querySelectorAll('[data-testid="detector-rings"]')).toHaveLength(0);
     expect(state.sizeRequests).toEqual([]);
   });
 
@@ -3005,7 +3164,7 @@ describe("WorkspacePage", () => {
     state.peaks = [peak(7, 0.1, "auto"), peak(8, 0.14, "auto")];
     state.indices = [{ ...index(2, "Pn3m", 0.9), peaks: [{ peak_id: 7, ratio_position: 1, residual: 0, q_observed: 0.1 }] }];
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByTestId("workspace-indexing-fit")).toHaveTextContent("1/2 on peaks");
+    expect(screen.getByTestId("workspace-indexing").querySelectorAll("[data-observed]")).toHaveLength(1);
   });
   it("Enter on a focused button outside the custom panel does not add the index", () => {
     renderAt("/experiments/1/workspace/10");
@@ -3175,7 +3334,7 @@ describe("WorkspacePage", () => {
     fireEvent.keyDown(window, { key: "0" });
     expect(calls).toEqual([]);
   });
-  it("shows a same sample's frames under their own heading after this sample's, and picking one shows it", () => {
+  it("shows a same sample's frames under their own heading after this sample's, and picking one shows its image", () => {
     state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
     state.setups = [{ id: 1, name: "Short pipe", folder: "s1", included: true }, { id: 2, name: "Long pipe", folder: "s2", included: true }];
     state.corpus = state.corpus.map((s) => (s.id === 10 ? { ...s, setup_id: 1 } : s.id === 12 ? { ...s, setup_id: 2, assignment_state: "indexed" } : s));
@@ -3190,7 +3349,7 @@ describe("WorkspacePage", () => {
     expect(screen.getByRole("heading", { name: "Image" }).closest("section")!.textContent).toContain("SampleA1 in Short pipe");
     fireEvent.click(screen.getByRole("button", { name: "Image 2 of A3 in Long pipe" }));
     expect(screen.getByRole("button", { name: "Image 2 of A3 in Long pipe" })).toHaveAttribute("aria-current", "true");
-    expect(screen.getByText("Image 2 of 3")).toBeInTheDocument();
+    expect(screen.getByText("Image 2 of 2")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Image" }).closest("section")!.textContent).toContain("SampleA3 in Long pipe");
     expect(screen.getByText("Same as A3 in Long pipe")).toBeInTheDocument();
     fireEvent.keyDown(window, { key: " " });
@@ -3249,7 +3408,7 @@ describe("WorkspacePage", () => {
     expect(calls.filter((c) => c.hook === "op:setStatus").map((c) => c.arg)).toEqual([[12, 200, "rejected"]]);
     expect(calls.filter((c) => c.hook === "status")).toHaveLength(0);
     await act(async () => { fireEvent.keyDown(window, { key: "z", ctrlKey: true }); for (let i = 0; i < 10; i++) await Promise.resolve(); });
-    expect(calls.filter((c) => c.hook === "op:setStatus").map((c) => c.arg)).toEqual([[12, 200, "rejected"], [12, 200, null]]);
+    expect(calls.filter((c) => c.hook === "op:setStatus").map((c) => c.arg)).toEqual([[12, 200, "rejected"], [12, 200, null, true]]);
   });
 
   it("an unbridged sample's frames have no group heading", () => {

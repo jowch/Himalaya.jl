@@ -48,14 +48,17 @@ end
 
 function sample_open(sample)
     exposures = call("GET", "/api/samples/$(sample.id)/exposures")
-    x = sample.representative_exposure_id
+    x = sample.analyzed_exposure_id
     call("GET", "/api/samples/$(sample.id)/call")
     for e in exposures
-        call("GET", "/api/exposures/$(e.id)/image?thumb=1")
+        get(e, :kind, "file") == "file" && call("GET", "/api/exposures/$(e.id)/image?thumb=1")
     end
-    for part in ("trace", "peaks", "indices", "assignment", "image")
+    for part in ("trace", "peaks", "indices", "assignment")
         call("GET", "/api/exposures/$x/$part")
     end
+    images = [e for e in exposures if get(e, :kind, "file") == "file" && get(e, :selected, false) === true]
+    call("GET", "/api/exposures/$(first(images).id)/image")
+    length(images) > 1 && foreach(e -> call("GET", "/api/exposures/$(e.id)/trace"), images)
     x
 end
 
@@ -101,15 +104,15 @@ function measure(db_path)
         e
     end
     samples = [s for s in call("GET", "/api/samples?experiment_id=$experiment")
-               if s.representative_exposure_id !== nothing]
+               if s.analyzed_exposure_id !== nothing]
     length(samples) >= 3 || error("the demo needs at least 3 samples with a kept image")
     step(() -> sample_open(samples[1]), "first sample")
     step(() -> sample_open(samples[2]), "second sample")
 
     target = findfirst(smp -> any(p -> p.source == "auto",
-                                  call("GET", "/api/exposures/$(smp.representative_exposure_id)/peaks")), samples)
+                                  call("GET", "/api/exposures/$(smp.analyzed_exposure_id)/peaks")), samples)
     target === nothing && error("no demo sample has auto peaks on its shown image")
-    x = samples[target].representative_exposure_id
+    x = samples[target].analyzed_exposure_id
     s = samples[target].id
     added = step(() -> call("POST", "/api/exposures/$x/peaks", Dict(:q => 0.123)), "add peak")
     step(() -> call("DELETE", "/api/peaks/manual/$(added.id)"), "remove peak")
@@ -128,8 +131,12 @@ function measure(db_path)
     step(() -> call("PATCH", "/api/samples/$s/compares", Dict(:add => [other])), "add comparison")
     step(() -> call("PATCH", "/api/samples/$s/compares", Dict(:remove => [other])), "remove comparison")
     step(() -> call("POST", "/api/exposures/$x/custom-index", Dict(:phase => "Ia3d", :basis => 0.05)), "custom index")
-    step(() -> call("PATCH", "/api/exposures/$x/status", Dict(:status => "rejected")), "drop image")
-    step(() -> call("PATCH", "/api/exposures/$x/status", Dict(:status => nothing)), "keep image")
+    images = [e.id for e in call("GET", "/api/samples/$s/exposures") if e.kind == "file" && e.selected === true]
+    step(() -> call("PUT", "/api/samples/$s/selection", Dict(:exposure_ids => images[1:1])), "select one image")
+    step(() -> call("PUT", "/api/samples/$s/selection", Dict(:exposure_ids => images)), "select images")
+    img = first(images)
+    step(() -> call("PATCH", "/api/exposures/$img/status", Dict(:status => "rejected")), "drop image")
+    step(() -> call("PATCH", "/api/exposures/$img/status", Dict(:status => nothing)), "keep image")
 
     for (name, ms) in results
         println(rpad(name, 20), lpad(round(Int, ms), 6), " ms compiling   (budget ", round(Int, budget(name)), " ms)")

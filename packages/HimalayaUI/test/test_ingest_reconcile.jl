@@ -321,4 +321,39 @@ const _T0 = DateTime(2026, 4, 26, 23, 0, 0)
         db = HimalayaUI.open_db(path)
         @test count(==("ingest_error"), [r.name for r in _rows(db, "PRAGMA table_info(experiments)", [])]) == 1
     end
+
+    @testset "a beam-off image starts left out of the selection, at ingest and when its trace lands late" begin
+        dark!(path) = open(path, "w") do io
+            for i in 1:200
+                println(io, 0.005 + 0.001i, " ", i % 7 == 0 ? 2.0 : 0.0, " ", 1.0)
+            end
+        end
+        dir, data, ana = _recon_tree()
+        _recon_exposure!(data, ana, "A_S0001_0_001"; t = _T0, h = 58.9)
+        _recon_exposure!(data, ana, "A_S0002_0_001"; t = _T0 + Second(30), h = 58.9, dat = false)
+        dark!(joinpath(ana, "A_S0002_0_001.dat"))
+        _recon_exposure!(data, ana, "A_S0003_0_001"; t = _T0 + Second(60), h = 58.9, dat = false)
+        db, id = _recon_db(dir, data, ana)
+        HimalayaUI.scan_and_group!(db, id)
+        ids = Dict(String(r.filename) => (Int(r.id), Int(r.sample_id)) for r in
+                   _rows(db, "SELECT id, filename, sample_id FROM exposures WHERE kind = 'file'"))
+        lit, dark, late = ids["A_S0001_0_001"], ids["A_S0002_0_001"], ids["A_S0003_0_001"]
+        @test lit[2] == dark[2] == late[2]
+        sid = lit[2]
+        @test HimalayaUI.selected_image_ids(db, sid) == [lit[1], late[1]]
+
+        dark!(joinpath(ana, "A_S0003_0_001.dat"))
+        HimalayaUI.scan_and_group!(db, id)
+        @test HimalayaUI.selected_image_ids(db, sid) == [lit[1]]
+        @test HimalayaUI.analyzed_exposure_id(db, sid) == lit[1]
+
+        _recon_exposure!(data, ana, "A_S0004_0_001"; t = _T0 + Second(90), h = 58.9)
+        HimalayaUI.scan_and_group!(db, id)
+        added = Int(first(_rows(db, "SELECT id FROM exposures WHERE filename = 'A_S0004_0_001'")).id)
+        @test HimalayaUI.selected_image_ids(db, sid) == [lit[1], added]
+
+        DBInterface.execute(db, "UPDATE exposures SET deselected = 0 WHERE id = ?", [dark[1]])
+        HimalayaUI.scan_and_group!(db, id)
+        @test HimalayaUI.selected_image_ids(db, sid) == [lit[1], dark[1], added]
+    end
 end

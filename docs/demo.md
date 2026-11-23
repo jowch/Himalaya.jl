@@ -61,7 +61,7 @@ scratch/demo-experiment/
   Lα+HII, weak Pn3m, Pn3m+HII, a buffer blank, a ULV form-factor-only trace, and
   a leaked capillary. Each scan is one frame (`_0_001`, the frame the funnel's
   layout detection keys on).
-- **Some scans are bad on purpose**, so the drop and representative rules have
+- **Some scans are bad on purpose**, so the drop and selection rules have
   something to act on. TRUTH's `drop` column lists them (`BAD_SCANS` in the
   generator), and its `flare` column says which of those still hold the sample.
   Flares are the commonest reason to drop a frame at the beamline, so they are

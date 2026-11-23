@@ -102,8 +102,9 @@ broadcast routing through the dispatcher):
 `set_exposure_status`, `update_sample`, `analyze`,
 `scan`, `experiment_created`, `setups_added`. The dispatcher carries explicit no-op
 `return nothing` guards for the view-less kinds (`set_exposure_status`,
-`update_sample`, …). Old `select_exposure` rows are a retired kind: frame
-selection was removed, and the representative is always the newest kept frame.
+`update_sample`, `set_selection`, …). Old `select_exposure` rows are a retired kind.
+`set_selection` replaces which images a sample analyzes; see
+[image-selection.md](image-selection.md).
 
 `set_exposure_status` is audit-only: it records a Drop action but
 produces no view. There is a single screening verb — **Drop** (the X key) —
@@ -159,13 +160,13 @@ member stays keyed by the frame its index lives on, so the per-frame
 `assignment_add` / `assignment_remove` contract is unchanged. Dropping a frame
 never clears the call. `GET /api/samples` reports `phase` (the top-scored
 member) and `call_phases` (every phase in the call) from the sample, not from
-the representative frame. `GET /api/samples/{id}/call` returns the whole call,
+the analyzed image. `GET /api/samples/{id}/call` returns the whole call,
 and `POST /api/samples/{id}/call/state` sets the state.
 
 `migrate_sample_calls!` (`sample_calls_v1`, run by `open_db`) moves existing
 calls. Per sample it considers only frames that still carry a call (members,
 or a non-indexed state). Among those it keeps the frame the user edited last
-(the newest `assignment_*` event), else the representative frame, else the
+(the newest `assignment_*` event), else the frame the old UI opened on, else the
 lowest id. Members on the other frames are removed: the old UI never showed
 them together, so the union would surface stale picks. The kept frame's state
 becomes the sample's state. The migration writes these changes as logged

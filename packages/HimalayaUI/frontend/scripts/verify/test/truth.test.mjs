@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bridgeCallDrift, bridgeLabelDrift, compareTruth, normalizeCall, railMismatch, shownStatus } from "../truth.mjs";
+import { bridgeCallDrift, bridgeLabelDrift, compareTruth, selectedFrames, normalizeCall, railMismatch, shownStatus } from "../truth.mjs";
 
 const TRUTH = [
   { sample: "MO_H2O", bases: "MO_H2O_S1 MO_H2O_S2", phases: "Pn3m", auto: "Pn3m", drop: "", note: "" },
@@ -13,8 +13,17 @@ function frame(filename, autoPhases, extra = {}) {
   return { id: Number(filename.at(-1)), filename, status: null, autoPhases, assignment: { state: "indexed", phases: [] }, ...extra };
 }
 
-function sample(id, name, frames, shown = {}) {
-  return { id, name, frames, shown: { ...NOT_INDEXED, representative_id: frames.at(-1).id, ...shown } };
+function combinedOf(id, frames) {
+  const sources = selectedFrames(frames);
+  if (sources.length < 2) return null;
+  const autoPhases = sources.find((f) => f.autoPhases.length)?.autoPhases ?? [];
+  return { id: 100 + id, filename: "combined", sources, autoPhases, assignment: { state: "indexed", phases: [] } };
+}
+
+function sample(id, name, frames, shown = {}, combined = combinedOf(id, frames)) {
+  const one = selectedFrames(frames);
+  const rep = combined ? combined.id : one.length === 1 ? one[0].id : frames.at(-1).id;
+  return { id, name, frames, combined, shown: { ...NOT_INDEXED, analyzed_id: rep, ...shown } };
 }
 
 function app(overrides = {}) {
@@ -101,7 +110,7 @@ test("a flared frame is to be dropped, and its auto call may lose phases but not
 test("--expect fresh fails on a frame already dropped; --expect triaged fails on a bad frame still kept", () => {
   const truth = [{ ...TRUTH[0], drop: "MO_H2O_S2" }, TRUTH[1]];
   const untouched = app({ h2o: [frame("MO_H2O_S1", ["Pn3m"]), frame("MO_H2O_S2", [])] });
-  const triaged = app({ h2o: [frame("MO_H2O_S1", ["Pn3m"]), frame("MO_H2O_S2", [], dropped)], h2oShown: { representative_id: 1 } });
+  const triaged = app({ h2o: [frame("MO_H2O_S1", ["Pn3m"]), frame("MO_H2O_S2", [], dropped)], h2oShown: { analyzed_id: 1 } });
 
   assert.equal(compareTruth(truth, untouched, { expect: "fresh" }).ok, true);
   const notTriaged = compareTruth(truth, untouched, { expect: "triaged" });
@@ -123,7 +132,7 @@ test("the shown status is what GET /api/samples gives the corpus, on the frame i
   assert.deepEqual(shownStatus(NOT_INDEXED), { status: "unreviewed", call: null });
 
   const r = compareTruth(TRUTH, app({ pegShown: { phase: "Im3m" } }));
-  assert.deepEqual(r.samples[1].shown, { status: "phase", call: "Im3m", frame: "MO_PEG5_S3" });
+  assert.deepEqual(r.samples[1].shown, { status: "phase", call: "Im3m", frame: "MO_PEG5_S3", exposure_id: 3 });
   assert.equal(r.samples[1].shown_matches_truth, false);
   assert.equal(r.samples[0].shown_matches_truth, null);
   assert.equal(r.summary.shown_reviewed, 1);
@@ -190,23 +199,23 @@ test("status_matches_assignment: unconfirmed reads unreviewed, confirmed reads t
   assert.equal(ffShown.invariants.status_matches_assignment.ok, true);
 });
 
-test("representative_kept: the corpus status describes a dropped frame while a kept one exists", () => {
+test("analyzed_kept: the corpus status describes a dropped frame while a kept one exists", () => {
   const h2o = [frame("MO_H2O_S1", ["Pn3m"]), frame("MO_H2O_S2", ["Pn3m"], dropped)];
-  const r = compareTruth(TRUTH, app({ h2o }));
-  assert.deepEqual(r.invariants.representative_kept.violations, [
+  const r = compareTruth(TRUTH, app({ h2o, h2oShown: { analyzed_id: 2 } }));
+  assert.deepEqual(r.invariants.analyzed_kept.violations, [
     { sample: "MO_H2O", view: "corpus_api", frame: "MO_H2O_S2", kept: ["MO_H2O_S1"] },
   ]);
 
   const allDropped = compareTruth(TRUTH, app({ h2o: h2o.map((f) => ({ ...f, ...dropped })) }));
-  assert.equal(allDropped.invariants.representative_kept.ok, true);
+  assert.equal(allDropped.invariants.analyzed_kept.ok, true);
 
-  const onKept = compareTruth(TRUTH, app({ h2o, h2oShown: { representative_id: 1 } }));
-  assert.equal(onKept.invariants.representative_kept.ok, true);
+  const onKept = compareTruth(TRUTH, app({ h2o, h2oShown: { analyzed_id: 1 } }));
+  assert.equal(onKept.invariants.analyzed_kept.ok, true);
 });
 
 function withViews(samples, views, workspaceText = "Unreviewed", workspaceKept = {}, rails = {}) {
   return samples.map((s) => {
-    const last = s.frames.at(-1).filename;
+    const last = s.combined ? "combined" : s.frames.at(-1).filename;
     return {
       ...s,
       views: views[s.id] ?? { workspace: last },
@@ -219,11 +228,11 @@ function withViews(samples, views, workspaceText = "Unreviewed", workspaceKept =
 
 test("with --ui, the workspace's frame cards must show the app's kept / total", () => {
   const h2o = [frame("MO_H2O_S1", ["Pn3m"]), frame("MO_H2O_S2", ["Pn3m"], dropped)];
-  const same = compareTruth(TRUTH, withViews(app({ h2o, h2oShown: { representative_id: 1 } }), { 1: { workspace: "MO_H2O_S1" } }));
+  const same = compareTruth(TRUTH, withViews(app({ h2o, h2oShown: { analyzed_id: 1 } }), { 1: { workspace: "MO_H2O_S1" } }));
   assert.equal(same.ok, true);
   assert.equal(same.samples[0].shown.workspace_kept, "1/2");
 
-  const stale = compareTruth(TRUTH, withViews(app({ h2o, h2oShown: { representative_id: 1 } }), { 1: { workspace: "MO_H2O_S1" } }, "Unreviewed", { 1: "2/2" }));
+  const stale = compareTruth(TRUTH, withViews(app({ h2o, h2oShown: { analyzed_id: 1 } }), { 1: { workspace: "MO_H2O_S1" } }, "Unreviewed", { 1: "2/2" }));
   assert.equal(stale.ok, false);
   assert.deepEqual(stale.samples[0].problems, ["the workspace's frame cards show 2/2 kept but the app has 1/2"]);
 
@@ -240,15 +249,15 @@ test("views_agree compares the API status frame with the frame the workspace ope
   const split = compareTruth(TRUTH, withViews(app(), { 1: { workspace: "MO_H2O_S1" } }));
   assert.equal(split.invariants.views_agree.ok, false);
   assert.deepEqual(split.invariants.views_agree.violations, [
-    { sample: "MO_H2O", corpus_api: "MO_H2O_S2", workspace: "MO_H2O_S1" },
+    { sample: "MO_H2O", corpus_api: "combined", workspace: "MO_H2O_S1" },
   ]);
   assert.deepEqual(split.samples[0].views, { workspace: "MO_H2O_S1" });
 });
 
-test("a view opening on a dropped frame breaks representative_kept", () => {
+test("a view opening on a dropped frame breaks analyzed_kept", () => {
   const h2o = [frame("MO_H2O_S1", ["Pn3m"], dropped), frame("MO_H2O_S2", ["Pn3m"])];
   const r = compareTruth(TRUTH, withViews(app({ h2o }), { 1: { workspace: "MO_H2O_S1" } }));
-  assert.deepEqual(r.invariants.representative_kept.violations, [
+  assert.deepEqual(r.invariants.analyzed_kept.violations, [
     { sample: "MO_H2O", view: "workspace", frame: "MO_H2O_S1", kept: ["MO_H2O_S2"] },
   ]);
 });
@@ -258,7 +267,7 @@ test("a workspace read that finds no frame is a problem, and the view invariants
   assert.equal(r.ok, false);
   assert.match(r.samples[0].problems[0], /could not read which frame the workspace opens on/);
   assert.deepEqual(r.samples[1].problems, []);
-  for (const name of ["representative_kept", "views_agree", "workspace_status_matches"]) {
+  for (const name of ["analyzed_kept", "views_agree", "workspace_status_matches"]) {
     assert.equal(r.invariants[name].checked, false);
     assert.equal(r.invariants[name].ok, null);
   }
@@ -324,7 +333,7 @@ test("railMismatch wants exactly the called phases the frame offers, and form fa
 
 test("with --ui, a Call list that misses a phase called on a dropped frame breaks rail_matches_call", () => {
   const h2o = [frame("MO_H2O_S1", ["Pn3m"], { ...dropped, assignment: { state: "indexed", phases: ["Pn3m"] } }), frame("MO_H2O_S2", ["Pn3m"])];
-  const shown = { h2o, h2oShown: { phase: "Pn3m", state: "indexed", representative_id: 2 } };
+  const shown = { h2o, h2oShown: { phase: "Pn3m", state: "indexed", analyzed_id: 2 } };
   const ok = compareTruth(TRUTH, withViews(app(shown), {}, "Pn3m", {}, { 1: { ticked: ["Pn3m"], candidates: ["Pn3m"], form_factor: false } }));
   assert.equal(ok.invariants.rail_matches_call.checked, true);
   assert.equal(ok.invariants.rail_matches_call.ok, true);
@@ -384,4 +393,101 @@ test("bridged_calls_match is unchecked without a bridge and fails on a sample wh
   drifted[0].callDrift = [{ mate: "B", mine: { state: "indexed", phases: ["Pn3m"] }, theirs: { state: "form_factor", phases: [] } }];
   const r = compareTruth(TRUTH, drifted);
   assert.deepEqual(r.summary.invariants_failed, ["bridged_calls_match"]);
+});
+
+test("plot_shows_selection: two selected images need their average, and the status describes it", () => {
+  const ok = compareTruth(TRUTH, app());
+  assert.equal(ok.invariants.plot_shows_selection.ok, true);
+  assert.equal(ok.invariants.plot_shows_selection.checked, true);
+
+  const h2o = [frame("MO_H2O_S1", ["Pn3m"]), frame("MO_H2O_S2", ["Pn3m"])];
+  const missing = compareTruth(TRUTH, [sample(1, "MO_H2O_S1 (S01P01)", h2o, {}, null), app()[1]]);
+  assert.deepEqual(missing.invariants.plot_shows_selection.violations, [
+    { sample: "MO_H2O", expected: "an average of MO_H2O_S1 MO_H2O_S2", combined: null },
+  ]);
+
+  const notShown = compareTruth(TRUTH, app({ h2oShown: { analyzed_id: 2 } }));
+  assert.deepEqual(notShown.invariants.plot_shows_selection.violations, [
+    { sample: "MO_H2O", expected: "the sample status describes the average", analyzed: "MO_H2O_S2" },
+  ]);
+
+  const stale = [frame("MO_H2O_S1", ["Pn3m"]), frame("MO_H2O_S2", ["Pn3m"], dropped), frame("MO_H2O_S3", ["Pn3m"])];
+  const staleApp = app({ h2o: stale });
+  staleApp[0].combined = { ...staleApp[0].combined, sources: stale };
+  const r = compareTruth([{ ...TRUTH[0], bases: "MO_H2O_S1 MO_H2O_S2 MO_H2O_S3" }, TRUTH[1]], staleApp);
+  assert.deepEqual(r.invariants.plot_shows_selection.violations, [
+    { sample: "MO_H2O", expected: "MO_H2O_S1 MO_H2O_S3", combined: "MO_H2O_S1 MO_H2O_S2 MO_H2O_S3" },
+  ]);
+});
+
+test("plot_shows_selection: one selected image is analyzed as itself, and a dropped image is never selected", () => {
+  const one = [frame("MO_H2O_S1", ["Pn3m"]), frame("MO_H2O_S2", ["Pn3m"], { selected: false })];
+  const r = compareTruth(TRUTH, app({ h2o: one }));
+  assert.equal(r.samples[0].shown.frame, "MO_H2O_S1");
+  assert.equal(r.invariants.plot_shows_selection.ok, true);
+  assert.equal(app({ h2o: one })[0].combined, null);
+
+  const wrong = compareTruth(TRUTH, app({ h2o: one, h2oShown: { analyzed_id: 2 } }));
+  assert.deepEqual(wrong.invariants.plot_shows_selection.violations, [
+    { sample: "MO_H2O", expected: "the sample status describes MO_H2O_S1", analyzed: "MO_H2O_S2" },
+  ]);
+
+  const bad = [frame("MO_H2O_S1", ["Pn3m"]), frame("MO_H2O_S2", ["Pn3m"], { ...dropped, selected: true })];
+  assert.deepEqual(compareTruth(TRUTH, app({ h2o: bad })).invariants.plot_shows_selection.violations, [
+    { sample: "MO_H2O", expected: "a dropped image is never selected", selected: "MO_H2O_S2" },
+  ]);
+});
+
+test("plot_shows_selection: with --ui the workspace draws one faint line per selected image", () => {
+  const drawn = withViews(app(), {});
+  drawn[0].workspaceMembers = [1, 2];
+  drawn[1].workspaceMembers = [];
+  assert.equal(compareTruth(TRUTH, drawn).invariants.plot_shows_selection.ok, true);
+
+  const single = withViews(app(), {});
+  single[0].workspaceMembers = [];
+  single[1].workspaceMembers = [];
+  assert.deepEqual(compareTruth(TRUTH, single).invariants.plot_shows_selection.violations, [
+    { sample: "MO_H2O", expected_plot: "faint lines for MO_H2O_S1 MO_H2O_S2 under their average", drawn: [] },
+  ]);
+});
+
+test("plot_shows_selection and views_agree wait while a selected image's trace is held back", () => {
+  const pending = withViews(app(), {});
+  pending[0].combined = null;
+  pending[0].shown = { ...pending[0].shown, analyzed_id: null };
+  pending[0].views = { workspace: "MO_H2O_S1" };
+  pending[0].workspaceMembers = [];
+  pending[0].workspacePlot = "Waiting for the selected images' traces.";
+  pending[1].workspaceMembers = [];
+  const r = compareTruth(TRUTH, pending, { held: new Set(["MO_H2O_S2"]) });
+  assert.equal(r.invariants.plot_shows_selection.ok, true);
+  assert.equal(r.invariants.views_agree.ok, true);
+  assert.deepEqual(r.invariants.plot_matches_trace.violations, []);
+});
+
+test("a call confirmed on an earlier average still counts as the sample's call", () => {
+  const earlier = app({ h2oShown: { phase: "Pn3m", state: "indexed" } });
+  earlier[0].earlierAverages = [{ id: 99, filename: "combined", assignment: { state: "indexed", phases: ["Pn3m"] } }];
+  assert.equal(compareTruth(TRUTH, earlier).invariants.status_matches_assignment.ok, true);
+  const without = app({ h2oShown: { phase: "Pn3m", state: "indexed" } });
+  assert.equal(compareTruth(TRUTH, without).invariants.status_matches_assignment.ok, false);
+});
+
+test("the average's auto call may add a TRUTH phase but must keep the auto call", () => {
+  const peg = [frame("MO_PEG5_S3", ["Im3m"]), frame("MO_PEG5_S4", ["Im3m"])];
+  const truth = [TRUTH[0], { ...TRUTH[1], bases: "MO_PEG5_S3 MO_PEG5_S4" }];
+  const better = app({ peg });
+  better[1].combined = { ...better[1].combined, autoPhases: ["Im3m", "Pn3m"] };
+  assert.equal(compareTruth(truth, better).ok, true);
+
+  const lost = app({ peg });
+  lost[1].combined = { ...lost[1].combined, autoPhases: [] };
+  const r = compareTruth(truth, lost);
+  assert.equal(r.ok, false);
+  assert.match(r.samples[1].problems[0], /combined=none/);
+
+  const extra = app({ peg });
+  extra[1].combined = { ...extra[1].combined, autoPhases: ["Im3m", "Ia3d"] };
+  assert.equal(compareTruth(truth, extra).ok, false);
 });

@@ -81,7 +81,7 @@ test.beforeEach(async ({ page }) => {
   await page.route(/\/api\/samples\/\d+\/exposures/, (r) => {
     const id = Number(/samples\/(\d+)\//.exec(r.request().url())![1]);
     const n = FRAMES[id] ?? 1;
-    return r.fulfill(json(Array.from({ length: n }, (_, f) => exposureOf(id, id % 2 === 0, f, n > 1 && f === n - 1))));
+    return r.fulfill(json(Array.from({ length: n }, (_, f) => ({ ...exposureOf(id, id % 2 === 0, f, n > 1 && f === n - 1), selected: f === n - 1 }))));
   });
   await page.route(/\/api\/exposures\/\d+\/trace/, (r) => r.fulfill(json(trace)));
   await page.route(/\/api\/exposures\/\d+\/peaks/, (r) => r.fulfill(json([])));
@@ -215,34 +215,29 @@ test("hovering a candidate does not move the candidate list, even when three pha
   expect(await rows.nth(3).boundingBox()).toEqual(before);
 });
 
-test("a Custom cubic row keeps its curvature and unit whole on one line", async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await page.route(/\/api\/exposures\/410\/indices/, (r) =>
-    r.fulfill({
-      status: 200, contentType: "application/json",
-      body: JSON.stringify([["Im3m", 699.9], ["Ia3d", 50], ["Pn3m", 499.9], ["Hexagonal", 499.9]].map(([phase, lattice_d], i) => ({
-        id: 41000 + i, exposure_id: 410, phase, basis: 0.1, score: null, r_squared: 0.99, lattice_d, 
-        status: "candidate", kind: "speculative", inputs_hash: null, peaks: [], predicted_q: [0.1, 0.141],
-      }))),
-    }),
-  );
-  await page.goto("/experiments/17/workspace/41");
-  const rows = page.locator("[data-testid=workspace-candidates] button");
-  await expect(rows).toHaveCount(4);
-  const plain = await rows.filter({ hasText: "Hexagonal" }).boundingBox();
-  for (const row of await rows.filter({ hasNotText: "Hexagonal" }).all()) {
-    await expect(row).toContainText("Custom");
-    await expect(row).toContainText("nm⁻²");
-    const inside = await row.evaluate((b) => {
-      const cell = b.children[2]!.getBoundingClientRect();
-      return b.querySelector("[data-testid=workspace-candidate-curvature]")!.getBoundingClientRect().right <= cell.right;
-    });
-    expect(inside).toBe(true);
-    expect((await row.boundingBox())!.height).toBe(plain!.height);
-  }
-});
+for (const width of [1024, 1440]) {
+  test(`a cubic fit's legend shows its curvature on one unclipped line at ${width} px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const peaksAt = (qs: readonly number[]) => qs.map((q_observed, i) => ({ peak_id: 1 + i, ratio_position: 1 + i, residual: 0, q_observed }));
+    await page.route(/\/api\/exposures\/410\/indices/, (r) =>
+      r.fulfill({
+        status: 200, contentType: "application/json",
+        body: JSON.stringify([{
+          id: 41000, exposure_id: 410, phase: "Ia3d", basis: 0.1, score: 0.9, r_squared: 0.9983, lattice_d: 1234.5,
+          status: "candidate", kind: "auto", inputs_hash: null, peaks: peaksAt([0.029, 0.041, 0.071]), predicted_q: [0.029, 0.041],
+        }]),
+      }),
+    );
+    await page.goto("/experiments/17/workspace/41");
+    await page.locator("[data-testid=workspace-candidates] button").first().hover();
+    const fit = page.locator("[data-testid=workspace-indexing-fit]");
+    await expect(fit).toContainText("a = 1234.5 Å κ −0.0011 nm⁻²");
+    await expect(fit).toContainText("R² 0.9983");
+    expect(await fit.evaluate((p) => p.scrollWidth <= p.clientWidth)).toBe(true);
+  });
+}
 
-test("an indented Custom cubic in a Bonnet group keeps its curvature and unit whole on one line", async ({ page }) => {
+test("a Bonnet group header keeps its curvature whole on one line, and its members show none", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const peaksAt = (qs: readonly number[]) => qs.map((q_observed, i) => ({ peak_id: 1 + i, ratio_position: 1 + i, residual: 0, q_observed }));
   const group: [string, number, number[]][] = [
@@ -269,12 +264,7 @@ test("an indented Custom cubic in a Bonnet group keeps its curvature and unit wh
   expect(headerInside).toBe(true);
   for (const row of await rows.all()) {
     await expect(row).toContainText("Custom");
-    await expect(row).toContainText("nm⁻²");
-    const inside = await row.evaluate((b) => {
-      const cell = b.children[2]!.getBoundingClientRect();
-      return b.querySelector("[data-testid=workspace-candidate-curvature]")!.getBoundingClientRect().right <= cell.right;
-    });
-    expect(inside).toBe(true);
+    await expect(row).not.toContainText("nm⁻²");
     expect((await row.boundingBox())!.height).toBe(plain!.height);
   }
 });
