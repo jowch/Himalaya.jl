@@ -2613,10 +2613,11 @@ describe("WorkspacePage", () => {
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "?", shiftKey: true });
     const help = screen.getByRole("dialog", { name: "Keyboard shortcuts" });
-    expect(document.activeElement).toBe(help);
-    fireEvent.keyDown(help, { key: "x" });
-    fireEvent.keyDown(help, { key: "z" });
-    fireEvent.keyDown(help, { key: "ArrowDown" });
+    const list = within(help).getByRole("region", { name: "Keyboard shortcuts" });
+    expect(document.activeElement).toBe(list);
+    fireEvent.keyDown(list, { key: "x" });
+    fireEvent.keyDown(list, { key: "z" });
+    fireEvent.keyDown(list, { key: "ArrowDown" });
     expect(calls).toEqual([]);
     expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/10");
   });
