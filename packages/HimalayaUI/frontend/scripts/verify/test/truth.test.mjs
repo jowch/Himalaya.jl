@@ -164,7 +164,8 @@ test("status_matches_assignment: unconfirmed reads unreviewed, confirmed reads t
 
   const coexistence = { state: "indexed", phases: ["Pn3m", "Im3m"] };
   const peg = compareTruth(TRUTH, app({ peg: [frame("MO_PEG5_S3", ["Im3m"], { assignment: coexistence })], pegShown: { phase: "Pn3m" } }));
-  assert.equal(peg.invariants.status_matches_assignment.ok, true, "a payload without call_phases names only the dominant phase");
+  assert.equal(peg.ok, false, "a payload without call_phases can't show whether the list names every phase");
+  assert.match(peg.samples[1].problems.join("\n"), /GET \/api\/samples gives MO_PEG5_S3 \(S01P02\) the phase Pn3m but no call_phases/);
   const pegAll = compareTruth(TRUTH, app({ peg: [frame("MO_PEG5_S3", ["Im3m"], { assignment: coexistence })], pegShown: { phase: "Pn3m", call_phases: ["Pn3m", "Im3m"] } }));
   assert.equal(pegAll.invariants.status_matches_assignment.ok, true);
   const pegShort = compareTruth(TRUTH, app({ peg: [frame("MO_PEG5_S3", ["Im3m"], { assignment: coexistence })], pegShown: { phase: "Pn3m", call_phases: ["Pn3m"] } }));
