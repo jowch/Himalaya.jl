@@ -37,7 +37,7 @@ end
     end
 end
 
-@testset "auto_group members never share a peak" begin
+@testset "auto_group members never share a peak when none is contested" begin
     qs        = [0.1, 0.1414, 0.1732, 0.2, 0.2449]
     sharpness = ones(length(qs))
     candidates = indexpeaks(qs, sharpness)
@@ -123,3 +123,26 @@ end
     @test first(auto_group(cands, coll)) isa Himalaya.Index{Himalaya.Hexagonal}
 end
 
+
+const IM3M_Q = 0.06445 .* Himalaya.phaseratios(Himalaya.Im3m; normalize = true)[1:7]
+const PN3M_Q = 0.08225 .* Himalaya.phaseratios(Himalaya.Pn3m; normalize = true)[1:7]
+
+@testset "auto_group: coexisting Im3m and Pn3m each keep the peaks their lattice fits best" begin
+    q  = sort(vcat(IM3M_Q, PN3M_Q))
+    sh = [x in IM3M_Q ? 2.0 * exp(-10x) : 3.0 * exp(-10x) for x in q]
+    cands = collect(indexpeaks(q, sh))
+    for group in _both(cands, _eff(q, sh))
+        @test _phases(group) == ["Im3m", "Pn3m"]
+        @test first(group) isa Himalaya.Index{Himalaya.Im3m}
+        @test all(g -> any(c -> c === g, cands), group)
+    end
+end
+
+@testset "auto_group: a pure Im3m whose first peak sits high stays one phase" begin
+    q  = copy(IM3M_Q); q[1] *= 1.009
+    sh = [4.0 * exp(-12x) for x in q]
+    cands = collect(indexpeaks(q, sh))
+    for group in _both(cands, _eff(q, sh))
+        @test _phases(group) == ["Im3m"]
+    end
+end
