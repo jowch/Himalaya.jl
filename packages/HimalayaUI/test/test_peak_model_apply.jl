@@ -299,3 +299,28 @@ end
         DBInterface.close!(db)
     end
 end
+
+@testset "labels from a model-era snapshot: model-only peaks are dropped, shared ones count as kept" begin
+    mktempdir() do dir
+        b = _pma_db(dir; n = 2)
+        _pma_add_model!(b.db; status = "active")
+        e, hybrid_only = b.eids
+        HimalayaUI.analyze_exposure!(b.db, e, b.adir)
+        HimalayaUI.analyze_exposure!(b.db, hybrid_only, b.adir)
+        DBInterface.execute(b.db, "UPDATE auto_peaks SET found_by = 'hybrid', model_id = NULL WHERE exposure_id = ?", [hybrid_only])
+        DBInterface.execute(b.db, "UPDATE exposures SET peak_model_version = NULL WHERE id = ?", [hybrid_only])
+        peaks = _pma_peaks(b.db, e)
+        DBInterface.execute(b.db, "UPDATE auto_peaks SET found_by = 'model' WHERE exposure_id = ? AND q = ?", [e, peaks[1].q])
+        DBInterface.execute(b.db, "UPDATE auto_peaks SET found_by = 'both' WHERE exposure_id = ? AND q != ?", [e, peaks[1].q])
+        for x in (e, hybrid_only)
+            HimalayaUI.apply_event!(b.db, _pma_req(); kind = "peak_added", entity_type = "exposure",
+                                    entity_id = x, payload = Dict(:q => 0.321), defer_broadcast = true)
+        end
+        exps = Dict(x.id => x for x in HimalayaUI.labeled_exposures(b.db; io = devnull))
+        @test exps[e].kept_model == [peaks[1].q]
+        @test sort(exps[e].kept) == [p.q for p in peaks[2:end]]
+        @test isempty(exps[hybrid_only].kept_model) && !isempty(exps[hybrid_only].kept)
+        @test HimalayaUI.no_model_shown_ids(b.db) == Set([hybrid_only])
+        DBInterface.close!(b.db)
+    end
+end
