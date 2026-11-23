@@ -142,7 +142,7 @@ function helpSections(mod: string): HelpSection[] {
         { keys: ["Esc"], what: "Leave the phase choices and let Tab reach every other control until you open another sample" },
         { keys: ["I"], what: "Custom index: press Tab or Shift+Tab to change the symmetry, then drag the lattice, nudge it with ← →, or click a peak to snap to it. Press Enter to add it or Esc to cancel." },
         { keys: ["L"], what: "Label the sample, e.g. Buffer. Press Enter to add it or Esc to close." },
-        { keys: [mod, "K"], what: "Then choose Same sample as… to bridge it with the same sample in another setup" },
+        { keys: [mod, "K"], what: "Open the commands and choose Same sample as… to mark this as the same sample measured in another setup" },
       ],
     },
     {
