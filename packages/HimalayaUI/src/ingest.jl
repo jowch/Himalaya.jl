@@ -289,7 +289,11 @@ function _pending_setup_ids(db::SQLite.DB, setup; retry_failed::Bool = false)
     rows = sqlrows(DBInterface.execute(db, """
         SELECT id, filename, analysis_error, analysis_version, analysis_trace_stat FROM exposures
          WHERE setup_id = ?2 AND filename IS NOT NULL
-           AND (trace_hash IS NULL OR analysis_version IS NULL OR analysis_version != ?1)
+           AND (reviewed_at IS NULL
+                AND (trace_hash IS NULL OR analysis_version IS NULL OR analysis_version != ?1)
+             OR reviewed_at IS NOT NULL AND trace_hash IS NULL
+                AND NOT EXISTS (SELECT 1 FROM assignment_members m WHERE m.exposure_id = exposures.id)
+                AND NOT EXISTS (SELECT 1 FROM auto_peaks a WHERE a.exposure_id = exposures.id))
          ORDER BY id""", [ANALYSIS_VERSION, Int(setup.id)]))
     isempty(rows) && return Int[]
     find_trace = _trace_finder(setup)

@@ -298,9 +298,13 @@ runs once per included setup (`_scan_setup!`), reading `data_dir`,
    stored value is never overwritten.
 5. **Analyzes**, outside the write transaction, every exposure that is new,
    never analyzed, whose integration file has appeared since it was last
-   tried, or whose stored `analysis_version` is older than `ANALYSIS_VERSION`
+   tried, or whose stored `analysis_version` differs from `ANALYSIS_VERSION`
    (`pipeline.jl`: the core Himalaya version plus a local counter, bumped when
-   the analysis changes). At SSRL BL 4-2 the image and metadata file are written
+   the analysis changes). An analysis from before versions were recorded has
+   no `analysis_version` and is re-analyzed too: the migration that adds the
+   column leaves it empty rather than claiming the current version. A reviewed
+   exposure (one a user has curated, assigned, called or accepted) is never
+   re-analyzed for a version change, only when its trace file changes. At SSRL BL 4-2 the image and metadata file are written
    when the exposure completes and the integration pipeline writes the
    `_tot.dat` afterwards, so a scan can see an exposure before its trace. Such an
    exposure gets `analysis_error = 'no trace'` and is analyzed by the first pass
