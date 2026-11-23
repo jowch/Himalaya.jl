@@ -57,20 +57,65 @@ function evaluate_gate(model, hybrid; peaks_slack::Real = GATE_PEAKS_SLACK, ff_s
     (passed = all(c -> c.passed, checks), checks, reasons = String[c.reason for c in checks if !c.passed])
 end
 
+_call_hit(c, confirmed) =
+    any(p == string(nameof(Himalaya.phase(c))) && abs(Himalaya.basis(c) / b - 1) < PHASE_BASIS_TOL for (p, b) in confirmed)
+
 function top_call_matches(q::AbstractVector, sharpness::AbstractVector, confirmed)
     isempty(q) && return false
     candidates = Himalaya.indexpeaks(Float64.(q), Float64.(sharpness))
     isempty(candidates) && return false
-    top = first(auto_group(candidates))
-    name = string(nameof(Himalaya.phase(top)))
-    any(p == name && abs(Himalaya.basis(top) / b - 1) < PHASE_BASIS_TOL for (p, b) in confirmed)
+    _call_hit(first(auto_group(candidates)), confirmed)
 end
 
-function eval_context(db::SQLite.DB, exps; phase_auto::Symbol = :user_events)
+function oracle_pick(e)
+    step = HimalayaPeakModel.grid_step(e.q)
+    want = vcat(e.adds, e.kept, e.kept_model)
+    idx = unique(argmin(abs.(e.q .- x)) for x in want)
+    sort!([i for i in idx if !any(x -> abs(e.q[i] - x) <= HimalayaPeakModel.peak_match_tol(x, step), e.excluded)])
+end
+
+oracle_picks(exps) = map(oracle_pick, exps)
+
+function _scored_peaks(e, pk)
+    step = HimalayaPeakModel.grid_step(e.q)
+    [i for i in pk if !_near(e.q[i], e.excluded, step)]
+end
+
+function _reaches(e, keep, calls)
+    isempty(keep) && return false
+    candidates = Himalaya.indexpeaks(e.q[keep], _sharpness_at(Himalaya.sharpness(e.I), keep))
+    any(c -> _call_hit(c, calls), candidates)
+end
+
+function reachable_calls(exps, calls, detector_picks = ())
+    out = typeof(calls)()
+    for (k, e) in enumerate(exps)
+        cs = get(calls, e.id, nothing)
+        cs === nothing && continue
+        if _reaches(e, oracle_pick(e), cs) || any(picks -> _reaches(e, _scored_peaks(e, picks[k]), cs), detector_picks)
+            out[e.id] = cs
+        end
+    end
+    out
+end
+
+function _target_counts(confirmed, reachable)
+    phases = Dict{String, NamedTuple{(:reachable, :all), Tuple{Int, Int}}}()
+    for (id, cs) in confirmed
+        c = get(phases, first(cs)[1], (reachable = 0, all = 0))
+        phases[first(cs)[1]] = (reachable = c.reachable + haskey(reachable, id), all = c.all + 1)
+    end
+    (all = length(confirmed), reachable = length(reachable), per_phase = phases)
+end
+
+function eval_context(db::SQLite.DB, exps; phase_auto::Symbol = :user_events, phase_targets::Symbol = :reachable,
+                      detector_picks = ())
+    phase_targets in (:reachable, :all) || throw(ArgumentError("phase_targets must be :reachable or :all"))
     shown = no_model_shown_ids(db)
     label_ids = intersect(Set(e.id for e in exps if e.labelled), shown)
-    targets = confirmed_calls(db, [e.id for e in exps if e.labelled && e.id in shown]; auto = phase_auto)
-    (; label_ids, targets)
+    confirmed = confirmed_calls(db, [e.id for e in exps if e.labelled && e.id in shown]; auto = phase_auto)
+    reachable = reachable_calls(exps, confirmed, detector_picks)
+    (; label_ids, targets = phase_targets === :all ? confirmed : reachable, counts = _target_counts(confirmed, reachable))
 end
 
 function confirmed_calls(db::SQLite.DB, exposure_ids; auto::Symbol = :user_events)
@@ -143,7 +188,7 @@ function peak_eval(exps, picks; targets = Dict{Int, Vector{Tuple{String, Float64
         end
         calls = get(targets, e.id, nothing)
         if calls !== nothing
-            keep = [i for i in pk if !_near(e.q[i], e.excluded, step)]
+            keep = _scored_peaks(e, pk)
             ok = top_call_matches(e.q[keep], _sharpness_at(Himalaya.sharpness(e.I), keep), calls)
             phase_n += 1; phase_ok += ok
             push!(phase_rows, (id = e.id, phase = first(calls)[1], ok = ok))
@@ -168,7 +213,7 @@ _content_key(e) = bytes2hex(sha256(vcat(reinterpret(UInt8, e.q), reinterpret(UIn
 
 function run_peak_training(db::SQLite.DB; recipe::HimalayaPeakModel.Recipe = HimalayaPeakModel.default_recipe(),
                            cache_dir::Union{AbstractString, Nothing} = nothing, io::IO = stderr,
-                           cold_start = (;), phase_auto::Symbol = :user_events, peaks_slack = GATE_PEAKS_SLACK, ff_slack = GATE_FF_SLACK)
+                           cold_start = (;), phase_auto::Symbol = :user_events, phase_targets::Symbol = :reachable, peaks_slack = GATE_PEAKS_SLACK, ff_slack = GATE_FF_SLACK)
     t0 = time()
     watermark = label_watermark(db)
     base = Dict{String, Any}("watermark" => watermark, "core_version" => string(pkgversion(Himalaya)),
@@ -211,16 +256,20 @@ function run_peak_training(db::SQLite.DB; recipe::HimalayaPeakModel.Recipe = Him
     for (r, k) in enumerate(ds.exposure); push!(rows_of[k], r); end
     picks_at(thr) = [ds.cand[k][HimalayaPeakModel.select_peaks(ds.cand[k], oof[rows_of[k]], thr, recipe.nms)]
                      for k in eachindex(exps)]
-    (; label_ids, targets) = eval_context(db, exps; phase_auto)
-    hybrid = peak_summary(exps, ds.hybrid; targets, label_ids)
+    (; label_ids) = eval_context(db, exps; phase_auto, phase_targets)
+    hybrid_peaks = peak_summary(exps, ds.hybrid; label_ids)
 
     sweep = [(threshold = t, summary = peak_summary(exps, picks_at(t); label_ids)) for t in THRESHOLD_GRID]
-    within(s) = s.peaks <= hybrid.peaks + peaks_slack + 1e-9 &&
-                (isnan(s.ff_peaks) || isnan(hybrid.ff_peaks) || s.ff_peaks <= hybrid.ff_peaks + ff_slack + 1e-9)
+    within(s) = s.peaks <= hybrid_peaks.peaks + peaks_slack + 1e-9 &&
+                (isnan(s.ff_peaks) || isnan(hybrid_peaks.ff_peaks) || s.ff_peaks <= hybrid_peaks.ff_peaks + ff_slack + 1e-9)
     ok = [x for x in sweep if within(x.summary)]
     threshold = isempty(ok) ? last(THRESHOLD_GRID) :
         sort(ok; by = x -> (isnan(_rate(x.summary.adds)) ? 0.0 : _rate(x.summary.adds), x.threshold))[end].threshold
-    model = peak_summary(exps, picks_at(threshold); targets, label_ids)
+    model_picks = picks_at(threshold)
+    scored = eval_context(db, exps; phase_auto, phase_targets, detector_picks = [ds.hybrid, model_picks])
+    (; targets) = scored
+    hybrid = peak_summary(exps, ds.hybrid; targets, label_ids)
+    model = peak_summary(exps, model_picks; targets, label_ids)
     gate = evaluate_gate(model, hybrid; peaks_slack, ff_slack)
     isempty(ok) && pushfirst!(gate.reasons, "no threshold keeps peaks within the caps")
     gate = (; gate..., passed = gate.passed && !isempty(ok))
@@ -230,7 +279,8 @@ function run_peak_training(db::SQLite.DB; recipe::HimalayaPeakModel.Recipe = Him
         cv = (candidate_auc = cv.candidate_auc, groups = cv.groups,
               by_threshold = [(; threshold = t, s...) for (t, s) in cv.by_threshold],
               hybrid = cv.hybrid, candidates = cv.candidates),
-        comparison = (threshold = threshold, phase_auto = phase_auto, model = model, hybrid = hybrid, phase_targets = length(targets),
+        comparison = (threshold = threshold, phase_auto = phase_auto, model = model, hybrid = hybrid, phase_targets = length(targets), phase_targets_mode = phase_targets,
+                      phase_target_counts = scored.counts,
                       label_exposures_no_model_shown = length(label_ids)),
         sweep = [(; threshold = x.threshold, peaks = x.summary.peaks, ff_peaks = x.summary.ff_peaks,
                   adds = x.summary.adds, within_caps = within(x.summary)) for x in sweep],

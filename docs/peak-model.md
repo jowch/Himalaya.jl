@@ -270,6 +270,15 @@ the model's and the hybrid's summaries (a check with no data is skipped and pass
   when the first `auto_group` pick over the detector's peaks, with excludes removed, adds not applied and
   sharpness from `sharpness` with the pipeline's fallback (median positive), has the phase and a basis within 2% of one of the calls.
   Model correct count must be at least the hybrid's.
+  Only reachable calls are scored (`phase_targets = :reachable`, the default; `:all` scores every call). A call is reachable when `indexpeaks`
+  yields a candidate of the called phase with a basis within 2% of the call, over the user's own final peaks (kept snapshot peaks and
+  adds snapped to the grid, excludes removed, the same sharpness rule) or over the peaks of either scored detector (the model at the chosen
+  threshold and the hybrid, excludes removed). Calls no scored peak set can produce, for example a custom index anchored on fewer peaks than
+  indexing needs, only dilute the metric, so an exposure with no reachable call leaves the targets. An exposure with at least one keeps its full
+  call list, so its phase key is the same in both modes and a hit on any call counts. A call whose phase exists but is out-ranked stays in.
+  The model and the hybrid are scored on identical targets. The metrics JSON `comparison` holds `phase_targets` (the scored count; before
+  this change it counted every confirmed call, so recorded runs before and after are not comparable), `phase_targets_mode` and
+  `phase_target_counts` (`all`, `reachable` and `per_phase` counts).
 - Add recall (hits over adds, adds in the top 7% of q excluded and counted as `adds_in_band`) must be at least the hybrid's, and the share
   of excludes still detected at most the hybrid's, on exposures whose latest direct snapshot had `shown_model_id` NULL. Today that is every labelled exposure.
 - The threshold is chosen from 0.30 to 0.90 in steps of 0.05 as the one with the highest add recall within the peaks caps (higher on ties).

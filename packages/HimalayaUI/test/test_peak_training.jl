@@ -142,6 +142,9 @@ end
         @test cmp.hybrid.exposures == 36 && cmp.model.exposures == 36
         @test cmp.phase_auto == "user_events"
         @test cmp.phase_targets == 36 && cmp.model.phase[2] == 36 && cmp.hybrid.phase[2] == 36
+        @test cmp.phase_targets_mode == "reachable"
+        @test cmp.phase_target_counts.all == 36 && cmp.phase_target_counts.reachable == 36
+        @test cmp.phase_target_counts.per_phase.Lamellar.reachable == 36
         @test cmp.model.adds[2] == cmp.hybrid.adds[2] > 0
         @test cmp.model.adds_in_band == cmp.hybrid.adds_in_band
         @test r.metrics.gate.passed == (r.status == "passed")
@@ -204,6 +207,94 @@ end
         @test ev.peak_count == sum(length, picks) && ev.ff_peak_count == 0
         none = HimalayaUI.peak_eval(exps, [Int[] for _ in exps]; ctx.targets, ctx.label_ids)
         @test none.summary.phase == (0, 36) && all(r -> !r.ok, none.phase_rows)
+        DBInterface.close!(ro)
+    end
+end
+
+@testset "phase targets keep only calls reachable from the user's own peaks" begin
+    mktempdir() do dir
+        b = _pt_db(dir; experiments = 1, samples = 1, per = 3)
+        e1, e2, e3 = b.eids
+        DBInterface.execute(b.db, "UPDATE indices SET basis = basis * 2 WHERE exposure_id = ?", [e2])
+        DBInterface.execute(b.db, "UPDATE indices SET phase = 'Hexagonal' WHERE exposure_id = ?", [e3])
+        DBInterface.close!(b.db)
+        ro = HimalayaUI.open_readonly_db(b.path)
+        exps = HimalayaUI.labeled_exposures(ro; include_unlabelled = true, io = devnull)
+
+        ctx = HimalayaUI.eval_context(ro, exps)
+        @test Set(keys(ctx.targets)) == Set([e1, e2])
+        @test ctx.counts.all == 3 && ctx.counts.reachable == 2
+        @test ctx.counts.per_phase["Lamellar"] == (reachable = 2, all = 2)
+        @test ctx.counts.per_phase["Hexagonal"] == (reachable = 0, all = 1)
+        @test ctx.label_ids == Set(b.eids)
+
+        every = HimalayaUI.eval_context(ro, exps; phase_targets = :all)
+        @test Set(keys(every.targets)) == Set(b.eids)
+        @test every.counts == ctx.counts
+        @test_throws ArgumentError HimalayaUI.eval_context(ro, exps; phase_targets = :typo)
+
+        picks = HimalayaUI.oracle_picks(exps)
+        ev = HimalayaUI.peak_eval(exps, picks; ctx.targets, ctx.label_ids)
+        @test Dict(r.id => r.ok for r in ev.phase_rows) == Dict(e1 => true, e2 => false)
+        ev = HimalayaUI.peak_eval(exps, picks; every.targets, every.label_ids)
+        @test ev.summary.phase == (1, 3)
+        DBInterface.close!(ro)
+    end
+end
+
+@testset "phase targets keep the full call list of a partly reachable exposure" begin
+    mktempdir() do dir
+        b = _pt_db(dir; experiments = 1, samples = 1, per = 2)
+        e1, e2 = b.eids
+        member = "(SELECT index_id FROM assignment_members WHERE exposure_id = ?)"
+        q0 = only(r.basis for r in HimalayaUI.sqlrows(DBInterface.execute(b.db,
+            "SELECT basis FROM indices WHERE id = $member", [e1])))
+        DBInterface.execute(b.db, "UPDATE indices SET phase = 'Hexagonal' WHERE id = $member", [e1])
+        ix = Int(DBInterface.lastrowid(DBInterface.execute(b.db,
+            "INSERT INTO indices (exposure_id, phase, basis, kind) VALUES (?, 'Lamellar', ?, 'auto')", [e1, q0])))
+        DBInterface.execute(b.db, "INSERT INTO assignment_members (exposure_id, index_id) VALUES (?, ?)", [e1, ix])
+        DBInterface.close!(b.db)
+        ro = HimalayaUI.open_readonly_db(b.path)
+        exps = HimalayaUI.labeled_exposures(ro; include_unlabelled = true, io = devnull)
+
+        (; targets, counts) = HimalayaUI.eval_context(ro, exps)
+        @test [p for (p, _) in targets[e1]] == ["Hexagonal", "Lamellar"] && length(targets[e2]) == 1
+        @test counts.all == 2 && counts.reachable == 2
+        @test counts.per_phase["Hexagonal"] == (reachable = 1, all = 1)
+        @test counts.per_phase["Lamellar"] == (reachable = 1, all = 1)
+        ev = HimalayaUI.peak_eval(exps, HimalayaUI.oracle_picks(exps); targets, label_ids = Set(b.eids))
+        rows = Dict(r.id => r for r in ev.phase_rows)
+        @test rows[e1].phase == "Hexagonal" && rows[e1].ok && rows[e2].ok
+        every = HimalayaUI.eval_context(ro, exps; phase_targets = :all)
+        @test every.targets == targets
+        DBInterface.close!(ro)
+    end
+end
+
+@testset "a detector's peaks can make a call reachable that the user's peaks cannot" begin
+    mktempdir() do dir
+        b = _pt_db(dir; experiments = 1, samples = 1, per = 2)
+        e1, e2 = b.eids
+        exps = HimalayaUI.labeled_exposures(b.db; include_unlabelled = true, io = devnull)
+        e = exps[1]
+        q0 = 0.06
+        pk = unique(argmin(abs.(e.q .- q0 * r)) for r in (1, sqrt(3), 2, sqrt(7), 3))
+        sh = HimalayaUI._sharpness_at(HimalayaUI.Himalaya.sharpness(e.I), pk)
+        hex = [c for c in HimalayaUI.Himalaya.indexpeaks(e.q[pk], sh) if nameof(HimalayaUI.Himalaya.phase(c)) == :Hexagonal]
+        @test !isempty(hex)
+        basis = HimalayaUI.Himalaya.basis(first(hex))
+        DBInterface.execute(b.db, "UPDATE indices SET phase = 'Hexagonal', basis = ?
+            WHERE id = (SELECT index_id FROM assignment_members WHERE exposure_id = ?)", [basis, e1])
+        DBInterface.close!(b.db)
+        ro = HimalayaUI.open_readonly_db(b.path)
+        exps = HimalayaUI.labeled_exposures(ro; include_unlabelled = true, io = devnull)
+
+        @test Set(keys(HimalayaUI.eval_context(ro, exps).targets)) == Set([e2])
+        picks = [i == 1 ? pk : Int[] for i in eachindex(exps)]
+        ctx = HimalayaUI.eval_context(ro, exps; detector_picks = [picks])
+        @test Set(keys(ctx.targets)) == Set(b.eids) && ctx.counts.reachable == 2
+        ev = HimalayaUI.peak_eval(exps, picks; ctx.targets, ctx.label_ids)
+        @test Dict(r.id => r.ok for r in ev.phase_rows)[e1]
         DBInterface.close!(ro)
     end
 end

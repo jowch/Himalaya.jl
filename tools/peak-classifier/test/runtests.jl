@@ -139,10 +139,18 @@ end
         @test r.counts.exposures == 36 && r.counts.labelled == 36 && r.counts.group_by == :experiment
         e = only(r.entries)
         @test e.name == "hybrid" && e.detector == :hybrid && e.threshold === nothing
-        @test e.summary.phase == (24, 36) && e.summary.adds == (144, 144) && e.summary.exposures == 36
+        @test e.summary.phase == (24, 24) && e.summary.adds == (144, 144) && e.summary.exposures == 36
         @test e.peak_count == round(Int, e.summary.peaks * 36)
-        @test phase_table(e) == Dict("Lamellar" => (24, 24), "Hexagonal" => (0, 12))
+        @test phase_table(e) == Dict("Lamellar" => (24, 24))
+        @test r.counts.phase_calls.all == 36 && r.counts.phase_calls.reachable == 24 && r.counts.phase_targets == 24
+        @test r.counts.phase_calls.per_phase["Hexagonal"] == (reachable = 0, all = 12)
         @test isempty(r.paired)
+
+        every = evaluate_database(b.path; detectors = [:hybrid], phase_targets = :all, io = devnull)
+        @test r.phase_targets == :reachable && every.phase_targets == :all
+        @test only(every.entries).summary.phase == (24, 36) && every.counts.phase_targets == 36
+        @test phase_table(only(every.entries)) == Dict("Lamellar" => (24, 24), "Hexagonal" => (0, 12))
+        @test every.counts.phase_calls == r.counts.phase_calls
     end
 end
 
@@ -161,7 +169,7 @@ end
         end
         @test sum(x -> x[1], values(pair.phases)) - sum(x -> x[2], values(pair.phases)) ==
               p.summary.phase[1] - a.summary.phase[1]
-        @test pair.phases["Hexagonal"] == (0, 0, 0, 12)
+        @test !haskey(pair.phases, "Hexagonal")
     end
 end
 
@@ -184,10 +192,10 @@ end
     end
 end
 
-@testset "oracle scores the user's own peaks as a ceiling" begin
+@testset "oracle scores the user's own peaks as a reference" begin
     mktempdir() do dir
         b = eval_fixture(dir)
-        r = evaluate_database(b.path; detectors = [:oracle, :hybrid], io = devnull)
+        r = evaluate_database(b.path; detectors = [:oracle, :hybrid], phase_targets = :all, io = devnull)
         o = r.entries[1]
         @test o.name == "oracle" && o.detector == :oracle && o.threshold === nothing
         @test o.summary.adds == (144, 144) && o.summary.excluded == (0, 12)
@@ -202,6 +210,7 @@ end
     mktempdir() do dir
         b = eval_fixture(dir)
         @test_throws ArgumentError evaluate_database(b.path; phase_auto = :typo, io = devnull)
+        @test_throws ArgumentError evaluate_database(b.path; phase_targets = :typo, io = devnull)
         @test_logs (:warn, r"--threshold|threshold") evaluate_database(b.path; detectors = [:hybrid], thresholds = 0.7, io = devnull)
         r = evaluate_database(b.path; detectors = [:recipe], recipe = HPM.default_recipe(n_trees = 10),
                               thresholds = :sweep, io = devnull)
@@ -217,17 +226,20 @@ end
         b = eval_fixture(dir)
         r = evaluate_database(b.path; detectors = [:hybrid, :persistence], io = devnull)
         text = sprint(print_evaluation, r)
-        @test occursin("24/36", text) && occursin("144/144", text) && occursin("Hexagonal", text)
+        @test occursin("24/24", text) && occursin("144/144", text) && occursin("Hexagonal 0/12", text)
+        @test occursin("24 of 36", text)
         @test occursin("persistence", text) && occursin("wins", text)
         path = joinpath(dir, "sub", "out.json")
         write_evaluation(path, r)
         j = JSON3.read(read(path, String))
         @test [x.name for x in j.detectors] == ["hybrid", "persistence"]
         h = j.detectors[1]
-        @test h.metrics.phase.correct == 24 && h.metrics.phase.total == 36
+        @test h.metrics.phase.correct == 24 && h.metrics.phase.total == 24
+        @test j.phase_targets == "reachable" && j.counts.phase_calls.all == 36 && j.counts.phase_calls.reachable == 24
+        @test j.counts.phase_calls.per_phase.Hexagonal.reachable == 0 && j.counts.phase_calls.per_phase.Hexagonal.all == 12
         @test h.metrics.adds.correct == 144 && h.metrics.adds.total == 144
         @test h.metrics.peaks_per_exposure.total == 36
-        @test h.per_phase.Hexagonal.correct == 0 && h.per_phase.Hexagonal.total == 12
+        @test !haskey(h.per_phase, :Hexagonal)
         @test j.paired[1].against == "hybrid" && j.counts.exposures == 36
         @test !occursin(dir, read(path, String))
     end
