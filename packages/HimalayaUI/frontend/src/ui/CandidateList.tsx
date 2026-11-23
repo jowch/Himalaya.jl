@@ -11,6 +11,7 @@ import { Tooltip } from "./Tooltip";
 interface Props {
   rows: readonly CallRow[];
   assigned: ReadonlySet<number>;
+  unsupported?: ReadonlySet<number>;
   disabled: boolean;
   formFactor: boolean;
   onToggle: (ix: IndexEntry) => void;
@@ -19,11 +20,14 @@ interface Props {
   onHover: (ids: readonly number[] | undefined) => void;
 }
 
+const NONE: ReadonlySet<number> = new Set();
+const NOT_FOUND = "Not found in the selected images. The call stays, with lines drawn from its own lattice.";
+
 const ROW = "grid w-full items-center rounded-sm border px-2 text-left text-base disabled:opacity-50 ";
 const look = (on: boolean | "mixed") =>
   "border-transparent " + (on === true ? SELECTED_ROW : on === "mixed" ? "bg-accent/10 hover:bg-accent/15" : "hover:bg-ink/6");
 
-export function CandidateList({ rows, assigned, disabled, formFactor, onToggle, onToggleGroup, onFormFactor, onHover }: Props): JSX.Element {
+export function CandidateList({ rows, assigned, unsupported = NONE, disabled, formFactor, onToggle, onToggleGroup, onFormFactor, onHover }: Props): JSX.Element {
   const [pointerFocus, setPointerFocus] = useState(false);
   const pointerDown = useRef(false);
   return (
@@ -53,8 +57,8 @@ export function CandidateList({ rows, assigned, disabled, formFactor, onToggle, 
         setPointerFocus(false);
       }}
     >
-      {rows.length === 0 && <Note>No candidate indices for this image.</Note>}
-      {rows.length > 0 && <Rows rows={rows} assigned={assigned} disabled={disabled} onToggle={onToggle} onToggleGroup={onToggleGroup} onHover={onHover} />}
+      {rows.every((r) => r.kind === "one" && unsupported.has(r.candidate.id)) && <Note>No candidate indices for this image.</Note>}
+      {rows.length > 0 && <Rows rows={rows} assigned={assigned} unsupported={unsupported} disabled={disabled} onToggle={onToggle} onToggleGroup={onToggleGroup} onHover={onHover} />}
       <button
         type="button"
         aria-pressed={formFactor}
@@ -75,10 +79,11 @@ function Key({ n }: { n: number }): JSX.Element {
   return n <= 9 ? <Kbd>{n}</Kbd> : <span aria-hidden="true" className="invisible"><Kbd>9</Kbd></span>;
 }
 
-function Rows({ rows, assigned, disabled, onToggle, onToggleGroup, onHover }: Omit<Props, "formFactor" | "onFormFactor">): JSX.Element {
+function Rows({ rows, assigned, unsupported, disabled, onToggle, onToggleGroup, onHover }: Omit<Props, "formFactor" | "onFormFactor" | "unsupported"> & { unsupported: ReadonlySet<number> }): JSX.Element {
   let n = 0;
   const candidateRow = (c: IndexEntry, inGroup: boolean) => {
     const on = assigned.has(c.id);
+    const missing = unsupported.has(c.id);
     const key = ++n;
     const lattice = c.lattice_d !== null ? `${c.lattice_d.toFixed(1)} Å` : "";
     return (
@@ -91,6 +96,7 @@ function Rows({ rows, assigned, disabled, onToggle, onToggleGroup, onHover }: Om
           onMouseEnter={() => onHover([c.id])}
           onMouseMove={() => onHover([c.id])}
           onFocus={() => onHover([c.id])}
+          data-unsupported={missing ? "" : undefined}
           className={ROW + "grid-cols-[auto_auto_1fr_auto] py-[5px] " + (inGroup ? "gap-1 " : "gap-1.5 ") + look(on)}
         >
           <Key n={key} />
@@ -98,7 +104,13 @@ function Rows({ rows, assigned, disabled, onToggle, onToggleGroup, onHover }: Om
           <Tooltip content={lattice} overflowOnly>
             <span className="min-w-0 truncate whitespace-nowrap text-ink-soft">{lattice}</span>
           </Tooltip>
-          <span className="text-right text-ink-faint">{c.kind === "speculative" ? "Custom" : c.score !== null ? c.score.toFixed(2) : ""}</span>
+          {missing ? (
+            <Tooltip content={NOT_FOUND}>
+              <span className="text-right text-ink-faint">Not found</span>
+            </Tooltip>
+          ) : (
+            <span className="text-right text-ink-faint">{c.kind === "speculative" ? "Custom" : c.score !== null ? c.score.toFixed(2) : ""}</span>
+          )}
         </button>
       </li>
     );

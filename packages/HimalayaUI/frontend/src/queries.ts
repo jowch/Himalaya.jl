@@ -229,6 +229,15 @@ export function useIndices(exposureId: number | undefined) {
   });
 }
 
+export function useFrameIndices(exposureIds: readonly number[]) {
+  return useQueries({
+    queries: exposureIds.map((id) => ({
+      queryKey: queryKeys.indices(id),
+      queryFn: () => api.listIndices(id),
+    })),
+  });
+}
+
 export function useAddPeak(exposureId: number) {
   const username = useAppState((s) => s.username);
   const inner = useQueueMutation(
