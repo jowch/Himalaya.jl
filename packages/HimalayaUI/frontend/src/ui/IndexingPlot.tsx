@@ -80,12 +80,11 @@ export function IndexingPlot({ series }: { series: readonly IndexSeries[] }): JS
         {series.map((s) => {
           const kappa = gaussianCurvature(s.phase, s.lattice);
           return (
-            <p key={s.key} className="m-0 flex flex-wrap gap-x-1.5 whitespace-nowrap" data-testid="workspace-indexing-fit">
-              <span style={{ color: s.color }}>{s.phase}</span>{" "}
-              {s.lattice !== null && <span>{`${s.param ?? "a"} = ${s.lattice.toFixed(1)} Å`}</span>}{" "}
-              {kappa !== null && <span data-testid="workspace-indexing-curvature">{formatCurvature(kappa)}</span>}{" "}
-              {s.r2 !== null && <span>{`R² ${s.r2.toFixed(4)}`}</span>}{" "}
-              <span>{`${s.fit.landed}/${s.fit.points.length} on peaks`}</span>
+            <p key={s.key} className="m-0 truncate" data-testid="workspace-indexing-fit">
+              <span className="mr-1" style={{ color: s.color }}>{s.phase}</span>{" "}
+              {s.lattice !== null && <span className="mr-1">{`${s.param ?? "a"} = ${s.lattice.toFixed(1)} Å`}</span>}{" "}
+              {kappa !== null && <span className="mr-1" data-testid="workspace-indexing-curvature">{formatCurvature(kappa)}</span>}{" "}
+              {s.r2 !== null && <span>{`R² ${s.r2.toFixed(4)}`}</span>}
             </p>
           );
         })}

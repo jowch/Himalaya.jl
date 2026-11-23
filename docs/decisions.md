@@ -154,7 +154,7 @@ Every row also needs the date it was decided, as `YYYY-MM-DD`.
 | id | Decision | Decided | Status | Evidence |
 |---|---|---|---|---|
 | phase-curvature | Bicontinuous cubic calls show the mean Gaussian curvature in nm⁻². | 2026-11-22 | superseded | 2026-11-23: phase-curvature-legend and phase-curvature-bonnet |
-| phase-curvature-legend | A bicontinuous cubic fit shows its mean Gaussian curvature κ in nm⁻² on its indexing plot legend line. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › the indexing plot shows the assigned candidate's fit against the peaks |
+| phase-curvature-legend | Each indexing plot legend line reads phase, lattice, κ in nm⁻² (bicontinuous cubics only) and R², on one line. It drops the reflections-on-peaks count, which both plots already show. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › the indexing plot shows the assigned candidate's fit against the peaks |
 | phase-curvature-bonnet | In the Assignment list only a Bonnet group's header shows κ. Single candidate rows and group members show none. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/workspace/CandidateList.test.tsx › leaves the curvature off single candidate rows, cubic or not |
 | phase-bonnet-groups | Bonnet-related cubics that share peaks are offered as one group, ticked whole or one member at a time. | 2026-11-22 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › ticks a Bonnet group whole with its number key and undoes it as one edit |
 
