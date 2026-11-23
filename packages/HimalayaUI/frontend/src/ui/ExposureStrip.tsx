@@ -5,6 +5,7 @@ import { detectorLutFilter } from "../detector/detectorLut";
 import { Button } from "./Button";
 import { Checkbox } from "./Checkbox";
 import { Tooltip } from "./Tooltip";
+import { DetectorRings, type DetectorRingsView } from "./DetectorRings";
 import { releaseMouseFocus, useRovingFocus } from "../hooks/useRovingFocus";
 
 const DETECTOR_COLOUR = { filter: detectorLutFilter("magma") };
@@ -30,6 +31,7 @@ interface Props {
   selection?: ExposureSelection | undefined;
   onPick: (id: number) => void;
   onToggleDrop: (e: Exposure) => void;
+  ringsOf?: ((e: Exposure) => DetectorRingsView | null) | undefined;
 }
 
 const ACTION = "flex-1 rounded-[4px] border border-hair bg-paper py-0.5 text-xs text-ink hover:border-hair-strong";
@@ -41,7 +43,7 @@ function selectionCaption(selection: ExposureSelection): string {
   return `Average of ${n} images`;
 }
 
-export function ExposureStrip({ groups, currentId, selection, onPick, onToggleDrop }: Props): JSX.Element {
+export function ExposureStrip({ groups, currentId, selection, onPick, onToggleDrop, ringsOf }: Props): JSX.Element {
   const ref = useRovingFocus<HTMLDivElement>(currentId);
   const hasCurrent = groups.some((g) => g.exposures.some((e) => e.id === currentId));
   const click = (ev: MouseEvent<HTMLElement>, id: number): void => {
@@ -76,6 +78,7 @@ export function ExposureStrip({ groups, currentId, selection, onPick, onToggleDr
               const selectable = selection?.selectableIds.has(e.id) ?? false;
               const selected = selection?.selectedIds.has(e.id) ?? false;
               const src = imageUrl(e, true);
+              const ringView = src ? ringsOf?.(e) ?? null : null;
               const name = gi === 0 || g.title === undefined ? `Image ${i + 1}` : `Image ${i + 1} of ${g.title}`;
               return (
                 <li
@@ -95,13 +98,14 @@ export function ExposureStrip({ groups, currentId, selection, onPick, onToggleDr
                       tabIndex={stop}
                       data-roving="image"
                       onClick={(ev) => click(ev, e.id)}
-                      className="grid aspect-square w-full place-items-center overflow-hidden rounded-[3px] bg-frame-edge"
+                      className="relative grid aspect-square w-full place-items-center overflow-hidden rounded-[3px] bg-frame-edge"
                     >
                       {src ? (
                         <img src={src} alt="" loading="lazy" style={DETECTOR_COLOUR} className="h-full w-full object-cover" />
                       ) : (
                         <span className="text-xs text-frame-tag">No TIFF</span>
                       )}
+                      {ringView && <DetectorRings view={ringView} fit="cover" />}
                     </button>
                     {selectable && selection && (
                       <span className="absolute left-0.5 top-0.5 rounded-full bg-paper">

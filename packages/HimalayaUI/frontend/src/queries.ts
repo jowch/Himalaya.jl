@@ -40,6 +40,7 @@ export const queryKeys = {
   folderPreview: (path: string) => ["folder-preview", path] as const,
   folderPreviews: ["folder-preview"] as const,
   labelColors:  () => ["label-colors"] as const,
+  detectorSize: (url: string) => ["detector-size", url] as const,
   manifest: (dataDir: string, patterns: { image: string; metadata: string; integration: string }, setupFile: string, analysisDir: string) =>
     ["manifest", dataDir, patterns, setupFile, analysisDir] as const,
   bridges:    (experimentId: number | undefined) =>
@@ -180,6 +181,22 @@ export function useSamplesExposures(sampleIds: readonly number[]) {
       queryFn: () => api.listExposures(id),
     })),
     combine: (results) => results.map((r) => r.data),
+  });
+}
+
+export function useDetectorSizes(urls: readonly string[]): Map<string, api.DetectorSize> {
+  return useQueries({
+    queries: urls.map((url) => ({
+      queryKey: queryKeys.detectorSize(url),
+      queryFn: () => api.getDetectorSize(url),
+      staleTime: Infinity,
+      gcTime: Infinity,
+    })),
+    combine: (results) => {
+      const out = new Map<string, api.DetectorSize>();
+      results.forEach((r, i) => { if (r.data) out.set(urls[i]!, r.data); });
+      return out;
+    },
   });
 }
 

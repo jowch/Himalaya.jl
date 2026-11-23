@@ -5,6 +5,7 @@ import { detectorLutFilter } from "../detector/detectorLut";
 const DETECTOR_COLOUR = { filter: detectorLutFilter("magma") };
 import { Kbd } from "./Kbd";
 import { Overlay } from "./Overlay";
+import { DetectorRings, type DetectorRingsView } from "./DetectorRings";
 
 const CLOSE_KEYS = ["Escape", " "] as const;
 
@@ -15,12 +16,14 @@ interface Props {
   onStep: (dir: 1 | -1) => void;
   onToggleDrop: (() => void) | undefined;
   onClose: () => void;
+  ringsOf?: ((e: Exposure) => DetectorRingsView | null) | undefined;
 }
 
-export function DetectorOverlay({ exposures, currentId, caption, onStep, onToggleDrop, onClose }: Props): JSX.Element {
+export function DetectorOverlay({ exposures, currentId, caption, onStep, onToggleDrop, onClose, ringsOf }: Props): JSX.Element {
   const index = exposures.findIndex((e) => e.id === currentId);
   const current = exposures[index];
   const dropped = current?.status === "rejected";
+  const ringView = current && imageUrl(current, false) ? ringsOf?.(current) ?? null : null;
   const onKey = (key: string, repeat: boolean): boolean => {
     if (key === "ArrowRight" || key === "ArrowLeft") {
       onStep(key === "ArrowRight" ? 1 : -1);
@@ -52,6 +55,7 @@ export function DetectorOverlay({ exposures, currentId, caption, onStep, onToggl
               />
             );
           })}
+          {ringView && <DetectorRings view={ringView} fit="contain" />}
           {current && !imageUrl(current, false) && (
             <p className="absolute inset-0 m-0 flex items-center justify-center text-sm text-ink-faint">No detector image</p>
           )}
