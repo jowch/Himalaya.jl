@@ -390,6 +390,7 @@ export function WorkspacePage(): JSX.Element {
   );
   const theme = useAppTheme();
   const [draft, setDraft] = useState<CustomDraft | null>(null);
+  const customPanel = useRef<HTMLDivElement>(null);
   useEffect(() => setDraft(null), [exposure?.id]);
   const commitCustom = useCommitCustomIndex(exposure?.id ?? 0);
   const bridgedNames = useMemo(() => {
@@ -871,6 +872,7 @@ export function WorkspacePage(): JSX.Element {
           target = pq;
         }
       }
+      customPanel.current?.focus();
       setDraftClamped({ ...draft, lattice: latticeForFirstOrderOnPeak(draft.phase, target) });
     },
     [draft, activePeakQs, setDraftClamped],
@@ -1367,6 +1369,7 @@ export function WorkspacePage(): JSX.Element {
             {draft && draftBounds ? (
               <Section title="Custom index">
                 <CustomIndexPanel
+                  panelRef={customPanel}
                   draft={draft}
                   min={draftBounds.min}
                   max={draftBounds.max}

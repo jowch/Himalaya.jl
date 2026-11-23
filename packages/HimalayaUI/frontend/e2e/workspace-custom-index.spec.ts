@@ -88,3 +88,17 @@ test("with the filter focused, clicking a peak to snap, then Enter, adds it", as
   await page.getByLabel("Filter samples").focus();
   await snapAndAdd(page, posted);
 });
+
+test("a value typed in the lattice field gives way to the peak the click snaps to", async ({ page }) => {
+  const posted = await recordCustomIndex(page);
+  await openCustomIndex(page);
+  const field = page.getByRole("spinbutton", { name: /Lattice . value/ });
+  await field.fill("150");
+  await page.locator('[data-peak-key="auto:1"]').click();
+  await expect(field).not.toHaveValue("150");
+  const snapped = await field.inputValue();
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("workspace-custom-index")).toBeHidden();
+  expect(posted).toHaveLength(1);
+  expect(snapped).not.toBe("150.0");
+});
