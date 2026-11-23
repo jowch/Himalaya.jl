@@ -392,7 +392,6 @@ export function WorkspacePage(): JSX.Element {
   const [picking, setPicking] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [bigOpen, setBigOpen] = useState(false);
-  const [bigHover, setBigHover] = useState<readonly number[] | undefined>(undefined);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const paletteCorpus = useCorpusPalette();
   const elsewhere = useMemo(
@@ -588,11 +587,10 @@ export function WorkspacePage(): JSX.Element {
     [candidates, hoverIds, assigned, draft, draftQs],
   );
 
-  const ringSets = useMemo(() => {
-    if (draft) return [{ color: phaseColor(draft.phase), qs: draftQs }];
-    const shown = bigHover?.length ? candidates.filter((c) => bigHover.includes(c.id)) : candidates.filter((c) => assigned.has(c.id));
-    return shown.map((c) => ({ color: phaseColor(c.phase), qs: c.predicted_q }));
-  }, [draft, draftQs, candidates, bigHover, assigned]);
+  const ringSets = useMemo(() => [
+    ...candidates.filter((c) => assigned.has(c.id)).map((c) => ({ color: phaseColor(c.phase), qs: c.predicted_q })),
+    ...(draft ? [{ color: phaseColor(draft.phase), qs: draftQs }] : []),
+  ], [draft, draftQs, candidates, assigned]);
   const setupOfSample = useMemo(
     () => new Map(inExperiment.map((s) => [s.id, setups.find((st) => st.id === s.setup_id)] as const)),
     [inExperiment, setups],
@@ -1066,7 +1064,6 @@ export function WorkspacePage(): JSX.Element {
         } else if (ev.key === " " && !ev.repeat && exposure && imageUrl(exposure, false)) {
           if (ev.target instanceof HTMLElement && ev.target.closest("button,a")) return;
           ev.preventDefault();
-          setBigHover(undefined);
           setBigOpen(true);
         }
         return;
@@ -1137,10 +1134,8 @@ export function WorkspacePage(): JSX.Element {
         }
         case " ":
           if (ev.repeat) break;
-          if (exposure && imageUrl(exposure, false)) {
-            setBigHover(hoverIds);
-            setBigOpen(true);
-          } else handled = false;
+          if (exposure && imageUrl(exposure, false)) setBigOpen(true);
+          else handled = false;
           break;
         case "x":
         case "X":
@@ -1167,7 +1162,7 @@ export function WorkspacePage(): JSX.Element {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [visible, sampleId, goSample, exposureList, exposure, toggleDrop, keyed, toggleCandidate, toggleGroup, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor, view, setView, sample, openLabeling, applyHistory, callOpen, hoverIds]);
+  }, [visible, sampleId, goSample, exposureList, exposure, toggleDrop, keyed, toggleCandidate, toggleGroup, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor, view, setView, sample, openLabeling, applyHistory, callOpen]);
 
   const droppedCount = ownFrames.filter((e) => e.status === "rejected").length;
   const keptHint = droppedCount > 0 ? `${ownFrames.length - droppedCount} of ${ownFrames.length} kept` : undefined;
