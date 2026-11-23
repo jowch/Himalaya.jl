@@ -114,3 +114,107 @@ end
     @test read(copy) == main0
     @test read(copy * "-wal") == wal0
 end
+
+include(joinpath(pkgdir(HimalayaUI), "test", "peak_training_fixture.jl"))
+import HimalayaPeakModel as HPM
+
+# 36 labelled exposures in 3 experiments, every one with a confirmed Lamellar call;
+# the 12 of the first experiment are re-labelled Hexagonal, which no detector can match.
+function eval_fixture(dir)
+    b = _pt_db(dir)
+    first_x = b.eids[1:12]
+    for e in first_x
+        DBInterface.execute(b.db, "UPDATE indices SET phase = 'Hexagonal' WHERE exposure_id = ?", [e])
+    end
+    DBInterface.close!(b.db)
+    b
+end
+
+@testset "evaluate scores a detector on a database" begin
+    mktempdir() do dir
+        b = eval_fixture(dir)
+        before = read(b.path)
+        r = evaluate_database(b.path; detectors = [:hybrid], io = devnull)
+        @test read(b.path) == before
+        @test r.counts.exposures == 36 && r.counts.labelled == 36 && r.counts.group_by == :experiment
+        e = only(r.entries)
+        @test e.name == "hybrid" && e.detector == :hybrid && e.threshold === nothing
+        @test e.summary.phase == (24, 36) && e.summary.adds == (144, 144) && e.summary.exposures == 36
+        @test e.peak_count == round(Int, e.summary.peaks * 36)
+        @test phase_table(e) == Dict("Lamellar" => (24, 24), "Hexagonal" => (0, 12))
+        @test isempty(r.paired)
+    end
+end
+
+@testset "evaluate compares detectors against the first, per phase" begin
+    mktempdir() do dir
+        b = eval_fixture(dir)
+        r = evaluate_database(b.path; detectors = [:hybrid, :persistence], io = devnull)
+        @test [e.name for e in r.entries] == ["hybrid", "persistence"]
+        a, p = r.entries
+        pair = only(r.paired)
+        @test pair.name == "persistence" && pair.against == "hybrid"
+        for (phase, (w, l, both, neither)) in pair.phases
+            na = phase_table(a)[phase]; np = phase_table(p)[phase]
+            @test w + both == np[1] && l + both == na[1]
+            @test w + l + both + neither == na[2]
+        end
+        @test sum(x -> x[1], values(pair.phases)) - sum(x -> x[2], values(pair.phases)) ==
+              p.summary.phase[1] - a.summary.phase[1]
+        @test pair.phases["Hexagonal"] == (0, 0, 0, 12)
+    end
+end
+
+@testset "evaluate scores a recipe out of fold and sweeps thresholds" begin
+    mktempdir() do dir
+        b = eval_fixture(dir)
+        recipe = HPM.default_recipe(n_trees = 15)
+        r = evaluate_database(b.path; detectors = [:hybrid, :recipe], recipe, thresholds = :sweep, io = devnull)
+        @test [e.name for e in r.entries][1] == "hybrid"
+        @test [e.threshold for e in r.entries[2:end]] == collect(HimalayaUI.THRESHOLD_GRID)
+        @test all(e -> e.detector == :recipe && e.summary.exposures == 36, r.entries[2:end])
+        @test r.entries[2].name == "recipe@0.3"
+        @test length(r.paired) == length(HimalayaUI.THRESHOLD_GRID)
+        @test r.entries[end].summary.peaks <= r.entries[2].summary.peaks
+
+        one = evaluate_database(b.path; detectors = [:recipe], recipe, thresholds = 0.6, io = devnull)
+        @test only(one.entries).name == "recipe@0.6"
+        @test isequal(only(one.entries).summary, r.entries[findfirst(e -> e.threshold == 0.6, r.entries)].summary)
+        @test_throws ArgumentError evaluate_database(b.path; detectors = [:nope], io = devnull)
+    end
+end
+
+@testset "evaluate prints and writes the same numbers" begin
+    mktempdir() do dir
+        b = eval_fixture(dir)
+        r = evaluate_database(b.path; detectors = [:hybrid, :persistence], io = devnull)
+        text = sprint(print_evaluation, r)
+        @test occursin("24/36", text) && occursin("144/144", text) && occursin("Hexagonal", text)
+        @test occursin("persistence", text) && occursin("wins", text)
+        path = joinpath(dir, "sub", "out.json")
+        write_evaluation(path, r)
+        j = JSON3.read(read(path, String))
+        @test [x.name for x in j.detectors] == ["hybrid", "persistence"]
+        h = j.detectors[1]
+        @test h.metrics.phase.correct == 24 && h.metrics.phase.total == 36
+        @test h.metrics.adds.correct == 144 && h.metrics.adds.total == 144
+        @test h.metrics.peaks_per_exposure.total == 36
+        @test h.per_phase.Hexagonal.correct == 0 && h.per_phase.Hexagonal.total == 12
+        @test j.paired[1].against == "hybrid" && j.counts.exposures == 36
+        @test !occursin(dir, read(path, String))
+    end
+end
+
+@testset "the training gate scores with the same function as evaluate" begin
+    mktempdir() do dir
+        b = eval_fixture(dir)
+        ro = HimalayaUI.open_readonly_db(b.path)
+        run = JSON3.read(JSON3.write(HimalayaUI.run_peak_training(ro; recipe = HPM.default_recipe(n_trees = 15),
+                                                                  io = devnull, peaks_slack = 100, ff_slack = 100)))
+        DBInterface.close!(ro)
+        h = only(evaluate_database(b.path; detectors = [:hybrid], io = devnull).entries).summary
+        g = run.metrics.comparison.hybrid
+        @test g.phase == [h.phase...] && g.adds == [h.adds...] && g.excluded == [h.excluded...]
+        @test g.peaks == h.peaks && g.exposures == h.exposures
+    end
+end
