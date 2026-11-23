@@ -101,6 +101,33 @@ describe("peak_* frames with the W1 assignment envelope", () => {
     expect(qc.getQueryData<Assignment>(queryKeys.assignment(5))).toEqual(SEEDED_ASSIGNMENT);
   });
 
+  it("a frame whose assignment changed the call refetches the sample list and the sample calls", () => {
+    const invalidateSpy = vi.spyOn(qc, "invalidateQueries");
+    applyPostStateOnly(w1Frame({ post_state: {
+      analysis_inputs_hash: "h-new", indices: [],
+      assignment: { state: "indexed", members: [] }, assignment_dropped: ["Im3m"],
+    } }), qc);
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.corpusSamples });
+    expect(invalidateSpy.mock.calls.some(([f]) => typeof f?.predicate === "function"
+      && f.predicate({ queryKey: queryKeys.sampleCall(3) } as never))).toBe(true);
+  });
+
+  it("the foreign path refreshes the sample list when the call changed", () => {
+    const invalidateSpy = vi.spyOn(qc, "invalidateQueries");
+    applyRemoteToCache(w1Frame(), qc);
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.corpusSamples });
+  });
+
+  it("a peak edit on a frame with no call before or after does not refetch the sample list", () => {
+    qc.setQueryData<Assignment>(queryKeys.assignment(5), { exposure_id: 5, state: "indexed", members: [] });
+    const invalidateSpy = vi.spyOn(qc, "invalidateQueries");
+    applyPostStateOnly(w1Frame({ post_state: {
+      analysis_inputs_hash: "h-new", indices: [],
+      assignment: { state: "indexed", members: [] },
+    } }), qc);
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: queryKeys.corpusSamples });
+  });
+
   // ---- (c)/(d) assignment_dropped toast gating ------------------------------
 
   it("assignment_dropped non-empty fires exactly one warning toast with aggregated copy", () => {

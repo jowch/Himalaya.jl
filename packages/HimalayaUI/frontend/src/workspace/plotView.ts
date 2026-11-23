@@ -6,14 +6,21 @@ export type PlotView = "log" | "linear" | "loglog" | "kratky";
 export interface PlotViewOption {
   view: PlotView;
   name: string;
+  short: string;
 }
 
 export const PLOT_VIEWS: readonly PlotViewOption[] = [
-  { view: "log", name: "Log" },
-  { view: "linear", name: "Linear" },
-  { view: "loglog", name: "Log-log" },
-  { view: "kratky", name: "q²I (Kratky)" },
+  { view: "log", name: "Log", short: "Log" },
+  { view: "linear", name: "Linear", short: "Linear" },
+  { view: "loglog", name: "Log-log", short: "Log-log" },
+  { view: "kratky", name: "q²I (Kratky)", short: "q²I" },
 ];
+
+export function stepView(view: PlotView, dir: 1 | -1): PlotView {
+  const i = PLOT_VIEWS.findIndex((o) => o.view === view);
+  const n = PLOT_VIEWS.length;
+  return PLOT_VIEWS[(((i < 0 ? 0 : i) + dir) % n + n) % n]!.view;
+}
 
 const KEY = "himalaya-ui:workspace-plot-view";
 

@@ -67,6 +67,7 @@ import { usePrefetchNeighbours } from "./prefetch";
 import { CompareBar } from "../ui/CompareBar";
 import { ComparePicker } from "../ui/ComparePicker";
 import { SubtractToggle } from "../ui/SubtractToggle";
+import { PlotViewToggle } from "../ui/PlotViewToggle";
 import { PlotCard } from "../ui/PlotCard";
 import { HelpOverlay, type HelpSection } from "../ui/HelpOverlay";
 import { MOD_KEY } from "../lib/modKey";
@@ -75,7 +76,7 @@ import { Palette } from "../ui/palette/Palette";
 import { keepCallForm, workspacePalette, type PaletteSetup } from "./palette";
 import type { PaletteForm } from "../ui/palette/model";
 import { useAppTheme } from "../lib/theme";
-import { PLOT_VIEWS, usePlotView } from "./plotView";
+import { PLOT_VIEWS, stepView, usePlotView } from "./plotView";
 import { positiveExtent } from "../plot/projection";
 import { CustomIndexPanel, NUDGE_STEP, NUDGE_STEP_LARGE } from "../ui/CustomIndexPanel";
 import { IndexingPlot, type IndexSeries } from "../ui/IndexingPlot";
@@ -122,11 +123,11 @@ function helpSections(mod: string): HelpSection[] {
       ],
     },
     {
-      title: "Call",
+      title: "Assignment",
       rows: [
         { keys: ["1–9"], what: "Tick or untick a phase candidate" },
         { keys: ["0"], what: "Mark no phase (form factor), or clear it" },
-        { keys: ["I"], what: "Custom index: pick a symmetry and drag the lattice. Press Enter to add it or Esc to cancel." },
+        { keys: ["I"], what: "Custom index: pick a symmetry, then drag the lattice, nudge it with ← →, or click a peak to snap to it. Press Enter to add it or Esc to cancel." },
         { keys: ["L"], what: "Label the sample, e.g. Buffer. Press Enter to add it or Esc to close." },
       ],
     },
@@ -136,6 +137,7 @@ function helpSections(mod: string): HelpSection[] {
         { gesture: "Click", what: "Turn a peak off or on, remove one you added, or add one" },
         { gesture: "Scroll", what: "Zoom q" },
         { keys: [`${mod} 0`], what: "Reset the zoom" },
+        { keys: ["V"], what: "Next plot view: log, linear, log-log, q²I. ⇧ V goes back." },
         { keys: ["C"], what: "Compare with another sample" },
         { gesture: `${mod}-click a sample in the list`, what: "Compare with it, or stop comparing" },
         { gesture: "Click a comparison", what: "Hide or show its trace" },
@@ -344,6 +346,9 @@ export function WorkspacePage(): JSX.Element {
     return here;
   }, [assignment.data, otherMembers, candidates]);
   const [hoverIds, setHoverIds] = useState<readonly number[] | undefined>(undefined);
+  const hoverCandidates = useCallback((ids: readonly number[] | undefined) => {
+    setHoverIds((prev) => (prev?.length === ids?.length && (prev ?? []).every((id, i) => id === ids?.[i]) ? prev : ids));
+  }, []);
 
   const addPhase = useAddAssignmentPhase(exposure?.id ?? 0);
   const removePhase = useRemoveAssignmentPhase(exposure?.id ?? 0);
@@ -391,7 +396,9 @@ export function WorkspacePage(): JSX.Element {
   );
   const theme = useAppTheme();
   const [draft, setDraft] = useState<CustomDraft | null>(null);
+  const customPanel = useRef<HTMLDivElement>(null);
   useEffect(() => setDraft(null), [exposure?.id]);
+  useEffect(() => setHoverIds(undefined), [exposure?.id]);
   const commitCustom = useCommitCustomIndex(exposure?.id ?? 0);
   const bridgedNames = useMemo(() => {
     const names = new Map(inExperiment.map((s) => [s.id, s.name]));
@@ -872,6 +879,7 @@ export function WorkspacePage(): JSX.Element {
           target = pq;
         }
       }
+      customPanel.current?.focus();
       setDraftClamped({ ...draft, lattice: latticeForFirstOrderOnPeak(draft.phase, target) });
     },
     [draft, activePeakQs, setDraftClamped],
@@ -1023,6 +1031,10 @@ export function WorkspacePage(): JSX.Element {
           break;
         case "?":
           setHelpOpen(true);
+          break;
+        case "v":
+        case "V":
+          setView(stepView(view, ev.shiftKey ? -1 : 1));
           break;
         case "z":
         case "Z": {
@@ -1201,11 +1213,11 @@ export function WorkspacePage(): JSX.Element {
     elsewhere: { ...elsewhere, go: (path) => navigate(path) },
   });
 
+  const customIndexButton = <CustomIndexButton open={draft !== null} disabled={!canCall} onClick={draft ? () => setDraft(null) : openCustom} />;
   const indexingSection = (
     <Section
       title="Indexing"
       className="shrink-0"
-      aside={<CustomIndexButton open={draft !== null} disabled={!canCall} onClick={draft ? () => setDraft(null) : openCustom} />}
     >
       <IndexingPlot series={indexSeries} />
     </Section>
@@ -1328,7 +1340,7 @@ export function WorkspacePage(): JSX.Element {
               )}
             </div>
             <div className="mx-3.5">
-              <PlotCard {...(darkNotice ? { notice: darkNotice } : {})}>
+              <PlotCard {...(darkNotice ? { notice: darkNotice } : {})} corner={<PlotViewToggle options={PLOT_VIEWS} view={view} onChange={setView} />}>
                 <WorkspacePlot
                   trace={trace.data}
                   {...(noTraceMessage
@@ -1366,8 +1378,9 @@ export function WorkspacePage(): JSX.Element {
         <>
           <div className={callOpen ? "flex min-h-24 flex-1 flex-col overflow-y-auto" : "shrink-0"} data-testid="workspace-tools-middle">
             {draft && draftBounds ? (
-              <Section title="Custom index">
+              <Section title="Assignment" aside={customIndexButton} pinAside collapsible={shortWindow ? { open: true } : undefined}>
                 <CustomIndexPanel
+                  panelRef={customPanel}
                   draft={draft}
                   min={draftBounds.min}
                   max={draftBounds.max}
@@ -1380,7 +1393,7 @@ export function WorkspacePage(): JSX.Element {
                 />
               </Section>
             ) : (
-              <Section title="Call" collapsible={shortWindow ? { open: callOpen, onOpen: () => setOpenPanel("call") } : undefined}>
+              <Section title="Assignment" aside={customIndexButton} pinAside collapsible={shortWindow ? { open: callOpen, onOpen: () => setOpenPanel("call") } : undefined}>
                 {exposureDropped && <Note>This image is dropped. Restore it to call a phase.</Note>}
                 <CandidateList
                   rows={rows}
@@ -1390,7 +1403,7 @@ export function WorkspacePage(): JSX.Element {
                   onToggle={toggleCandidate}
                   onToggleGroup={toggleGroup}
                   onFormFactor={toggleFormFactor}
-                  onHover={setHoverIds}
+                  onHover={hoverCandidates}
                 />
               </Section>
             )}

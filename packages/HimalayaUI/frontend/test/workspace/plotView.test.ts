@@ -1,12 +1,19 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import { PLOT_VIEWS, usePlotView, viewAxes, viewIntensity } from "../../src/workspace/plotView";
+import { PLOT_VIEWS, stepView, usePlotView, viewAxes, viewIntensity } from "../../src/workspace/plotView";
 
 describe("plot views", () => {
   beforeEach(() => window.localStorage.clear());
 
   it("offers log, linear, log-log and q²I in that order", () => {
     expect(PLOT_VIEWS.map((v) => v.view)).toEqual(["log", "linear", "loglog", "kratky"]);
+  });
+
+  it("steps to the next or previous view and wraps at either end", () => {
+    expect(stepView("log", 1)).toBe("linear");
+    expect(stepView("kratky", 1)).toBe("log");
+    expect(stepView("log", -1)).toBe("kratky");
+    expect(stepView("loglog", -1)).toBe("linear");
   });
 
   it("maps each view to its axis scales", () => {

@@ -672,6 +672,14 @@ describe("WorkspacePage", () => {
     expect(screen.getByTestId("workspace-progress")).toHaveTextContent("3 of 4 reviewed");
   });
 
+  it("lists every phase of a coexistence call, as the mock-up does", () => {
+    const { rerender } = renderAt("/experiments/1/workspace/11");
+    state.corpus = state.corpus.map((s) => (s.id === 11 ? { ...s, assignment_state: "indexed", phase: "Im3m", call_phases: ["Im3m", "Pn3m"] } : s));
+    rerender(page("/experiments/1/workspace/11"));
+    const row = within(screen.getByTestId("workspace-samples")).getByRole("button", { current: true });
+    expect(within(row).getByTestId("workspace-status")).toHaveTextContent("Im3m + Pn3m");
+  });
+
   it("Z jumps to the next unreviewed sample, like Gradescope's next ungraded", () => {
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "z" });
@@ -1838,6 +1846,47 @@ describe("WorkspacePage", () => {
     expect(ticks()).toBe(logTicks);
   });
 
+  it("V steps forward through the plot views and Shift+V steps back, wrapping", () => {
+    state.trace = makeTrace(1);
+    renderAt("/experiments/1/workspace/10");
+    const pressed = (): string | null =>
+      within(screen.getByRole("group", { name: "Plot view" })).getByRole("button", { pressed: true }).textContent;
+    expect(pressed()).toBe("Log");
+    fireEvent.keyDown(window, { key: "v" });
+    expect(pressed()).toBe("Linear");
+    fireEvent.keyDown(window, { key: "v" });
+    fireEvent.keyDown(window, { key: "v" });
+    expect(pressed()).toBe("q²I");
+    expect(screen.getByTestId("workspace-trace").textContent).toContain("q²·I");
+    fireEvent.keyDown(window, { key: "v" });
+    expect(pressed()).toBe("Log");
+    fireEvent.keyDown(window, { key: "V", shiftKey: true });
+    expect(pressed()).toBe("q²I");
+    expect(currentView()).toBe("q²I (Kratky)");
+  });
+
+  it("V does nothing while typing in the sample filter", () => {
+    state.trace = makeTrace(1);
+    renderAt("/experiments/1/workspace/10");
+    const filter = document.getElementById("workspace-filter")!;
+    filter.focus();
+    fireEvent.keyDown(filter, { key: "v" });
+    expect(currentView()).toBe("Log");
+  });
+
+  it("the plot view buttons switch the view directly and mark the current one", () => {
+    state.trace = makeTrace(1);
+    renderAt("/experiments/1/workspace/10");
+    const group = screen.getByRole("group", { name: "Plot view" });
+    fireEvent.click(within(group).getByRole("button", { name: "Log-log plot" }));
+    expect(currentView()).toBe("Log-log");
+    fireEvent.click(within(group).getByRole("button", { name: "q²I (Kratky) plot" }));
+    expect(currentView()).toBe("q²I (Kratky)");
+    expect(within(group).getByRole("button", { name: "q²I (Kratky) plot" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(group).getByRole("button", { name: "Log plot" })).toHaveAttribute("aria-pressed", "false");
+    expect(fireEvent.mouseDown(within(group).getByRole("button", { name: "Linear plot" }))).toBe(false);
+  });
+
   it("the difference replaces the trace and follows the plot view", () => {
     state.trace = makeTrace(1);
     const flat = makeTrace(1);
@@ -2531,23 +2580,23 @@ describe("WorkspacePage", () => {
 
   it("titles the phase list Call and the exposure details Exposure", () => {
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByRole("heading", { name: "Call" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Assignment" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Image" })).toBeInTheDocument();
   });
 
-  it("folds Call and Frame as an accordion on a short window, and opening a custom index shows it in place of Call", () => {
+  it("folds Assignment and Image as an accordion on a short window, and opening a custom index from the folded Assignment header shows it in place of the list", () => {
     vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(max-height: 860px)", media: query, addEventListener: () => {}, removeEventListener: () => {} }));
     try {
       renderAt("/experiments/1/workspace/10");
       const tools = screen.getByRole("complementary", { name: "Tools" });
-      const call = within(tools).getByRole("button", { name: /Call/ });
+      const call = within(tools).getByRole("button", { name: /Assignment/ });
       const exposure = within(tools).getByRole("button", { name: /^Image/ });
       expect(call).toHaveAttribute("aria-expanded", "true");
       expect(exposure).toHaveAttribute("aria-expanded", "false");
       expect(within(tools).queryByText("File")).toBeNull();
       fireEvent.click(exposure);
       expect(exposure).toHaveAttribute("aria-expanded", "true");
-      expect(within(tools).getByRole("button", { name: /Call/ })).toHaveAttribute("aria-expanded", "false");
+      expect(within(tools).getByRole("button", { name: /Assignment/ })).toHaveAttribute("aria-expanded", "false");
       expect(within(tools).getByText("File")).toBeInTheDocument();
       fireEvent.click(screen.getByRole("button", { name: /Custom index/ }));
       expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
@@ -2582,19 +2631,22 @@ describe("WorkspacePage", () => {
     }
   });
 
-  it("puts the Call list first in the tools column, then the indexing plot, then the exposure", () => {
+  it("puts the Assignment list first in the tools column, then the indexing plot, then the exposure", () => {
     renderAt("/experiments/1/workspace/10");
     const tools = screen.getByRole("complementary", { name: "Tools" });
     const headings = within(tools).getAllByRole("heading").map((h) => h.textContent);
-    expect(headings).toEqual(["Call", "Indexing", "Image"]);
+    expect(headings).toEqual(["Assignment", "Indexing", "Image"]);
   });
 
-  it("the Custom index button in the indexing section opens a custom index", () => {
+  it("the Custom index button sits in the Assignment header and stays there while the custom index it opens replaces the list", () => {
     renderAt("/experiments/1/workspace/10");
-    const button = screen.getByRole("button", { name: /Custom index/ });
+    const header = () => screen.getByRole("heading", { name: "Assignment" }).closest("header")!;
+    const button = within(header()).getByRole("button", { name: /Custom index/ });
+    expect(within(screen.getByRole("heading", { name: "Indexing" }).closest("header")!).queryByRole("button", { name: /Custom index/ })).toBeNull();
     expect(button).toHaveTextContent("Custom index I");
     fireEvent.click(button);
     expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
+    expect(within(header()).getByRole("button", { name: /Custom index/ })).toBe(button);
     expect(button).toHaveAttribute("aria-pressed", "true");
     expect(button).toHaveTextContent("Custom index Esc");
   });
