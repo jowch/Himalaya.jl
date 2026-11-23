@@ -16,7 +16,7 @@ function get_client_op_id(req::HTTP.Request)
 end
 
 function get_or_create_user!(db::SQLite.DB, username::String)
-    rows = Tables.rowtable(DBInterface.execute(db,
+    rows = sqlrows(DBInterface.execute(db,
         "SELECT id FROM users WHERE username = ?", [username]))
     isempty(rows) || return Int(rows[1].id)
     res = DBInterface.execute(db,

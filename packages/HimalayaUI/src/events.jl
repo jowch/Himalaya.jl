@@ -137,7 +137,7 @@ function apply_event!(::InTransaction, db::SQLite.DB, req;
         # and return it. (SQLite raises a generic SQLiteException; match
         # by message text since there's no stable error code surface.)
         if client_op_id !== nothing && occursin("UNIQUE constraint failed", sprint(showerror, err))
-            existing = Tables.rowtable(DBInterface.execute(db,
+            existing = sqlrows(DBInterface.execute(db,
                 """SELECT id FROM user_actions
                    WHERE client_op_id = ? AND action = ? AND entity_id = ?
                    LIMIT 1""",
@@ -546,7 +546,7 @@ Used by broadcast_event! to format the `actor` field in SSE frames so
 clients can self-echo-filter their own edits.
 """
 function lookup_username(db::SQLite.DB, user_id::Integer)::Union{String, Nothing}
-    rows = Tables.rowtable(DBInterface.execute(db,
+    rows = sqlrows(DBInterface.execute(db,
         "SELECT username FROM users WHERE id = ?", [Int(user_id)]))
     isempty(rows) || ismissing(rows[1].username) ? nothing : String(rows[1].username)
 end
@@ -746,7 +746,7 @@ function rebuild_views_from_log!(db::SQLite.DB, entity_id::Integer;
                                   entity_type::String = "exposure")
     entity_type == "exposure" && return _rebuild_exposure_with_call!(db, Int(entity_id))
     entity_type == "sample" && return _rebuild_sample_with_call!(db, Int(entity_id))
-    rows = Tables.rowtable(DBInterface.execute(db,
+    rows = sqlrows(DBInterface.execute(db,
         """SELECT id, action, entity_id, payload
            FROM user_actions
            WHERE entity_type = ? AND entity_id = ?

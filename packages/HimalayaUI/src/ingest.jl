@@ -16,7 +16,7 @@ end
 _nothing_if_missing(x) = ismissing(x) ? nothing : x
 
 function backfill_monitors!(db::SQLite.DB, experiment_id::Int)
-    rows = Tables.rowtable(DBInterface.execute(db,
+    rows = sqlrows(DBInterface.execute(db,
         "SELECT id, prp_path FROM exposures
           WHERE experiment_id = ? AND prp_path IS NOT NULL AND monitors_read = 0",
         [experiment_id]))
@@ -109,13 +109,13 @@ function _scan_setup!(db::SQLite.DB, experiment_id::Int, setup;
     lock(_DB_WRITE_LOCK) do
         SQLite.transaction(db) do
             existing_filenames = Set{String}(String(r.filename)
-                for r in Tables.rowtable(DBInterface.execute(db,
+                for r in sqlrows(DBInterface.execute(db,
                     "SELECT filename FROM exposures WHERE setup_id = ? AND filename IS NOT NULL",
                     [setup_id])))
 
             for gl in grouping.loads
                 any(ge -> !(ge.stem in existing_filenames), (ge for gs in gl.samples for ge in gs.exposures)) || continue
-                existing_load = Tables.rowtable(DBInterface.execute(db,
+                existing_load = sqlrows(DBInterface.execute(db,
                     "SELECT id FROM loads WHERE setup_id = ? AND load_index = ?",
                     [setup_id, gl.load_index]))
                 if isempty(existing_load)
@@ -133,7 +133,7 @@ function _scan_setup!(db::SQLite.DB, experiment_id::Int, setup;
 
                 for gs in gl.samples
                     any(ge -> !(ge.stem in existing_filenames), gs.exposures) || continue
-                    existing_sample = Tables.rowtable(DBInterface.execute(db,
+                    existing_sample = sqlrows(DBInterface.execute(db,
                         "SELECT id FROM samples WHERE setup_id = ? AND load_id = ? AND slot_index = ?",
                         [setup_id, load_id, gs.slot_index]))
                     if isempty(existing_sample)
@@ -201,11 +201,14 @@ end
 
 const NO_TRACE = "no trace"
 
-function _file_finder(base::AbstractString, pattern::AbstractString; strip_acquisition::Bool = false)
+_file_finder(base::AbstractString, pattern::AbstractString; strip_acquisition::Bool = false) =
+    _file_finder(String(base), String(pattern); strip_acquisition)
+
+function _file_finder(base::String, pattern::String; strip_acquisition::Bool = false)
     pattern_dir = dirname(pattern)
     if occursin("{name}", pattern_dir)
         return function (stem)
-            p = joinpath(base, replace(pattern, "{name}" => stem))
+            p = joinpath(base, replace(pattern, "{name}" => String(stem)))
             isfile(p) ? p : nothing
         end
     end
@@ -217,6 +220,7 @@ function _file_finder(base::AbstractString, pattern::AbstractString; strip_acqui
     end
     leaf = basename(pattern)
     function (stem)
+        stem = String(stem)
         candidate = replace(leaf, "{name}" => stem)
         candidate in names && return joinpath(dir, candidate)
         if strip_acquisition
@@ -239,7 +243,7 @@ function _stat_signature(path::AbstractString)
 end
 
 function analyze_or_record!(db::SQLite.DB, exposure_id::Int, analysis_dir::AbstractString)
-    row = first(Tables.rowtable(DBInterface.execute(db,
+    row = first(sqlrows(DBInterface.execute(db,
         "SELECT filename FROM exposures WHERE id = ?", [exposure_id])))
     trace = resolve_trace_path(analysis_dir, integration_pattern_for_exposure(db, exposure_id), String(row.filename))
     error_text = if trace === nothing
@@ -264,7 +268,7 @@ function analyze_or_record!(db::SQLite.DB, exposure_id::Int, analysis_dir::Abstr
 end
 
 function ingest_problems(db::SQLite.DB, experiment_id::Int)
-    rows = Tables.rowtable(DBInterface.execute(db, """
+    rows = sqlrows(DBInterface.execute(db, """
         SELECT e.id, e.filename, e.analysis_error, e.sample_id, s.name AS sample_name
           FROM exposures e LEFT JOIN samples s ON s.id = e.sample_id
          WHERE e.experiment_id = ? AND e.analysis_error IS NOT NULL
@@ -282,7 +286,7 @@ pending_analysis_ids(db::SQLite.DB, experiment_id::Int; retry_failed::Bool = fal
                   for st in setups_of(db, experiment_id; included_only = true)); init = Int[])
 
 function _pending_setup_ids(db::SQLite.DB, setup; retry_failed::Bool = false)
-    rows = Tables.rowtable(DBInterface.execute(db, """
+    rows = sqlrows(DBInterface.execute(db, """
         SELECT id, filename, analysis_error, analysis_version, analysis_trace_stat FROM exposures
          WHERE setup_id = ?2 AND filename IS NOT NULL
            AND (trace_hash IS NULL OR analysis_version IS NULL OR analysis_version != ?1)
@@ -316,7 +320,7 @@ function _insertable_setup_stems(db::SQLite.DB, r)
     listing === nothing && return String[]
     _, tif_files, tif_suffix = listing
     stems = String[f[1:end-length(tif_suffix)] for f in tif_files]
-    known = Set(String(x.filename) for x in Tables.rowtable(DBInterface.execute(db,
+    known = Set(String(x.filename) for x in sqlrows(DBInterface.execute(db,
         "SELECT filename FROM exposures WHERE setup_id = ? AND filename IS NOT NULL", [Int(r.id)])))
     find_prp = _file_finder(data_dir, coalesce(r.metadata_pattern, "{name}.prp"))
     has_prp(stem) = find_prp(stem) !== nothing
@@ -330,7 +334,7 @@ function ingest_has_work(db::SQLite.DB, experiment_id::Int)::Bool
 end
 
 function _fill_unset_geometry!(db::SQLite.DB, setup_id::Int, geo::NamedTuple)
-    current = first(Tables.rowtable(DBInterface.execute(db,
+    current = first(sqlrows(DBInterface.execute(db,
         """SELECT energy_kev_source, flight_path_m_source,
                   beam_center_x_source, beam_center_y_source, pixel_size_um_source
              FROM setups WHERE id = ?""", [setup_id])))

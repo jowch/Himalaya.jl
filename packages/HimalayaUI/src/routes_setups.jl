@@ -17,7 +17,7 @@ function _setup_patch(db, row, body)
         v = _body_get(body, :included)
         v isa Bool || return "included must be true or false"
         if !v && Int(row.included) == 1
-            others = Tables.rowtable(DBInterface.execute(db,
+            others = sqlrows(DBInterface.execute(db,
                 "SELECT COUNT(*) AS c FROM setups WHERE experiment_id = ? AND included = 1 AND id != ?",
                 [Int(row.experiment_id), Int(row.id)]))
             Int(first(others).c) == 0 && return "keep at least one setup shown"

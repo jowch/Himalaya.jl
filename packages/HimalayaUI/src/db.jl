@@ -42,9 +42,9 @@ const MIGRATION_PEAK_PROVENANCE = "peak_provenance_v1"
 
 # Sentinel helpers (ingestion redesign): gate-read and marker-write for the
 # `schema_migrations` table.
-_migrated(db::SQLite.DB, name::AbstractString) = !isempty(Tables.rowtable(DBInterface.execute(db,
+_migrated(db::SQLite.DB, name::AbstractString) = !isempty(sqlrows(DBInterface.execute(db,
     "SELECT 1 FROM schema_migrations WHERE name = ?", [name])))
-_table_exists(db::SQLite.DB, name::AbstractString) = !isempty(Tables.rowtable(DBInterface.execute(db,
+_table_exists(db::SQLite.DB, name::AbstractString) = !isempty(sqlrows(DBInterface.execute(db,
     "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", [name])))
 
 _record_migration!(db::SQLite.DB, name::AbstractString) = DBInterface.execute(db,
@@ -52,7 +52,7 @@ _record_migration!(db::SQLite.DB, name::AbstractString) = DBInterface.execute(db
 
 # Column names of a table — lets ADD COLUMN migrations stay idempotent on a
 # partially-migrated DB by skipping columns that already exist.
-cols_of(db, table) = String.(getproperty.(Tables.rowtable(
+cols_of(db, table) = String.(getproperty.(sqlrows(
     DBInterface.execute(db, "PRAGMA table_info($table)")), :name))
 
 const SCHEMA = """
@@ -334,10 +334,10 @@ know that "merge the duplicate custom groups" is the right next step.
 No-op on truly-fresh DBs (the `index_groups` table doesn't exist yet).
 """
 function preflight_index_groups_uniqueness!(db::SQLite.DB)
-    has_table = !isempty(Tables.rowtable(DBInterface.execute(db,
+    has_table = !isempty(sqlrows(DBInterface.execute(db,
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name='index_groups'")))
     has_table || return
-    dups = Tables.rowtable(DBInterface.execute(db, """
+    dups = sqlrows(DBInterface.execute(db, """
         SELECT exposure_id, COUNT(*) AS n FROM index_groups
         WHERE kind = 'custom' GROUP BY exposure_id HAVING n > 1
     """))
@@ -465,7 +465,7 @@ function migrate_schema!(db::SQLite.DB)
     # around at this point, something went wrong in the migration path
     # (e.g. partial state from an aborted run). Warn loudly so operators
     # see it in the daemon log.
-    legacy = Tables.rowtable(DBInterface.execute(db,
+    legacy = sqlrows(DBInterface.execute(db,
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name='peaks'"))
     if !isempty(legacy)
         @warn "Legacy 'peaks' table still present after R2 migration — investigate"
@@ -546,7 +546,7 @@ function migrate_schema!(db::SQLite.DB)
 end
 
 function migrate_label_colors!(db::SQLite.DB)
-    has(t) = !isempty(Tables.rowtable(DBInterface.execute(db,
+    has(t) = !isempty(sqlrows(DBInterface.execute(db,
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", [t])))
     if has("tag_colors") && !has("label_colors")
         DBInterface.execute(db, "ALTER TABLE tag_colors RENAME TO label_colors")
@@ -671,7 +671,7 @@ function migrate_exposures_experiment_id!(db::SQLite.DB)
         """)
 
         # FAIL-FAST: any exposure with no derivable experiment_id is a data error (spec §10 / P1-5)
-        orphans = Tables.rowtable(DBInterface.execute(db,
+        orphans = sqlrows(DBInterface.execute(db,
             "SELECT id, filename FROM exposures WHERE experiment_id IS NULL"))
         isempty(orphans) || error(
             "migrate_exposures_experiment_id!: $(length(orphans)) exposures have no derivable " *
@@ -692,7 +692,7 @@ function migrate_exposures_experiment_id!(db::SQLite.DB)
         #         a silent delete could drop a distinct exposure. (np counts only non-NULLs.)
         # filename IS NOT NULL: a UNIQUE index treats multiple NULLs as distinct, so NULL
         # filenames are not collisions and must be excluded from the GROUP BY.
-        dupes = Tables.rowtable(DBInterface.execute(db, """
+        dupes = sqlrows(DBInterface.execute(db, """
             SELECT experiment_id, filename,
                    COUNT(*) AS n, COUNT(DISTINCT image_path) AS np
               FROM exposures
@@ -713,7 +713,7 @@ function migrate_exposures_experiment_id!(db::SQLite.DB)
         # Survivor = analyzed-first (trace_hash present), lowest-id tiebreak.
         nonsurvivors = Int[]
         for d in dupes  # only np==1 (proven-redundant) groups remain (the rest errored above)
-            rows = Tables.rowtable(DBInterface.execute(db, """
+            rows = sqlrows(DBInterface.execute(db, """
                 SELECT id FROM exposures
                  WHERE experiment_id IS ? AND filename = ?
                  ORDER BY (trace_hash IS NULL), id
@@ -940,18 +940,18 @@ function backfill_load_sessions!(db::SQLite.DB)
     # Tolerate the loads table not yet existing (very old DBs where
     # migrate_loads_table! hasn't installed it — the sentinel below still fires
     # so a subsequent open_db doesn't re-run and hit the missing table again).
-    has_loads = !isempty(Tables.rowtable(DBInterface.execute(db,
+    has_loads = !isempty(sqlrows(DBInterface.execute(db,
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name='loads'")))
     if has_loads
         # Experiments that have at least one load with NULL session_id.
-        exp_ids = Int[Int(r.experiment_id) for r in Tables.rowtable(DBInterface.execute(db,
+        exp_ids = Int[Int(r.experiment_id) for r in sqlrows(DBInterface.execute(db,
             "SELECT DISTINCT experiment_id FROM loads WHERE session_id IS NULL"))]
         for eid in exp_ids
             # Read ALL of this experiment's loads (no NULL filter): session assignment
             # is holistic over the ordered start-times, and `_assign_sessions` is a pure
             # deterministic function of that full set — so re-deriving every load is safe
             # even if some already held a session_id (a mixed state no writer produces).
-            rows = Tables.rowtable(DBInterface.execute(db,
+            rows = sqlrows(DBInterface.execute(db,
                 "SELECT id, start_time FROM loads WHERE experiment_id = ? ORDER BY start_time",
                 [eid]))
             isempty(rows) && continue
@@ -1013,13 +1013,13 @@ function migrate_speculative_peak_durability!(db::SQLite.DB)
             PRIMARY KEY (index_id, ratio_position)
         )""")
 
-    already = Tables.rowtable(DBInterface.execute(db,
+    already = sqlrows(DBInterface.execute(db,
         "SELECT 1 FROM schema_migrations WHERE name = ?",
         [MIGRATION_SPECULATIVE_PEAK_DURABILITY]))
     isempty(already) || return nothing
 
     SQLite.transaction(db) do
-        spec_rows = Tables.rowtable(DBInterface.execute(db,
+        spec_rows = sqlrows(DBInterface.execute(db,
             "SELECT id, phase, basis FROM indices WHERE kind = 'speculative'"))
         for r in spec_rows
             ismissing(r.basis) && continue
@@ -1213,7 +1213,7 @@ function migrate_sample_calls!(db::SQLite.DB)
     _migrated(db, MIGRATION_SAMPLE_CALLS) && return nothing
     SQLite.transaction(db) do
         last_event = Dict{Int, Int}()
-        for r in Tables.rowtable(DBInterface.execute(db, """
+        for r in sqlrows(DBInterface.execute(db, """
                 SELECT entity_id AS eid, MAX(id) AS last FROM user_actions
                  WHERE entity_type = 'exposure'
                    AND action IN ('assignment_add', 'assignment_remove', 'assignment_set_state')
@@ -1221,19 +1221,19 @@ function migrate_sample_calls!(db::SQLite.DB)
             last_event[Int(r.eid)] = Int(r.last)
         end
         members = Dict{Int, Vector{Int}}()
-        for r in Tables.rowtable(DBInterface.execute(db,
+        for r in sqlrows(DBInterface.execute(db,
                 "SELECT exposure_id AS eid, index_id AS iid FROM assignment_members ORDER BY index_id"))
             push!(get!(members, Int(r.eid), Int[]), Int(r.iid))
         end
         states = Dict{Int, String}()
-        for r in Tables.rowtable(DBInterface.execute(db,
+        for r in sqlrows(DBInterface.execute(db,
                 "SELECT exposure_id AS eid, state FROM assignments"))
             states[Int(r.eid)] = String(r.state)
         end
         carries(i) = haskey(members, i) || get(states, i, "indexed") != "indexed"
         by_sample = Dict{Int, Vector{NamedTuple}}()
         sel = "selected" in cols_of(db, "exposures") ? "selected" : "0 AS selected"
-        for e in Tables.rowtable(DBInterface.execute(db,
+        for e in sqlrows(DBInterface.execute(db,
                 "SELECT id, sample_id, $sel, status FROM exposures
                   WHERE sample_id IS NOT NULL ORDER BY id"))
             push!(get!(by_sample, Int(e.sample_id), NamedTuple[]), e)
@@ -1275,7 +1275,7 @@ end
 function migrate_index_peaks_ratio_int!(db::SQLite.DB)
     _migrated(db, MIGRATION_RATIO_POSITION_INT) && return nothing
     unknown = SQLite.transaction(db) do
-        rows = Tables.rowtable(DBInterface.execute(db, """
+        rows = sqlrows(DBInterface.execute(db, """
             SELECT rowid AS rid,
                    hex(substr(ratio_position, 1, 3)) AS magic,
                    hex(substr(ratio_position, -1)) AS last
@@ -1335,7 +1335,7 @@ confirmation is silently lost. Post-Plan-A confirmations ride `assignment_add`
 and round-trip through the log normally.
 """
 function migrate_assignments!(db::SQLite.DB)
-    already = Tables.rowtable(DBInterface.execute(db,
+    already = sqlrows(DBInterface.execute(db,
         "SELECT 1 FROM schema_migrations WHERE name = ?", [MIGRATION_ASSIGNMENTS]))
     isempty(already) || return nothing
 
@@ -1368,7 +1368,7 @@ queries on legacy events.
 Idempotent: returns early if no legacy rows remain.
 """
 function migrate_r4_rebase_entity_type!(db::SQLite.DB)
-    legacy = first(Tables.rowtable(DBInterface.execute(db, """
+    legacy = first(sqlrows(DBInterface.execute(db, """
         SELECT COUNT(*) AS n FROM user_actions
         WHERE entity_type IN ('peak', 'index')
     """))).n
@@ -1442,7 +1442,7 @@ function migrate_pk_to_autoincrement!(db::SQLite.DB)
     # idempotent on fresh DBs.
     needs_migration = false
     for t in tables
-        rows = Tables.rowtable(DBInterface.execute(db,
+        rows = sqlrows(DBInterface.execute(db,
             "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", [t]))
         isempty(rows) && continue  # table absent (e.g. peaks on R2.2+ DBs) — skip
         if !occursin("AUTOINCREMENT", String(rows[1].sql))
@@ -1457,11 +1457,11 @@ function migrate_pk_to_autoincrement!(db::SQLite.DB)
     # legacy `peaks` rows are handled by migrate_r2_split_peaks! instead.
     schema_tables = let db_tmp = SQLite.DB()
         create_schema!(db_tmp)
-        Set(String[String(r.name) for r in Tables.rowtable(DBInterface.execute(db_tmp,
+        Set(String[String(r.name) for r in sqlrows(DBInterface.execute(db_tmp,
             "SELECT name FROM sqlite_master WHERE type='table'"))])
     end
     tables_to_migrate = filter(t ->
-        !isempty(Tables.rowtable(DBInterface.execute(db,
+        !isempty(sqlrows(DBInterface.execute(db,
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", [t]))) &&
         t in schema_tables,
         tables)
@@ -1489,9 +1489,9 @@ function migrate_pk_to_autoincrement!(db::SQLite.DB)
                 # and the freshly-created destination — the old table may be
                 # missing columns added by `migrate_schema!`'s ALTER TABLE pass
                 # (those columns will land NULL, which the schema permits).
-                new_cols = Set(String[String(c.name) for c in Tables.rowtable(
+                new_cols = Set(String[String(c.name) for c in sqlrows(
                     DBInterface.execute(db, "PRAGMA table_info($t)"))])
-                old_cols = String[String(c.name) for c in Tables.rowtable(
+                old_cols = String[String(c.name) for c in sqlrows(
                     DBInterface.execute(db, "PRAGMA table_info(_migrate_old_$t)"))]
                 shared = join(String[c for c in old_cols if c in new_cols], ", ")
                 DBInterface.execute(db,
@@ -1540,7 +1540,7 @@ only swap the dead `_migrate_old_<x>` table name back to its real name
 re-read the schema cache.
 """
 function _fix_fk_references_after_autoincrement_migration!(db::SQLite.DB)
-    broken = Tables.rowtable(DBInterface.execute(db,
+    broken = sqlrows(DBInterface.execute(db,
         "SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE '%_migrate_old_%'"))
     isempty(broken) && return
 
@@ -1584,7 +1584,7 @@ function _fix_fk_references_after_autoincrement_migration!(db::SQLite.DB)
             # migrate_r2_widen_index_peaks_pk! but the constant list above
             # isn't updated (review issue #19). Inside the tx so the throw
             # rolls back the partial REPLACE pass (review issue #25).
-            remaining = Tables.rowtable(DBInterface.execute(db,
+            remaining = sqlrows(DBInterface.execute(db,
                 "SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE '%_migrate_old_%'"))
             isempty(remaining) || error(
                 "_fix_fk_references_after_autoincrement_migration!: tables still " *
@@ -1632,7 +1632,7 @@ blocked them) are renamed to `<name>-2`, `<name>-3`, … ordered by ascending id
 (oldest sample wins the bare name; deterministic across reruns).
 """
 function migrate_samples_naming!(db::SQLite.DB)::Nothing
-    cols = Set(r.name for r in Tables.rowtable(DBInterface.execute(db,
+    cols = Set(r.name for r in sqlrows(DBInterface.execute(db,
         "PRAGMA table_info('samples')")))
     # No samples table yet (partial legacy fixture or pre-create_schema! call) — skip.
     # create_schema! will create it with the canonical shape; nothing to rename.
@@ -1702,16 +1702,16 @@ function migrate_exposures_unique_filename!(db::SQLite.DB)
         # "<x>-2" doesn't collide with our rename target.
         existing = Set{Tuple{Int64,String}}(
             (Int64(r.sample_id), String(r.filename))
-            for r in Tables.rowtable(DBInterface.execute(db,
+            for r in sqlrows(DBInterface.execute(db,
                 "SELECT sample_id, filename FROM exposures WHERE sample_id IS NOT NULL AND filename IS NOT NULL")))
 
-        dups = Tables.rowtable(DBInterface.execute(db, """
+        dups = sqlrows(DBInterface.execute(db, """
             SELECT sample_id, filename FROM exposures
             WHERE sample_id IS NOT NULL AND filename IS NOT NULL
             GROUP BY sample_id, filename HAVING COUNT(*) > 1"""))
 
         for d in dups
-            ids = Tables.rowtable(DBInterface.execute(db,
+            ids = sqlrows(DBInterface.execute(db,
                 "SELECT id FROM exposures WHERE sample_id = ? AND filename = ? ORDER BY id ASC",
                 [d.sample_id, d.filename]))
             for (i, row) in enumerate(ids)
@@ -1747,7 +1747,7 @@ right shape).
 """
 function migrate_r2_widen_index_peaks_pk!(db::SQLite.DB)
     # Sentinel: skip if peak_kind already in PK (rebuilt previously).
-    info = Tables.rowtable(DBInterface.execute(db,
+    info = sqlrows(DBInterface.execute(db,
         "SELECT name, pk FROM pragma_table_info('index_peaks')"))
     already_widened = any(r -> String(r.name) == "peak_kind" && Int(r.pk) > 0, info)
     already_widened && return
@@ -1795,7 +1795,7 @@ no longer exists.
 function migrate_r2_split_peaks!(db::SQLite.DB)
     # Sentinel: if `peaks` table is gone, migration already ran (or was never
     # needed). This is the normal state for all R2.1+ DBs after first run.
-    peaks_exists = !isempty(Tables.rowtable(DBInterface.execute(db,
+    peaks_exists = !isempty(sqlrows(DBInterface.execute(db,
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name='peaks'")))
     peaks_exists || return
 
@@ -1808,18 +1808,18 @@ function migrate_r2_split_peaks!(db::SQLite.DB)
     #     AUTOINCREMENT), so sqlite_sequence has no entry even if rows exist —
     #     fall back to a COUNT(*) check.
     # Fresh DBs need no migration; peaks will be removed in R2.2.
-    peaks_ever_written = !isempty(Tables.rowtable(DBInterface.execute(db,
+    peaks_ever_written = !isempty(sqlrows(DBInterface.execute(db,
         "SELECT 1 FROM sqlite_sequence WHERE name = 'peaks'"))) ||
-        (first(Tables.rowtable(DBInterface.execute(db,
+        (first(sqlrows(DBInterface.execute(db,
             "SELECT COUNT(*) AS n FROM peaks"))).n > 0)
     peaks_ever_written || return
 
     # Sentinel: if auto_peaks already has rows, we're partway through —
     # the only safe action is to bail and require operator intervention.
-    auto_peaks_exists = !isempty(Tables.rowtable(DBInterface.execute(db,
+    auto_peaks_exists = !isempty(sqlrows(DBInterface.execute(db,
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name='auto_peaks'")))
     if auto_peaks_exists
-        auto_count = first(Tables.rowtable(DBInterface.execute(db,
+        auto_count = first(sqlrows(DBInterface.execute(db,
             "SELECT COUNT(*) AS n FROM auto_peaks"))).n
         if Int(auto_count) > 0
             error("migrate_r2_split_peaks!: auto_peaks already has $auto_count rows " *
@@ -1863,7 +1863,7 @@ function migrate_r2_split_peaks!(db::SQLite.DB)
             # Introspect the legacy `peaks` table to handle minimal/partial schemas
             # (e.g. test DBs that only have id, exposure_id, q).
             peaks_cols = Set(String.(
-                Tables.rowtable(DBInterface.execute(db, "PRAGMA table_info(peaks)")) .|>
+                sqlrows(DBInterface.execute(db, "PRAGMA table_info(peaks)")) .|>
                 r -> r.name))
             has_source     = "source"     ∈ peaks_cols
             has_intensity  = "intensity"  ∈ peaks_cols
@@ -1897,7 +1897,7 @@ function migrate_r2_split_peaks!(db::SQLite.DB)
             """)
 
             # 3. Addition curations: row-by-row to capture old→new id mapping.
-            manual_rows = Tables.rowtable(DBInterface.execute(db,
+            manual_rows = sqlrows(DBInterface.execute(db,
                 "SELECT id, exposure_id, q FROM peaks $manual_where"))
             old_to_new = Dict{Int, Int}()
             for r in manual_rows
@@ -1920,7 +1920,7 @@ function migrate_r2_split_peaks!(db::SQLite.DB)
             # 5. Verify no orphan index_peaks rows remain (auto refs survive,
             #    manual refs were just repointed). Any remaining row whose
             #    peak_id doesn't resolve in either table is a bug.
-            orphans = Tables.rowtable(DBInterface.execute(db, """
+            orphans = sqlrows(DBInterface.execute(db, """
                 SELECT ip.peak_id, ip.peak_kind, ip.index_id
                 FROM index_peaks ip
                 WHERE (ip.peak_kind = 'auto'     AND ip.peak_id NOT IN (SELECT id FROM auto_peaks))
@@ -2028,19 +2028,19 @@ function create_exposure!(db::SQLite.DB;
 end
 
 function get_experiment(db::SQLite.DB, id::Int)
-    rows = Tables.rowtable(DBInterface.execute(db,
+    rows = sqlrows(DBInterface.execute(db,
         "SELECT * FROM experiments WHERE id = ?", [id]))
     isempty(rows) && error("experiment $id not found")
     first(rows)
 end
 
 function get_samples(db::SQLite.DB, experiment_id::Int)
-    Tables.rowtable(DBInterface.execute(db,
+    sqlrows(DBInterface.execute(db,
         "SELECT * FROM samples WHERE experiment_id = ? ORDER BY id", [experiment_id]))
 end
 
 function get_exposures(db::SQLite.DB, sample_id::Int)
-    Tables.rowtable(DBInterface.execute(db,
+    sqlrows(DBInterface.execute(db,
         "SELECT * FROM exposures WHERE sample_id = ? ORDER BY id", [sample_id]))
 end
 
@@ -2091,7 +2091,7 @@ function open_db(db_path::AbstractString = default_db_path())::SQLite.DB
     # for existing DBs and a no-op on every subsequent open. Skipped for
     # `:memory:` and shared-cache URI DBs, which can't run WAL.
     #
-    # `Tables.rowtable(...)` drains the result iterator so the prepared
+    # `sqlrows(...)` drains the result iterator so the prepared
     # statement is dropped before `finalize_statements!`. Without the drain,
     # the iterator keeps the PRAGMA's statement attached, and any subsequent
     # DDL (e.g. `DROP TABLE` in tests, or migration loops on legacy DBs)
@@ -2099,7 +2099,7 @@ function open_db(db_path::AbstractString = default_db_path())::SQLite.DB
     # `finalize_statements!` then clears the cache so callers see a
     # quiescent connection.
     if db_path != ":memory:" && !startswith(db_path, "file:")
-        Tables.rowtable(DBInterface.execute(db, "PRAGMA journal_mode = WAL"))
+        sqlrows(DBInterface.execute(db, "PRAGMA journal_mode = WAL"))
         SQLite.finalize_statements!(db)
     end
 

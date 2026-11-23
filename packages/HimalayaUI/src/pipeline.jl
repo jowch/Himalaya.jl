@@ -115,7 +115,7 @@ curations exist, no SG work is done either way. The q-lookup uses
 function effective_peaks(db::SQLite.DB, exposure_id::Int,
                           q_grid::Vector{Float64}, I::Vector{Float64};
                           sharps_full::Union{Vector{Float64}, Nothing} = nothing)
-    auto = Tables.rowtable(DBInterface.execute(db,
+    auto = sqlrows(DBInterface.execute(db,
         "SELECT id, q, sharpness FROM auto_peaks WHERE exposure_id = ? ORDER BY id", [exposure_id]))
     fl   = curation_flags(db, exposure_id, [Float64(r.q) for r in auto])
     adds = fl.adds
@@ -181,7 +181,7 @@ function diff_update_auto_peaks!(db::SQLite.DB, exposure_id::Int,
                                   q_step::Union{Float64, Nothing} = exposure_q_step(db, exposure_id),
                                   found_by::Union{AbstractString, AbstractVector{<:AbstractString}, Nothing} = nothing,
                                   model_id::Union{Integer, Nothing, AbstractVector} = nothing)
-    existing = Tables.rowtable(DBInterface.execute(db,
+    existing = sqlrows(DBInterface.execute(db,
         "SELECT id, q FROM auto_peaks WHERE exposure_id = ? ORDER BY id", [exposure_id]))
     remaining = Set{Int}(Int(r.id) for r in existing)
 
@@ -301,7 +301,7 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
     # invalidates every PK in `index_group_members`, leaving the active set
     # empty after reanalysis. Restricted to kind='auto' members because
     # speculative members keep stable ids across the wipe (see below).
-    custom_member_identities = Tables.rowtable(DBInterface.execute(db, """
+    custom_member_identities = sqlrows(DBInterface.execute(db, """
         SELECT g.id AS group_id, i.phase, i.basis
         FROM index_groups g
         JOIN index_group_members m ON m.group_id = g.id
@@ -318,7 +318,7 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
     # order deterministic: when two identities merge onto one new candidate
     # (see the claim set in the re-attach loop), the member earlier in
     # (phase, basis) order is the one that survives.
-    assignment_member_identities = Tables.rowtable(DBInterface.execute(db, """
+    assignment_member_identities = sqlrows(DBInterface.execute(db, """
         SELECT i.phase, i.basis
         FROM assignment_members m
         JOIN indices i ON i.id = m.index_id
@@ -329,7 +329,7 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
     # gates the seeding below: a curated assignment that loses all its members
     # stays EMPTY (announced via the returned dropped phases), never silently
     # replaced by the fresh machine picks.
-    had_assignment_members = !isempty(Tables.rowtable(DBInterface.execute(db,
+    had_assignment_members = !isempty(sqlrows(DBInterface.execute(db,
         "SELECT 1 FROM assignment_members WHERE exposure_id = ? LIMIT 1",
         [exposure_id])))
 
@@ -339,13 +339,13 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
     # the indexpeaks stage runs (i.e., when the effective peak set changes —
     # an unchanged-set analyze is hash-skipped as a provable no-op and does
     # not re-enter this loop).
-    speculative_intents = Tables.rowtable(DBInterface.execute(db, """
+    speculative_intents = sqlrows(DBInterface.execute(db, """
         SELECT spi.index_id, spi.ratio_position, spi.q AS q_value
         FROM speculative_peak_intents spi
         JOIN indices i ON i.id = spi.index_id
         WHERE i.exposure_id = ? AND i.kind = 'speculative'
         """, [exposure_id]))
-    speculative_index_ids = Tables.rowtable(DBInterface.execute(db,
+    speculative_index_ids = sqlrows(DBInterface.execute(db,
         """SELECT id, phase, basis, basis_locked FROM indices
            WHERE exposure_id = ? AND kind = 'speculative'""",
         [exposure_id]))
@@ -733,7 +733,7 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
     # If any custom group survived with at least one member (auto-reattached
     # OR speculative), it remains the active set — demote the freshly-created
     # auto group.
-    custom_still_populated = Tables.rowtable(DBInterface.execute(db,
+    custom_still_populated = sqlrows(DBInterface.execute(db,
         "SELECT g.id FROM index_groups g
          WHERE g.exposure_id = ? AND g.kind = 'custom'
            AND EXISTS (SELECT 1 FROM index_group_members m WHERE m.group_id = g.id)",
@@ -784,7 +784,7 @@ exposure analysis) to pay the heavier query just to measure size. The
 duplication here is structural, not redundant.
 """
 function _serialized_indices_bytes(db::SQLite.DB, exposure_id::Int)::Int
-    rows = Tables.rowtable(DBInterface.execute(db,
+    rows = sqlrows(DBInterface.execute(db,
         "SELECT id, phase, basis, score, r_squared, lattice_d, status, kind, inputs_hash FROM indices WHERE exposure_id = ?",
         [exposure_id]))
     arr = [Dict(
@@ -802,7 +802,7 @@ function _serialized_indices_bytes(db::SQLite.DB, exposure_id::Int)::Int
 end
 
 function get_indices_for_exposure(db::SQLite.DB, exposure_id::Int)
-    Tables.rowtable(DBInterface.execute(db,
+    sqlrows(DBInterface.execute(db,
         """SELECT id, exposure_id, phase, basis, score, r_squared, lattice_d,
                   status, kind, inputs_hash
            FROM indices WHERE exposure_id = ? ORDER BY score DESC""",
@@ -810,7 +810,7 @@ function get_indices_for_exposure(db::SQLite.DB, exposure_id::Int)
 end
 
 function get_groups_for_exposure(db::SQLite.DB, exposure_id::Int)
-    Tables.rowtable(DBInterface.execute(db,
+    sqlrows(DBInterface.execute(db,
         "SELECT * FROM index_groups WHERE exposure_id = ? ORDER BY id", [exposure_id]))
 end
 
@@ -836,7 +836,7 @@ to `argmin` nearest-grid-index for those rows (heals on next diff_update).
 """
 function synthesize_peaks_result(db::SQLite.DB, exposure_id::Int,
                                   q::Vector{Float64}, I::Vector{Float64})
-    rows = Tables.rowtable(DBInterface.execute(db,
+    rows = sqlrows(DBInterface.execute(db,
         """SELECT q, prominence, sharpness, findpeaks_index
            FROM auto_peaks WHERE exposure_id = ? ORDER BY q""", [exposure_id]))
     qs    = Float64[Float64(r.q)                                           for r in rows]
@@ -863,33 +863,33 @@ end
 const ANALYSIS_VERSION = string(pkgversion(Himalaya), "+3")
 
 function read_analysis_version(db::SQLite.DB, exposure_id::Int)::Union{String, Nothing}
-    rows = Tables.rowtable(DBInterface.execute(db,
+    rows = sqlrows(DBInterface.execute(db,
         "SELECT analysis_version FROM exposures WHERE id = ?", [exposure_id]))
     (isempty(rows) || ismissing(rows[1].analysis_version)) ? nothing : String(rows[1].analysis_version)
 end
 
 function read_trace_hash(db::SQLite.DB, exposure_id::Int)::Union{String, Nothing}
-    rows = Tables.rowtable(DBInterface.execute(db,
+    rows = sqlrows(DBInterface.execute(db,
         "SELECT trace_hash FROM exposures WHERE id = ?", [exposure_id]))
     isempty(rows) && return nothing
     ismissing(rows[1].trace_hash) ? nothing : String(rows[1].trace_hash)
 end
 
 function read_inputs_hash(db::SQLite.DB, exposure_id::Int)::Union{String, Nothing}
-    rows = Tables.rowtable(DBInterface.execute(db,
+    rows = sqlrows(DBInterface.execute(db,
         "SELECT analysis_inputs_hash FROM exposures WHERE id = ?", [exposure_id]))
     isempty(rows) && return nothing
     ismissing(rows[1].analysis_inputs_hash) ? nothing : String(rows[1].analysis_inputs_hash)
 end
 
 function count_auto_peaks(db::SQLite.DB, exposure_id::Int)::Int
-    rows = Tables.rowtable(DBInterface.execute(db,
+    rows = sqlrows(DBInterface.execute(db,
         "SELECT COUNT(*) AS c FROM auto_peaks WHERE exposure_id = ?", [exposure_id]))
     Int(rows[1].c)
 end
 
 function any_add_curations(db::SQLite.DB, exposure_id::Int)::Bool
-    rows = Tables.rowtable(DBInterface.execute(db,
+    rows = sqlrows(DBInterface.execute(db,
         "SELECT 1 AS x FROM peak_curations WHERE exposure_id = ? AND kind = 'add' LIMIT 1",
         [exposure_id]))
     !isempty(rows)
@@ -908,7 +908,7 @@ Mirrors the `hash_peak_set` byte encoding exactly: sort by q, write 16 bytes
 per peak (8 q + 8 sharpness, native order), SHA-256.
 """
 function hash_peak_set_from_db(db::SQLite.DB, exposure_id::Int)::String
-    auto = Tables.rowtable(DBInterface.execute(db,
+    auto = sqlrows(DBInterface.execute(db,
         "SELECT q, sharpness FROM auto_peaks WHERE exposure_id = ? ORDER BY id", [exposure_id]))
     excluded = curation_flags(db, exposure_id, [Float64(r.q) for r in auto]).excluded
 
@@ -949,9 +949,10 @@ route — must resolve through here. Each exposure row must map to its own
 `_tot.dat`: a scan detects `{name}_0_001.tif`, so no two rows share a stem.
 Returns the path if found, else `nothing`.
 """
-function resolve_trace_path(analysis_dir::AbstractString,
-                            integration_pattern::AbstractString,
-                            filename::AbstractString)
+resolve_trace_path(analysis_dir::AbstractString, integration_pattern::AbstractString, filename::AbstractString) =
+    resolve_trace_path(String(analysis_dir), String(integration_pattern), String(filename))
+
+function resolve_trace_path(analysis_dir::String, integration_pattern::String, filename::String)
     exact = joinpath(analysis_dir, replace(integration_pattern, "{name}" => filename))
     isfile(exact) && return exact
     stripped = acquisition_stem(filename)
@@ -1017,7 +1018,7 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
                             req::Union{HTTP.Request, Nothing}=nothing)
     t0 = time()
 
-    rows = Tables.rowtable(DBInterface.execute(db,
+    rows = sqlrows(DBInterface.execute(db,
         "SELECT filename FROM exposures WHERE id = ?", [Int(exposure_id)]))
     isempty(rows) && error("exposure $exposure_id not found")
     filename      = rows[1].filename
@@ -1216,7 +1217,7 @@ function _serialized_indices_for_broadcast(db::SQLite.DB, exposure_id::Int)
     # server-internal column doesn't leak into every SSE post_state frame.
     # The list mirrors the frontend IndexEntry interface (minus the joined
     # `peaks`/`predicted_q` which are added below).
-    indices = Tables.rowtable(DBInterface.execute(db,
+    indices = sqlrows(DBInterface.execute(db,
         """SELECT id, exposure_id, phase, basis, score, r_squared, lattice_d,
                   status, kind, inputs_hash
            FROM indices WHERE exposure_id = ? ORDER BY score DESC""",
@@ -1227,7 +1228,7 @@ function _serialized_indices_for_broadcast(db::SQLite.DB, exposure_id::Int)
     # client-side. On exposures with many auto-group indices this fires
     # on every peak mutation/analyze on the SSE hot path.
     index_ids = Set(Int(ix.id) for ix in indices)
-    all_peak_rows = Tables.rowtable(DBInterface.execute(db,
+    all_peak_rows = sqlrows(DBInterface.execute(db,
         """SELECT ip.index_id, ip.peak_id, ip.ratio_position, ip.residual,
                   COALESCE(ap.q, pc.q) AS q_observed
            FROM index_peaks ip

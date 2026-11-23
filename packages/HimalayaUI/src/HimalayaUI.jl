@@ -1,5 +1,6 @@
 module HimalayaUI
 
+include("db_rows.jl")
 include("db.jl")
 include("setups.jl")
 include("image.jl")

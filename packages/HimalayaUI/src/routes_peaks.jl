@@ -52,7 +52,7 @@ function _queue_peak_added_broadcast!(result, entity_id::Integer,
 end
 
 function _auto_peak_row(db::SQLite.DB, id::Int)
-    owner = Tables.rowtable(DBInterface.execute(db,
+    owner = sqlrows(DBInterface.execute(db,
         "SELECT exposure_id FROM auto_peaks WHERE id = ?", [id]))
     isempty(owner) && return nothing
     rows = peak_listing(db, Int(owner[1].exposure_id); include_superseded = true)
@@ -211,7 +211,7 @@ function register_peaks_routes!()
                 end
             elseif Int(peak_row.excluded) == 1
                 # peak_unexcluded: find the prior peak_excluded event to record as undoes.
-                prior = Tables.rowtable(DBInterface.execute(db, """
+                prior = sqlrows(DBInterface.execute(db, """
                     SELECT id FROM user_actions
                     WHERE action = 'peak_excluded'
                       AND entity_type = 'exposure' AND entity_id = ?
@@ -266,7 +266,7 @@ function register_peaks_routes!()
     @delete "/api/peaks/manual/{id}" function(req::HTTP.Request, id::Int)
         db = current_db()
         return with_idempotency(db, req) do
-            curation_rows = Tables.rowtable(DBInterface.execute(db,
+            curation_rows = sqlrows(DBInterface.execute(db,
                 "SELECT exposure_id, q FROM peak_curations WHERE id = ? AND kind = 'add'",
                 [id]))
             if isempty(curation_rows)

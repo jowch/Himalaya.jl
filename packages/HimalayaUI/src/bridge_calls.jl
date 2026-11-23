@@ -18,7 +18,7 @@ _side(db, sid::Int) = vcat(sid, bridge_mates(db, sid))
 _same_call(x, y) = x.state == y.state && x.phases == y.phases
 
 function _call_conflict_body(db, a::Int, b::Int, ca, cb)
-    name(sid) = String(first(Tables.rowtable(DBInterface.execute(db,
+    name(sid) = String(first(sqlrows(DBInterface.execute(db,
         "SELECT name FROM samples WHERE id = ?", [sid]))).name)
     Dict(:error => "these samples have different calls; say which to keep",
          :calls => [Dict(:sample_id => sid, :name => name(sid), :state => c.state, :call_phases => c.phases)
@@ -129,7 +129,7 @@ function migrate_share_bridged_calls!(db::SQLite.DB)
 end
 
 function _align_mates_to_indexed!(db, req, exposure_id::Int)
-    row = Tables.rowtable(DBInterface.execute(db,
+    row = sqlrows(DBInterface.execute(db,
         "SELECT sample_id FROM exposures WHERE id = ?", [exposure_id]))
     (isempty(row) || row[1].sample_id === missing) && return Tuple{Int, Any}[]
     align_call_state!(db, req, bridge_mates(db, Int(row[1].sample_id)), "indexed"; broadcast = false)

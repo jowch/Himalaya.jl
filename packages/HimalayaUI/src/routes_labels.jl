@@ -3,7 +3,7 @@ using HTTP, JSON3, DBInterface, Tables, Oxygen
 const MAX_LABEL_LENGTH = 64
 
 function labels_for_experiment(db, exp_id::Int)
-    rows = Tables.rowtable(DBInterface.execute(db,
+    rows = sqlrows(DBInterface.execute(db,
         """SELECT l.id, l.sample_id, l.label, l.state, l.source
              FROM sample_labels l JOIN samples s ON s.id = l.sample_id
             WHERE s.experiment_id = ? AND l.state != 'removed'
@@ -20,7 +20,7 @@ function normalize_label(raw)
 end
 
 function _label_state(db, sample_id::Int, label::String)
-    rows = Tables.rowtable(DBInterface.execute(db,
+    rows = sqlrows(DBInterface.execute(db,
         "SELECT state FROM sample_labels WHERE sample_id = ? AND label = ? COLLATE NOCASE",
         [sample_id, label]))
     isempty(rows) ? nothing : String(rows[1].state)
@@ -66,7 +66,7 @@ function restore_label_suggestion!(db, req, sample_id::Int, label::String, exp_i
 end
 
 function _live_sample_experiment(db, sample_id::Int)
-    rows = Tables.rowtable(DBInterface.execute(db,
+    rows = sqlrows(DBInterface.execute(db,
         "SELECT experiment_id FROM samples WHERE id = ?", [sample_id]))
     isempty(rows) || ismissing(rows[1].experiment_id) ? nothing : Int(rows[1].experiment_id)
 end

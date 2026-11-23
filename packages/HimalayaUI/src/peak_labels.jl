@@ -22,7 +22,7 @@ function _load_label_trace(db::SQLite.DB, r)
 end
 
 function _latest_snapshot(db::SQLite.DB, exposure_id)
-    rows = Tables.rowtable(DBInterface.execute(db,
+    rows = sqlrows(DBInterface.execute(db,
         "SELECT peaks_json FROM peak_reviews WHERE exposure_id = ? AND direct = 1 ORDER BY id DESC LIMIT 1", [exposure_id]))
     isempty(rows) ? nothing : JSON3.read(String(rows[1].peaks_json))
 end
@@ -34,7 +34,7 @@ function labeled_exposures(db::SQLite.DB; group_by::Symbol = :experiment,
         error("the database has no review snapshots; open it once with the current HimalayaUI to migrate it")
     out = HimalayaPeakModel.LabeledExposure[]
     skips = Dict{Symbol, Int}()
-    rows = Tables.rowtable(DBInterface.execute(db, """
+    rows = sqlrows(DBInterface.execute(db, """
         SELECT e.id, e.filename, e.sample_id, e.experiment_id,
                EXISTS (SELECT 1 FROM peak_reviews r WHERE r.exposure_id = e.id AND r.direct = 1) AS labelled,
                COALESCE((SELECT sc.state = 'form_factor' FROM sample_calls sc
@@ -49,7 +49,7 @@ function labeled_exposures(db::SQLite.DB; group_by::Symbol = :experiment,
             ismissing(key) && throw(SkipExposure(:no_group))
             q, I, σ = _load_label_trace(db, r)
             snap = _latest_snapshot(db, r.id)
-            seen = snap === nothing ? [(q = Float64(x.q), found_by = "hybrid") for x in Tables.rowtable(
+            seen = snap === nothing ? [(q = Float64(x.q), found_by = "hybrid") for x in sqlrows(
                 DBInterface.execute(db, "SELECT q FROM auto_peaks WHERE exposure_id = ? ORDER BY id", [r.id]))] :
                    [(q = Float64(p.q), found_by = String(p.found_by)) for p in snap]
             aq = Float64[p.q for p in seen]
@@ -57,7 +57,7 @@ function labeled_exposures(db::SQLite.DB; group_by::Symbol = :experiment,
             left = .!fl.excluded .& .!fl.superseded
             kept = [p.q for (p, ok) in zip(seen, left) if ok && p.found_by != "model"]
             kept_model = [p.q for (p, ok) in zip(seen, left) if ok && p.found_by == "model"]
-            excl = Float64[x.q for x in Tables.rowtable(DBInterface.execute(db,
+            excl = Float64[x.q for x in sqlrows(DBInterface.execute(db,
                 "SELECT q FROM peak_curations WHERE exposure_id = ? AND kind = 'exclude' ORDER BY id", [r.id]))]
             push!(out, HimalayaPeakModel.LabeledExposure(r.id, Int(key), q, I, σ,
                 Float64[a.q for a in fl.adds], kept, excl, r.labelled == 1, r.ff == 1, kept_model))

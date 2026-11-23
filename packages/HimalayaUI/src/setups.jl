@@ -25,7 +25,7 @@ setup_folder(root_dir::AbstractString) = String(basename(rstrip(String(root_dir)
 function pattern_problem(label, v)
     v === nothing && return nothing
     v isa AbstractString || return "the $label pattern must be a string"
-    count("{name}", v) == 1 || return "the $label pattern must contain {name} exactly once, for example {name}.tif"
+    count("{name}", String(v)) == 1 || return "the $label pattern must contain {name} exactly once, for example {name}.tif"
     nothing
 end
 
@@ -67,24 +67,24 @@ function create_setup!(db::SQLite.DB;
 end
 
 setups_of(db::SQLite.DB, experiment_id::Integer; included_only::Bool = false) =
-    Tables.rowtable(DBInterface.execute(db,
+    sqlrows(DBInterface.execute(db,
         "SELECT * FROM setups WHERE experiment_id = ?" *
         (included_only ? " AND included = 1" : "") * " ORDER BY position, id",
         [Int(experiment_id)]))
 
 function setup_row(db::SQLite.DB, setup_id::Integer)
-    rows = Tables.rowtable(DBInterface.execute(db, "SELECT * FROM setups WHERE id = ?", [Int(setup_id)]))
+    rows = sqlrows(DBInterface.execute(db, "SELECT * FROM setups WHERE id = ?", [Int(setup_id)]))
     isempty(rows) ? nothing : first(rows)
 end
 
 function default_setup_id(db::SQLite.DB, experiment_id::Integer)
-    rows = Tables.rowtable(DBInterface.execute(db,
+    rows = sqlrows(DBInterface.execute(db,
         "SELECT id FROM setups WHERE experiment_id = ? ORDER BY position, id LIMIT 1", [Int(experiment_id)]))
     isempty(rows) ? nothing : Int(first(rows).id)
 end
 
 function exposure_setup(db::SQLite.DB, exposure_id::Integer)
-    rows = Tables.rowtable(DBInterface.execute(db, """
+    rows = sqlrows(DBInterface.execute(db, """
         SELECT st.* FROM exposures e JOIN setups st ON st.id = e.setup_id
          WHERE e.id = ?""", [Int(exposure_id)]))
     isempty(rows) ? nothing : first(rows)
@@ -99,7 +99,7 @@ function _copy_experiments_into_setups!(db::SQLite.DB)
     "data_dir" in exp_cols || return nothing
     shared = [c for c in SETUP_CONFIG_COLUMNS if c in exp_cols]
     sel(c) = endswith(c, "_source") ? "COALESCE(x.$c, 'default') AS $c" : "x.$c"
-    rows = Tables.rowtable(DBInterface.execute(db, """
+    rows = sqlrows(DBInterface.execute(db, """
         SELECT x.id, x.path, $(join((sel(c) for c in shared), ", ")) FROM experiments x
          WHERE x.data_dir IS NOT NULL
            AND NOT EXISTS (SELECT 1 FROM setups st WHERE st.experiment_id = x.id)
@@ -142,7 +142,7 @@ end
 
 function _setup_keyed_indexes!(db::SQLite.DB)
     if _table_exists(db, "exposures") && "setup_id" in cols_of(db, "exposures")
-        idx = Tables.rowtable(DBInterface.execute(db,
+        idx = sqlrows(DBInterface.execute(db,
             "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'exposures_unique_filename'"))
         if isempty(idx) || !occursin("setup_id", String(coalesce(first(idx).sql, "")))
             DBInterface.execute(db, "DROP INDEX IF EXISTS exposures_unique_filename")

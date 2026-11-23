@@ -3,7 +3,7 @@ using HTTP, JSON3, DBInterface, Tables, Oxygen
 function register_trace_routes!()
     @get "/api/exposures/{id}/trace" function(req::HTTP.Request, id::Int)
         db   = current_db()
-        rows = Tables.rowtable(DBInterface.execute(db,
+        rows = sqlrows(DBInterface.execute(db,
             "SELECT e.filename, e.kind, e.transmitted_counts, e.exposure_time, e.counting_time,
                     st.analysis_dir, st.integration_pattern
              FROM exposures e JOIN setups st ON st.id = e.setup_id

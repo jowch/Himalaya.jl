@@ -9,14 +9,14 @@ function review_exposure_ids(db::SQLite.DB, kind::AbstractString,
     if kind in REVIEW_EXPOSURE_KINDS && entity_type == "exposure"
         return [Int(entity_id)]
     elseif kind in REVIEW_SAMPLE_KINDS && entity_type == "sample"
-        return Int[r.id for r in Tables.rowtable(DBInterface.execute(db,
+        return Int[r.id for r in sqlrows(DBInterface.execute(db,
             "SELECT id FROM exposures WHERE sample_id = ? ORDER BY id", [Int(entity_id)]))]
     end
     Int[]
 end
 
 function _snapshot_peaks_json(db::SQLite.DB, exposure_id::Integer)
-    rows = Tables.rowtable(DBInterface.execute(db,
+    rows = sqlrows(DBInterface.execute(db,
         "SELECT q, found_by, model_id FROM auto_peaks WHERE exposure_id = ? ORDER BY id",
         [Int(exposure_id)]))
     JSON3.write([Dict(:q => Float64(r.q), :found_by => String(r.found_by),
@@ -81,7 +81,7 @@ function migrate_peak_provenance!(db::SQLite.DB)
     SQLite.transaction(db) do
         migrate_peak_provenance_schema!(db)
         migrated_at = now_iso()
-        rows = Tables.rowtable(DBInterface.execute(db, """
+        rows = sqlrows(DBInterface.execute(db, """
             SELECT e.id,
                    (EXISTS (SELECT 1 FROM peak_curations c WHERE c.exposure_id = e.id)
                     OR EXISTS (SELECT 1 FROM user_actions ua

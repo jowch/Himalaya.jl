@@ -4,7 +4,7 @@ using DBInterface
 
 function _resolve_experiment(db::SQLite.DB, key::Union{Nothing,AbstractString})
     if key === nothing
-        rows = Tables.rowtable(DBInterface.execute(db,
+        rows = sqlrows(DBInterface.execute(db,
             "SELECT id, name, path FROM experiments ORDER BY id"))
         if length(rows) == 1
             return rows[1]
@@ -22,18 +22,18 @@ function _resolve_experiment(db::SQLite.DB, key::Union{Nothing,AbstractString})
 
     looks_like_path = startswith(key, "/") || startswith(key, ".") || occursin('/', key)
     rows = if !isempty(key) && all(isdigit, key)
-        Tables.rowtable(DBInterface.execute(db,
+        sqlrows(DBInterface.execute(db,
             "SELECT id, name, path FROM experiments WHERE id = ?", [parse(Int, key)]))
     elseif looks_like_path
         plain = rstrip(abspath(key), '/')
-        Tables.rowtable(DBInterface.execute(db,
+        sqlrows(DBInterface.execute(db,
             """SELECT DISTINCT x.id, x.name, x.path FROM experiments x
                  LEFT JOIN setups st ON st.experiment_id = x.id
                 WHERE rtrim(x.path, '/') IN (?1, ?2) OR rtrim(st.data_dir, '/') IN (?1, ?2)
                    OR rtrim(st.root_dir, '/') IN (?1, ?2)""",
             [plain, _canonical_dir(plain)]))
     else
-        Tables.rowtable(DBInterface.execute(db,
+        sqlrows(DBInterface.execute(db,
             "SELECT id, name, path FROM experiments WHERE name = ?", [key]))
     end
     isempty(rows)     && error("No experiment matching '$key'.")
@@ -107,7 +107,7 @@ function cli_analyze(args)
     if p[:all]
         p[:experiment] === nothing ||
             error("--all and --experiment are mutually exclusive.")
-        rows = Tables.rowtable(DBInterface.execute(db,
+        rows = sqlrows(DBInterface.execute(db,
             "SELECT id, name FROM experiments ORDER BY id"))
         isempty(rows) && error("No experiments registered.")
         skipped = 0

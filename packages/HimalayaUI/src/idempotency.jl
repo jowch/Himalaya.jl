@@ -16,7 +16,7 @@ function _drop_op_lock!(op_id::String)
 end
 
 function _lookup_cached_response(db::SQLite.DB, op_id::String)::Union{HTTP.Response, Nothing}
-    rows = Tables.rowtable(DBInterface.execute(db,
+    rows = sqlrows(DBInterface.execute(db,
         "SELECT status_code, body FROM idempotent_responses WHERE client_op_id = ?",
         [op_id]))
     isempty(rows) && return nothing
@@ -86,7 +86,7 @@ end
 
 function gc_idempotent_responses!(db::SQLite.DB; ttl_seconds::Int = 3600)
     expired = lock(_DB_WRITE_LOCK) do
-        Tables.rowtable(DBInterface.execute(db,
+        sqlrows(DBInterface.execute(db,
             """DELETE FROM idempotent_responses
                WHERE created_at < datetime('now', ?)
                RETURNING client_op_id""",

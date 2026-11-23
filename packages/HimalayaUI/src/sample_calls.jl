@@ -1,19 +1,19 @@
 using DBInterface, Tables, SQLite
 
 function sample_call_state(db::SQLite.DB, sample_id::Int)
-    rows = Tables.rowtable(DBInterface.execute(db,
+    rows = sqlrows(DBInterface.execute(db,
         "SELECT state FROM sample_calls WHERE sample_id = ?", [sample_id]))
     isempty(rows) ? "indexed" : String(rows[1].state)
 end
 
-_sample_exists(db::SQLite.DB, sample_id::Int) = !isempty(Tables.rowtable(DBInterface.execute(db,
+_sample_exists(db::SQLite.DB, sample_id::Int) = !isempty(sqlrows(DBInterface.execute(db,
     "SELECT 1 FROM samples WHERE id = ?", [sample_id])))
 
 function _call_groups(db::SQLite.DB, sample_ids::AbstractVector{<:Integer})
     out = Dict(Int(sid) => [Int(sid)] for sid in sample_ids)
     isempty(sample_ids) && return out
     ph = join(fill("?", length(sample_ids)), ",")
-    for r in Tables.rowtable(DBInterface.execute(db, """
+    for r in sqlrows(DBInterface.execute(db, """
             SELECT b.sample_id AS sid, m.sample_id AS mate
               FROM sample_bridges b
               JOIN sample_bridges m ON m.group_id = b.group_id AND m.sample_id <> b.sample_id
@@ -39,7 +39,7 @@ function _own_call_members(db::SQLite.DB, sample_ids::AbstractVector{<:Integer})
     out = Dict{Int, Vector{NamedTuple{(:index_id, :exposure_id, :phase, :score), Tuple{Int, Int, String, Float64}}}}()
     isempty(sample_ids) && return out
     ph = join(fill("?", length(sample_ids)), ",")
-    for r in Tables.rowtable(DBInterface.execute(db, """
+    for r in sqlrows(DBInterface.execute(db, """
             SELECT e.sample_id AS sid, m.index_id AS iid, m.exposure_id AS eid,
                    i.phase AS phase, i.score AS score
               FROM assignment_members m
@@ -58,7 +58,7 @@ function sample_call_states(db::SQLite.DB, sample_ids::AbstractVector{<:Integer}
     out = Dict{Int, String}()
     isempty(sample_ids) && return out
     ph = join(fill("?", length(sample_ids)), ",")
-    for r in Tables.rowtable(DBInterface.execute(db,
+    for r in sqlrows(DBInterface.execute(db,
             "SELECT sample_id, state FROM sample_calls WHERE sample_id IN ($ph)",
             collect(Int, sample_ids)))
         out[Int(r.sample_id)] = String(r.state)
@@ -125,7 +125,7 @@ function _set_exposure_sample_state!(db::SQLite.DB, exposure_id::Int, state::Abs
 end
 
 function _index_sample_if_called!(db::SQLite.DB, exposure_id::Int)
-    has = Tables.rowtable(DBInterface.execute(db,
+    has = sqlrows(DBInterface.execute(db,
         "SELECT 1 FROM assignment_members WHERE exposure_id = ? LIMIT 1", [exposure_id]))
     isempty(has) || _set_exposure_sample_state!(db, exposure_id, "indexed")
     nothing
@@ -136,13 +136,13 @@ _call_state_effect(kind::AbstractString, payload) =
     kind == "assignment_set_state" ? String(payload.state) : nothing
 
 _call_rows(db::SQLite.DB, where_sql::AbstractString, params) =
-    collect(Tables.rowtable(DBInterface.execute(db,
+    collect(sqlrows(DBInterface.execute(db,
         """SELECT id, action, entity_type, entity_id, payload FROM user_actions
             WHERE payload IS NOT NULL AND ($where_sql)""", params)))
 
 function _rebuild_exposure_with_call!(db::SQLite.DB, exposure_id::Int)
     rows = _call_rows(db, "entity_type = 'exposure' AND entity_id = ?", [exposure_id])
-    srow = Tables.rowtable(DBInterface.execute(db,
+    srow = sqlrows(DBInterface.execute(db,
         "SELECT sample_id FROM exposures WHERE id = ?", [exposure_id]))
     sid = isempty(srow) || srow[1].sample_id === missing ? nothing : Int(srow[1].sample_id)
     if sid !== nothing

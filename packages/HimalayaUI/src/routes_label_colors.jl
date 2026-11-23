@@ -8,14 +8,14 @@ const LABEL_COLOR_ENTITY_ID = 0
 _is_system_label(label) = any(r -> lowercase(r) == lowercase(label), ROLE_LABELS)
 
 function label_colors_list(db)
-    rows = Tables.rowtable(DBInterface.execute(db,
+    rows = sqlrows(DBInterface.execute(db,
         "SELECT label, color FROM label_colors ORDER BY label COLLATE NOCASE"))
     [Dict(:label => String(r.label), :color => String(r.color)) for r in rows
      if !_is_system_label(String(r.label)) && String(r.color) in USER_LABEL_COLORS]
 end
 
 function _label_color(db, label::String)
-    rows = Tables.rowtable(DBInterface.execute(db,
+    rows = sqlrows(DBInterface.execute(db,
         "SELECT color FROM label_colors WHERE label = ? COLLATE NOCASE", [label]))
     isempty(rows) ? nothing : String(rows[1].color)
 end

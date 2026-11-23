@@ -70,3 +70,43 @@ end
     @test sort!(collect(intersect(driven, _COLD_ROUTES_OFF_THE_TRIAGE_PATH))) == String[]
     @test sort!(collect(setdiff(_COLD_ROUTES_OFF_THE_TRIAGE_PATH, routes))) == String[]
 end
+
+@testset "the workload's mixed trace indexes every phase the pipeline searches" begin
+    mktempdir() do dir
+        analysis_dir = joinpath(dir, "analysis")
+        mkpath(analysis_dir)
+        HimalayaUI._workload_trace(
+            joinpath(analysis_dir, replace(HimalayaUI.DEFAULT_INTEGRATION_PATTERN, "{name}" => "frame_mixed")),
+            HimalayaUI._workload_mixed_centers())
+        db = HimalayaUI.open_db(joinpath(dir, "himalaya.db"))
+        try
+            experiment = HimalayaUI.init_experiment!(db; path = dir, data_dir = dir, analysis_dir)
+            sample = HimalayaUI.create_sample!(db; experiment_id = experiment, name = "mixed")
+            exposure = HimalayaUI.create_exposure!(db; experiment_id = experiment, sample_id = sample,
+                                                   filename = "frame_mixed", image_path = joinpath(dir, "frame.tif"))
+            HimalayaUI.analyze_exposure!(db, exposure, analysis_dir)
+            found = Set(String(r.phase) for r in HimalayaUI.sqlrows(DBInterface.execute(db,
+                "SELECT phase FROM indices WHERE exposure_id = ?", [exposure])))
+            searched = Set(string(nameof(P)) for P in HimalayaUI._WORKLOAD_PHASES if P !== HimalayaUI.Himalaya.Fm3m)
+            @test setdiff(searched, found) == Set{String}()
+        finally
+            DBInterface.close!(db)
+        end
+    end
+end
+
+@testset "DB reads go through sqlrows so their row types do not depend on the data" begin
+    src = joinpath(pkgdir(HimalayaUI), "src")
+    offenders = String[]
+    for file in readdir(src; join = true)
+        endswith(file, ".jl") || continue
+        for (n, line) in enumerate(eachline(file))
+            occursin(r"\browtable\b", line) && push!(offenders, "$(basename(file)):$n")
+        end
+    end
+    @test offenders == String[]
+    isempty(offenders) || @info """
+        Read query results with `sqlrows(DBInterface.execute(...))`, not `Tables.rowtable`. \
+        `Tables.rowtable` types each column by the values it finds, so a NULL or an empty result \
+        makes a new row type, and the code that reads it compiles again on first use.""" offenders
+end

@@ -1,14 +1,14 @@
 using HTTP, JSON3, DBInterface, Tables, Oxygen
 
 function compares_for_experiment(db, exp_id::Int)
-    compares = Tables.rowtable(DBInterface.execute(db,
+    compares = sqlrows(DBInterface.execute(db,
         """SELECT c.sample_id, c.ref_sample_id, u.username
              FROM sample_compares c
              JOIN samples s ON s.id = c.sample_id
              LEFT JOIN users u ON u.id = c.added_by
             WHERE s.experiment_id = ?
             ORDER BY c.sample_id, c.id""", [exp_id]))
-    subs = Tables.rowtable(DBInterface.execute(db,
+    subs = sqlrows(DBInterface.execute(db,
         """SELECT t.sample_id, t.ref_sample_id
              FROM sample_subtractions t
              JOIN samples s ON s.id = t.sample_id
@@ -24,11 +24,11 @@ end
 _int_list(raw) = raw === nothing ? Int[] :
     (raw isa AbstractVector && all(x -> x isa Integer, raw)) ? Int.(collect(raw)) : nothing
 
-_current_compares(db, sample_id::Int) = Set(Int(r.ref_sample_id) for r in Tables.rowtable(DBInterface.execute(db,
+_current_compares(db, sample_id::Int) = Set(Int(r.ref_sample_id) for r in sqlrows(DBInterface.execute(db,
     "SELECT ref_sample_id FROM sample_compares WHERE sample_id = ?", [sample_id])))
 
 function _current_subtraction(db, sample_id::Int)
-    rows = Tables.rowtable(DBInterface.execute(db,
+    rows = sqlrows(DBInterface.execute(db,
         "SELECT ref_sample_id FROM sample_subtractions WHERE sample_id = ?", [sample_id]))
     isempty(rows) ? nothing : Int(rows[1].ref_sample_id)
 end
@@ -75,7 +75,7 @@ function register_compare_routes!()
         id ∈ refs && return _json_error(400, "a sample cannot be compared with itself")
         ids = unique(vcat(id, refs))
         marks = join(fill("?", length(ids)), ", ")
-        rows = Tables.rowtable(DBInterface.execute(db,
+        rows = sqlrows(DBInterface.execute(db,
             "SELECT id, experiment_id FROM samples WHERE id IN ($marks)", ids))
         length(rows) == length(ids) || return _json_error(404, "sample not found")
         length(unique(Int(r.experiment_id) for r in rows)) == 1 ||
