@@ -45,7 +45,7 @@ test("compareTraces fails on a delivered trace still waiting, a held one not rep
 
 test("a frame whose trace is held back must have no auto call yet", () => {
   const truth = [{ sample: "MO", bases: "MO_S1", phases: "Pn3m", auto: "Pn3m", drop: "", note: "" }];
-  const app = (auto) => [{ id: 1, name: "MO_S1 (S01P01)", shown: { phase: null, state: "indexed", representative_id: 1 },
+  const app = (auto) => [{ id: 1, name: "MO_S1 (S01P01)", shown: { phase: null, state: "indexed", analyzed_id: 1 },
     frames: [{ id: 1, filename: "MO_S1", status: null, autoPhases: auto, assignment: { state: "indexed", phases: [] } }] }];
   assert.equal(compareTruth(truth, app([]), { held: new Set(["MO_S1"]) }).ok, true);
   const early = compareTruth(truth, app(["Pn3m"]), { held: new Set(["MO_S1"]) });
@@ -82,7 +82,7 @@ test("check-truth reads ingest problems and fails while a delivered trace is sti
   const problems = { ingest_error: null, exposures: [waiting("MO_S1")] };
   const stub = await stubBackend({
     "/api/experiments": [{ id: 4, setups: [{ data_dir: path.join(demoDir, "data") }], ingest_status: "complete" }],
-    "/api/samples?experiment_id=4": [{ id: 10, name: "MO_S1 (S01P01)", assignment_state: "indexed", phase: null, representative_exposure_id: 1 }],
+    "/api/samples?experiment_id=4": [{ id: 10, name: "MO_S1 (S01P01)", assignment_state: "indexed", phase: null, analyzed_exposure_id: 1 }],
     "/api/experiments/4/export": [{ name: "MO_S1 (S01P01)", exposures: [{ filename: "MO_S1", auto_phases: [] }] }],
     "/api/experiments/4/labels": [],
     "/api/experiments/4/bridges": [],
@@ -132,8 +132,8 @@ test("check-truth --ui tells the reader every held frame, since a neighbour's pr
   const stub = await stubBackend({
     "/api/experiments": [{ id: 4, setups: [{ data_dir: path.join(demoDir, "data") }], ingest_status: "complete" }],
     "/api/samples?experiment_id=4": [
-      { id: 10, name: "A_S1 (S01P01)", assignment_state: "indexed", phase: null, representative_exposure_id: 1 },
-      { id: 11, name: "B_S2 (S01P02)", assignment_state: "indexed", phase: null, representative_exposure_id: 2 },
+      { id: 10, name: "A_S1 (S01P01)", assignment_state: "indexed", phase: null, analyzed_exposure_id: 1 },
+      { id: 11, name: "B_S2 (S01P02)", assignment_state: "indexed", phase: null, analyzed_exposure_id: 2 },
     ],
     "/api/experiments/4/export": [
       { name: "A_S1 (S01P01)", exposures: [{ filename: "A_S1", auto_phases: [] }] },
@@ -176,6 +176,13 @@ test("plotMismatch: a held frame's plot says it is waiting, any other frame show
   assert.equal(plotMismatch("A_S1", null, held), null);
   assert.deepEqual(plotMismatch("A_S1", "No integrated trace for this image.", held), { frame: "A_S1", plot: "No integrated trace for this image.", expected: "the trace" });
   assert.equal(plotMismatch(null, null, held), null);
+});
+
+test("plotMismatch: an average waiting on a held image says the selected images are waiting", async () => {
+  const { plotMismatch, WAITING_AVERAGE, WAITING_PLOT } = await import("../truth.mjs");
+  const held = new Set(["B_S2"]);
+  assert.equal(plotMismatch("B_S1", WAITING_AVERAGE, held, true), null);
+  assert.deepEqual(plotMismatch("B_S1", WAITING_PLOT, held, true), { frame: "B_S1", plot: WAITING_PLOT, expected: WAITING_AVERAGE });
 });
 
 test("compareTraces checks the workspace notice when it was read", () => {

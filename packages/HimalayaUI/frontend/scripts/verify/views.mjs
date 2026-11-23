@@ -99,7 +99,11 @@ async function workspaceRail(page) {
 }
 
 async function currentWorkspaceFrame(page, frameOrder) {
-  const current = page.locator("[data-testid='workspace-exposures'] [aria-current='true']");
+  const strip = "[data-testid='workspace-exposures']";
+  const selected = await page.locator(`${strip} [data-selected='true'] button[aria-label^='Image']`)
+    .evaluateAll((els) => els.map((e) => e.getAttribute("aria-label") ?? ""));
+  if (selected.length === 1) return frameFromLabels(selected, frameOrder);
+  const current = page.locator(`${strip} [aria-current='true']`);
   const labels = await current.evaluateAll((els) => els.map((e) => e.getAttribute("aria-label") ?? e.textContent ?? ""));
   return frameFromLabels(labels, frameOrder);
 }

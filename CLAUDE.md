@@ -28,9 +28,10 @@ If this is your first session on this repo, skim these in order before touching 
 1. [docs/peak-finding.md](docs/peak-finding.md) — why `findpeaks` is the way it is. Load-bearing.
 2. [docs/experiment-config.md](docs/experiment-config.md) — required if touching the New-experiment funnel (`routes_fs.jl`), experiment create/scan (`routes_experiments.jl`, `ingest.jl`), or `config.jl`.
 3. [docs/scoring.md](docs/scoring.md) — required if touching `score`, `auto_group`, or `remove_subsets`.
-4. [docs/event-log.md](docs/event-log.md) — required if touching `events.jl`, `hash.jl`, the `apply_event!` call sites, or the SSE handler.
-5. [docs/mutation-queue.md](docs/mutation-queue.md) — required if touching `lib/queue/`, `idempotency.jl`, `with_idempotency`, or `applyRemoteToCache.ts`.
-6. [docs/contract-testing.md](docs/contract-testing.md) — six-layer testing rule. Required before fixing a queue/SSE/cache reconciliation bug.
+4. [docs/image-selection.md](docs/image-selection.md) — required if touching which images a sample analyzes: selection, averages (`combine.jl`), `analyzed_exposure_id`, the image strip.
+5. [docs/event-log.md](docs/event-log.md) — required if touching `events.jl`, `hash.jl`, the `apply_event!` call sites, or the SSE handler.
+6. [docs/mutation-queue.md](docs/mutation-queue.md) — required if touching `lib/queue/`, `idempotency.jl`, `with_idempotency`, or `applyRemoteToCache.ts`.
+7. [docs/contract-testing.md](docs/contract-testing.md) — six-layer testing rule. Required before fixing a queue/SSE/cache reconciliation bug.
 
 ## Code layout
 
@@ -176,6 +177,7 @@ Module-specific conventions and anti-patterns live in the AGENTS.md file nearest
 
 - [peak-finding.md](docs/peak-finding.md) — narrative design notes, non-obvious defaults, out-of-scope decisions.
 - [scoring.md](docs/scoring.md) — how and why of the index scoring formula (coverage × consistency).
+- [image-selection.md](docs/image-selection.md) — what a sample analyzes: the selected images, one or their average, and why nothing is averaged implicitly.
 - [experiment-config.md](docs/experiment-config.md) — New-experiment funnel, experiment configuration fields, file patterns, geometry, scan and grouping, rescans, read-only contract, CLI reference.
 - [frontend-dev-loop.md](docs/frontend-dev-loop.md) — running a dev session against a live backend.
 - [demo.md](docs/demo.md) — synthetic demo experiment, `make demo`, and running the app in a cloud session.
