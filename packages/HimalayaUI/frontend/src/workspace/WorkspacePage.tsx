@@ -23,6 +23,7 @@ import {
   useSetLabelColor,
   usePeaks,
   useFrameAssignments,
+  useFrameIndices,
   useRemoveAssignmentPhase,
   useRemoveFramePhase,
   useSampleCall,
@@ -58,6 +59,7 @@ import { callStatesSplit, keepChoices, type KeepCall } from "../lib/bridgeCall";
 import { bufferRole, buffersFirst, displayLabel, firstUnusedColor, labelColor, labelColorIsDefault, labelsFor, sameLabel, sampleMatchesFilter, labelVocabulary, labelKey } from "../lib/labels";
 import { analysisOf, imageFrames, keptExposures, MIN_COMBINED, newestKeptFrame } from "../lib/exposure";
 import { useMemberTraces } from "./useMemberTraces";
+import { unsupportedCalls } from "./unsupportedCalls";
 import { useCorpusPalette } from "../hooks/useCorpusPalette";
 import { allFrames, frameGroups, frameOf } from "./frameGroups";
 import { phaseColor } from "../phases";
@@ -356,8 +358,6 @@ export function WorkspacePage(): JSX.Element {
     settled: [trace, peaks, indices, assignment].every((q) => q.fetchStatus === "idle"),
   });
   const candidates = useMemo(() => rankCandidates(indices.data), [indices.data]);
-  const rows = useMemo(() => callRows(candidates), [candidates]);
-  const keyed = useMemo(() => keyedRows(rows), [rows]);
   const sampleCall = useSampleCall(sampleId);
   const otherFrames = useMemo(
     () => [...new Set((sampleCall.data?.members ?? []).map((m) => m.exposure_id))].filter((id) => id !== exposure?.id),
@@ -370,12 +370,29 @@ export function WorkspacePage(): JSX.Element {
       (m) => m.exposure_id !== exposure?.id && (live.get(m.exposure_id) ?? [m.index_id]).includes(m.index_id),
     );
   }, [sampleCall.data, otherFrames, otherAssignments, exposure?.id]);
+  const offeredPhases = useMemo(() => new Set(candidates.map((c) => c.phase)), [candidates]);
+  const unsupportedFrames = useMemo(
+    () => [...new Set(otherMembers.filter((m) => !offeredPhases.has(m.phase)).map((m) => m.exposure_id))],
+    [otherMembers, offeredPhases],
+  );
+  const unsupportedLattices = useFrameIndices(unsupportedFrames);
+  const unsupported = useMemo(
+    () => unsupportedCalls(otherMembers, candidates, unsupportedLattices),
+    [otherMembers, candidates, unsupportedLattices],
+  );
+  const unsupportedIds = useMemo(() => new Set(unsupported.map((c) => c.id)), [unsupported]);
+  const choices = useMemo(() => [...candidates, ...unsupported], [candidates, unsupported]);
   const assigned = useMemo(() => {
     const here = new Set(assignment.data?.members ?? []);
     const phases = new Set(otherMembers.map((m) => m.phase));
-    for (const c of candidates) if (phases.has(c.phase)) here.add(c.id);
+    for (const c of choices) if (phases.has(c.phase)) here.add(c.id);
     return here;
-  }, [assignment.data, otherMembers, candidates]);
+  }, [assignment.data, otherMembers, choices]);
+  const rows = useMemo(
+    () => [...callRows(candidates), ...unsupported.map((candidate) => ({ kind: "one" as const, candidate }))],
+    [candidates, unsupported],
+  );
+  const keyed = useMemo(() => keyedRows(rows), [rows]);
   const [hoverIds, setHoverIds] = useState<readonly number[] | undefined>(undefined);
   const hoverCandidates = useCallback((ids: readonly number[] | undefined) => {
     setHoverIds((prev) => (prev?.length === ids?.length && (prev ?? []).every((id, i) => id === ids?.[i]) ? prev : ids));
@@ -649,14 +666,14 @@ export function WorkspacePage(): JSX.Element {
 
   const draftQs = useMemo(() => (draft ? draftPrediction(draft) : []), [draft]);
   const combs: CombLine[] = useMemo(
-    () => callCombs(candidates, hoverIds, assigned, draft ? { phase: draft.phase, qs: draftQs } : null),
-    [candidates, hoverIds, assigned, draft, draftQs],
+    () => callCombs(choices, hoverIds, assigned, draft ? { phase: draft.phase, qs: draftQs } : null),
+    [choices, hoverIds, assigned, draft, draftQs],
   );
 
   const ringSets = useMemo(() => [
-    ...candidates.filter((c) => assigned.has(c.id)).map((c) => ({ color: phaseColor(c.phase), qs: c.predicted_q })),
+    ...choices.filter((c) => assigned.has(c.id)).map((c) => ({ color: phaseColor(c.phase), qs: c.predicted_q })),
     ...(draft ? [{ color: phaseColor(draft.phase), qs: draftQs }] : []),
-  ], [draft, draftQs, candidates, assigned]);
+  ], [draft, draftQs, choices, assigned]);
   const setupOfSample = useMemo(
     () => new Map(inExperiment.map((s) => [s.id, setups.find((st) => st.id === s.setup_id)] as const)),
     [inExperiment, setups],
@@ -1315,7 +1332,7 @@ export function WorkspacePage(): JSX.Element {
       leave: leaveBridges,
     },
     candidates: {
-      list: candidates,
+      list: choices,
       ticked: assigned,
       tick: (ix) => {
         setOpenPanel("call");
@@ -1562,6 +1579,7 @@ export function WorkspacePage(): JSX.Element {
                 <CandidateList
                   rows={rows}
                   assigned={assigned}
+                  unsupported={unsupportedIds}
                   disabled={!username}
                   formFactor={isFormFactor}
                   onToggle={toggleCandidate}

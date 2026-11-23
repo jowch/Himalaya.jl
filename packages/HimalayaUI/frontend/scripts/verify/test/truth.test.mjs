@@ -319,16 +319,27 @@ test("without --ui the workspace invariant is unchecked", () => {
   assert.equal(r.invariants.workspace_status_matches.ok, null);
 });
 
-test("railMismatch wants exactly the called phases the frame offers, and form factor only for a form-factor call", () => {
-  const rail = (ticked, candidates = ["Pn3m", "Im3m"], ff = false) => ({ ticked, candidates, form_factor: ff });
+test("railMismatch wants every called phase ticked, and form factor only for a form-factor call", () => {
+  const rail = (ticked, candidates = ["Pn3m", "Im3m"], ff = false, unsupported = []) => ({ ticked, candidates, unsupported, form_factor: ff });
   assert.equal(railMismatch(rail(["Pn3m"]), "Pn3m"), null);
-  assert.equal(railMismatch(rail(["Pn3m"]), "Ia3d+Pn3m"), null);
-  assert.equal(railMismatch(rail([]), "Ia3d"), null);
+  assert.deepEqual(railMismatch(rail(["Pn3m"]), "Ia3d+Pn3m"), { rail: "Pn3m", call: "Ia3d+Pn3m", expected: "Ia3d+Pn3m" });
+  assert.deepEqual(railMismatch(rail([]), "Ia3d"), { rail: "none", call: "Ia3d", expected: "Ia3d" });
   assert.deepEqual(railMismatch(rail([]), "Pn3m"), { rail: "none", call: "Pn3m", expected: "Pn3m" });
   assert.deepEqual(railMismatch(rail(["Im3m"]), null), { rail: "Im3m", call: "unreviewed", expected: "none" });
   assert.equal(railMismatch(rail([], undefined, true), "none"), null);
   assert.deepEqual(railMismatch(rail([], undefined, false), "none"), { rail: "none", call: "none" });
   assert.deepEqual(railMismatch(rail([], undefined, true), null), { rail: "form_factor", call: "unreviewed", expected: "none" });
+});
+
+test("railMismatch wants a called phase the curve doesn't offer ticked and marked, and only that one marked", () => {
+  const rail = (ticked, unsupported, candidates = ["Pn3m", "Im3m"]) => ({ ticked, candidates, unsupported, form_factor: false });
+  assert.equal(railMismatch(rail(["Ia3d", "Pn3m"], ["Ia3d"]), "Ia3d+Pn3m"), null);
+  assert.deepEqual(railMismatch(rail(["Ia3d", "Pn3m"], []), "Ia3d+Pn3m"),
+    { rail: "Ia3d+Pn3m", call: "Ia3d+Pn3m", expected: "Ia3d+Pn3m", unmarked: ["Ia3d"] });
+  assert.deepEqual(railMismatch(rail(["Pn3m"], ["Pn3m"]), "Pn3m"),
+    { rail: "Pn3m", call: "Pn3m", expected: "Pn3m", marked: ["Pn3m"] });
+  assert.deepEqual(railMismatch(rail([], ["Ia3d"]), null),
+    { rail: "none", call: "unreviewed", expected: "none", marked: ["Ia3d"] });
 });
 
 test("with --ui, a Call list that misses a phase called on a dropped frame breaks rail_matches_call", () => {

@@ -35,6 +35,7 @@ const state = {
   assignment: undefined as Assignment | undefined,
   sampleCall: undefined as SampleCall | undefined,
   frameAssignments: new Map<number, Assignment>(),
+  frameIndices: new Map<number, IndexEntry[]>(),
   username: "jc" as string | undefined,
   trace: undefined as Trace | undefined,
   traceError: false,
@@ -182,6 +183,7 @@ vi.mock("../../src/queries", () => ({
   useAssignment: () => ({ data: state.assignment, fetchStatus: "idle" }),
   useSampleCall: () => ({ data: state.sampleCall }),
   useFrameAssignments: (ids: number[]) => ids.map((id) => ({ data: state.frameAssignments.get(id) })),
+  useFrameIndices: (ids: number[]) => ids.flatMap((id) => state.frameIndices.get(id) ?? []),
   useRemoveFramePhase: () => ({
     mutate: (exposureId: number, indexId: number) => calls.push({ hook: "removeFrame", boundTo: exposureId, arg: indexId }),
   }),
@@ -371,6 +373,7 @@ beforeEach(() => {
   state.assignment = { exposure_id: 101, state: "indexed", members: [2] };
   state.sampleCall = undefined;
   state.frameAssignments = new Map();
+  state.frameIndices = new Map();
   state.trace = undefined;
   state.traceError = false;
   state.traceErr = null;
@@ -1625,6 +1628,74 @@ describe("WorkspacePage", () => {
     renderAt("/experiments/1/workspace/10");
     const rows = within(screen.getByTestId("workspace-candidates")).getAllByRole("button");
     expect(rows[0]).toHaveAttribute("aria-pressed", "false");
+  });
+
+  describe("a called phase the selected curve doesn't offer", () => {
+    beforeEach(() => {
+      state.exposures = [exposure(100), exposure(101, { status: "rejected" })];
+      state.indices = [{ ...index(1, "Im3m", 0.4), exposure_id: 100 }];
+      state.assignment = { exposure_id: 100, state: "indexed", members: [] };
+      state.sampleCall = {
+        sample_id: 10, state: "indexed", phase: "Pn3m", call_phases: ["Pn3m"],
+        members: [{ index_id: 7, exposure_id: 101, phase: "Pn3m" }],
+      };
+      state.frameIndices = new Map([[101, [{ ...index(7, "Pn3m", 0.9), lattice_d: 120, predicted_q: [0.08, 0.11] }]]]);
+    });
+
+    it("stays ticked in the Assignment list, after the curve's own candidates, marked as not found in this selection", () => {
+      renderAt("/experiments/1/workspace/10");
+      const rows = within(screen.getByTestId("workspace-candidates")).getAllByRole("button");
+      expect(rows).toHaveLength(2);
+      expect(rows[0]).toHaveTextContent("Im3m");
+      expect(rows[0]).toHaveAttribute("aria-pressed", "false");
+      expect(rows[1]).toHaveTextContent("Pn3m");
+      expect(rows[1]).toHaveTextContent("120.0 Å");
+      expect(rows[1]).toHaveAttribute("aria-pressed", "true");
+      expect(rows[1]).toHaveAttribute("data-unsupported", "");
+      expect(within(rows[1]!).getByText("Not found")).toBeInTheDocument();
+      expect(rows[0]).not.toHaveAttribute("data-unsupported");
+    });
+
+    it("draws its reflections from the called lattice", () => {
+      state.trace = makeTrace(1);
+      renderAt("/experiments/1/workspace/10");
+      const combs = Array.from(screen.getByTestId("workspace-combs").querySelectorAll("[data-comb]"));
+      expect(new Set(combs.map((l) => l.getAttribute("data-comb")))).toEqual(new Set(["7"]));
+    });
+
+    it("unticking it removes the member where it was called", () => {
+      renderAt("/experiments/1/workspace/10");
+      fireEvent.keyDown(window, { key: "2" });
+      expect(calls).toEqual([{ hook: "removeFrame", boundTo: 101, arg: 7 }]);
+    });
+
+    it("still shows ticked while the called lattice is loading", () => {
+      state.frameIndices = new Map();
+      renderAt("/experiments/1/workspace/10");
+      const rows = within(screen.getByTestId("workspace-candidates")).getAllByRole("button");
+      expect(rows[1]).toHaveTextContent("Pn3m");
+      expect(rows[1]).toHaveAttribute("aria-pressed", "true");
+    });
+
+    it("shows once per phase when the phase is called on two images", () => {
+      state.exposures = [exposure(100), exposure(101, { status: "rejected" }), exposure(102, { status: "rejected" })];
+      state.sampleCall = {
+        sample_id: 10, state: "indexed", phase: "Pn3m", call_phases: ["Pn3m"],
+        members: [{ index_id: 7, exposure_id: 101, phase: "Pn3m" }, { index_id: 8, exposure_id: 102, phase: "Pn3m" }],
+      };
+      renderAt("/experiments/1/workspace/10");
+      const rows = within(screen.getByTestId("workspace-candidates")).getAllByRole("button");
+      expect(rows.filter((r) => r.textContent?.includes("Pn3m"))).toHaveLength(1);
+    });
+
+    it("leaves the note about no candidates when the curve offers none", () => {
+      state.indices = [];
+      renderAt("/experiments/1/workspace/10");
+      expect(screen.getByText("No candidate indices for this image.")).toBeInTheDocument();
+      const rows = within(screen.getByTestId("workspace-candidates")).getAllByRole("button");
+      expect(rows[0]).toHaveTextContent("Pn3m");
+      expect(rows[0]).toHaveAttribute("aria-pressed", "true");
+    });
   });
 
   it("ignores shortcuts while typing in the filter", () => {

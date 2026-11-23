@@ -229,6 +229,18 @@ export function useIndices(exposureId: number | undefined) {
   });
 }
 
+const flatIndices = (results: readonly { data: api.IndexEntry[] | undefined }[]): api.IndexEntry[] => results.flatMap((r) => r.data ?? []);
+
+export function useFrameIndices(exposureIds: readonly number[]): api.IndexEntry[] {
+  return useQueries({
+    queries: exposureIds.map((id) => ({
+      queryKey: queryKeys.indices(id),
+      queryFn: () => api.listIndices(id),
+    })),
+    combine: flatIndices,
+  });
+}
+
 export function useAddPeak(exposureId: number) {
   const username = useAppState((s) => s.username);
   const inner = useQueueMutation(
