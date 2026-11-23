@@ -25,5 +25,7 @@ export interface ContractDoc {
 export const MOCKUP: ContractDoc;
 export const DECISIONS: ContractDoc;
 export function parseContract(text: string): Contract;
+export function decisionRefs(evidence: string): string[];
+export function deletedRows(base: Contract, contract: Contract): string[];
 export function checkRowCount(contract: Contract, doc: ContractDoc): string[];
 export function checkContract(contract: Contract, read: (path: string) => string | undefined, doc?: ContractDoc, decisionIds?: ReadonlySet<string>): string[];
