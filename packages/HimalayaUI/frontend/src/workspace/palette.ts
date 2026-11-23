@@ -85,6 +85,8 @@ export interface WorkspacePaletteInput extends AppActions {
   };
 }
 
+const SAME_SAMPLE_WORDS: readonly string[] = ["merge", "bridge", "link"];
+
 const THEMES: readonly { theme: AppTheme; name: string }[] = [
   { theme: "light", name: "Light" },
   { theme: "dark", name: "Dark" },
@@ -352,8 +354,8 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
     { id: "compare", label: "Compare with a sample", shortcut: "C", page: "compare" },
     ...(pages.subtract ? [{ id: "subtract", label: "Subtract a comparison", page: "subtract" }] : []),
     ...(pages.uncompare ? [{ id: "uncompare", label: "Stop comparing with a sample", page: "uncompare" }] : []),
-    ...(p.canEdit ? [{ id: "bridge", label: "Same sample as…", page: "bridge" }] : []),
-    ...(p.canEdit && p.bridge.bridged.length > 0 ? [{ id: "unbridge", label: `Not the same sample as ${p.bridge.bridged.join(", ")}`, run: p.bridge.leave }] : []),
+    ...(p.canEdit ? [{ id: "bridge", label: "Same sample as…", keywords: SAME_SAMPLE_WORDS, page: "bridge" }] : []),
+    ...(p.canEdit && p.bridge.bridged.length > 0 ? [{ id: "unbridge", label: `Not the same sample as ${p.bridge.bridged.join(", ")}`, keywords: SAME_SAMPLE_WORDS, run: p.bridge.leave }] : []),
     ...(pages.tick ? [{ id: "tick", label: "Tick a candidate", hint: `${n} candidate${n === 1 ? "" : "s"}`, page: "tick" }] : []),
     { id: "custom", label: "Custom index", shortcut: "I", run: p.customIndex },
     ...(p.canEdit ? [{ id: "form-factor", label: p.formFactor.on ? "Clear no phase (form factor)" : "Mark no phase (form factor)", shortcut: "0", run: p.formFactor.toggle }] : []),
