@@ -164,7 +164,11 @@ test("status_matches_assignment: unconfirmed reads unreviewed, confirmed reads t
 
   const coexistence = { state: "indexed", phases: ["Pn3m", "Im3m"] };
   const peg = compareTruth(TRUTH, app({ peg: [frame("MO_PEG5_S3", ["Im3m"], { assignment: coexistence })], pegShown: { phase: "Pn3m" } }));
-  assert.equal(peg.invariants.status_matches_assignment.ok, true, "the corpus shows one phase of a coexistence call");
+  assert.equal(peg.invariants.status_matches_assignment.ok, true, "a payload without call_phases names only the dominant phase");
+  const pegAll = compareTruth(TRUTH, app({ peg: [frame("MO_PEG5_S3", ["Im3m"], { assignment: coexistence })], pegShown: { phase: "Pn3m", call_phases: ["Pn3m", "Im3m"] } }));
+  assert.equal(pegAll.invariants.status_matches_assignment.ok, true);
+  const pegShort = compareTruth(TRUTH, app({ peg: [frame("MO_PEG5_S3", ["Im3m"], { assignment: coexistence })], pegShown: { phase: "Pn3m", call_phases: ["Pn3m"] } }));
+  assert.deepEqual(pegShort.invariants.status_matches_assignment.violations, [{ sample: "MO_PEG5", shown: "Pn3m", confirmed: "Im3m+Pn3m" }]);
 
   const onDroppedFrames = [frame("MO_H2O_S1", ["Pn3m"], { assignment: assigned, ...dropped }), frame("MO_H2O_S2", ["Pn3m"])];
   const onDropped = compareTruth(TRUTH, app({ h2o: onDroppedFrames }));
@@ -280,6 +284,16 @@ test("with --ui, the workspace list must show the status GET /api/samples report
   assert.deepEqual(stale.invariants.workspace_status_matches.violations.find((v) => v.sample === "MO_PEG5"), {
     sample: "MO_PEG5", shown: "Im3m", workspace: "Unreviewed",
   });
+});
+
+test("with --ui, the workspace list must show every phase of the call, not just the dominant one", () => {
+  const coexistence = { state: "indexed", phases: ["Pn3m", "Im3m"] };
+  const peg = [frame("MO_PEG5_S3", ["Im3m"], { assignment: coexistence })];
+  const pegShown = { phase: "Im3m", call_phases: ["Im3m", "Pn3m"] };
+  const one = compareTruth(TRUTH, withViews(app({ peg, pegShown }), {}, "Im3m").filter((s) => s.id === 2));
+  assert.deepEqual(one.invariants.workspace_status_matches.violations, [{ sample: "MO_PEG5", shown: "Im3m+Pn3m", workspace: "Im3m" }]);
+  const both = compareTruth(TRUTH, withViews(app({ peg, pegShown }), {}, "Im3m + Pn3m").filter((s) => s.id === 2));
+  assert.equal(both.invariants.workspace_status_matches.ok, true);
 });
 
 test("a workspace read that finds no current frame is a problem", () => {

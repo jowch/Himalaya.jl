@@ -672,6 +672,14 @@ describe("WorkspacePage", () => {
     expect(screen.getByTestId("workspace-progress")).toHaveTextContent("3 of 4 reviewed");
   });
 
+  it("lists every phase of a coexistence call, as the mock-up does", () => {
+    const { rerender } = renderAt("/experiments/1/workspace/11");
+    state.corpus = state.corpus.map((s) => (s.id === 11 ? { ...s, assignment_state: "indexed", phase: "Im3m", call_phases: ["Im3m", "Pn3m"] } : s));
+    rerender(page("/experiments/1/workspace/11"));
+    const row = within(screen.getByTestId("workspace-samples")).getByRole("button", { current: true });
+    expect(within(row).getByTestId("workspace-status")).toHaveTextContent("Im3m + Pn3m");
+  });
+
   it("Z jumps to the next unreviewed sample, like Gradescope's next ungraded", () => {
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "z" });
