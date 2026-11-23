@@ -97,10 +97,12 @@ scratch/demo-experiment/
   last step checks that nothing a person sees changed, the confirmed call
   included. `analyze` exits non-zero if it skipped any exposure.
 - **Expected calls are not always the generated truth**, by design. TRUTH's `auto`
-  column is what Himalaya's own pipeline calls. Two samples differ:
-  - `MO_PEG5`: Pn3m √6 overlaps Im3m √10, so `auto_group` keeps Im3m. Pn3m stays
-    a candidate, as the second hypothesis to promote by hand.
+  column is what Himalaya's own pipeline calls. One sample differs:
   - `MO_AMP_weak`: too weak to index automatically.
+
+  `MO_PEG5` (Pn3m + Im3m) used to be the other one. Its Pn3m √6 sits about 1% from
+  Im3m √10, and `auto_group` now gives each such peak to the lattice that fits it
+  best, so both phases are called (`docs/scoring.md`).
 
   `test/test_demo_data.jl` holds a regression floor on these calls over three
   seeds. If a change to peak finding, scoring or `phaseratios` moves them, fix

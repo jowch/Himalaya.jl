@@ -136,6 +136,9 @@ Every row also needs the date it was decided, as `YYYY-MM-DD`.
 | combine-restore-unselected | A dropped image that is restored comes back unselected, unless nothing else is selected. Undo of a drop puts back the selection it had. | 2026-11-23 | built | packages/HimalayaUI/test/test_combine.jl › selection, drop and restore routes |
 | combine-beam-off-deselected | Beam-off images start deselected, so they are averaged in only when ticked. | 2026-11-23 | built | packages/HimalayaUI/test/test_ingest_reconcile.jl › a beam-off image starts left out of the selection, at ingest and when its trace lands late |
 | combine-no-cross-setup | Images never combine across setups. | 2026-11-22 | built | packages/HimalayaUI/test/test_combine.jl › a bridged sample averages only its own images |
+| img-half-rings | Predicted rings are dashed half-circles. The cut runs through the beam centre along the image's long axis (top/bottom on a wide image, left/right on a tall one), and the rings take the narrower half, so the bare half shows the image out to the highest q. When the beam lies off the image along the cut, the rings take the half that faces the image. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/lib/detectorRings.test.ts › cuts a wide image across its height, so the rings and the bare image both span its full width |
+| img-rings-enlarged | Predicted rings show only on the enlarged image, never on the image cards, which are too small to judge them. They are drawn for the selected phases, including a committed custom index, plus the custom index draft while it is open. Hovering a candidate does not draw rings. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › the enlarged image draws half-rings for the ticked phases only, never for a hovered candidate, and the image cards draw none |
+| img-rings-hold | Pressing and holding the enlarged image hides the rings until the button comes up, to compare against the bare image. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/workspace/detectorRings.test.tsx › pressing and holding the image hides the rings until the button comes up or the pointer leaves |
 
 ## Bridges and beamtimes
 
@@ -156,8 +159,11 @@ Every row also needs the date it was decided, as `YYYY-MM-DD`.
 
 | id | Decision | Decided | Status | Evidence |
 |---|---|---|---|---|
-| phase-curvature | Bicontinuous cubic calls show the mean Gaussian curvature in nm⁻². | 2026-11-22 | built | packages/HimalayaUI/frontend/test/workspace/CandidateList.test.tsx › shows the mean Gaussian curvature in nm⁻² on bicontinuous cubic rows only, on one line |
+| phase-curvature | Bicontinuous cubic calls show the mean Gaussian curvature in nm⁻². | 2026-11-22 | superseded | 2026-11-23: phase-curvature-legend and phase-curvature-bonnet |
+| phase-curvature-legend | Each indexing plot legend line reads phase, lattice, κ in nm⁻² (bicontinuous cubics only) and R², on one line. It drops the reflections-on-peaks count, which both plots already show. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › the indexing plot shows the assigned candidate's fit against the peaks |
+| phase-curvature-bonnet | In the Assignment list only a Bonnet group's header shows κ. Single candidate rows and group members show none. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/workspace/CandidateList.test.tsx › leaves the curvature off single candidate rows, cubic or not |
 | phase-bonnet-groups | Bonnet-related cubics that share peaks are offered as one group, ticked whole or one member at a time. | 2026-11-22 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › ticks a Bonnet group whole with its number key and undoes it as one edit |
+| phase-contested-best-fit | A peak two auto-called lattices both match goes to the lattice that predicts it most closely, so coexisting cubics are both called. The real cubic fixture now auto-calls Im3m + Pn3m, which is not yet verified. | 2026-11-23 | built | packages/HimalayaUI/test/test_auto_group_peak_id_claiming.jl › auto_group: coexisting Im3m and Pn3m each keep the peaks their lattice fits best |
 
 ## Export
 

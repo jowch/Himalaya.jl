@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseContract, checkContract, DECISIONS } from "../scripts/check-contracts.mjs";
+import { parseContract, checkContract, checkRowCount, decisionRefs, deletedRows, DECISIONS, MOCKUP } from "../scripts/check-contracts.mjs";
 
 const HEAD = [
   "- Mock-up version: `1-a`",
@@ -80,6 +80,21 @@ describe("checkContract", () => {
     expect(problems(["| a-b | Does it | untested | x |", "| a-b | Again | untested | y |"])[0]).toMatch(/a-b.*more than once/);
   });
 
+  it("rejects a superseded row that cites a decision id docs/decisions.md doesn't have", () => {
+    const ids = new Set(["new-rule"]);
+    const check = (row: string): string[] => checkContract(parseContract([...HEAD, row].join("\n")), read, MOCKUP, ids);
+    expect(check("| a-b | Does it | superseded | new-rule in docs/decisions.md, 2026-11-23 |")).toEqual([]);
+    expect(check("| a-b | Does it | superseded | gone-rule in docs/decisions.md, 2026-11-23 |")[0]).toMatch(/a-b.*cites gone-rule in docs\/decisions\.md, which has no row with that id/);
+    expect(check("| a-b | Does it | superseded | docs/decisions.md new-rule, 2026-11-23 |")).toEqual([]);
+    expect(check("| a-b | Does it | superseded | 2026-11-23 docs/decisions.md gone-rule |")[0]).toMatch(/a-b.*cites gone-rule in docs\/decisions\.md, which has no row with that id/);
+    expect(check("| a-b | Does it | superseded | see docs/decisions.md, 2026-11-23 |")[0]).toMatch(/a-b.*mentions docs\/decisions\.md without naming a decision/);
+  });
+
+  it("reads a decision cited either way round", () => {
+    expect(decisionRefs("combine-select in docs/decisions.md, 2026-11-23")).toEqual(["combine-select"]);
+    expect(decisionRefs("2026-11-23 docs/decisions.md phase-curvature-legend")).toEqual(["phase-curvature-legend"]);
+  });
+
   it("needs the pinned mock-up version and hash", () => {
     expect(problems(["| a-b | Does it | untested | x |"], HEAD.slice(2))).toEqual([
       "docs/mockup-contract.md does not pin the mock-up version",
@@ -115,5 +130,42 @@ describe("checkContract on the decisions file", () => {
   it("needs the date each decision was made", () => {
     expect(dproblems(["| a-b | Do it | soon | planned | PR 9 |"])[0]).toMatch(/a-b.*Decided column must be a YYYY-MM-DD date/);
   });
+
+  it("needs a superseded decision to start with the id of an existing decision that replaced it", () => {
+    const rows = (evidence: string): string[] => [
+      `| old-rule | Do it | 2026-11-20 | superseded | ${evidence} |`,
+      "| new-rule | Do it better | 2026-11-23 | planned | PR 9 |",
+    ];
+    expect(dproblems(rows("new-rule, 2026-11-23"))).toEqual([]);
+    expect(dproblems(rows("gone-rule, 2026-11-23"))[0]).toMatch(/old-rule.*superseded by gone-rule, which has no row in docs\/decisions\.md/);
+    expect(dproblems(rows("old-rule, 2026-11-23"))[0]).toMatch(/old-rule.*can't supersede itself/);
+    expect(dproblems(rows("Jonathan changed it on 2026-11-23"))[0]).toMatch(/old-rule.*starts its evidence with the id of the decision that replaced it, optionally after its date/);
+    expect(dproblems(rows("2026-11-23: new-rule and another"))).toEqual([]);
+    expect(dproblems(rows("2026-11-23: gone-rule"))[0]).toMatch(/old-rule.*superseded by gone-rule/);
+  });
 });
 
+describe("checkRowCount", () => {
+  const doc = { ...DECISIONS, floor: 2 };
+  const rows = (n: number) => parseContract(["| id | Decision | Decided | Status | Evidence |", "|---|---|---|---|---|",
+    ...Array.from({ length: n }, (_, i) => `| r-${i} | Do it | 2026-11-23 | planned | PR 9 |`)].join("\n"));
+
+  it("fails on a file a merge emptied", () => {
+    expect(checkRowCount(parseContract(""), doc)[0]).toMatch(/docs\/decisions\.md has no rows/);
+  });
+
+  it("fails when rows drop below the floor, and passes at it", () => {
+    expect(checkRowCount(rows(1), doc)[0]).toMatch(/has 1 rows, fewer than its floor of 2/);
+    expect(checkRowCount(rows(2), doc)).toEqual([]);
+  });
+
+  it("names every row the base commit had that is gone now", () => {
+    expect(deletedRows(rows(3), rows(2))).toEqual(["r-2"]);
+    expect(deletedRows(rows(2), rows(3))).toEqual([]);
+  });
+
+  it("holds both real files to a floor", () => {
+    expect(MOCKUP.floor).toBeGreaterThan(0);
+    expect(DECISIONS.floor).toBeGreaterThan(0);
+  });
+});

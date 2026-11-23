@@ -6,7 +6,7 @@ This document explains why `score(index)` is defined the way it is and what phys
 
 `score` is load-bearing in two places:
 
-1. **`auto_group`** (pipeline) — selects the non-overlapping set of indices to present as the auto-analysis result. It builds the group greedily in descending score order and claims peaks first-come first-served, except that a higher-scoring index can be displaced by one that strictly dominates it. A wrong ordering can lock out the correct assignment. See "A dominating index displaces the top-scoring one" below.
+1. **`auto_group`** (pipeline) — selects the set of indices to present as the auto-analysis result. It builds the group greedily in descending score order with exclusive peaks, except that a higher-scoring index can be displaced by one that strictly dominates it, then hands each contested peak to the member whose lattice fits it best and admits the phases that frees. See "A dominating index displaces the top-scoring one" and "Contested peaks go to the best-fitting lattice" below.
 
 2. **`remove_subsets`** — when two indices share the same basis but one's peaks are a subset of the other's, the lower-scoring one is removed. Score breaks the tie.
 
@@ -76,6 +76,21 @@ Known limit: the rule only overrides when one index strictly contains the other'
 The hybrid detector stores a peak whose measured sharpness is ≤ 0 with the median positive sharpness of the returned peaks. That substituted value can be the sharper peak that lets a containing index displace the top one.
 
 `score` and `remove_subsets` are unchanged, and the Alternatives list keeps its score order, so the auto call can sit below a higher-scoring alternative. The displaced index shares peaks with the one picked, so it is not selected later.
+
+## Contested peaks go to the best-fitting lattice
+
+`indexpeaks` matches each ratio within ±0.0025 Å⁻¹ of `ratio × basis`, where the basis is an observed peak. That window is about 4% at q = 0.065 and has to stay that loose: a first reflection on a sloping background can sit about 1% high, and a tighter window or pruning members by their fitted residual turns a pure Im3m into a Pn3m alias. The cost is that coexisting cubics contest peaks. At the Bonnet ratio (a_Im3m / a_Pn3m ≈ 1.279) Pn3m √6, √10 and √12 sit about 1% from Im3m √10, √16 and √20, so with first-come claims the top-scoring Im3m held them and the coexisting Pn3m was locked out of the auto call (2026-11-23, Jonathan).
+
+After the greedy pass, `auto_group` fits each member's lattice by least squares through the origin over the peaks it still owns and gives every contested peak to the member that predicts it with the smallest relative residual. Another member keeps the peak only when its residual is within `SHARED_PEAK_BAND` (0.3%) of the best, so a true coincidence (Im3m √18 against Pn3m √11, 0.1% apart) stays with both. A member left with fewer than `minpeaks` peaks drops out, residuals are refitted, and the step repeats until nothing moves. Then the highest-scoring candidate that owns at least `minpeaks` unclaimed peaks is admitted and the reassignment runs again, until no candidate qualifies. Reassigning before admitting matters: admitting first let a high-scoring alias claim peaks the true second phase needed. A same-basis candidate whose unclaimed peaks strictly contain the top one's is admitted in its place, because Im3m at a Pn3m lattice's own basis reads a subset of the Pn3m series and can outscore it by a hair.
+
+`auto_group` still returns the original candidates, so the stored indices and their `index_peaks` are unchanged; only which candidates are in the auto group changes. Measured on `origin/main` 54eb06d with the hybrid detector:
+
+| set | frames | exact call before → after | phases wrongly called | phases missed |
+|---|---|---|---|---|
+| curated demo, seeds 1–56 (kept frames) | 1120 | 919 → 1031 | 0 → 1 | 201 → 89 |
+| `--large`, 3 seeds × 2 × 300 samples | 7049 | 4924 → 4954 | 160 → 153 | 2296 → 2254 |
+
+No frame went from a correct call to a wrong one. The one new wrong phase is a pre-existing alias: Hexagonal 1, √3, 2, √7 is an exact subset of the Im3m ratios, and in 2 of 168 `MO_AMP_10` frames the Im3m alias outscores the Hexagonal it stands for, so a call that missed the Hexagonal phase now names it Im3m. The user-ticked call is not affected: a ticked candidate still draws its full raw window.
 
 ## R² — not in the score
 

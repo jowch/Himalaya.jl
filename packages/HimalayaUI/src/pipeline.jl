@@ -4,15 +4,13 @@ using Tables
 using JSON3
 using HTTP: HTTP, Request
 
-function greedy_dominating(score_sorted, claims_of)
-    candidates = score_sorted
+function greedy_dominating(candidates, claim_sets)
     n = length(candidates)
     qs  = [Float64.(collect(Himalaya.peaks(idx))) for idx in candidates]
     shs = [Float64.(nonzeros(idx.sharpness)) for idx in candidates]
-    claim_sets = [claims_of(idx) for idx in candidates]
     picked  = falses(n)
-    claimed = Set()
-    group   = eltype(candidates)[]
+    claimed = eltype(claim_sets)()
+    group   = Int[]
     while true
         free = [i for i in 1:n if !picked[i] && isempty(intersect(claim_sets[i], claimed))]
         isempty(free) && break
@@ -29,62 +27,118 @@ function greedy_dominating(score_sorted, claims_of)
             k === nothing || (pick = free[k])
         end
         picked[pick] = true
-        push!(group, candidates[pick])
+        push!(group, pick)
         union!(claimed, claim_sets[pick])
     end
     group
 end
 
 """
+Relative distance between a shared peak's residual and the best member's residual
+within which both members keep it (`docs/scoring.md`, "Contested peaks").
+"""
+const SHARED_PEAK_BAND = 0.003
+
+# physics: each member's lattice is the least-squares scale through the origin of
+# physics: the peaks it still owns; a peak's residual is its relative distance from
+# physics: that lattice's prediction, so it measures fit to the whole series rather
+# physics: than to the observed peak the candidate happened to take as its basis.
+# physics: the fit includes the contested peak itself, for every member alike; a member
+# physics: owning only minpeaks peaks leans on it more, which is accepted as symmetric.
+function fitted_residuals(idx::Himalaya.Index, claims::Vector, owned::Set{K}) where {K}
+    P = Himalaya.phase(idx)
+    ratios = Himalaya.phaseratios(P; normalize = true)
+    keep = [k for k in eachindex(claims) if claims[k].claim in owned]
+    isempty(keep) && return Dict{K, Float64}()
+    r = [ratios[claims[k].rpos] for k in keep]
+    q = [claims[k].q for k in keep]
+    s = r \ q
+    Dict{K, Float64}(claims[k].claim => abs(q[j] - s * r[j]) / q[j] for (j, k) in enumerate(keep))
+end
+
+function reassign_contested(members, cands, claims, owned)
+    while true
+        res = Dict(m => fitted_residuals(cands[m], claims[m], owned[m]) for m in members)
+        changed = false
+        for p in unique(p for m in members for p in owned[m])
+            hold = [m for m in members if p in owned[m]]
+            length(hold) < 2 && continue
+            best = minimum(res[m][p] for m in hold)
+            for m in hold
+                res[m][p] > best + SHARED_PEAK_BAND || continue
+                delete!(owned[m], p)
+                changed = true
+            end
+        end
+        kept = [m for m in members if length(owned[m]) >= Himalaya.minpeaks(Himalaya.phase(cands[m]))]
+        changed |= length(kept) != length(members)
+        members = kept
+        changed || return members
+    end
+end
+
+function best_fit_group(sorted, claim_of_peak, ::Type{K}) where {K}
+    claims = map(sorted) do idx
+        rpos, qs = SparseArrays.findnz(idx.peaks)
+        [(claim = c, q = Float64(q), rpos = Int(r))
+         for (r, q) in zip(rpos, qs) for c in (claim_of_peak(Float64(q)),) if c !== nothing]
+    end
+    full = [Set{K}(c.claim for c in cl) for cl in claims]
+    members = greedy_dominating(sorted, full)
+    owned = Dict(m => copy(full[m]) for m in eachindex(sorted))
+    tried = Set(members)
+    while true
+        members = reassign_contested(members, sorted, claims, owned)
+        claimed = reduce(union, (owned[m] for m in members); init = Set{K}())
+        free = Dict(c => setdiff(full[c], claimed) for c in eachindex(sorted) if !(c in tried))
+        eligible = [c for c in eachindex(sorted) if haskey(free, c) &&
+                    length(free[c]) >= Himalaya.minpeaks(Himalaya.phase(sorted[c]))]
+        isempty(eligible) && break
+        t = first(eligible)
+        k = findfirst(eligible) do a
+            a != t && Himalaya.basis(sorted[a]) == Himalaya.basis(sorted[t]) &&
+                issubset(free[t], free[a]) && length(free[a]) > length(free[t])
+        end
+        next = k === nothing ? t : eligible[k]
+        push!(tried, next)
+        owned[next] = copy(full[next])
+        push!(members, next)
+    end
+    sorted[members]
+end
+
+"""
     auto_group(indices, eff) -> Vector{<:Index}
     auto_group(indices)       -> Vector{<:Index}
 
-Greedily select non-overlapping indices by score; a compatible index holding all
-of the top one's peaks plus a sharper peak below them displaces it (`docs/scoring.md`).
+Pick the auto-analysis group from `indices` (`docs/scoring.md`). Greedy by score
+with exclusive peaks first, where a compatible index holding all of the top one's
+peaks plus a sharper peak below them displaces it. Then each contested peak goes
+to the member whose fitted lattice predicts it best (others keep it only within
+`SHARED_PEAK_BAND`), members left below `minpeaks` drop out, and further
+candidates owning at least `minpeaks` unclaimed peaks are admitted one at a time in
+score order, until stable. A same-basis candidate whose unclaimed peaks strictly
+contain the top one's is admitted in its place, so Im3m at a Pn3m lattice's basis
+(whose series is a subset of Pn3m's) cannot stand in for that Pn3m.
+Returns a subset of `indices` (the same objects), which `persist_analysis!`
+matches by identity.
 
-The two-arg form claims by `eff.peak_id` (Int) — the membership test is
-on integer identity instead of `Float64` equality, so two indices whose
-peaks come from the same underlying `eff` row can never simultaneously
-win. **Contract**: every `q` in `peaks(idx)` for each `idx in indices`
-MUST be `==` to some `eff.q` value. Q-values that don't match any
-`eff.q` are silently dropped from the claim set (their index can still
-be admitted to the group), so a future caller that arithmetically
-derives q would lose claims rather than wrongly intersect. Production
-call site is `analyze_exposure!`, where `candidates =
-Himalaya.indexpeaks(eff.q, eff.sharpness)` reuses `eff.q` references so
-the contract holds by construction.
-
-The one-arg form falls back to q-value equality (`Set{Float64}`) and is
-retained for test fixtures that don't materialize an `eff` tuple.
+The two-arg form claims by `eff.peak_id`; every `q` in `peaks(idx)` must be `==`
+to some `eff.q`, and a q that matches none claims nothing. The one-arg form
+claims by q value, for fixtures without an `eff` tuple.
 """
 function auto_group(indices::Vector{<:Himalaya.Index},
                     eff::NamedTuple)::Vector{<:Himalaya.Index}
     isempty(indices) && return indices
-
-    # Score once; sort by score descending via sortperm.
-    scores  = Himalaya.score.(indices)
-    perm    = sortperm(scores; rev = true)
-    sorted  = indices[perm]
-
-    # q → peak_id lookup (eff is sorted by q in effective_peaks, but the dict
-    # tolerates either ordering).
-    q_to_id = Dict{Float64, Int}()
-    for i in eachindex(eff.q)
-        q_to_id[Float64(eff.q[i])] = Int(eff.peak_id[i])
-    end
-
-    ids_of(idx) = Set{Int}(pid for q in Himalaya.peaks(idx)
-                           for pid in (get(q_to_id, Float64(q), nothing),)
-                           if pid !== nothing)  # arithmetically-derived q — won't claim
-    greedy_dominating(sorted, ids_of)
+    sorted = indices[sortperm(Himalaya.score.(indices); rev = true)]
+    q_to_id = Dict{Float64, Int}(Float64(eff.q[i]) => Int(eff.peak_id[i]) for i in eachindex(eff.q))
+    best_fit_group(sorted, q -> get(q_to_id, q, nothing), Int)
 end
 
 function auto_group(indices::Vector{<:Himalaya.Index})::Vector{<:Himalaya.Index}
     isempty(indices) && return indices
-    scores  = Himalaya.score.(indices)
-    perm    = sortperm(scores; rev = true)
-    sorted  = indices[perm]
-    greedy_dominating(sorted, idx -> Set{Float64}(Himalaya.peaks(idx)))
+    sorted = indices[sortperm(Himalaya.score.(indices); rev = true)]
+    best_fit_group(sorted, identity, Float64)
 end
 
 """
