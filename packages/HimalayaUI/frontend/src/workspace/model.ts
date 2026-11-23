@@ -4,12 +4,12 @@ import { samePeak, type PeakRef } from "../lib/peakRef";
 export type SampleStatus =
   | { kind: "unreviewed" }
   | { kind: "form_factor" }
-  | { kind: "phase"; phase: string };
+  | { kind: "phase"; phases: string[] };
 
-export function sampleStatus(s: Pick<CorpusSample, "assignment_state" | "phase">): SampleStatus {
+export function sampleStatus(s: Pick<CorpusSample, "assignment_state" | "phase" | "call_phases">): SampleStatus {
   if (s.assignment_state === "form_factor") return { kind: "form_factor" };
-  if (s.assignment_state === "indexed" && s.phase) return { kind: "phase", phase: s.phase };
-  return { kind: "unreviewed" };
+  if (s.assignment_state !== "indexed" || !s.phase) return { kind: "unreviewed" };
+  return { kind: "phase", phases: [s.phase, ...(s.call_phases ?? []).filter((p) => p !== s.phase)] };
 }
 
 export function firstUnreviewed<T extends Pick<CorpusSample, "assignment_state" | "phase">>(samples: readonly T[]): T | undefined {
