@@ -672,6 +672,14 @@ describe("WorkspacePage", () => {
     expect(screen.getByTestId("workspace-progress")).toHaveTextContent("3 of 4 reviewed");
   });
 
+  it("lists every phase of a coexistence call, as the mock-up does", () => {
+    const { rerender } = renderAt("/experiments/1/workspace/11");
+    state.corpus = state.corpus.map((s) => (s.id === 11 ? { ...s, assignment_state: "indexed", phase: "Im3m", call_phases: ["Im3m", "Pn3m"] } : s));
+    rerender(page("/experiments/1/workspace/11"));
+    const row = within(screen.getByTestId("workspace-samples")).getByRole("button", { current: true });
+    expect(within(row).getByTestId("workspace-status")).toHaveTextContent("Im3m + Pn3m");
+  });
+
   it("Z jumps to the next unreviewed sample, like Gradescope's next ungraded", () => {
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "z" });
@@ -1836,6 +1844,47 @@ describe("WorkspacePage", () => {
     runFromPalette("plot view", "log");
     expect(currentView()).toBe("Log");
     expect(ticks()).toBe(logTicks);
+  });
+
+  it("V steps forward through the plot views and Shift+V steps back, wrapping", () => {
+    state.trace = makeTrace(1);
+    renderAt("/experiments/1/workspace/10");
+    const pressed = (): string | null =>
+      within(screen.getByRole("group", { name: "Plot view" })).getByRole("button", { pressed: true }).textContent;
+    expect(pressed()).toBe("Log");
+    fireEvent.keyDown(window, { key: "v" });
+    expect(pressed()).toBe("Linear");
+    fireEvent.keyDown(window, { key: "v" });
+    fireEvent.keyDown(window, { key: "v" });
+    expect(pressed()).toBe("q²I");
+    expect(screen.getByTestId("workspace-trace").textContent).toContain("q²·I");
+    fireEvent.keyDown(window, { key: "v" });
+    expect(pressed()).toBe("Log");
+    fireEvent.keyDown(window, { key: "V", shiftKey: true });
+    expect(pressed()).toBe("q²I");
+    expect(currentView()).toBe("q²I (Kratky)");
+  });
+
+  it("V does nothing while typing in the sample filter", () => {
+    state.trace = makeTrace(1);
+    renderAt("/experiments/1/workspace/10");
+    const filter = document.getElementById("workspace-filter")!;
+    filter.focus();
+    fireEvent.keyDown(filter, { key: "v" });
+    expect(currentView()).toBe("Log");
+  });
+
+  it("the plot view buttons switch the view directly and mark the current one", () => {
+    state.trace = makeTrace(1);
+    renderAt("/experiments/1/workspace/10");
+    const group = screen.getByRole("group", { name: "Plot view" });
+    fireEvent.click(within(group).getByRole("button", { name: "Log-log plot" }));
+    expect(currentView()).toBe("Log-log");
+    fireEvent.click(within(group).getByRole("button", { name: "q²I (Kratky) plot" }));
+    expect(currentView()).toBe("q²I (Kratky)");
+    expect(within(group).getByRole("button", { name: "q²I (Kratky) plot" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(group).getByRole("button", { name: "Log plot" })).toHaveAttribute("aria-pressed", "false");
+    expect(fireEvent.mouseDown(within(group).getByRole("button", { name: "Linear plot" }))).toBe(false);
   });
 
   it("the difference replaces the trace and follows the plot view", () => {

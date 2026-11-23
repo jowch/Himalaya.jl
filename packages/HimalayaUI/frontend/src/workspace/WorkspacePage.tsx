@@ -67,6 +67,7 @@ import { usePrefetchNeighbours } from "./prefetch";
 import { CompareBar } from "../ui/CompareBar";
 import { ComparePicker } from "../ui/ComparePicker";
 import { SubtractToggle } from "../ui/SubtractToggle";
+import { PlotViewToggle } from "../ui/PlotViewToggle";
 import { PlotCard } from "../ui/PlotCard";
 import { HelpOverlay, type HelpSection } from "../ui/HelpOverlay";
 import { MOD_KEY } from "../lib/modKey";
@@ -75,7 +76,7 @@ import { Palette } from "../ui/palette/Palette";
 import { keepCallForm, workspacePalette, type PaletteSetup } from "./palette";
 import type { PaletteForm } from "../ui/palette/model";
 import { useAppTheme } from "../lib/theme";
-import { PLOT_VIEWS, usePlotView } from "./plotView";
+import { PLOT_VIEWS, stepView, usePlotView } from "./plotView";
 import { positiveExtent } from "../plot/projection";
 import { CustomIndexPanel, NUDGE_STEP, NUDGE_STEP_LARGE } from "../ui/CustomIndexPanel";
 import { IndexingPlot, type IndexSeries } from "../ui/IndexingPlot";
@@ -139,6 +140,7 @@ function helpSections(mod: string): HelpSection[] {
         { gesture: "Click", what: "Turn a peak off or on, remove one you added, or add one" },
         { gesture: "Scroll", what: "Zoom q" },
         { keys: [`${mod} 0`], what: "Reset the zoom" },
+        { keys: ["V"], what: "Next plot view: log, linear, log-log, q²I. ⇧ V goes back." },
         { keys: ["C"], what: "Compare with another sample" },
         { gesture: `${mod}-click a sample in the list`, what: "Compare with it, or stop comparing" },
         { gesture: "Click a comparison", what: "Hide or show its trace" },
@@ -1057,6 +1059,10 @@ export function WorkspacePage(): JSX.Element {
         case "?":
           setHelpOpen(true);
           break;
+        case "v":
+        case "V":
+          setView(stepView(view, ev.shiftKey ? -1 : 1));
+          break;
         case "z":
         case "Z": {
           const nid = nextUnreviewed(visible, sampleId, 1);
@@ -1361,7 +1367,7 @@ export function WorkspacePage(): JSX.Element {
               )}
             </div>
             <div className="mx-3.5">
-              <PlotCard {...(darkNotice ? { notice: darkNotice } : {})}>
+              <PlotCard {...(darkNotice ? { notice: darkNotice } : {})} corner={<PlotViewToggle options={PLOT_VIEWS} view={view} onChange={setView} />}>
                 <WorkspacePlot
                   trace={trace.data}
                   {...(noTraceMessage
