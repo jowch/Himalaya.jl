@@ -614,12 +614,16 @@ export interface DetectorSize {
   height: number;
 }
 
-export async function getDetectorSize(url: string): Promise<DetectorSize | null> {
-  const res = await fetch(url);
+async function readDetectorSize(url: string, cache: RequestCache): Promise<DetectorSize | null> {
+  const res = await fetch(url, { cache });
   void res.body?.cancel();
   const width = Number(res.headers.get("X-Image-Width"));
   const height = Number(res.headers.get("X-Image-Height"));
   return width > 0 && height > 0 ? { width, height } : null;
+}
+
+export async function getDetectorSize(url: string): Promise<DetectorSize | null> {
+  return (await readDetectorSize(url, "default")) ?? readDetectorSize(url, "reload");
 }
 
 export const reanalyzeExposure = (exposure_id: number, opts?: AuthOpts) =>
