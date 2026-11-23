@@ -772,6 +772,7 @@ end
             @test isequal([r.transmitted_counts for r in rows], [7001.0, 7002.0])
         finally
             HimalayaUI.stop_gc_timer!()
+            HimalayaUI.stop_peak_training!()
             HimalayaUI.Oxygen.resetstate()
             HimalayaUI._DB_REF[] = nothing
             SQLite.close(db)

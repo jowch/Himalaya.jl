@@ -117,6 +117,19 @@ end
 _is_read(req::HTTP.Request) = req.method == "GET" || req.method == "HEAD"
 _is_event_stream(req::HTTP.Request) = HTTP.URI(req.target).path in _UNPOOLED_GET_PATHS
 
+_uri_path(p) = replace(abspath(p), "%" => "%25", "?" => "%3f", "#" => "%23")
+
+function open_readonly_db(db_path::AbstractString)
+    db = SQLite.DB("file:" * _uri_path(db_path) * "?mode=ro")
+    try
+        DBInterface.execute(db, "PRAGMA query_only = ON")
+    catch
+        close(db)
+        rethrow()
+    end
+    db
+end
+
 with_background_db(f, db::SQLite.DB) = _poolable(db.file) ? with_background_db(f, String(db.file)) : f(db)
 
 function with_background_db(f, path::String)

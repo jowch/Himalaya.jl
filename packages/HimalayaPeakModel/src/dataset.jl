@@ -106,17 +106,33 @@ end
     build_dataset(exps; features = DefaultFeatures()) -> Dataset
 
 Candidates, features and labels for each exposure. A recipe can train on a
-dataset whose columns include all of its feature names.
+dataset whose columns include all of its feature names. With a `cache`
+(`DiskFeatureCache`), an exposure's candidates, features and hybrid peaks are
+read from its file when there is one and written after computing otherwise.
+`float32` rounds features to Float32 (the cache's precision) and defaults to on with a cache.
 """
 function build_dataset(exps::AbstractVector{LabeledExposure}; features::FeatureSet = DefaultFeatures(),
-                       verbose::Bool = false)
+                       verbose::Bool = false, cache::Union{DiskFeatureCache, Nothing} = nothing,
+                       float32::Bool = cache !== nothing)
     parts = Vector{Any}(undef, length(exps))
+    ncol = length(feature_names(features))
     Threads.@threads for k in eachindex(exps)
         e = exps[k]
-        idx, X, hyb = candidates_and_features(features, e.q, e.I, e.σ)
+        path = cache === nothing ? nothing : cache_path(cache, e)
+        hit = path === nothing ? nothing : read_features(path, ncol)
+        if hit === nothing
+            idx, X, hyb = candidates_and_features(features, e.q, e.I, e.σ)
+            hyb_idx = hyb === nothing ? Int[] : hyb.indices
+            float32 && (X = Float64.(Float32.(X)))
+            if cache !== nothing
+                path === nothing || try_write_features(path, idx, X, hyb_idx)
+            end
+        else
+            idx, X, hyb_idx = hit
+        end
         lab = label_candidates(e.q, idx, e.adds, e.kept, e.excluded, e.labelled, e.form_factor;
                               kept_model = e.kept_model)
-        parts[k] = (idx, X, lab, hyb === nothing ? Int[] : hyb.indices)
+        parts[k] = (idx, X, lab, hyb_idx)
     end
     Xs = [p[2] for p in parts]
     exposure = reduce(vcat, [fill(k, length(parts[k][1])) for k in eachindex(parts)]; init = Int[])

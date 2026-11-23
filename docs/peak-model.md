@@ -1,9 +1,10 @@
 # Per-database peak model
 
-Status: design. Steps 1 (packaging) and 2 (provenance and pinning) are implemented: the features, labels,
+Status: design. Steps 1 (packaging), 2 (provenance and pinning) and 3 (training service) are implemented: the features, labels,
 model and cross-validation live in `packages/HimalayaPeakModel`, the database
-loader is `HimalayaUI.labeled_exposures` (reading review snapshots), and `tools/peak-classifier/` (#486)
-is the command-line tool on top of both. This document describes how HimalayaUI trains such a model for its own
+loader is `HimalayaUI.labeled_exposures` (reading review snapshots), `tools/peak-classifier/` (#486)
+is the command-line tool on top of both, and the server trains and records runs in the background
+(see "Training service (step 3)"). No model is active yet, so peaks are unchanged. This document describes how HimalayaUI trains such a model for its own
 database, keeps it up to date as users curate, and uses it.
 
 ## Goal
@@ -202,6 +203,86 @@ when omitted); inserts default to `hybrid` and NULL.
   count towards this. Until then the hybrid alone is used, and the run's row
   records why.
 
+## Training service (step 3)
+
+What is built, and where it differs from the sections above.
+
+**Child process.** `himalaya train-peak-model [--db PATH] [--trees N] [--no-cache]` opens the
+database read-only (`HimalayaUI.open_readonly_db`, also used by the tool), runs
+`run_peak_training` and prints one JSON object on stdout (status, metrics, recipe, fitted, watermark,
+counts); progress goes to stderr. The server starts it with `Base.julia_cmd()`, which carries the
+sysimage the server runs with, and the active project. The child gets at most
+`min(server default threads, CPUs / 2)` threads and, on Linux when `nice` exists, runs under `nice -n 10`, so a run does not take
+every core from requests and ingest. Its stdout and stderr go to
+temporary files, so a crash leaves the end of stderr (about 1700 characters) in a `failed` row.
+`PEAK_TRAINING_COMMAND` replaces the command in tests. An `atexit` hook and `stop_peak_training!` kill a running child. `atexit` does not run when
+systemd stops the server with SIGTERM, so the unit must keep `KillMode=control-group` (the systemd default,
+set explicitly in `deploy/himalaya.service`), which also stops the child.
+
+**Trigger.** The watermark is the largest `user_actions.id` among `DIRECT_REVIEW_KINDS` on exposures (the
+labelling events; `set_exposure_status` and sample calls do not count, unlike the review-snapshot
+kinds). A run is due when at least 20 such events are newer than the largest watermark in
+`peak_models` (every status counts, so a crashing run waits for new labels) and the newest has been
+quiet for 10 minutes (`PEAK_TRAINING_MIN_EVENTS`, `PEAK_TRAINING_QUIET_SECONDS`). A timer checks
+every 5 minutes, first after 60 seconds, and runs only when the server resumes work
+(`start_background!(...; train = resume)`), so tests that boot with `resume = false` start nothing.
+The row's watermark is the child's, read at its start, so labels that arrive during a run stay due.
+One child at a time: a due check during a run returns `:busy`. `stop_peak_training!` sets a `stopped` flag
+(cleared only by `start_peak_training_timer!`), under which a check that was already in flight returns `:stopped` and spawns
+nothing; the child is registered under the same lock that stop takes, so stop kills it instead of waiting for it. The watermark
+a run started from is also kept in memory, so if writing its row fails the next check does not rerun it until new label events arrive. There is no extra flag, because dueness is read from
+the table, and the finished run's watermark leaves the newer events due. The server writes the row under
+`_DB_WRITE_LOCK` on its own connection. No SSE frame, no `user_actions` row, no UI.
+An in-memory database never trains (the child needs a file).
+
+**Cold start.** `cold_start_check` counts add and exclude rows of `peak_curations` on non-rejected file
+exposures. It needs 100 curations on 30 exposures, and 3 experiments, or else 5 samples (then the
+folds group by sample). Otherwise the child trains nothing and returns `rejected` with one reason per shortfall.
+
+**Dataset.** The run loads every non-rejected exposure with a readable trace (`include_unlabelled`), not only
+the labelled ones, so the peak caps below are measured over "all exposures with a trace". Unlabelled
+exposures carry no labels; they are never trained on. `oof_proba` predicts a group that has
+no labelled candidates (an experiment or sample nobody curated) with one model trained on everything, which
+is what leaving it out would give, instead of fitting one forest per group.
+
+**Feature cache.** `HimalayaPeakModel.DiskFeatureCache`, in `<database dir>/cache/peak-features/<database file stem>/` (so databases in one directory do not prune each other's files),
+one file per exposure named `<sha256 of the q, I, σ arrays>-<first 12 hex of sha1(feature version)>.f32`
+(a hash of the loaded arrays rather than `exposures.trace_hash`, which can lag the file). Layout:
+8-byte magic, Int32 `n` candidates, `p` features and `h` hybrid peaks, then `n·p` Float32 (column-major), `n`
+Int32 candidate indices and `h` Int32 hybrid indices. The hybrid indices are stored because the gate needs them.
+A short, malformed or wrong-width file is a miss and is rewritten. A changed trace or feature version is a new
+file, and each run deletes every `.f32` file it did not use and `.tmp` files over an hour old (left by an interrupted write). An unwritable or racing
+directory is ignored per file (writes and deletes). The training run always rounds features to Float32, with the cache or with `--no-cache`, so every run builds the same dataset.
+
+**Gate.** All figures are out of fold. The threshold is chosen on the same out-of-fold predictions and label set the checks then score, so
+add recall is the best of the 13 thresholds (optimistic), and the two peak-cap checks pass by construction whenever some threshold fits the caps; the excludes and
+phase checks are not affected by the choice. `peak_summary` scores a detector's peaks, and `evaluate_gate` applies the checks to
+the model's and the hybrid's summaries (a check with no data is skipped and passes).
+
+- Peaks per exposure ≤ hybrid + 0.5 over all loaded exposures, and ≤ hybrid + 0.1 over form-factor ones (constants `GATE_PEAKS_SLACK`, `GATE_FF_SLACK`).
+- Phase calls. The exposures scored are labelled ones (a direct snapshot with no model shown) whose assignment is `indexed`
+  (and sample call `indexed`, the default), with the call being the `(phase, basis)` of the members. Members on `speculative`
+  indices (the custom indices users build) always count, being user-made. Members on `auto` indices (the auto-group picks, which are fitted from a
+  detector's peaks) count only when the exposure has a user `assignment_add`, `assignment_remove` or `assignment_set_state` event
+  (`phase_auto = :user_events`, the default; `:all` keeps every auto one). The stored calls do not record confirmation beyond that, so an
+  `auto` call with such an event is the closest signal to a confirmed one. On a local real database the event-limited set kept most of the
+  exposures and did not change the gate outcome, so the limit is used. A pick is correct
+  when the first `auto_group` pick over the detector's peaks, with excludes removed, adds not applied and
+  sharpness from `sharpness` with the pipeline's fallback (median positive), has the phase and a basis within 2% of one of the calls.
+  Model correct count must be at least the hybrid's.
+- Add recall (hits over adds, adds in the top 7% of q excluded and counted as `adds_in_band`) must be at least the hybrid's, and the share
+  of excludes still detected at most the hybrid's, on exposures whose latest direct snapshot had `shown_model_id` NULL. Today that is every labelled exposure.
+- The threshold is chosen from 0.30 to 0.90 in steps of 0.05 as the one with the highest add recall within the peaks caps (higher on ties).
+  When none is within the caps the run is `rejected` with that reason.
+
+A passing run trains the final model on all rows. A rejected run trains nothing.
+
+**Metrics JSON.** `cv` (the `cross_validate` tables per threshold, hybrid and candidate-pool rows, AUC), `comparison` (chosen threshold, model and
+hybrid summaries, phase target count), `sweep` (per threshold: peaks, form-factor peaks, adds, within caps), `gate` (passed, checks, reasons, caps) and `seconds`.
+
+**Not done here.** Promotion (`active`), the 25% label-growth rule, retraining after a core bump, `shown_model_id`
+written by snapshots, and prediction in `analyze_exposure!` are step 4.
+
 ## Swapping the model
 
 The model is a recipe (`HimalayaPeakModel.Recipe`) made of three parts that
@@ -268,15 +349,17 @@ production stays.
 
 ## Storage
 
-- Table `peak_models` (migration): id, created_at, status (`active`,
-  `pending`, `rejected`, `retired`), label watermark, counts, threshold and
-  non-maximum-suppression window,
-  metrics JSON (the cross-validated tables and the production comparison),
-  feature version, core version, the recipe (its `to_dict` as JSON), the
-  recipe id, and the fitted model.
+- Table `peak_models` (migration `migrate_peak_models!`, idempotent): id, created_at, status (`passed`,
+  `rejected`, `active`, `retired`, `failed`), `label_watermark`, `counts_json`, `threshold` and
+  non-maximum-suppression window `nms`, `metrics_json` (the cross-validated tables, the
+  hybrid comparison and the gate outcome with its reasons),
+  `feature_version`, `core_version`, `recipe_json` (the recipe's `to_dict`), `recipe_id`,
+  and `fitted_json`. A run that passes the gate is `passed` (the design's earlier `pending`);
+  `failed` is a crashed or unreadable run, whose `metrics_json` holds `{"error": <stderr tail>}`.
+  Step 3 writes only `passed`, `rejected` and `failed`.
 - The fitted model is `to_dict` of the learner's `Fitted` object, stored as JSON
-  in a TEXT column, only for the active and a pending model; it is set to NULL
-  on rejected and retired rows. For the random forest each tree is nested split
+  in a TEXT column, only for the newest `passed` row and any `active` row; it is NULL
+  on `rejected`, `failed` and `retired` rows, and inserting a `passed` row clears it from older `passed` ones. For the random forest each tree is nested split
   nodes (exact Float64 thresholds) and leaves holding the majority class and the
   training count per class. JSON loads without running code (a `Serialization`
   file runs code when loaded, and the directory next to the database is
@@ -363,7 +446,7 @@ cache are lab data like the rest of the database and are never exported.
 3. Training service: `peak_models` table (recipe, recipe id and fitted model
    as JSON), feature cache, child-process
    training, watermark trigger and the gate. Runs are recorded but nothing is
-   promoted, so peaks do not change.
+   promoted, so peaks do not change. Done; see "Training service (step 3)".
 4. Model-written auto peaks: `peak_model_version`, prediction from the stored JSON model,
    the model pass with `force_detect`, boot ordering after a core bump, and
    the one detector resolver for server and CLI.

@@ -164,3 +164,19 @@ end
     @test sort([e.id for e in HimalayaUI.labeled_exposures(b.db; io = devnull)]) == sort([b.e_id, b.ff_id])
     DBInterface.close!(b.db)
 end
+
+@testset "labeled_exposures include_unlabelled adds exposures nobody curated, without labels" begin
+    b = _pl_db(mktempdir())
+    other = HimalayaUI.create_exposure!(b.db; experiment_id = b.exp_id, sample_id = b.s_id, filename = "other_tot")
+    cp(joinpath(b.adir, "ex_tot.dat"), joinpath(b.adir, "other_tot.dat"))
+    DBInterface.execute(b.db, "INSERT INTO auto_peaks (exposure_id, q) VALUES (?, 0.1)", [other])
+    DBInterface.execute(b.db, "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'add', 0.3)", [other])
+    @test !any(e -> e.id == other, HimalayaUI.labeled_exposures(b.db; io = devnull))
+    got = HimalayaUI.labeled_exposures(b.db; include_unlabelled = true, io = devnull)
+    @test sort([e.id for e in got]) == sort([b.e_id, b.ff_id, other])
+    u = only(filter(e -> e.id == other, got))
+    @test !u.labelled && !u.form_factor
+    @test isempty(u.adds) && isempty(u.kept) && isempty(u.excluded) && isempty(u.kept_model)
+    @test only(filter(e -> e.id == b.e_id, got)).adds == [0.4]
+    DBInterface.close!(b.db)
+end

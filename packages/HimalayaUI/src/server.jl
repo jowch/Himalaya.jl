@@ -261,8 +261,9 @@ function backfill_all_monitors!(db::SQLite.DB)
     nothing
 end
 
-function start_background!(db::SQLite.DB; resume::Bool = true)
+function start_background!(db::SQLite.DB; resume::Bool = true, train::Bool = resume)
     start_gc_timer!(db)
+    train && start_peak_training_timer!(db)
     Threads.@spawn _boot_background_work(db, resume)
 end
 
@@ -308,6 +309,7 @@ end
 
 function stop_test_server!()
     stop_gc_timer!()
+    stop_peak_training!()
     Oxygen.terminate()
     Oxygen.resetstate()
     unbind_db!()

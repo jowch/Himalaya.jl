@@ -47,6 +47,31 @@ function tiedrank_(x)
 end
 
 """
+    oof_proba(recipe, ds; verbose = false) -> Vector{Float64}
+
+Probability of every candidate row from a model trained without the row's
+group (leave one group out). Groups with no labelled candidates have nothing to
+hold out, so one model trained on every row predicts them. Needs at least two groups.
+"""
+function oof_proba(recipe::Recipe, ds::Dataset; verbose::Bool = false)
+    groups = sort(unique(ds.group))
+    length(groups) >= 2 || error("cross-validation needs at least two groups, found $(length(groups))")
+    oof = fill(NaN, length(ds.label))
+    scored = [l == POS || l == NEG || l == WEAK for l in ds.label]
+    labelled_groups = Set(ds.group[scored])
+    for g in groups
+        g in labelled_groups || continue
+        m = train(recipe, ds; rows = findall(!=(g), ds.group))
+        te = findall(==(g), ds.group)
+        oof[te] = proba(m, ds, te)
+        verbose && @printf("  held out group %d: %d exposures\n", g, length(unique(ds.exposure[te])))
+    end
+    rest = findall(isnan, oof)
+    isempty(rest) || (oof[rest] = proba(train(recipe, ds), ds, rest))
+    oof
+end
+
+"""
     cross_validate(exps, recipe; ds = build_dataset(exps; features = recipe.features),
                    thresholds = [0.3, 0.5, 0.7, 0.85, 0.9], verbose = true) -> NamedTuple
 
@@ -59,22 +84,15 @@ excluded peak that is still detected is a miss), and predicted peaks per
 labelled exposure that match neither an add nor a kept peak (`extra`;
 unlabelled real peaks count here, so this overstates false positives).
 The recipe's `nms` is applied; its `threshold` is not used. Pass `ds` to reuse a
-dataset built from `exps`.
+dataset built from `exps` and `oof` (from `oof_proba`) to reuse its probabilities;
+the result carries them as `oof`.
 """
 function cross_validate(exps::AbstractVector{LabeledExposure}, recipe::Recipe;
                         ds::Dataset = build_dataset(exps; features = recipe.features),
-                        thresholds = [0.3, 0.5, 0.7, 0.85, 0.9], verbose::Bool = true)
+                        thresholds = [0.3, 0.5, 0.7, 0.85, 0.9], verbose::Bool = true,
+                        oof::Union{AbstractVector, Nothing} = nothing)
     nms = recipe.nms
-    groups = sort(unique(ds.group))
-    length(groups) >= 2 || error("cross-validation needs at least two groups, found $(length(groups))")
-    oof = fill(NaN, length(ds.label))
-    for g in groups
-        tr = findall(!=(g), ds.group)
-        m = train(recipe, ds; rows = tr)
-        te = findall(==(g), ds.group)
-        oof[te] = proba(m, ds, te)
-        verbose && @printf("  held out group %d: %d exposures\n", g, length(unique(ds.exposure[te])))
-    end
+    oof === nothing && (oof = oof_proba(recipe, ds; verbose))
     rows_of = [Int[] for _ in exps]
     for (r, k) in enumerate(ds.exposure); push!(rows_of[k], r); end
     function run(pick)
@@ -97,7 +115,7 @@ function cross_validate(exps::AbstractVector{LabeledExposure}, recipe::Recipe;
     (by_threshold = by_threshold,
      hybrid = summary(run(k -> ds.hybrid[k])),
      candidates = summary(run(k -> ds.cand[k])),
-     candidate_auc = auc(oof[scored], ds.label[scored] .== POS), groups = groups)
+     candidate_auc = auc(oof[scored], ds.label[scored] .== POS), groups = sort(unique(ds.group)), oof = oof)
 end
 
 function print_cv(r)

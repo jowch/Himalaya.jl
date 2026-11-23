@@ -9,11 +9,12 @@ include("features.jl")
 include("serial.jl")
 include("featureset.jl")
 include("learner.jl")
+include("cache.jl")
 include("dataset.jl")
 include("recipe.jl")
 include("cv.jl")
 
-export LabeledExposure, Dataset, build_dataset, train, predict_peaks,
+export LabeledExposure, Dataset, build_dataset, DiskFeatureCache, oof_proba, train, predict_peaks,
        cross_validate, print_cv, FEATURE_NAMES, DETECTOR_FEATURES,
        peak_match_tol, grid_step,
        Learner, Fitted, fit, predict_proba, RandomForestLearner, LogisticLearner,
