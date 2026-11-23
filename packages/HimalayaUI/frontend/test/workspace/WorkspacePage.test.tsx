@@ -2805,18 +2805,31 @@ describe("WorkspacePage", () => {
     fireEvent.mouseLeave(screen.getByTestId("workspace-candidates"));
     expect(screen.getAllByTestId("workspace-indexing-fit").map((n) => n.textContent)).toEqual([expect.stringMatching(/^Pn3m/)]);
   });
-  it("the plot draws a candidate's reflections only while it is hovered, not because it is ticked", () => {
+  it("the plot keeps the called phase's reflections faded, and draws a hovered candidate's at full strength instead", () => {
     state.trace = makeTrace(1);
     state.peaks = [peak(7, 0.1, "auto")];
     renderAt("/experiments/1/workspace/10");
-    const combIds = (): string[] => Array.from(screen.getByTestId("workspace-combs").querySelectorAll("[data-comb]")).map((l) => l.getAttribute("data-comb") ?? "");
-    expect(combIds()).toEqual([]);
+    const combs = (): Element[] => Array.from(screen.getByTestId("workspace-combs").querySelectorAll("[data-comb]"));
+    const ids = (): Set<string> => new Set(combs().map((l) => l.getAttribute("data-comb") ?? ""));
+    const faded = (): boolean => combs().every((l) => l.getAttribute("stroke-opacity") !== null);
+    expect(combs().length).toBeGreaterThan(0);
+    expect(ids()).toEqual(new Set(["2"]));
+    expect(faded()).toBe(true);
     const rows = within(screen.getByTestId("workspace-candidates")).getAllByRole("button");
     fireEvent.mouseEnter(rows[1]!);
-    expect(combIds().length).toBeGreaterThan(0);
-    expect(new Set(combIds())).toEqual(new Set(["1"]));
+    expect(ids()).toEqual(new Set(["1"]));
+    expect(combs().some((l) => l.getAttribute("stroke-opacity") !== null)).toBe(false);
     fireEvent.mouseLeave(screen.getByTestId("workspace-candidates"));
-    expect(combIds()).toEqual([]);
+    expect(ids()).toEqual(new Set(["2"]));
+    expect(faded()).toBe(true);
+  });
+
+  it("the plot draws no reflections when nothing is called or hovered", () => {
+    state.trace = makeTrace(1);
+    state.peaks = [peak(7, 0.1, "auto")];
+    state.assignment = { exposure_id: 101, state: "null", members: [] };
+    renderAt("/experiments/1/workspace/10");
+    expect(screen.getByTestId("workspace-combs").querySelectorAll("[data-comb]")).toHaveLength(0);
   });
   it("hovering a candidate, a custom row or a Bonnet group header colours the peaks it claims on the trace", () => {
     state.trace = makeTrace(1);
