@@ -25,6 +25,8 @@ test("status text maps onto the sample states", () => {
   assert.equal(statusFromText("Not indexed"), "unreviewed");
   assert.equal(statusFromText("Unreviewed"), "unreviewed");
   assert.equal(statusFromText("Index →"), "unreviewed");
+  assert.equal(statusFromText("Unreviewed. Every image is dropped, so nothing is analyzed."), "unreviewed");
+  assert.equal(callFromText("Unreviewed. No image is selected, so nothing is analyzed."), null);
   assert.equal(statusFromText("Form factor"), "form_factor");
   assert.equal(statusFromText(" Pn3m "), "phase");
   assert.equal(statusFromText(null), null);

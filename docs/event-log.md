@@ -166,7 +166,7 @@ and `POST /api/samples/{id}/call/state` sets the state.
 `migrate_sample_calls!` (`sample_calls_v1`, run by `open_db`) moves existing
 calls. Per sample it considers only frames that still carry a call (members,
 or a non-indexed state). Among those it keeps the frame the user edited last
-(the newest `assignment_*` event), else the representative frame, else the
+(the newest `assignment_*` event), else the frame the old UI opened on, else the
 lowest id. Members on the other frames are removed: the old UI never showed
 them together, so the union would surface stale picks. The kept frame's state
 becomes the sample's state. The migration writes these changes as logged

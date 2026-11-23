@@ -7,7 +7,7 @@ import { leavePage, prepareUser, routeUrl } from "./page.mjs";
 export function statusFromText(text) {
   const t = String(text ?? "").replace(/\s+/g, " ").trim();
   if (!t) return null;
-  if (/^(Not indexed|Unreviewed)$|^Index\b/.test(t)) return "unreviewed";
+  if (/^(Not indexed|Unreviewed)$|^Unreviewed\. |^Index\b/.test(t)) return "unreviewed";
   if (/^Form factor$/i.test(t)) return "form_factor";
   return "phase";
 }

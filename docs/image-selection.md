@@ -28,7 +28,7 @@ image) measures nothing, so the selection is the user's call, made cheap.
 | Checkbox in a tile's top-left corner, or ⌘/Ctrl-click | Toggles that image |
 | Shift-click | Adds the range from the last toggled tile |
 | Drop an image | It leaves the selection, and a dropped image can't be selected |
-| Drop the last kept image | Allowed: nothing is analyzed (a leaked capillary can leave no usable image) |
+| Drop the last kept image | Allowed: nothing is analyzed (a leaked capillary can leave no usable image). The sample row says "All dropped" |
 | Restore an image | It comes back unselected, unless nothing else is selected |
 | A rescan adds an image | It joins only if every other kept image is selected |
 
@@ -36,13 +36,19 @@ Storage is `exposures.deselected` (0 = in the selection), which is
 `selected: boolean` on `GET /api/samples/{id}/exposures`. `PUT
 /api/samples/{id}/selection {exposure_ids}` replaces the selection in one
 undoable `set_selection` event. `analyzed_exposure_id` on `GET /api/samples`
-names the image the selection resolves to.
+names the image the selection resolves to, and `analysis_gap` says why there
+is none: `all_dropped` or `none_selected` (the sample row shows "All dropped" or
+"None selected"). Undo of a drop sends `selected` with the restore, so the image
+comes back as it was.
 
 ## Peaks and calls follow the set
 
 Each distinct set of selected images gets its own averaged row, which is never
 deleted. Going back to a set used before brings back its peaks and edits.
 Calls stay with the sample (#350): members on any image or average count.
+Export lists the analyzed average and any earlier average that holds a call
+member, not every set tried. At boot, `backfill_averages!` builds the average a
+selection names but doesn't have yet (a DB from before averages existed).
 
 ## Physics
 

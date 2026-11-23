@@ -41,13 +41,13 @@ When the mock-up changes, extract its behaviours again from the code and update 
 |---|---|---|---|
 | img-arrows | ← → move between images | built | test/workspace/WorkspacePage.test.tsx › arrow keys step from this sample's last frame into the same sample's frames |
 | img-drop | X or the card's Drop button drops or restores the image | built | test/workspace/WorkspacePage.test.tsx › X drops the shown frame and shows the nearest kept frame, so a phase key calls there |
-| img-keep-one | Dropping the last kept image is refused ("Keep at least one exposure") | planned | thread "Show combined curve by default" |
+| img-keep-one | Dropping the last kept image is refused ("Keep at least one exposure") | superseded | docs/image-selection.md: dropping the last image is allowed and the sample row says why nothing is analyzed (PR 519) |
 | img-kept-hint | The section header says "k of N kept" once one is dropped | built | test/workspace/WorkspacePage.test.tsx › a dropped card offers Restore and the header counts the kept frames |
 | img-dropped-card | A dropped card fades and says "dropped" | built | test/workspace/WorkspacePage.test.tsx › a dropped card offers Restore and the header counts the kept frames |
 | img-enlarge | Space enlarges the image; Space or Esc closes it | built | test/workspace/WorkspacePage.test.tsx › Space enlarges the shown frame's detector image, and Space or Esc closes it |
 | img-enlarge-keys | Inside the enlarged view ← → step and X drops | built | test/workspace/WorkspacePage.test.tsx › flips through frames inside the enlarged view, and dropping one moves to the nearest kept frame without closing it |
 | img-dblclick | Double-clicking a card enlarges it | planned | held small item from the 2026-11-23 mock-up audit (thread "Audit app against the mock-up") |
-| img-overlay-mean | The plot draws every kept image faintly with their mean in bold | planned | thread "Show combined curve by default" |
+| img-overlay-mean | The plot draws every kept image faintly with their mean in bold | built | test/workspace/WorkspacePage.test.tsx › plots the average of the selected images over a faint line for each, and names the average |
 | img-show-only | O or "Show only" plots one image, with a banner; O again shows all | planned | thread "Show combined curve by default" |
 | img-suspect | A suspect image (low-q excess) is outlined, says why, and is drawn in the warning colour | planned | thread "Show combined curve by default" |
 | img-open-suspect | Opening a sample selects its first undropped suspect image | planned | thread "Show combined curve by default" |
