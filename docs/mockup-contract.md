@@ -1,6 +1,6 @@
 # Mock-up behaviour contract
 
-The workspace is built to match the approved mock-up 1:1, with app-only features replayed on top. This file lists every behaviour the mock-up's code defines: its key handlers, click handlers and render branches, not just its look. Each row says where that behaviour stands in the app. `npm run lint:mockup` (part of `npm run build`) checks the rows, so a behaviour can't drop out of the app without a visible change to this file.
+The workspace is built to match the approved mock-up 1:1, with app-only features replayed on top. This file lists every behaviour the mock-up's code defines: its key handlers, click handlers and render branches, not just its look. Each row says where that behaviour stands in the app. `npm run lint:contracts` (part of `npm run build`) checks the rows, so a behaviour can't drop out of the app without a visible change to this file.
 
 - Mock-up: https://claude.ai/artifact/UoZAK7fkkvCBQ13TQYUXVH
 - Mock-up version: `1795147819-6f12`
@@ -16,6 +16,7 @@ When the mock-up changes, extract its behaviours again from the code and update 
 | `untested` | The app does it, but no test pins it yet. | What shows it works. Turning a row `built` means writing its test. |
 | `superseded` | A later product decision replaced it. | The decision: a date, a PR number or a doc path. |
 | `planned` | Not built yet, and someone owns it. | The owner: a PR number, an issue (`#n`) or a thread name. |
+| `contradicted` | The app does the opposite today. A known bug, not a gap. | The owner: a PR number, an issue (`#n`) or a thread name, and where the app contradicts it. |
 
 ## Sample list and header
 
