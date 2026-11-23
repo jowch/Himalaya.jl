@@ -3550,6 +3550,8 @@ describe("WorkspacePage", () => {
     expect(calls.filter((c) => c.hook === "op:setSelection").map((c) => c.arg).at(-1)).toEqual([12, [200]]);
     fireEvent.click(screen.getByRole("button", { name: "Image 1" }), { metaKey: true });
     expect(calls.filter((c) => c.hook === "op:setSelection").map((c) => c.arg).at(-1)).toEqual([10, [101, 100]]);
+    fireEvent.click(screen.getByRole("button", { name: "Image 3 of A3" }), { shiftKey: true });
+    expect(calls.filter((c) => c.hook === "op:setSelection").map((c) => c.arg).at(-1)).toEqual([12, [200, 201, 202]]);
   });
 
   it("an unbridged sample's frames have no group heading", () => {

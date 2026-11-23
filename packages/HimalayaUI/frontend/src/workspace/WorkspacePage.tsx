@@ -621,8 +621,8 @@ export function WorkspacePage(): JSX.Element {
     },
     [setStatus, sampleId, history, ops, frameName, exposureList, tile],
   );
-  const anchor = useRef<number | undefined>(undefined);
-  useEffect(() => { anchor.current = undefined; }, [sampleId]);
+  const anchors = useRef(new Map<number, number>());
+  useEffect(() => { anchors.current = new Map(); }, [sampleId]);
   const groupSelections = useMemo(() => {
     if (sampleId === undefined) return new Map<number, ExposureSelection>();
     return new Map(groups.map((g) => {
@@ -639,17 +639,17 @@ export function WorkspacePage(): JSX.Element {
         selectedIds,
         selectableIds: new Set(kept),
         onToggle: (eid) => {
-          anchor.current = eid;
+          anchors.current.set(owner, eid);
           const on = selectedIds.has(eid);
           apply(on ? prev.filter((id) => id !== eid) : [...prev, eid], `${on ? "deselected" : "selected"} ${frameName(eid)}`);
         },
         onRange: (eid) => {
           const to = kept.indexOf(eid);
           if (to < 0) return;
-          const at = kept.indexOf(anchor.current ?? prev[0] ?? eid);
+          const at = kept.indexOf(anchors.current.get(owner) ?? prev[0] ?? eid);
           const from = at < 0 ? to : at;
           const span = kept.slice(Math.min(from, to), Math.max(from, to) + 1);
-          anchor.current = eid;
+          anchors.current.set(owner, eid);
           apply([...new Set([...prev, ...span])], `selected ${span.length} images of ${ownerName}`);
         },
         onAll: () => apply(kept, `selected every image of ${ownerName}`),
