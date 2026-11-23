@@ -66,6 +66,7 @@ Options: `--detector` (comma list of `hybrid`, `persistence`, `recipe`, `oracle`
 `hybrid`), `--threshold X|sweep` (recipe decision threshold; `sweep` scores
 every threshold of the gate's grid, 0.3 to 0.9 and omits the recipe id; ignored with a warning when `recipe` is not a detector), `--learner`, `--nms`, `--trees`,
 `--no-detector-features` (recipe, as for `cv`), `--phase-auto user_events|all`,
+`--phase-targets reachable|all` (default `reachable`),
 `--group-by experiment|sample` (fold key; by default training's choice,
 experiments when there are at least 3 and otherwise samples; with fewer than
 5 samples training refuses, and `evaluate` still runs, by sample), `--json PATH`.
@@ -73,10 +74,17 @@ experiments when there are at least 3 and otherwise samples; with fewer than
 Every loaded exposure of the database is scored, labelled or not. Output, per
 detector, as numerator/denominator and rate:
 
-- **phase top-1**: of the labelled exposures that have a confirmed call, how many
+- **phase top-1**: of the labelled exposures that have a reachable confirmed call, how many
   have the first pick of `auto_group` (computed from the detector's peaks, minus
   peaks the user excluded) matching a confirmed call in phase and basis (2%).
   A second table gives this per phase, using each exposure's first confirmed call.
+  A call is reachable when `indexpeaks` over the oracle's peaks gives a candidate
+  of the called phase with a basis within 2% of the call. Calls with no such
+  candidate (for example custom indices anchored on fewer peaks than indexing
+  needs) cannot be matched by any detector, so they are left out, and an
+  exposure with none left is not scored. Calls whose phase exists but is
+  out-ranked stay in. `--phase-targets all` scores every call. The output gives
+  reachable and all counts, overall and per phase.
 - **add recall**: your added peaks the detector finds. Adds in the top 7% of
   the q range are not scored (the hybrid trims it); their count is printed.
 - **excludes detected**: excluded peaks the detector still outputs (lower is better).
@@ -112,14 +120,13 @@ Biases to keep in mind:
   threshold's numbers as optimistic and compare detectors at a threshold fixed
   beforehand.
 - With few experiments the folds are large and per-phase counts are small.
-- The phase metric stays well below 100% even with the user's own peaks:
-  it needs the first `auto_group` pick to match a confirmed call within 2% of
-  its basis, and confirmed calls (custom indices, coexisting phases) often do
-  not satisfy that. A phase that scores 0 for every detector may be near 0 for
-  the oracle too, which says nothing about detection. Read each detector
-  against the oracle row of the same phase.
+- The phase metric can stay below 100% even with the user's own peaks: it
+  needs the first `auto_group` pick to match a confirmed call within 2% of its
+  basis, and a reachable call can still be out-ranked (coexisting phases). Read
+  each detector against the oracle row of the same phase. With `--phase-targets
+  all`, unreachable calls also count against every detector.
 
-The JSON holds the same numbers (`counts`, `detectors[].metrics`,
+The JSON holds the same numbers (`counts` including `phase_calls`, `phase_targets`, `detectors[].metrics`,
 `detectors[].per_phase`, `paired`), with no paths. The output is derived from
 lab data: keep it under `evaluations/` and do not commit it.
 
