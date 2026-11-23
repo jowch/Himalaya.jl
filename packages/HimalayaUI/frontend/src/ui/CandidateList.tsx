@@ -18,7 +18,8 @@ interface Props {
 }
 
 const ROW = "grid w-full items-center rounded-sm border px-2 text-left text-base disabled:opacity-50 ";
-const look = (on: boolean) => (on ? "border-ink-soft bg-paper-sunk" : "border-transparent hover:border-hair-strong");
+const BAR = "shadow-[inset_3px_0_0_var(--color-accent)] ";
+const look = (on: boolean | "mixed") => "border-transparent " + (on === true ? BAR + "bg-row-cursor" : on === "mixed" ? BAR + "hover:bg-paper-sunk" : "hover:bg-paper-sunk");
 
 export function CandidateList({ rows, assigned, disabled, formFactor, onToggle, onToggleGroup, onFormFactor, onHover }: Props): JSX.Element {
   return (
@@ -95,7 +96,7 @@ function Rows({ rows, assigned, disabled, onToggle, onToggleGroup, onHover }: Om
               onMouseEnter={() => onHover(ids)}
               onFocus={() => onHover(ids)}
               data-testid="workspace-bonnet-group"
-              className={ROW + "grid-cols-[auto_1fr_auto] gap-1.5 py-[6px] " + (pressed === "mixed" ? "border-dashed border-ink-soft" : look(pressed === true))}
+              className={ROW + "grid-cols-[auto_1fr_auto] gap-1.5 py-[6px] " + look(pressed)}
             >
               <Key n={key} />
               <span className="min-w-0 truncate whitespace-nowrap">
