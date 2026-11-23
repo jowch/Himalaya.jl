@@ -2869,31 +2869,43 @@ describe("WorkspacePage", () => {
     fireEvent.mouseLeave(screen.getByTestId("workspace-candidates"));
     expect(screen.getAllByTestId("workspace-indexing-fit").map((n) => n.textContent)).toEqual([expect.stringMatching(/^Pn3m/)]);
   });
-  it("hovering a candidate or drafting a custom index draws its predicted rings on every image, from that image's setup geometry", () => {
+  it("Space while hovering a candidate draws its half-rings on the enlarged image only, and keeps them after the mouse leaves the list", () => {
     state.setups = [{ id: 1, name: "setup1", folder: "setup1", included: true,
       beam_center_x: 421.409, beam_center_y: 836.946, pixel_size_um: 172, energy_kev: 9, flight_path_m: 1.8095, q_units: "A-1" }];
     state.corpus = state.corpus.map((s) => (s.id === 10 ? { ...s, setup_id: 1 } : s));
     state.exposures = [exposure(100, { image_path: "/d/100.tif", image_version: "v" }), exposure(101, { image_path: "/d/101.tif", image_version: "v" })];
     state.detectorSize = { width: 981, height: 1043 };
     renderAt("/experiments/1/workspace/10");
-    const strip = screen.getByTestId("workspace-exposures");
-    const ringSets = () => [...strip.querySelectorAll('[data-testid="detector-rings"]')];
-    expect(ringSets()).toHaveLength(0);
+    const ringSets = () => [...document.querySelectorAll('[data-testid="detector-rings"]')];
     expect(new Set(state.sizeRequests)).toEqual(new Set(["/api/exposures/100/image?thumb=1&v=v", "/api/exposures/101/image?thumb=1&v=v"]));
     const rows = within(screen.getByTestId("workspace-candidates")).getAllByRole("button");
     fireEvent.mouseEnter(rows[1]!);
-    expect(ringSets()).toHaveLength(2);
-    const arcs = [...ringSets()[0]!.querySelectorAll('[data-role="det-ring"]')];
+    expect(ringSets()).toHaveLength(0);
+    fireEvent.keyDown(window, { key: " " });
+    fireEvent.mouseLeave(screen.getByTestId("workspace-candidates"));
+    const big = screen.getByTestId("workspace-detector-big");
+    expect(ringSets()).toHaveLength(1);
+    const arcs = [...big.querySelectorAll('[data-role="det-ring"]')];
     expect(arcs).toHaveLength(2);
     const [, x0, y0, , r, , , , sweep, x1, y1] = arcs[0]!.getAttribute("d")!.split(" ");
     expect(Number(r)).toBeCloseTo(230.7, 0);
     expect(sweep).toBe("0");
     expect([x1, Number(y1) - Number(y0)]).toEqual([x0, 2 * Number(r)]);
     expect(arcs[0]!.getAttribute("stroke")).toBe(phaseColor("Im3m"));
-    fireEvent.mouseLeave(screen.getByTestId("workspace-candidates"));
-    expect(ringSets()).toHaveLength(0);
-    fireEvent.keyDown(window, { key: "i" });
-    expect(ringSets().length).toBe(2);
+    expect(within(screen.getByTestId("workspace-exposures")).queryByTestId("detector-rings")).toBeNull();
+  });
+
+  it("Space with no candidate hovered draws the ticked phases' rings on the enlarged image", () => {
+    state.setups = [{ id: 1, name: "setup1", folder: "setup1", included: true,
+      beam_center_x: 421.409, beam_center_y: 836.946, pixel_size_um: 172, energy_kev: 9, flight_path_m: 1.8095, q_units: "A-1" }];
+    state.corpus = state.corpus.map((s) => (s.id === 10 ? { ...s, setup_id: 1 } : s));
+    state.exposures = [exposure(100, { image_path: "/d/100.tif", image_version: "v" }), exposure(101, { image_path: "/d/101.tif", image_version: "v" })];
+    state.detectorSize = { width: 981, height: 1043 };
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: " " });
+    const strokes = [...screen.getByTestId("workspace-detector-big").querySelectorAll('[data-role="det-ring"]')].map((a) => a.getAttribute("stroke"));
+    expect(strokes.length).toBeGreaterThan(0);
+    expect(new Set(strokes)).toEqual(new Set([phaseColor("Pn3m")]));
   });
 
   it("draws a same sample's rings from another setup in that setup's geometry but in this sample's q units", () => {
@@ -2907,11 +2919,13 @@ describe("WorkspacePage", () => {
     state.detectorSize = { width: 981, height: 1043 };
     renderAt("/experiments/1/workspace/10");
     fireEvent.mouseEnter(within(screen.getByTestId("workspace-candidates")).getAllByRole("button")[1]!);
-    const radii = [...screen.getByTestId("workspace-exposures").querySelectorAll('[data-testid="detector-rings"]')]
-      .map((set) => Number(set.querySelector('[data-role="det-ring"]')!.getAttribute("d")!.split(" ")[4]));
-    expect(radii).toHaveLength(2);
-    expect(radii[0]).toBeCloseTo(230.7, 0);
-    expect(radii[1]).toBeCloseTo(radii[0]!, 6);
+    fireEvent.keyDown(window, { key: " " });
+    const radius = () => Number(screen.getByTestId("workspace-detector-big").querySelector('[data-role="det-ring"]')!.getAttribute("d")!.split(" ")[4]);
+    const first = radius();
+    expect(first).toBeCloseTo(230.7, 0);
+    fireEvent.keyDown(screen.getByTestId("workspace-detector-big"), { key: "ArrowRight" });
+    expect(screen.getByTestId("workspace-detector-caption").textContent).toMatch(/200|Image 2/);
+    expect(radius()).toBeCloseTo(first, 6);
   });
 
   it("Space opens the enlarged image while a custom index is open, with the draft's rings, and Esc there keeps the draft", () => {

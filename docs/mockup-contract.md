@@ -52,7 +52,7 @@ When the mock-up changes, extract its behaviours again from the code and update 
 | img-show-only | O or "Show only" plots one image, with a banner; O again shows all | planned | thread "Show combined curve by default" |
 | img-suspect | A suspect image (low-q excess) is outlined, says why, and is drawn in the warning colour | planned | thread "Show combined curve by default" |
 | img-open-suspect | Opening a sample selects its first undropped suspect image | planned | thread "Show combined curve by default" |
-| img-rings | Hovering a candidate draws its predicted rings on every detector image | built | test/workspace/WorkspacePage.test.tsx › hovering a candidate or drafting a custom index draws its predicted rings on every image, from that image's setup geometry |
+| img-rings | Hovering a candidate draws its predicted rings on every detector image | superseded | docs/decisions.md img-rings-enlarged, 2026-11-23 |
 | img-meta | The Image panel lists the shown image's file, time, exposure, I₀, I₂ and flight tube | built | test/workspace/WorkspacePage.test.tsx › lists the shown exposure's time, I₀ and I signal under the .prp names |
 | img-transmission | The Image panel shows I₂ / I₀ | planned | held small item from the 2026-11-23 mock-up audit, pending Jonathan's call (thread "Audit app against the mock-up") |
 | img-lowq | The Image panel shows "Low-q vs others" | planned | thread "Show combined curve by default" |
