@@ -3559,6 +3559,20 @@ describe("WorkspacePage", () => {
     expect(calls).toContainEqual({ hook: "bridge", boundTo: 1, arg: { sampleId: 10, toSampleId: 13 } });
   });
 
+  it("the same-sample page lists the samples of other setups first, the closest name on top", () => {
+    state.setups = [{ id: 1, name: "Short pipe", folder: "s", included: true }, { id: 2, name: "Long pipe", folder: "l", included: true }];
+    state.corpus = [
+      { ...sample(10, "MO_H2O"), setup_id: 1 },
+      { ...sample(11, "MO_PEG5"), setup_id: 1 },
+      { ...sample(12, "DOPC"), setup_id: 2 },
+      { ...sample(13, "MO_H2O"), setup_id: 2 },
+    ];
+    renderAt("/experiments/1/workspace/10");
+    runFromPalette("same sample as…");
+    const page = screen.getByRole("dialog", { name: "Same sample as" });
+    expect(within(page).getAllByRole("option").map((o) => o.getAttribute("data-palette-item"))).toEqual(["bridge-13", "bridge-12", "bridge-11"]);
+  });
+
   it("bridging to a sample with a different call asks which call to keep and sends that choice", async () => {
     state.corpus = state.corpus.map((s) => (s.id === 13 ? { ...s, assignment_state: "indexed", phase: "Im3m", call_phases: ["Im3m"] } : s));
     renderAt("/experiments/1/workspace/10");
