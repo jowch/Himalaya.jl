@@ -15,7 +15,7 @@ const sampleOf = (result, label) => {
 
 async function shownExposure(api, s, label) {
   const exposures = await getJson(api, `/api/samples/${s.sample_id}/exposures`);
-  const exposure = exposures.find((e) => e.filename === s.shown.frame);
+  const exposure = exposures.find((e) => (s.shown.exposure_id != null ? e.id === s.shown.exposure_id : e.filename === s.shown.frame));
   if (!exposure) report({ ok: false, error: `${label}'s shown frame ${s.shown.frame} is not among its exposures` });
   return exposure;
 }
@@ -94,14 +94,12 @@ async function twin(file) {
   const frames = [];
   for (const s of read(file).samples ?? []) {
     if (s.assigned_frames?.length) continue;
-    const exposures = await getJson(api, `/api/samples/${s.sample_id}/exposures`);
-    for (const [i, exposure] of exposures.entries()) {
-      if (exposure.status === "rejected") continue;
-      const peaks = await getJson(api, `/api/exposures/${exposure.id}/peaks`);
-      if (peaks.length >= 2 && peaks.some((p) => p.source === "auto")) frames.push({ s, exposure, frame: `Image ${i + 1}`, peaks });
-    }
+    const exposure = (await getJson(api, `/api/samples/${s.sample_id}/exposures`)).find((e) => e.id === s.shown?.exposure_id);
+    if (!exposure) continue;
+    const peaks = await getJson(api, `/api/exposures/${exposure.id}/peaks`);
+    if (peaks.length >= 2 && peaks.some((p) => p.source === "auto")) frames.push({ s, exposure, peaks });
   }
-  if (!frames.length) report({ ok: false, error: "no kept frame of an unassigned sample has two or more peaks, one of them auto" });
+  if (!frames.length) report({ ok: false, error: "no unassigned sample's analyzed curve has two or more peaks, one of them auto" });
   const autoIds = (f) => f.peaks.filter((p) => p.source === "auto").map((p) => p.id);
   frames.sort((a, b) => Math.min(...autoIds(a)) - Math.min(...autoIds(b)));
   const host = frames[0];
@@ -115,7 +113,7 @@ async function twin(file) {
     manual = await addManual(api, host.exposure.id, host.peaks);
   }
   const auto = host.peaks.find((p) => p.source === "auto" && p.id === manual.id);
-  console.log(JSON.stringify({ sample_id: host.s.sample_id, exposure_id: host.exposure.id, frame: host.frame, id: manual.id, manual: peakName(manual), auto: peakName(auto), excluded: peakName({ ...auto, excluded: true }) }));
+  console.log(JSON.stringify({ sample_id: host.s.sample_id, exposure_id: host.exposure.id, id: manual.id, manual: peakName(manual), auto: peakName(auto), excluded: peakName({ ...auto, excluded: true }) }));
 }
 
 async function twinState(exposureId, id, want) {

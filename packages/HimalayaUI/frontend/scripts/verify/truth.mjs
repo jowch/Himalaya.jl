@@ -130,13 +130,52 @@ export function unreadViews(app) {
   return unread;
 }
 
+export const COMBINED = "combined";
+
+export function isSelected(frame) {
+  return isKept(frame) && frame.selected !== false;
+}
+
+export function selectedFrames(frames) {
+  return frames.filter(isSelected);
+}
+
+export function selectionMismatch(app, frames, held = new Set()) {
+  const selected = selectedFrames(frames);
+  const names = (list) => list.map((f) => f.filename).sort().join(" ");
+  const out = [];
+  const analyzed = app.shown.analyzed_id ?? null;
+  const dropped = frames.filter((f) => !isKept(f) && f.selected === true);
+  if (dropped.length) out.push({ expected: "a dropped image is never selected", selected: names(dropped) });
+  if (selected.length === 1 && analyzed !== selected[0].id) {
+    out.push({ expected: `the sample status describes ${selected[0].filename}`, analyzed: frames.find((f) => f.id === analyzed)?.filename ?? analyzed });
+  }
+  const averaged = selected.length >= 2 && !selected.some((f) => held.has(f.filename));
+  if (averaged) {
+    if (!app.combined) out.push({ expected: `an average of ${names(selected)}`, combined: null });
+    else {
+      if (names(app.combined.sources) !== names(selected)) out.push({ expected: names(selected), combined: names(app.combined.sources) });
+      if (analyzed !== app.combined.id) out.push({ expected: "the sample status describes the average", analyzed: frames.find((f) => f.id === analyzed)?.filename ?? analyzed });
+    }
+  }
+  if (app.workspaceMembers !== undefined) {
+    const drawn = [...app.workspaceMembers].sort((a, b) => a - b).join(" ");
+    const want = averaged ? selected.map((f) => f.id).sort((a, b) => a - b).join(" ") : "";
+    if (drawn !== want) out.push({ expected_plot: want ? `faint lines for ${names(selected)} under their average` : "one curve", drawn: app.workspaceMembers.map((id) => frames.find((f) => f.id === id)?.filename ?? id) });
+  }
+  return out.length ? out : null;
+}
+
 function sampleInvariants(app, frames, held = new Set()) {
   const kept = frames.filter(isKept);
   const keptNames = kept.map((f) => f.filename);
   const shown = shownStatus(app.shown);
-  const rep = frames.find((f) => f.id === (app.shown.representative_id ?? null)) ?? null;
-  const confirmed = sampleCall(frames);
-  const opened = { corpus_api: rep?.filename ?? null, ...(app.views ?? {}) };
+  const repId = app.shown.analyzed_id ?? null;
+  const rep = frames.find((f) => f.id === repId) ?? null;
+  const confirmed = sampleCall([...frames, ...(app.combined ? [app.combined] : []), ...(app.earlierAverages ?? [])]);
+  const selected = selectedFrames(frames);
+  const pending = selected.length >= 2 && selected.some((f) => held.has(f.filename));
+  const opened = { corpus_api: app.combined && app.combined.id === repId ? COMBINED : rep?.filename ?? null, ...(app.views ?? {}) };
   const onDropped = Object.entries(opened)
     .map(([view, name]) => ({ view, frame: frames.find((f) => f.filename === name) }))
     .filter(({ frame }) => frame && !isKept(frame) && kept.length)
@@ -144,29 +183,31 @@ function sampleInvariants(app, frames, held = new Set()) {
   const allRead = app.views && unreadViews(app).length === 0;
   const workspaceRead = app.views ? statusFromText(app.workspaceText) : null;
   return {
-    plot_matches_trace: app.views && app.workspacePlot !== undefined ? ((m) => (m ? [m] : null))(plotMismatch(app.views.workspace, app.workspacePlot, held)) : null,
+    plot_matches_trace: app.views && app.workspacePlot !== undefined ? ((m) => (m ? [m] : null))(plotMismatch(app.views.workspace, app.workspacePlot, held, pending)) : null,
     workspace_status_matches: app.views && (workspaceRead !== shown.status || (shown.status === "phase" && callFromText(app.workspaceText) !== shown.call)) ? [{ shown: shownLabel(shown), workspace: app.workspaceText ?? null }] : null,
     status_matches_assignment: statusMatches(shown, confirmed) ? null : [{ shown: shownLabel(shown), confirmed }],
     rail_matches_call: railViolation(app, kept, confirmed),
-    representative_kept: onDropped.length ? onDropped : null,
-    views_agree: allRead && kept.length && new Set(Object.values(opened)).size > 1 ? [opened] : null,
+    analyzed_kept: onDropped.length ? onDropped : null,
+    views_agree: allRead && kept.length && !pending && new Set(Object.values(opened)).size > 1 ? [opened] : null,
     bridged_labels_match: app.labelDrift?.length ? app.labelDrift : null,
     bridged_calls_match: app.callDrift?.length ? app.callDrift : null,
+    plot_shows_selection: selectionMismatch(app, frames, held),
   };
 }
 
 export const INVARIANTS = {
   status_matches_assignment: "A sample's confirmed call is the phases assigned on any of its frames, kept or dropped, or the sample's form-factor state. A sample with none is shown as unreviewed; a sample with one is shown with that call.",
   rail_matches_call: "The workspace's Call list ticks exactly the sample's called phases that the opened frame offers as candidates, and marks form factor only for a form-factor call (needs --ui).",
-  representative_kept: "The frame the sample status describes (corpus_api) or the workspace opens on (--ui) is never a dropped frame while the sample has a kept one.",
-  views_agree: "The sample status (corpus_api) and the workspace describe the same frame of a sample (needs --ui).",
+  analyzed_kept: "The image the sample status describes (corpus_api) or the workspace plots (--ui) is never a dropped image while the sample has a kept one.",
+  views_agree: "The sample status (corpus_api) and the workspace describe the same curve of a sample: the average of its selected images, or its one selected image (needs --ui).",
   workspace_status_matches: "The workspace sample list shows the same status as GET /api/samples (needs --ui).",
   bridged_labels_match: "Samples bridged as the same sample carry the same confirmed labels, apart from flight-path labels such as \"1.7 m\", which stay with each setup. Unchecked while the experiment has no bridge.",
   bridged_calls_match: "Samples bridged as the same sample show one call: the same call state and the same called phases. Unchecked while the experiment has no bridge.",
-  plot_matches_trace: "The workspace plot of the opened frame says \"Waiting for this image's trace.\" when its trace is held back in late/, and shows the trace otherwise (needs --ui).",
+  plot_shows_selection: "A sample analyzes exactly its selected images, and a dropped image is never selected. With one selected, the sample status describes that image. With two or more, each with a trace, an average of exactly those images exists and the status describes it, and the workspace draws one faint line per selected image under it (with --ui).",
+  plot_matches_trace: "The workspace plot of the opened frame says \"Waiting for this image's trace.\" when its trace is held back in late/, or \"Waiting for the selected images' traces.\" when it averages images one of which is held back, and shows the trace otherwise (needs --ui).",
 };
 
-const NEEDS_VIEWS = new Set(["representative_kept", "views_agree", "workspace_status_matches", "rail_matches_call", "plot_matches_trace"]);
+const NEEDS_VIEWS = new Set(["analyzed_kept", "views_agree", "workspace_status_matches", "rail_matches_call", "plot_matches_trace"]);
 const NEEDS_UI = new Set(["views_agree", "workspace_status_matches", "rail_matches_call", "plot_matches_trace"]);
 
 function rollupInvariants(perSample, ui) {
@@ -199,7 +240,10 @@ export const TRACES_RULE = "Exactly the frames whose trace is held back in late/
 
 export const WAITING_PLOT = "Waiting for this image's trace.";
 
-export function plotMismatch(frame, plot, held) {
+export const WAITING_AVERAGE = "Waiting for the selected images' traces.";
+
+export function plotMismatch(frame, plot, held, pending = false) {
+  if (pending) return plot === WAITING_AVERAGE ? null : { frame, plot, expected: WAITING_AVERAGE };
   if (!frame) return null;
   if (held.has(frame)) return plot === WAITING_PLOT ? null : { frame, plot, expected: WAITING_PLOT };
   return plot === null || plot === undefined ? null : { frame, plot, expected: "the trace" };
@@ -270,7 +314,18 @@ export function compareTruth(truthRows, appSamples, { strict = false, expect = n
       : flared.has(f.filename)
       ? { frame: f.filename, call: normalizeCall(f.autoPhases), expected: `within ${expectedAuto}` }
       : { frame: f.filename, call: normalizeCall(f.autoPhases), expected: empty.has(f.filename) ? "none" : expectedAuto }));
-    const wrongAuto = autoCalls.filter((c) => (c.expected.startsWith("within ") ? !withinCall(c.call, expectedAuto) : c.call !== c.expected));
+    const solo = matches.length === 1 ? matches[0] : null;
+    if (solo?.combined) {
+      const sources = new Set(solo.combined.sources.map((f) => f.filename));
+      const noisy = [...sources].some((f) => bad.has(f));
+      const allowed = normalizeCall([...expectedAuto.split("+"), ...truth.split("+")]);
+      autoCalls.push({ frame: COMBINED, call: normalizeCall(solo.combined.autoPhases), expected: noisy ? `within ${allowed}` : `${expectedAuto}, within ${allowed}`, allowed, needs: noisy ? "none" : expectedAuto });
+    }
+    const autoOk = (c) => {
+      if (c.allowed) return withinCall(c.call, c.allowed) && (c.needs === "none" || withinCall(c.needs, c.call));
+      return c.expected.startsWith("within ") ? withinCall(c.call, expectedAuto) : c.call === c.expected;
+    };
+    const wrongAuto = autoCalls.filter((c) => !autoOk(c));
     if (wrongAuto.length) {
       problems.push(`auto call ${wrongAuto.map((c) => `${c.frame}=${c.call} (expected ${c.expected})`).join(" ")}`);
     }
@@ -281,7 +336,8 @@ export function compareTruth(truthRows, appSamples, { strict = false, expect = n
     const droppedEarly = frames.filter((f) => !isKept(f)).map((f) => f.filename);
     if (expect === "fresh" && droppedEarly.length) problems.push(`frames dropped before triage: ${droppedEarly.join(" ")}`);
     const one = matches.length === 1 ? matches[0] : null;
-    const shown = one ? { ...withoutFull(shownStatus(one.shown)), frame: filenameOf(one.frames, one.shown.representative_id ?? null) } : null;
+    const analyzedId = one?.shown.analyzed_id ?? null;
+    const shown = one ? { ...withoutFull(shownStatus(one.shown)), frame: one.combined && one.combined.id === analyzedId ? COMBINED : filenameOf(one.frames, analyzedId), exposure_id: analyzedId } : null;
     if (one && one.shown.phase && !(Array.isArray(one.shown.call_phases) && one.shown.call_phases.length > 0)) {
       problems.push(`GET /api/samples gives ${one.name} the phase ${one.shown.phase} but no call_phases, so check-truth can't tell whether the list shows every phase of the call`);
     }
@@ -293,7 +349,8 @@ export function compareTruth(truthRows, appSamples, { strict = false, expect = n
       if (one.workspaceKept !== keptCount) problems.push(`the workspace's frame cards show ${one.workspaceKept ?? "nothing"} kept but the app has ${keptCount ?? "no frames"}`);
       for (const view of unread) problems.push(`could not read which frame ${VIEW_NAMES[view]} opens on (no single current "Image N" thumbnail); check-truth is misreading the app`);
     }
-    const assignedFrames = frames
+    const averages = matches.flatMap((s) => [...(s.combined ? [s.combined] : []), ...(s.earlierAverages ?? [])]);
+    const assignedFrames = [...frames, ...averages]
       .map((f) => ({ frame: f.filename, call: assignedCall(f.assignment) }))
       .filter((f) => f.call !== null);
     return {
@@ -370,24 +427,37 @@ export async function collectApp(cfg, experimentId) {
   for (const b of bridges) groupSize.set(b.group_id, (groupSize.get(b.group_id) ?? 0) + 1);
   const bridged = new Set(bridges.filter((b) => groupSize.get(b.group_id) > 1).map((b) => b.sample_id));
   const autoByFrame = new Map();
+  const autoByCombination = new Map();
   for (const s of exported) for (const e of s.exposures) {
-    if (!Array.isArray(e.auto_phases)) throw new Error(`export frame ${e.filename} has no auto_phases array`);
-    autoByFrame.set(e.filename, e.auto_phases);
+    if (!Array.isArray(e.auto_phases)) throw new Error(`export frame ${e.filename ?? e.kind} has no auto_phases array`);
+    if (e.kind === COMBINED) autoByCombination.set([...(e.sources ?? [])].sort().join(" "), e.auto_phases);
+    else autoByFrame.set(e.filename, e.auto_phases);
   }
   return Promise.all(
     samples.map(async (s) => {
-      const exposures = await getJson(api, `/api/samples/${s.id}/exposures`);
+      const all = await getJson(api, `/api/samples/${s.id}/exposures`);
+      const exposures = all.filter((e) => e.kind !== COMBINED);
       const frames = exposures
         .slice()
         .sort((a, b) => a.id - b.id)
-        .map((e) => ({ id: e.id, filename: e.filename, status: e.status, autoPhases: autoByFrame.get(e.filename) ?? [] }));
+        .map((e) => ({ id: e.id, filename: e.filename, status: e.status, selected: e.status !== "rejected" && e.selected !== false, autoPhases: autoByFrame.get(e.filename) ?? [] }));
       for (const f of frames) f.assignment = await readAssignment(api, f.id);
+      const row = all.find((e) => e.id === s.analyzed_exposure_id && e.kind === COMBINED);
+      const sourceIds = new Set((row?.sources ?? []).map((x) => x.source_exposure_id));
+      const sources = frames.filter((f) => sourceIds.has(f.id));
+      const combined = row
+        ? { id: row.id, filename: COMBINED, sources, autoPhases: autoByCombination.get(sources.map((f) => f.filename).sort().join(" ")) ?? [], assignment: await readAssignment(api, row.id) }
+        : null;
+      const earlierAverages = await Promise.all(all.filter((e) => e.kind === COMBINED && e.id !== row?.id)
+        .map(async (e) => ({ id: e.id, filename: COMBINED, assignment: await readAssignment(api, e.id) })));
       return {
         id: s.id,
         name: s.name,
-        shown: { phase: s.phase ?? null, call_phases: s.call_phases, state: s.assignment_state ?? null, representative_id: s.representative_exposure_id ?? null },
+        shown: { phase: s.phase ?? null, call_phases: s.call_phases, state: s.assignment_state ?? null, analyzed_id: s.analyzed_exposure_id ?? null },
         frameOrder: exposures.map((e) => e.filename),
         frames,
+        combined,
+        earlierAverages,
         bridged: bridged.has(s.id),
         ...(drift.has(s.id) ? { labelDrift: drift.get(s.id) } : {}),
         ...(callDrift.has(s.id) ? { callDrift: callDrift.get(s.id) } : {}),
@@ -429,8 +499,9 @@ export async function checkTruth(cfg, flags, { views = readViews } = {}) {
     const reused = [...opened.values()].map((v) => v.workspace_reused).filter((v) => v !== undefined);
     workspaceRead = reused.length ? (reused.every(Boolean) ? "in place" : "loaded") : null;
     for (const s of app) {
-      const { workspace_text: workspaceText = null, workspace_kept: workspaceKept = null, workspace_rail: workspaceRail = null, workspace_reused: _reused, workspace_plot: workspacePlot, workspace_notice: _notice, ...frames } = opened.get(s.id) ?? {};
+      const { workspace_text: workspaceText = null, workspace_kept: workspaceKept = null, workspace_rail: workspaceRail = null, workspace_reused: _reused, workspace_plot: workspacePlot, workspace_notice: _notice, workspace_members: workspaceMembers, ...frames } = opened.get(s.id) ?? {};
       if (workspacePlot !== undefined) s.workspacePlot = workspacePlot;
+      if (workspaceMembers !== undefined) s.workspaceMembers = workspaceMembers;
       s.views = { workspace: frames.workspace ?? null };
       s.workspaceKept = workspaceKept;
       s.workspaceText = workspaceText;

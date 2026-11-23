@@ -52,6 +52,7 @@ function _analyze_experiment!(db::SQLite.DB, exp_id::Int; sample_filter=nothing)
 
     for sample in samples
         exposures = get_exposures(db, Int(sample.id))
+        current = analyzed_exposure_id(db, Int(sample.id))
 
         for exp_row in exposures
             e_id = Int(exp_row.id)
@@ -60,7 +61,13 @@ function _analyze_experiment!(db::SQLite.DB, exp_id::Int; sample_filter=nothing)
                 println("  Skipping $(sample.name) / $(exp_row.filename) (rejected)")
                 continue
             end
-            print("  Analyzing $(sample.name) / $(exp_row.filename) ... ")
+            label = is_combined_kind(exp_row.kind) ?
+                "average of $(length(combined_source_ids(db, e_id))) images" : exp_row.filename
+            if is_combined_kind(exp_row.kind) && e_id != current
+                println("  Skipping $(sample.name) / $label (not the current selection)")
+                continue
+            end
+            print("  Analyzing $(sample.name) / $label ... ")
             try
                 res = analyze_exposure!(db, e_id)
                 if isempty(res.dropped_assignment_phases)
@@ -68,7 +75,7 @@ function _analyze_experiment!(db::SQLite.DB, exp_id::Int; sample_filter=nothing)
                 else
                     dropped = join(sort(res.dropped_assignment_phases), ", ")
                     println("done — DROPPED ASSIGNMENT: $dropped")
-                    push!(dropped_assignments, (sample.name, exp_row.filename, dropped))
+                    push!(dropped_assignments, (sample.name, label, dropped))
                 end
             catch e
                 msg = isa(e, ErrorException) ? e.msg : sprint(showerror, e)

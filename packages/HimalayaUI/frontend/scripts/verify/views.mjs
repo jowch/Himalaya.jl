@@ -7,7 +7,7 @@ import { leavePage, prepareUser, routeUrl } from "./page.mjs";
 export function statusFromText(text) {
   const t = String(text ?? "").replace(/\s+/g, " ").trim();
   if (!t) return null;
-  if (/^(Not indexed|Unreviewed)$|^Index\b/.test(t)) return "unreviewed";
+  if (/^(Not indexed|Unreviewed)$|^Unreviewed\. |^Index\b/.test(t)) return "unreviewed";
   if (/^Form factor$/i.test(t)) return "form_factor";
   return "phase";
 }
@@ -105,7 +105,11 @@ async function workspaceRail(page) {
 }
 
 async function currentWorkspaceFrame(page, frameOrder) {
-  const current = page.locator("[data-testid='workspace-exposures'] [aria-current='true']");
+  const strip = "[data-testid='workspace-exposures']";
+  const selected = await page.locator(`${strip} [data-selected='true'] button[aria-label^='Image']`)
+    .evaluateAll((els) => els.map((e) => e.getAttribute("aria-label") ?? ""));
+  if (selected.length === 1) return frameFromLabels(selected, frameOrder);
+  const current = page.locator(`${strip} [aria-current='true']`);
   const labels = await current.evaluateAll((els) => els.map((e) => e.getAttribute("aria-label") ?? e.textContent ?? ""));
   return frameFromLabels(labels, frameOrder);
 }
@@ -160,6 +164,7 @@ export async function readWorkspace(page, cfg, experimentId, samples, { reload =
     let rail = null;
     let plot = null;
     let notice = null;
+    let members = [];
     if (await row.count()) {
       const how = openSampleBy(page.url(), experimentId, s.id);
       if (how.reopen) {
@@ -176,11 +181,13 @@ export async function readWorkspace(page, cfg, experimentId, samples, { reload =
         kept = await workspaceKept(page);
       }
       frame = await currentWorkspaceFrame(page, s.frameOrder);
+      members = await page.locator("[data-testid='workspace-members'] [data-member]").evaluateAll((els) => els.map((e) => Number(e.getAttribute("data-member"))));
+      if (members.length) frame = "combined";
       rail = await workspaceRail(page);
       plot = await plotMessage(page);
       notice = await textOrNull(page, "[data-testid='workspace-ingest-status']");
     }
-    out.set(s.id, { workspace_text: texts.get(s.id) ?? null, workspace: frame, workspace_kept: kept, workspace_rail: rail, workspace_reused: start.reuse, workspace_plot: plot, workspace_notice: notice });
+    out.set(s.id, { workspace_text: texts.get(s.id) ?? null, workspace: frame, workspace_kept: kept, workspace_rail: rail, workspace_reused: start.reuse, workspace_plot: plot, workspace_notice: notice, workspace_members: members });
   }
   return out;
 }

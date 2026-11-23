@@ -62,6 +62,33 @@ stored_median(db, id) = only(Tables.rowtable(DBInterface.execute(db,
         @test HimalayaUI.backfill_trace_medians!(f.db) == 0
     end
 
+    @testset "deselect_beam_off! leaves beam-off images out of the selection" begin
+        f = _beam_off_fixture()
+        analyze_exposure!(f.db, f.lit, f.analysis_dir)
+        analyze_exposure!(f.db, f.dark, f.analysis_dir)
+        @test HimalayaUI.deselect_beam_off!(f.db, [f.lit, f.dark]) == 1
+        @test HimalayaUI.selected_image_ids(f.db, f.s_id) == [f.lit]
+        @test HimalayaUI.deselect_beam_off!(f.db, Int[]) == 0
+    end
+
+    @testset "the first boot after upgrading leaves beam-off images out of untouched selections, once" begin
+        f = _beam_off_fixture()
+        analyze_exposure!(f.db, f.lit, f.analysis_dir)
+        analyze_exposure!(f.db, f.dark, f.analysis_dir)
+        custom = create_sample!(f.db; experiment_id=f.exp_id, name="D2")
+        mine = create_exposure!(f.db; experiment_id=f.exp_id, sample_id=custom, filename="dark2")
+        theirs = create_exposure!(f.db; experiment_id=f.exp_id, sample_id=custom, filename="lit2")
+        DBInterface.execute(f.db, "UPDATE exposures SET trace_median = 0.0 WHERE id = ?", [mine])
+        DBInterface.execute(f.db, "UPDATE exposures SET deselected = 1 WHERE id = ?", [theirs])
+        DBInterface.execute(f.db, "DELETE FROM schema_migrations WHERE name = ?", [HimalayaUI.MIGRATION_BEAM_OFF_DESELECTED])
+        @test HimalayaUI.deselect_beam_off_once!(f.db) == 1
+        @test HimalayaUI.selected_image_ids(f.db, f.s_id) == [f.lit]
+        @test HimalayaUI.selected_image_ids(f.db, custom) == [mine]
+        DBInterface.execute(f.db, "UPDATE exposures SET deselected = 0 WHERE id = ?", [f.dark])
+        @test HimalayaUI.deselect_beam_off_once!(f.db) == 0
+        @test HimalayaUI.selected_image_ids(f.db, f.s_id) == [f.lit, f.dark]
+    end
+
     @testset "migrate_exposures_trace_median! adds the column to an old exposures table" begin
         f = _beam_off_fixture()
         DBInterface.execute(f.db, "ALTER TABLE exposures DROP COLUMN trace_median")

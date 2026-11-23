@@ -45,8 +45,8 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
             csv_body = String(r.body)
             @test startswith(csv_body, "sample_name,exposure_filename,call_state,call_phases,auto_phases,phases")
             @test occursin("D1,example_tot,uncalled,,$(join(s.exposures[1].auto_phases, ";")),,,,,Buffer;37C", csv_body)
-            @test strip(last(split(first(split(csv_body, "\n")), ","))) == "bridged_with"
-            @test endswith(strip(split(csv_body, "\n")[2]), ",Buffer;37C,$(s.setup),")
+            @test strip(last(split(first(split(csv_body, "\n")), ","))) == "analyzed"
+            @test endswith(strip(split(csv_body, "\n")[2]), ",Buffer;37C,$(s.setup),,true")
             @test s.setup isa String
             @test isempty(s.bridged_with)
 

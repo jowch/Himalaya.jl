@@ -49,7 +49,7 @@ test.beforeEach(async ({ page }) => {
   });
   await page.route("**/api/samples/*/exposures*", (r) => {
     const id = Number(/samples\/(\d+)\//.exec(r.request().url())![1]);
-    return r.fulfill(json([0, 1, 2].map((f) => exposureOf(id, f))));
+    return r.fulfill(json([0, 1, 2].map((f) => ({ ...exposureOf(id, f), selected: f === 2 }))));
   });
   await page.route(/\/api\/exposures\/\d+\/trace/, (r) => r.fulfill(json({ q: [0.02, 0.2], I: [10, 1], sigma: [1, 1] })));
   await page.route(/\/api\/exposures\/\d+\/peaks/, (r) => r.fulfill(json([])));

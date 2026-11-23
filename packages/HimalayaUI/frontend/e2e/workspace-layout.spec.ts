@@ -81,7 +81,7 @@ test.beforeEach(async ({ page }) => {
   await page.route(/\/api\/samples\/\d+\/exposures/, (r) => {
     const id = Number(/samples\/(\d+)\//.exec(r.request().url())![1]);
     const n = FRAMES[id] ?? 1;
-    return r.fulfill(json(Array.from({ length: n }, (_, f) => exposureOf(id, id % 2 === 0, f, n > 1 && f === n - 1))));
+    return r.fulfill(json(Array.from({ length: n }, (_, f) => ({ ...exposureOf(id, id % 2 === 0, f, n > 1 && f === n - 1), selected: f === n - 1 }))));
   });
   await page.route(/\/api\/exposures\/\d+\/trace/, (r) => r.fulfill(json(trace)));
   await page.route(/\/api\/exposures\/\d+\/peaks/, (r) => r.fulfill(json([])));

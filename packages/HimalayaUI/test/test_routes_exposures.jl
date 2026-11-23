@@ -30,7 +30,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         list = JSON3.read(String(r.body))
         @test length(list) == 2
         @test list[1].filename == "example_tot"
-        @test !haskey(list[1], :selected)
+        @test list[1].selected === true
         @test !haskey(list[1], :tags)
         @test list[1].sources  == []
         @test list[1].transmitted_counts ≈ 7365.0

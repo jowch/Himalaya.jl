@@ -1,3 +1,4 @@
+import { refetchListsWith, refetchSelection } from "../selectionLists";
 import type { QueryClient } from "@tanstack/react-query";
 import * as api from "../../../api";
 import type {
@@ -60,6 +61,7 @@ function patchOf(p: { name?: string; notes?: string }): { name?: string; notes?:
 export type SetExposureStatusInput = {
   exposureId: number;
   status: "accepted" | "rejected" | null;
+  selected?: boolean;
 };
 type SetExposureStatusScope = BaseScope & { sampleId: number };
 
@@ -70,15 +72,34 @@ export const setExposureStatusMutator: Mutator<
   onMutate: (p, qc): RollbackContext => {
     const restoreExposures = rewriteExposureLists(qc, p.sampleId, (list) =>
       list.map((e) =>
-        e.id === p.exposureId ? { ...e, status: p.status } : e,
+        e.id === p.exposureId ? { ...e, status: p.status, ...(p.selected === undefined ? {} : { selected: p.selected }) } : e,
       ),
     );
     return { restore: restoreExposures };
   },
-  request: (p) => api.setExposureStatus(p.exposureId, p.status, buildAuthOpts(p)),
-  onSuccess: (_p, _r, qc) => {
+  request: (p) => api.setExposureStatus(p.exposureId, p.status, buildAuthOpts(p), p.selected),
+  onSuccess: (p, _r, qc) => {
+    refetchListsWith(qc, p.exposureId);
     qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
   },
+};
+export type SetSelectionInput = { exposureIds: number[] };
+type SetSelectionScope = BaseScope & { sampleId: number };
+
+export const setSelectionMutator: Mutator<
+  SetSelectionInput, SetSelectionScope,
+  { sample_id: number; exposure_ids: number[]; analyzed_exposure_id: number | null }
+> = {
+  kind: "set_selection",
+  onMutate: (p, qc): RollbackContext => {
+    const chosen = new Set(p.exposureIds);
+    const restoreExposures = rewriteExposureLists(qc, p.sampleId, (list) =>
+      list.map((e) => (e.kind === "combined" || e.sample_id !== p.sampleId ? e : { ...e, selected: chosen.has(e.id) })),
+    );
+    return { restore: restoreExposures };
+  },
+  request: (p) => api.setSelection(p.sampleId, p.exposureIds, buildAuthOpts(p)),
+  onSuccess: (p, _r, qc) => refetchSelection(qc, p.sampleId),
 };
 function rewriteExposureLists(
   qc: QueryClient,

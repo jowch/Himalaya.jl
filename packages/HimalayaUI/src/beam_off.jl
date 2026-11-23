@@ -48,3 +48,34 @@ function backfill_trace_medians!(db::SQLite.DB)::Int
     end
     filled
 end
+
+function deselect_beam_off!(db::SQLite.DB, ids::AbstractVector{<:Integer})::Int
+    isempty(ids) && return 0
+    ph = join(fill("?", length(ids)), ",")
+    dark = [Int(r.id) for r in sqlrows(DBInterface.execute(db, """
+        SELECT id, trace_median, analysis_error, incident_monitor FROM exposures
+         WHERE id IN ($ph) AND kind = 'file' AND deselected = 0
+           AND (status IS NULL OR status != 'rejected')""", collect(Int, ids)))
+            if is_beam_off(r.trace_median, r.analysis_error, r.incident_monitor)]
+    isempty(dark) && return 0
+    DBInterface.execute(db, "UPDATE exposures SET deselected = 1 WHERE id IN ($(join(fill("?", length(dark)), ",")))", dark)
+    length(dark)
+end
+
+function deselect_beam_off_once!(db::SQLite.DB)::Int
+    _migrated(db, MIGRATION_BEAM_OFF_DESELECTED) && return 0
+    untouched = [Int(r.id) for r in sqlrows(DBInterface.execute(db, """
+        SELECT e.id FROM exposures e
+         WHERE e.kind = 'file' AND e.sample_id IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM exposures o
+                            WHERE o.sample_id = e.sample_id AND o.kind = 'file' AND o.deselected = 1
+                              AND (o.status IS NULL OR o.status != 'rejected'))"""))]
+    n = lock(_DB_WRITE_LOCK) do
+        SQLite.transaction(db) do
+            n = deselect_beam_off!(db, untouched)
+            _record_migration!(db, MIGRATION_BEAM_OFF_DESELECTED)
+            n
+        end
+    end
+    n
+end
