@@ -4,10 +4,13 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const FRONTEND = join(dirname(fileURLToPath(import.meta.url)), "..");
-const CONTRACT = join(FRONTEND, "..", "..", "..", "docs", "mockup-contract.md");
-const NAME = "docs/mockup-contract.md";
+const REPO = join(FRONTEND, "..", "..", "..");
 const STATUSES = new Set(["built", "untested", "superseded", "planned"]);
 const ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+export const MOCKUP = { name: "docs/mockup-contract.md", pinned: true, dated: false, root: FRONTEND };
+export const DECISIONS = { name: "docs/decisions.md", pinned: false, dated: true, root: REPO };
 
 function cells(line) {
   return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
@@ -18,11 +21,23 @@ export function parseContract(text) {
   const version = /Mock-up version: `([^`]+)`/.exec(text)?.[1];
   const sha256 = /Mock-up sha256: `([0-9a-f]{64})`/.exec(text)?.[1];
   const rows = [];
+  let columns = null;
   lines.forEach((line, i) => {
-    if (!line.trim().startsWith("|")) return;
-    const [id, behaviour, status, evidence] = cells(line);
-    if (!id || !ID.test(id) || id === "id") return;
-    rows.push({ id, behaviour: behaviour ?? "", status: status ?? "", evidence: evidence ?? "", line: i + 1 });
+    if (!line.trim().startsWith("|")) {
+      columns = null;
+      return;
+    }
+    const row = cells(line);
+    if (row[0] === "id") {
+      columns = Object.fromEntries(row.map((c, k) => [c.toLowerCase(), k]));
+      return;
+    }
+    const [id] = row;
+    if (!id || !ID.test(id)) return;
+    const at = (name, fallback) => row[columns?.[name] ?? fallback] ?? "";
+    const parsed = { id, behaviour: row[1] ?? "", status: at("status", 2), evidence: at("evidence", 3), line: i + 1 };
+    if (columns && "decided" in columns) parsed.decided = at("decided");
+    rows.push(parsed);
   });
   return { version, sha256, rows };
 }
@@ -39,6 +54,7 @@ function declaration(content, title) {
   for (const m of content.matchAll(re)) {
     if (!found || (found.modifier && !m[1])) found = { modifier: m[1] };
   }
+  if (!found && new RegExp(`@testset\\s+"${escape(title)}"`).test(content)) found = {};
   return found;
 }
 
@@ -56,15 +72,16 @@ function builtProblem(row, read) {
   return null;
 }
 
-export function checkContract(contract, read) {
+export function checkContract(contract, read, doc = MOCKUP) {
   const problems = [];
-  if (!contract.version) problems.push(`${NAME} does not pin the mock-up version`);
-  if (!contract.sha256) problems.push(`${NAME} does not pin the mock-up sha256`);
+  if (doc.pinned && !contract.version) problems.push(`${doc.name} does not pin the mock-up version`);
+  if (doc.pinned && !contract.sha256) problems.push(`${doc.name} does not pin the mock-up sha256`);
   const seen = new Set();
   for (const row of contract.rows) {
-    const at = `${NAME}:${row.line} ${row.id}`;
+    const at = `${doc.name}:${row.line} ${row.id}`;
     if (seen.has(row.id)) problems.push(`${at}: the id is used more than once`);
     seen.add(row.id);
+    if (doc.dated && !DATE.test(row.decided ?? "")) problems.push(`${at}: the Decided column must be a YYYY-MM-DD date`);
     if (!STATUSES.has(row.status)) {
       problems.push(`${at}: status "${row.status}" is not one of ${[...STATUSES].join(", ")}`);
       continue;
@@ -85,20 +102,28 @@ export function checkContract(contract, read) {
   return problems;
 }
 
-function readFrontend(path) {
-  const full = join(FRONTEND, path);
-  return existsSync(full) ? readFileSync(full, "utf8") : undefined;
+function reader(root) {
+  return (path) => {
+    const full = join(root, path);
+    return existsSync(full) ? readFileSync(full, "utf8") : undefined;
+  };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const contract = parseContract(readFileSync(CONTRACT, "utf8"));
-  const problems = checkContract(contract, readFrontend);
-  const counts = {};
-  for (const r of contract.rows) counts[r.status] = (counts[r.status] ?? 0) + 1;
-  if (problems.length) {
-    for (const p of problems) console.error(p);
-    console.error(`\n${problems.length} problem(s) in ${NAME}. Each row needs a status and the evidence that status requires; see the Statuses table at the top of the file.`);
-    process.exit(1);
+  let failed = 0;
+  for (const doc of [MOCKUP, DECISIONS]) {
+    const contract = parseContract(readFileSync(join(REPO, doc.name), "utf8"));
+    const problems = checkContract(contract, reader(doc.root), doc);
+    const counts = {};
+    for (const r of contract.rows) counts[r.status] = (counts[r.status] ?? 0) + 1;
+    if (problems.length) {
+      for (const p of problems) console.error(p);
+      console.error(`\n${problems.length} problem(s) in ${doc.name}. Each row needs a status and the evidence that status requires; see the Statuses table at the top of the file.`);
+      failed += problems.length;
+      continue;
+    }
+    const pin = doc.pinned ? ` against mock-up ${contract.version}` : "";
+    console.log(`${doc.name}: ${contract.rows.length} rows (${Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(", ")})${pin}`);
   }
-  console.log(`${NAME}: ${contract.rows.length} behaviours (${Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(", ")}) against mock-up ${contract.version}`);
+  if (failed) process.exit(1);
 }

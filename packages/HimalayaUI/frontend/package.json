@@ -5,10 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run lint:design && npm run lint:ratchet && npm run lint:mockup && npm run lint && tsc --noEmit -p tsconfig.build.json && vite build",
+    "build": "npm run lint:design && npm run lint:ratchet && npm run lint:contracts && npm run lint && tsc --noEmit -p tsconfig.build.json && vite build",
     "lint:design": "node scripts/check-design.mjs",
     "lint:ratchet": "node scripts/check-ratchets.mjs",
-    "lint:mockup": "node scripts/check-mockup-contract.mjs",
+    "lint:contracts": "node scripts/check-contracts.mjs",
     "lint": "eslint src",
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p tsconfig.e2e.json",
     "preview": "vite preview",

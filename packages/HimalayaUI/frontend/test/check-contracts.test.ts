@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseContract, checkContract } from "../scripts/check-mockup-contract.mjs";
+import { parseContract, checkContract, DECISIONS } from "../scripts/check-contracts.mjs";
 
 const HEAD = [
   "- Mock-up version: `1-a`",
@@ -79,3 +79,26 @@ describe("checkContract", () => {
     ]);
   });
 });
+
+describe("checkContract on the decisions file", () => {
+  const DHEAD = ["| id | Decision | Decided | Status | Evidence |", "|---|---|---|---|---|"];
+  const jl = { "packages/x/test/test_a.jl": '@testset "a decision holds" begin end' };
+  const dread = (p: string): string | undefined => ({ ...jl, ...files } as Record<string, string>)[p];
+  const dproblems = (rows: string[]): string[] =>
+    checkContract(parseContract([...DHEAD, ...rows].join("\n")), dread, DECISIONS);
+
+  it("reads the Status and Evidence columns by name, after the Decided column", () => {
+    const c = parseContract([...DHEAD, "| a-b | Do it | 2026-11-23 | planned | PR 9 |"].join("\n"));
+    expect(c.rows).toEqual([{ id: "a-b", behaviour: "Do it", decided: "2026-11-23", status: "planned", evidence: "PR 9", line: 3 }]);
+  });
+
+  it("accepts a Julia @testset as a built row's test, and needs no mock-up pin", () => {
+    expect(dproblems(["| a-b | Do it | 2026-11-23 | built | packages/x/test/test_a.jl › a decision holds |"])).toEqual([]);
+    expect(dproblems(["| a-b | Do it | 2026-11-23 | built | packages/x/test/test_a.jl › a decision", ].map((r) => r + " |"))[0]).toMatch(/does not contain the test "a decision"/);
+  });
+
+  it("needs the date each decision was made", () => {
+    expect(dproblems(["| a-b | Do it | soon | planned | PR 9 |"])[0]).toMatch(/a-b.*Decided column must be a YYYY-MM-DD date/);
+  });
+});
+
