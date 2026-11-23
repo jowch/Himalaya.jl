@@ -257,6 +257,21 @@ describe("WorkspacePlot", () => {
     expect(crosshair()).toBeNull();
   });
 
+  it("draws a faded comb lighter than a hovered one, at the same q", () => {
+    const combs = [
+      { id: 1, qs: [0.1], color: "red" },
+      { id: 2, qs: [0.1], color: "blue", faded: true },
+    ];
+    render(<WorkspacePlot trace={trace} peaks={[]} combs={combs} />);
+    const svg = screen.getByTestId("workspace-trace");
+    const full = svg.querySelector('[data-comb="1"]')!;
+    const faded = svg.querySelector('[data-comb="2"]')!;
+    expect(faded.getAttribute("x1")).toBe(full.getAttribute("x1"));
+    expect(full.getAttribute("stroke-opacity")).toBeNull();
+    expect(Number(faded.getAttribute("stroke-opacity"))).toBeGreaterThan(0);
+    expect(Number(faded.getAttribute("stroke-opacity"))).toBeLessThan(0.5);
+  });
+
   it("shows a crosshair cursor exactly while the crosshair is drawn, and keeps the pointer on peak markers", () => {
     if (typeof window.PointerEvent === "undefined") vi.stubGlobal("PointerEvent", MouseEvent);
     const peaks = [{ id: 1, exposure_id: 1, q: 0.1, intensity: 50, prominence: null, sharpness: null, source: "auto" as const, excluded: false }];
