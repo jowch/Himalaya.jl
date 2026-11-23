@@ -133,7 +133,7 @@ function exposureToggle(page: Page) {
 }
 
 function callToggle(page: Page) {
-  return page.locator("aside").getByRole("button", { name: "Call" });
+  return page.locator("aside").getByRole("button", { name: "Assignment" });
 }
 
 async function exposureOpen(page: Page): Promise<boolean> {
@@ -297,14 +297,14 @@ test("three comparisons with long names keep the compare bar on one line", async
 
 for (const viewport of VIEWPORTS) {
   const short = viewport.height <= 860;
-  const order = short ? "Call, then Image, with Indexing pinned at the bottom" : "Call, then Indexing, then Image";
+  const order = short ? "Assignment, then Image, with Indexing pinned at the bottom" : "Assignment, then Indexing, then Image";
   test(`the tools column reads ${order} at ${viewport.width}×${viewport.height}`, async ({ page }) => {
     await page.setViewportSize(viewport);
     await page.goto("/experiments/17/workspace/41");
     await openSample(page, 41);
     const tops = await page.evaluate(() => {
       const top = (sel: string) => Math.round(document.querySelector(sel)!.getBoundingClientRect().top);
-      return { call: top("aside section[data-section=Call]"), indexing: top("aside section[data-section=Indexing]"), exposure: top("aside section[data-section=Image]") };
+      return { call: top("aside section[data-section=Assignment]"), indexing: top("aside section[data-section=Indexing]"), exposure: top("aside section[data-section=Image]") };
     });
     const sequence = Object.entries(tops).sort((a, b) => a[1] - b[1]).map(([name]) => name);
     expect(sequence).toEqual(short ? ["call", "exposure", "indexing"] : ["call", "indexing", "exposure"]);
@@ -351,7 +351,7 @@ test("subtracting a comparison, switching between Raw and Minus and stopping mov
   expect(await measured(page)).toEqual(before);
 });
 
-test("on a short window Call and Frame fold as an accordion, and stay put from sample to sample", async ({ page }) => {
+test("on a short window Assignment and Frame fold as an accordion, and stay put from sample to sample", async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 650 });
   await page.goto("/experiments/17/workspace/41");
   await openSample(page, 41);
@@ -388,7 +388,7 @@ test("on a short window Call and Frame fold as an accordion, and stay put from s
   await expect(exposureToggle(page)).toHaveAttribute("aria-expanded", "true");
 });
 
-test("on a short window, folding Call or Frame and opening a custom index never moves the indexing chart", async ({ page }) => {
+test("on a short window, folding Assignment or Frame and opening a custom index never moves the indexing chart", async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 650 });
   await page.goto("/experiments/17/workspace/41");
   await openSample(page, 41);
@@ -404,7 +404,7 @@ test("on a short window, folding Call or Frame and opening a custom index never 
   await expect(page.getByTestId("workspace-custom-index")).toHaveCount(0);
   expect(await indexing(), "after closing it with the same button").toEqual(start);
   await callToggle(page).click();
-  expect(await indexing(), "after opening Call again").toEqual(start);
+  expect(await indexing(), "after opening Assignment again").toEqual(start);
 });
 
 test("the indexing chart and the exposure details hold their place while a sample's exposures load", async ({ page }) => {

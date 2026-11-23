@@ -121,7 +121,7 @@ function helpSections(mod: string): HelpSection[] {
       ],
     },
     {
-      title: "Call",
+      title: "Assignment",
       rows: [
         { keys: ["1–9"], what: "Tick or untick a phase candidate" },
         { keys: ["0"], what: "Mark no phase (form factor), or clear it" },
@@ -1204,11 +1204,11 @@ export function WorkspacePage(): JSX.Element {
     elsewhere: { ...elsewhere, go: (path) => navigate(path) },
   });
 
+  const customIndexButton = <CustomIndexButton open={draft !== null} disabled={!canCall} onClick={draft ? () => setDraft(null) : openCustom} />;
   const indexingSection = (
     <Section
       title="Indexing"
       className="shrink-0"
-      aside={<CustomIndexButton open={draft !== null} disabled={!canCall} onClick={draft ? () => setDraft(null) : openCustom} />}
     >
       <IndexingPlot series={indexSeries} />
     </Section>
@@ -1369,7 +1369,7 @@ export function WorkspacePage(): JSX.Element {
         <>
           <div className={callOpen ? "flex min-h-24 flex-1 flex-col overflow-y-auto" : "shrink-0"} data-testid="workspace-tools-middle">
             {draft && draftBounds ? (
-              <Section title="Custom index">
+              <Section title="Assignment" aside={customIndexButton} pinAside collapsible={shortWindow ? { open: true } : undefined}>
                 <CustomIndexPanel
                   draft={draft}
                   min={draftBounds.min}
@@ -1383,7 +1383,7 @@ export function WorkspacePage(): JSX.Element {
                 />
               </Section>
             ) : (
-              <Section title="Call" collapsible={shortWindow ? { open: callOpen, onOpen: () => setOpenPanel("call") } : undefined}>
+              <Section title="Assignment" aside={customIndexButton} pinAside collapsible={shortWindow ? { open: callOpen, onOpen: () => setOpenPanel("call") } : undefined}>
                 {exposureDropped && <Note>This image is dropped. Restore it to call a phase.</Note>}
                 <CandidateList
                   rows={rows}
