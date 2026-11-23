@@ -73,6 +73,26 @@ end
     @test HPM.label_candidates(q, idx2, [q[100]], Float64[], Float64[], true, false) == [1, -2]
 end
 
+@testset "candidate labels: peaks only a model found" begin
+    q = collect(range(0.0, 1.0; length = 1001))
+    idx = [100, 103, 300, 500, 700]
+    model_only = [q[300], q[500]]
+    # neither the peak nor its neighbours become negatives or positives
+    lab = HPM.label_candidates(q, idx, [q[100]], Float64[], Float64[], true, false; kept_model = model_only)
+    @test lab == [1, -2, -2, -2, -1]
+    # without them the same candidates are weak negatives
+    @test HPM.label_candidates(q, idx, [q[100]], Float64[], Float64[], true, false)[3:4] == [-1, -1]
+    # an exclude still beats the weak rule but a model-only peak comes first
+    lab2 = HPM.label_candidates(q, idx, Float64[], Float64[], [q[300], q[700]], true, false; kept_model = [q[300]])
+    @test lab2 == [-1, -1, -2, -1, 0]
+    # a hybrid or both peak is a positive
+    @test HPM.label_candidates(q, idx, Float64[], [q[300]], Float64[], true, false; kept_model = [q[500]])[3:4] == [1, -2]
+    # form factor: model-only peaks are ignored and everything remaining is a strong negative
+    @test HPM.label_candidates(q, idx, Float64[], Float64[], Float64[], false, true; kept_model = model_only) == [0, 0, 0, 0, 0]
+    e = LabeledExposure(1, 1, q, q, q, Float64[], Float64[], Float64[], true, false)
+    @test e.kept_model == Float64[]
+end
+
 @testset "end to end on synthetic traces" begin
     rng = MersenneTwister(7)
     exps = LabeledExposure[]; truth = Dict{Int, Vector{Float64}}()
@@ -89,7 +109,7 @@ end
     @test r.candidate_auc > 0.9
     c = r.by_threshold[1][2]
     @test c.add_recall > 0.8
-    @test c.extra_per_curated < r.candidates.extra_per_curated
+    @test c.extra_per_labelled < r.candidates.extra_per_labelled
 
     held = filter(e -> e.group == 4, exps)
     train_exps = filter(e -> e.group != 4, exps)
