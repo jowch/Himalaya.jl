@@ -1183,6 +1183,21 @@ describe("WorkspacePage", () => {
       expect(ops()).toEqual([["addPeak", 101, 0.2], ["setPeakExcluded", 101, 1, false]]);
     });
 
+    it("undoing a peak edit that dropped the call ticks the phase again on the re-fitted candidate", async () => {
+      state.trace = makeTrace(1);
+      state.peaks = peakList(101, { auto: [0.1, 0.12] });
+      state.indices = [index(2, "Pn3m", 0.9), index(3, "Im3m", 0.5)];
+      state.assignment = { exposure_id: 101, state: "indexed", members: [2] };
+      renderAt("/experiments/1/workspace/10");
+      clickPlotAt(0.1);
+      state.peaks = peakList(101, { auto: [{ q: 0.1, excluded: true }, 0.12] });
+      server.indices.set(101, [{ ...index(33, "Pn3m", 0.9), basis: 0.102 }, { ...index(34, "Im3m", 0.5), basis: 0.3 }]);
+      onServer(101, { state: "null", members: [] });
+      await undo();
+      expect(ops()).toEqual([["setPeakExcluded", 101, 1, false], ["addPhase", 101, 33]]);
+      expect(toasts.at(-1)).toBe("Undone: turned off a peak on image 2 of A1");
+    });
+
     it("does not record removing a peak that is still saving", async () => {
       state.trace = makeTrace(1);
       state.peaks = [peak(-5, 0.2, "manual")];
@@ -2341,7 +2356,7 @@ describe("WorkspacePage", () => {
     expect(rows()[0]).toBe("A4");
   });
 
-  it("drops a kept zoom that falls outside the next sample's q range, and Z resets the zoom", () => {
+  it("drops a kept zoom that falls outside the next sample's q range, and ⌘/Ctrl+0 resets the zoom", () => {
     state.trace = makeTrace(1);
     const { rerender } = renderAt("/experiments/1/workspace/10");
     const plot = screen.getByTestId("workspace-trace");
@@ -2602,23 +2617,23 @@ describe("WorkspacePage", () => {
 
   it("titles the phase list Call and the exposure details Exposure", () => {
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByRole("heading", { name: "Call" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Assignment" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Image" })).toBeInTheDocument();
   });
 
-  it("folds Call and Frame as an accordion on a short window, and opening a custom index shows it in place of Call", () => {
+  it("folds Assignment and Image as an accordion on a short window, and opening a custom index from the folded Assignment header shows it in place of the list", () => {
     vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(max-height: 860px)", media: query, addEventListener: () => {}, removeEventListener: () => {} }));
     try {
       renderAt("/experiments/1/workspace/10");
       const tools = screen.getByRole("complementary", { name: "Tools" });
-      const call = within(tools).getByRole("button", { name: /Call/ });
+      const call = within(tools).getByRole("button", { name: /Assignment/ });
       const exposure = within(tools).getByRole("button", { name: /^Image/ });
       expect(call).toHaveAttribute("aria-expanded", "true");
       expect(exposure).toHaveAttribute("aria-expanded", "false");
       expect(within(tools).queryByText("File")).toBeNull();
       fireEvent.click(exposure);
       expect(exposure).toHaveAttribute("aria-expanded", "true");
-      expect(within(tools).getByRole("button", { name: /Call/ })).toHaveAttribute("aria-expanded", "false");
+      expect(within(tools).getByRole("button", { name: /Assignment/ })).toHaveAttribute("aria-expanded", "false");
       expect(within(tools).getByText("File")).toBeInTheDocument();
       fireEvent.click(screen.getByRole("button", { name: /Custom index/ }));
       expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
@@ -2653,19 +2668,22 @@ describe("WorkspacePage", () => {
     }
   });
 
-  it("puts the Call list first in the tools column, then the indexing plot, then the exposure", () => {
+  it("puts the Assignment list first in the tools column, then the indexing plot, then the exposure", () => {
     renderAt("/experiments/1/workspace/10");
     const tools = screen.getByRole("complementary", { name: "Tools" });
     const headings = within(tools).getAllByRole("heading").map((h) => h.textContent);
-    expect(headings).toEqual(["Call", "Indexing", "Image"]);
+    expect(headings).toEqual(["Assignment", "Indexing", "Image"]);
   });
 
-  it("the Custom index button in the indexing section opens a custom index", () => {
+  it("the Custom index button sits in the Assignment header and stays there while the custom index it opens replaces the list", () => {
     renderAt("/experiments/1/workspace/10");
-    const button = screen.getByRole("button", { name: /Custom index/ });
+    const header = () => screen.getByRole("heading", { name: "Assignment" }).closest("header")!;
+    const button = within(header()).getByRole("button", { name: /Custom index/ });
+    expect(within(screen.getByRole("heading", { name: "Indexing" }).closest("header")!).queryByRole("button", { name: /Custom index/ })).toBeNull();
     expect(button).toHaveTextContent("Custom index I");
     fireEvent.click(button);
     expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
+    expect(within(header()).getByRole("button", { name: /Custom index/ })).toBe(button);
     expect(button).toHaveAttribute("aria-pressed", "true");
     expect(button).toHaveTextContent("Custom index Esc");
   });
@@ -2932,6 +2950,95 @@ describe("WorkspacePage", () => {
     unmount();
     renderAt("/experiments/1/workspace/10?exposure=999");
     expect(currentFrame()).toBe("Image 2");
+  });
+
+  it("Tab and Shift+Tab cycle only the phase choices, wrapping", () => {
+    renderAt("/experiments/1/workspace/10");
+    const rows = within(screen.getByTestId("workspace-candidates")).getAllByRole("button");
+    const ff = screen.getByTestId("workspace-form-factor");
+    const choices = [...rows, ff];
+    expect(fireEvent.keyDown(document.body, { key: "Tab" })).toBe(false);
+    expect(document.activeElement).toBe(choices[0]);
+    for (let i = 1; i < choices.length; i++) {
+      fireEvent.keyDown(document.activeElement!, { key: "Tab" });
+      expect(document.activeElement).toBe(choices[i]);
+    }
+    fireEvent.keyDown(document.activeElement!, { key: "Tab" });
+    expect(document.activeElement).toBe(choices[0]);
+    fireEvent.keyDown(document.activeElement!, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(ff);
+    fireEvent.keyDown(screen.getByRole("button", { name: "Image 1" }), { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(ff);
+  });
+
+  it("leaves Enter on a focused choice to the button, and Space keeps opening the detector view", () => {
+    state.exposures = [exposure(100), exposure(101, { image_path: "/x.tif", image_version: "7" })];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(document.body, { key: "Tab" });
+    expect(fireEvent.keyDown(document.activeElement!, { key: "Enter" })).toBe(true);
+    fireEvent.keyDown(document.activeElement!, { key: " " });
+    expect(screen.getByRole("dialog", { name: "Detector image" })).toBeInTheDocument();
+  });
+
+  it("a stray Esc outside the phase choices leaves Tab on them", () => {
+    renderAt("/experiments/1/workspace/10");
+    expect(fireEvent.keyDown(document.body, { key: "Escape" })).toBe(true);
+    expect(fireEvent.keyDown(document.body, { key: "Tab" })).toBe(false);
+    expect(document.activeElement?.closest("[data-call-choices]")).not.toBeNull();
+  });
+
+  it("Esc leaves the phase choices and lets Tab reach every control until another sample opens", () => {
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(document.body, { key: "Tab" });
+    const first = document.activeElement;
+    expect(fireEvent.keyDown(first!, { key: "Escape" })).toBe(false);
+    expect(document.activeElement).toBe(document.body);
+    expect(fireEvent.keyDown(document.body, { key: "Tab" })).toBe(true);
+    (first as HTMLElement).focus();
+    expect(fireEvent.keyDown(first!, { key: "Tab" })).toBe(true);
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    expect(fireEvent.keyDown(document.body, { key: "Tab" })).toBe(false);
+    expect(document.activeElement?.closest("[data-call-choices]")).not.toBeNull();
+  });
+
+  it("gives Tab to the filter's matches and to a custom index's symmetry, never to the phase choices", () => {
+    state.trace = makeTrace(1);
+    renderAt("/experiments/1/workspace/10");
+    const inChoices = (): boolean => document.activeElement?.closest("[data-call-choices]") != null;
+    const filter = document.getElementById("workspace-filter")!;
+    act(() => filter.focus());
+    expect(fireEvent.keyDown(filter, { key: "Tab" })).toBe(false);
+    expect(document.activeElement).toBe(filter);
+    expect(inChoices()).toBe(false);
+    expect(document.querySelector("[data-testid=workspace-samples] [data-highlighted]")).not.toBeNull();
+    act(() => filter.blur());
+    fireEvent.keyDown(window, { key: "i" });
+    const panel = screen.getByTestId("workspace-custom-index");
+    const pressed = (): string | null => within(panel).getAllByRole("button", { pressed: true })[0]!.textContent;
+    const before = pressed();
+    expect(fireEvent.keyDown(document.body, { key: "Tab" })).toBe(false);
+    expect(pressed()).not.toBe(before);
+    expect(inChoices()).toBe(false);
+  });
+
+  it("does not trap Tab when no phase choice can be picked", () => {
+    state.username = undefined;
+    renderAt("/experiments/1/workspace/10");
+    expect(fireEvent.keyDown(document.body, { key: "Tab" })).toBe(true);
+  });
+
+  it("on a short window with Call folded, Tab opens Call and lands on its first choice", () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(max-height: 860px)", media: query, addEventListener: () => {}, removeEventListener: () => {} }));
+    try {
+      renderAt("/experiments/1/workspace/10");
+      const tools = screen.getByRole("complementary", { name: "Tools" });
+      fireEvent.click(within(tools).getByRole("button", { name: /^Image/ }));
+      expect(screen.queryByTestId("workspace-candidates")).toBeNull();
+      fireEvent.keyDown(document.body, { key: "Tab", shiftKey: true });
+      expect(document.activeElement).toBe(screen.getByTestId("workspace-form-factor"));
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("0 marks the frame as no phase (form factor), and 0 again clears it", () => {

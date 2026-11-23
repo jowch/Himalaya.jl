@@ -4,6 +4,7 @@ import { sampleStatus } from "../workspace/model";
 import { COMPARE_DASH } from "./WorkspacePlot";
 import { Tooltip } from "./Tooltip";
 import { useListHighlight } from "./useListHighlight";
+import { releaseMouseFocus, useRovingFocus } from "../hooks/useRovingFocus";
 
 interface Props {
   samples: readonly CorpusSample[];
@@ -65,6 +66,8 @@ export function SampleList({ samples, setupHeaders, currentId, filter, onFilter,
   useEffect(() => {
     if (highlightedId !== undefined) document.getElementById(`workspace-sample-${highlightedId}`)?.scrollIntoView({ block: "nearest" });
   }, [highlightedId]);
+  const listRef = useRovingFocus<HTMLUListElement>(currentId);
+  const hasCurrent = samples.some((s) => s.id === currentId);
   return (
     <>
       <div className="border-b border-hair px-2.5 pb-2 pt-2.5">
@@ -86,7 +89,7 @@ export function SampleList({ samples, setupHeaders, currentId, filter, onFilter,
         />
       </div>
       {notice}
-      <ul className="min-h-0 flex-1 overflow-y-auto" data-testid="workspace-samples">
+      <ul ref={listRef} className="min-h-0 flex-1 overflow-y-auto" data-testid="workspace-samples">
         {samples.map((s, i) => {
           const cur = s.id === currentId;
           const setupId = s.setup_id ?? undefined;
@@ -109,9 +112,12 @@ export function SampleList({ samples, setupHeaders, currentId, filter, onFilter,
                 type="button"
                 data-highlighted={s.id === highlightedId ? "" : undefined}
                 aria-current={cur ? "true" : undefined}
+                tabIndex={cur || (!hasCurrent && i === 0) ? 0 : -1}
+                data-roving="row"
                 data-sample-id={s.id}
                 data-compared={compareColor !== undefined ? "" : undefined}
                 onClick={(e) => {
+                  releaseMouseFocus(e);
                   if ((e.metaKey || e.ctrlKey) && onToggleCompare) {
                     e.preventDefault();
                     onToggleCompare(s.id);

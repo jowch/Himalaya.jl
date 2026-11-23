@@ -44,7 +44,7 @@ import { helpKeyFromEmptyField, inDialog, isEditable, suppressGlobalKeys } from 
 import { useUndoHistory, type UndoEntry, type UndoStep } from "./undo";
 import {
   bridgeEntry, combinedEntry, settleCallEntry, customIndexEntry, dropEntry, excludeEntry, identify, labelEntry, noPhaseEntry, peakEntry,
-  experimentEntry, setupEntry, labelColorEntry, tickEntry, unbridgeEntry, untickEntry, compareEntry,
+  experimentEntry, setupEntry, labelColorEntry, tickEntry, unbridgeEntry, untickEntry, compareEntry, droppedByEdit, type PhaseIdentity,
 } from "./undoEntries";
 import { showToast } from "../lib/toast";
 import { useScanState } from "../hooks/useScanState";
@@ -93,6 +93,7 @@ import { RemoveExperimentDialog } from "../ui/RemoveExperimentDialog";
 import { COMPARE_COLORS, WorkspacePlot, type CombLine, type CompareLine } from "../ui/WorkspacePlot";
 import { ExposureStrip } from "../ui/ExposureStrip";
 import { CandidateList } from "../ui/CandidateList";
+import { callChoices, cycleChoice, inCallChoices } from "./callTab";
 import { callRows, keyedRows } from "./bonnetGroups";
 import { MetaList } from "../ui/MetaList";
 import { MainSection, SampleHeading, Section } from "../ui/Section";
@@ -123,11 +124,13 @@ function helpSections(mod: string): HelpSection[] {
       ],
     },
     {
-      title: "Call",
+      title: "Assignment",
       rows: [
         { keys: ["1–9"], what: "Tick or untick a phase candidate" },
         { keys: ["0"], what: "Mark no phase (form factor), or clear it" },
-        { keys: ["I"], what: "Custom index: press Tab or Shift+Tab to change the symmetry and ← → to nudge the lattice. Press Enter to add it or Esc to cancel." },
+        { keys: ["Tab", "⇧ Tab"], what: "Step through the phase choices, wrapping at the ends. Press Enter to tick the one in focus." },
+        { keys: ["Esc"], what: "Leave the phase choices and let Tab reach every other control until you open another sample" },
+        { keys: ["I"], what: "Custom index: press Tab or Shift+Tab to change the symmetry, then drag the lattice, nudge it with ← →, or click a peak to snap to it. Press Enter to add it or Esc to cancel." },
         { keys: ["L"], what: "Label the sample, e.g. Buffer. Press Enter to add it or Esc to close." },
       ],
     },
@@ -346,6 +349,9 @@ export function WorkspacePage(): JSX.Element {
     return here;
   }, [assignment.data, otherMembers, candidates]);
   const [hoverIds, setHoverIds] = useState<readonly number[] | undefined>(undefined);
+  const hoverCandidates = useCallback((ids: readonly number[] | undefined) => {
+    setHoverIds((prev) => (prev?.length === ids?.length && (prev ?? []).every((id, i) => id === ids?.[i]) ? prev : ids));
+  }, []);
 
   const addPhase = useAddAssignmentPhase(exposure?.id ?? 0);
   const removePhase = useRemoveAssignmentPhase(exposure?.id ?? 0);
@@ -393,7 +399,9 @@ export function WorkspacePage(): JSX.Element {
   );
   const theme = useAppTheme();
   const [draft, setDraft] = useState<CustomDraft | null>(null);
+  const customPanel = useRef<HTMLDivElement>(null);
   useEffect(() => setDraft(null), [exposure?.id]);
+  useEffect(() => setHoverIds(undefined), [exposure?.id]);
   const commitCustom = useCommitCustomIndex(exposure?.id ?? 0);
   const bridgedNames = useMemo(() => {
     const names = new Map(inExperiment.map((s) => [s.id, s.name]));
@@ -430,18 +438,31 @@ export function WorkspacePage(): JSX.Element {
   const fetchRefs = useMemo(() => shownRefs.filter((r) => !hiddenRefs.has(r) || r === subRef), [shownRefs, hiddenRefs, subRef]);
   const compareTraces = useCompareTraces(fetchRefs);
 
+  const callOnFrame = useCallback(
+    (eid: number): PhaseIdentity[] => {
+      if (assignment.data?.exposure_id !== eid) return [];
+      const members = new Set(assignment.data.members);
+      return (indices.data ?? [])
+        .filter((ix) => members.has(ix.id))
+        .map((ix) => ({ exposureId: eid, phase: ix.phase, basis: ix.basis, kind: ix.kind }));
+    },
+    [assignment.data, indices.data],
+  );
+
   const onClickPeak = useCallback(
     (ref: PeakRef) => {
       const action = peakClick(peaks.data ?? [], ref);
       if (!action || !exposure || sampleId === undefined) return;
       const eid = exposure.id;
       const q = (peaks.data ?? []).find((pk) => samePeak(pk, ref))?.q;
+      const before = callOnFrame(eid);
       if (action.kind === "remove") {
         if (ref.id < 0) return;
         removePeak.mutate(ref.id);
         if (q !== undefined) {
           history.record(peakEntry(ops, {
             label: `removed a peak at q = ${q.toFixed(4)} on ${frameName(eid)}`, sampleId, exposureId: eid, q, added: false,
+            dropped: droppedByEdit(ops, before),
           }));
         }
         return;
@@ -450,11 +471,11 @@ export function WorkspacePage(): JSX.Element {
       if (q !== undefined) {
         history.record(excludeEntry(ops, {
           label: `${action.excluded ? "turned off" : "turned on"} a peak on ${frameName(eid)}`, sampleId, exposureId: eid, q,
-          excluded: action.excluded,
+          excluded: action.excluded, dropped: droppedByEdit(ops, before),
         }));
       }
     },
-    [peaks.data, removePeak, setExcluded, exposure, sampleId, history, ops, frameName],
+    [peaks.data, removePeak, setExcluded, exposure, sampleId, history, ops, frameName, callOnFrame],
   );
 
   const addPeakAt = useCallback(
@@ -464,9 +485,10 @@ export function WorkspacePage(): JSX.Element {
       addPeak.mutate(q);
       history.record(peakEntry(ops, {
         label: `added a peak at q = ${q.toFixed(4)} on ${frameName(eid)}`, sampleId, exposureId: eid, q, added: true,
+        dropped: droppedByEdit(ops, callOnFrame(eid)),
       }));
     },
-    [exposure, sampleId, addPeak, history, ops, frameName],
+    [exposure, sampleId, addPeak, history, ops, frameName, callOnFrame],
   );
 
 
@@ -842,6 +864,17 @@ export function WorkspacePage(): JSX.Element {
   const [openPanel, setOpenPanel] = useState<"call" | "exposure">("call");
   const callOpen = !shortWindow || openPanel === "call" || draft !== null;
   const exposureOpen = !shortWindow || (openPanel === "exposure" && draft === null);
+  const tabFree = useRef(false);
+  const [pendingTab, setPendingTab] = useState<"first" | "last" | null>(null);
+  useEffect(() => {
+    tabFree.current = false;
+  }, [sampleId]);
+  useEffect(() => {
+    if (!pendingTab || !callOpen) return;
+    const choices = callChoices();
+    (pendingTab === "last" ? choices[choices.length - 1] : choices[0])?.focus();
+    setPendingTab(null);
+  }, [pendingTab, callOpen]);
   const openCustom = useCallback(() => {
     if (!canCall) return;
     setDraft((d) => d ?? initialDraft(candidates[0]));
@@ -874,6 +907,7 @@ export function WorkspacePage(): JSX.Element {
           target = pq;
         }
       }
+      customPanel.current?.focus();
       setDraftClamped({ ...draft, lattice: latticeForFirstOrderOnPeak(draft.phase, target) });
     },
     [draft, activePeakQs, setDraftClamped],
@@ -1001,6 +1035,25 @@ export function WorkspacePage(): JSX.Element {
       };
       let handled = true;
       switch (ev.key) {
+        case "Tab": {
+          if (tabFree.current) {
+            handled = false;
+            break;
+          }
+          const next = cycleChoice(callChoices(), ev.target, ev.shiftKey);
+          if (next) next.focus();
+          else if (!callOpen) {
+            setOpenPanel("call");
+            setPendingTab(ev.shiftKey ? "last" : "first");
+          } else handled = false;
+          break;
+        }
+        case "Escape":
+          if (inCallChoices(ev.target)) {
+            tabFree.current = true;
+            (ev.target as HTMLElement).blur();
+          } else handled = false;
+          break;
         case "ArrowDown":
           step(1);
           break;
@@ -1069,7 +1122,7 @@ export function WorkspacePage(): JSX.Element {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [visible, sampleId, goSample, exposureList, exposure, toggleDrop, keyed, toggleCandidate, toggleGroup, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor, view, setView, sample, openLabeling, applyHistory]);
+  }, [visible, sampleId, goSample, exposureList, exposure, toggleDrop, keyed, toggleCandidate, toggleGroup, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor, view, setView, sample, openLabeling, applyHistory, callOpen]);
 
   const droppedCount = ownFrames.filter((e) => e.status === "rejected").length;
   const keptHint = droppedCount > 0 ? `${ownFrames.length - droppedCount} of ${ownFrames.length} kept` : undefined;
@@ -1210,11 +1263,11 @@ export function WorkspacePage(): JSX.Element {
     elsewhere: { ...elsewhere, go: (path) => navigate(path) },
   });
 
+  const customIndexButton = <CustomIndexButton open={draft !== null} disabled={!canCall} onClick={draft ? () => setDraft(null) : openCustom} />;
   const indexingSection = (
     <Section
       title="Indexing"
       className="shrink-0"
-      aside={<CustomIndexButton open={draft !== null} disabled={!canCall} onClick={draft ? () => setDraft(null) : openCustom} />}
     >
       <IndexingPlot series={indexSeries} />
     </Section>
@@ -1375,8 +1428,9 @@ export function WorkspacePage(): JSX.Element {
         <>
           <div className={callOpen ? "flex min-h-24 flex-1 flex-col overflow-y-auto" : "shrink-0"} data-testid="workspace-tools-middle">
             {draft && draftBounds ? (
-              <Section title="Custom index">
+              <Section title="Assignment" aside={customIndexButton} pinAside collapsible={shortWindow ? { open: true } : undefined}>
                 <CustomIndexPanel
+                  panelRef={customPanel}
                   draft={draft}
                   min={draftBounds.min}
                   max={draftBounds.max}
@@ -1389,7 +1443,7 @@ export function WorkspacePage(): JSX.Element {
                 />
               </Section>
             ) : (
-              <Section title="Call" collapsible={shortWindow ? { open: callOpen, onOpen: () => setOpenPanel("call") } : undefined}>
+              <Section title="Assignment" aside={customIndexButton} pinAside collapsible={shortWindow ? { open: callOpen, onOpen: () => setOpenPanel("call") } : undefined}>
                 {exposureDropped && <Note>This image is dropped. Restore it to call a phase.</Note>}
                 <CandidateList
                   rows={rows}
@@ -1399,7 +1453,7 @@ export function WorkspacePage(): JSX.Element {
                   onToggle={toggleCandidate}
                   onToggleGroup={toggleGroup}
                   onFormFactor={toggleFormFactor}
-                  onHover={setHoverIds}
+                  onHover={hoverCandidates}
                 />
               </Section>
             )}
