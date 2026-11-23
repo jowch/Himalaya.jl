@@ -257,6 +257,26 @@ describe("WorkspacePlot", () => {
     expect(crosshair()).toBeNull();
   });
 
+  it("shows a crosshair cursor exactly while the crosshair is drawn, and keeps the pointer on peak markers", () => {
+    if (typeof window.PointerEvent === "undefined") vi.stubGlobal("PointerEvent", MouseEvent);
+    const peaks = [{ id: 1, exposure_id: 1, q: 0.1, intensity: 50, prominence: null, sharpness: null, source: "auto" as const, excluded: false }];
+    render(<WorkspacePlot trace={trace} peaks={peaks} combs={[]} onClickPeak={() => {}} onAddPeak={() => {}} onXDomain={() => {}} />);
+    const svg = screen.getByTestId("workspace-trace");
+    const frame = svg.parentElement!;
+    const plotWidth = 640 - PLOT_MARGINS.left - PLOT_MARGINS.right;
+    expect(svg.classList.contains("cursor-crosshair")).toBe(false);
+    fireEvent.pointerMove(frame, { clientX: PLOT_MARGINS.left + plotWidth * 0.25, clientY: 100 });
+    expect(svg.querySelector('[data-role="crosshair"]')).not.toBeNull();
+    expect(svg.classList.contains("cursor-crosshair")).toBe(true);
+    expect(svg.querySelector("[data-peak-key]")!.classList.contains("cursor-pointer")).toBe(true);
+    fireEvent.pointerMove(frame, { clientX: 2, clientY: 100 });
+    expect(svg.querySelector('[data-role="crosshair"]')).toBeNull();
+    expect(svg.classList.contains("cursor-crosshair")).toBe(false);
+    fireEvent.pointerMove(frame, { clientX: PLOT_MARGINS.left + plotWidth * 0.5, clientY: 100 });
+    fireEvent.pointerLeave(frame);
+    expect(svg.classList.contains("cursor-crosshair")).toBe(false);
+  });
+
   it("colours the peaks a hovered call claims and dims the rest, without moving any marker", () => {
     const peaks = [
       { id: 1, exposure_id: 1, q: 0.1, intensity: 50, prominence: null, sharpness: null, source: "auto" as const, excluded: false },
