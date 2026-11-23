@@ -1293,8 +1293,7 @@ export function WorkspacePage(): JSX.Element {
                 />
               }
             />
-            <div className="relative flex items-start gap-2 px-3.5 py-1">
-              <div className="min-w-0 flex-1">
+            <div className="relative px-3.5 py-1">
               <CompareBar
                 chips={activeRefs.map((rid) => ({
                   id: rid,
@@ -1322,8 +1321,6 @@ export function WorkspacePage(): JSX.Element {
                 full={comparesFull}
                 trailing={difference && subRef !== undefined ? <SubtractToggle name={subName} on={minusOn} onChange={setMinus} /> : undefined}
               />
-              </div>
-              <PlotViewToggle options={PLOT_VIEWS} view={view} onChange={setView} />
               {picking && (
                 <ComparePicker
                   samples={pickable}
@@ -1336,7 +1333,7 @@ export function WorkspacePage(): JSX.Element {
               )}
             </div>
             <div className="mx-3.5">
-              <PlotCard {...(darkNotice ? { notice: darkNotice } : {})}>
+              <PlotCard {...(darkNotice ? { notice: darkNotice } : {})} corner={<PlotViewToggle options={PLOT_VIEWS} view={view} onChange={setView} />}>
                 <WorkspacePlot
                   trace={trace.data}
                   {...(noTraceMessage

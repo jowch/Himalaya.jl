@@ -612,3 +612,23 @@ for (const width of [1024, 1280, 1440]) {
     });
   }
 }
+
+for (const width of [1024, 1440]) {
+  test(`at ${width} px the plot view switcher sits above the trace and below the peak markers in every view`, async ({ page }) => {
+    const peakAt = (id: number, q: number) => ({ id, exposure_id: 1, q, intensity: null, prominence: null, sharpness: null, source: "auto", excluded: false });
+    await page.route(/\/api\/exposures\/\d+\/peaks/, (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([peakAt(1, 0.1), peakAt(2, q[q.length - 2]!)]) }));
+    await openChips(page, width, [42, 44, 46, 48, 50], false);
+    const control = page.getByTestId("workspace-plot-view");
+    const before = await control.boundingBox();
+    for (const name of ["Log", "Linear", "Log-log", "q²I"]) {
+      await control.getByRole("button", { name: name === "q²I" ? "q²I (Kratky)" : name, exact: true }).click();
+      const box = (await control.boundingBox())!;
+      expect(box).toEqual(before);
+      const line = (await page.locator('[data-role="trace-line"] path').boundingBox())!;
+      expect(box.y + box.height).toBeLessThanOrEqual(line.y);
+      const marks = await page.locator('[data-role="peak-glyph"] polygon').evaluateAll((ns) => ns.map((n) => n.getBoundingClientRect().bottom));
+      expect(marks.length).toBe(2);
+      for (const bottom of marks) expect(box.y).toBeGreaterThanOrEqual(bottom);
+    }
+  });
+}
