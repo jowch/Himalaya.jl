@@ -609,5 +609,18 @@ export interface ReanalyzeResponse {
   analyzed: boolean;
   analysis_inputs_hash: string;
 }
+export interface DetectorSize {
+  width: number;
+  height: number;
+}
+
+export async function getDetectorSize(url: string): Promise<DetectorSize | null> {
+  const res = await fetch(url);
+  void res.body?.cancel();
+  const width = Number(res.headers.get("X-Image-Width"));
+  const height = Number(res.headers.get("X-Image-Height"));
+  return width > 0 && height > 0 ? { width, height } : null;
+}
+
 export const reanalyzeExposure = (exposure_id: number, opts?: AuthOpts) =>
   request<ReanalyzeResponse>("POST", `/api/exposures/${exposure_id}/analyze`, {}, opts);

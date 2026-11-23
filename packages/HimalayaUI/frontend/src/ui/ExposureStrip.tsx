@@ -2,6 +2,7 @@ import type { Exposure } from "../api";
 import { imageUrl } from "../workspace/model";
 import { detectorLutFilter } from "../detector/detectorLut";
 import { Tooltip } from "./Tooltip";
+import { DetectorRings, type DetectorRingsView } from "./DetectorRings";
 
 const DETECTOR_COLOUR = { filter: detectorLutFilter("magma") };
 
@@ -16,9 +17,10 @@ interface Props {
   currentId: number | undefined;
   onPick: (id: number) => void;
   onToggleDrop: (e: Exposure) => void;
+  ringsOf?: ((e: Exposure) => DetectorRingsView | null) | undefined;
 }
 
-export function ExposureStrip({ groups, currentId, onPick, onToggleDrop }: Props): JSX.Element {
+export function ExposureStrip({ groups, currentId, onPick, onToggleDrop, ringsOf }: Props): JSX.Element {
   return (
     <div className="flex flex-col gap-1.5" data-testid="workspace-exposures">
       {groups.map((g, gi) => (
@@ -33,6 +35,7 @@ export function ExposureStrip({ groups, currentId, onPick, onToggleDrop }: Props
               const cur = e.id === currentId;
               const dropped = e.status === "rejected";
               const src = imageUrl(e, true);
+              const ringView = src ? ringsOf?.(e) ?? null : null;
               const name = gi === 0 || g.title === undefined ? `Image ${i + 1}` : `Image ${i + 1} of ${g.title}`;
               return (
                 <li
@@ -55,6 +58,7 @@ export function ExposureStrip({ groups, currentId, onPick, onToggleDrop }: Props
                     ) : (
                       <span className="text-xs text-frame-tag">No TIFF</span>
                     )}
+                    {ringView && <DetectorRings view={ringView} fit="cover" />}
                   </button>
                   {dropped && <span className="text-xs text-ink-soft line-through">dropped</span>}
                   <div className={(cur ? "visible" : "invisible group-hover:visible group-focus-within:visible") + " flex gap-1"}>
