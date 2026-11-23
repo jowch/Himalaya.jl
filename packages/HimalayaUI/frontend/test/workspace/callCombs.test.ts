@@ -3,7 +3,13 @@ import { callCombs } from "../../src/workspace/callCombs";
 import { phaseColor } from "../../src/phases";
 import type { IndexEntry } from "../../src/api";
 
-const entry = (id: number, phase: string, predicted_q: number[]): IndexEntry => ({ id, phase, predicted_q } as unknown as IndexEntry);
+const entry = (id: number, phase: string, predicted_q: number[], observed: (number | null)[] = []): IndexEntry => ({
+  id,
+  phase,
+  predicted_q,
+  basis: predicted_q[0],
+  peaks: observed.flatMap((q, i) => (q === null ? [] : [{ peak_id: i + 1, ratio_position: i + 1, residual: 0, q_observed: q }])),
+} as unknown as IndexEntry);
 const pn3m = entry(1, "Pn3m", [0.1, 0.12]);
 const im3m = entry(2, "Im3m", [0.08, 0.11]);
 const hex = entry(3, "Hexagonal", [0.09]);
@@ -29,5 +35,23 @@ describe("callCombs", () => {
 
   it("draws only the custom draft while one is open", () => {
     expect(callCombs(candidates, [2], new Set([1]), { phase: "Ia3d", qs: [0.05] })).toEqual([{ id: -1, qs: [0.05], color: phaseColor("Ia3d") }]);
+  });
+
+  it("draws the reflections from the lattice fitted to every claimed peak, not from the first peak alone", () => {
+    const ratios = [Math.sqrt(2), 2, Math.sqrt(6), Math.sqrt(8), Math.sqrt(10)].map((r) => r / Math.sqrt(2));
+    const predicted = ratios.map((r) => 0.0644 * r);
+    const observed = [0.0644, 0.0909, 0.1113, 0.1287, null];
+    const drifting = entry(9, "Im3m", predicted, observed);
+    const [comb] = callCombs([drifting], undefined, new Set([9]), null);
+    const hits = observed.flatMap((q, i) => (q === null ? [] : [{ r: ratios[i]!, q }]));
+    const q1 = hits.reduce((a, h) => a + h.r * h.q, 0) / hits.reduce((a, h) => a + h.r * h.r, 0);
+    comb!.qs.forEach((q, i) => expect(q).toBeCloseTo(q1 * ratios[i]!, 9));
+    const worst = (qs: readonly number[]): number => Math.max(...observed.map((o, i) => (o === null ? 0 : Math.abs(qs[i]! - o))));
+    expect(worst(comb!.qs)).toBeLessThan(worst(predicted));
+    expect(callCombs([drifting], [9], new Set(), null)[0]!.qs).toEqual(comb!.qs);
+  });
+
+  it("keeps the stored predictions when the phase claims no peak", () => {
+    expect(callCombs([entry(4, "Pn3m", [0.1, 0.12])], undefined, new Set([4]), null)[0]!.qs).toEqual([0.1, 0.12]);
   });
 });
