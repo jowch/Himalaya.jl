@@ -34,6 +34,7 @@ export const COMPARE_COLORS = [1, 2, 3, 4, 5].map((n) => `var(--color-compare-${
 export const PLOT_HEIGHT = 330;
 const Q_LABEL_ROOM = 70;
 const FADED_COMB_OPACITY = 0.35;
+const MARKER_STRIP_PX = 12;
 
 interface Props {
   trace: Trace | undefined;
@@ -177,7 +178,7 @@ export function WorkspacePlot({
     const g = geometry.current;
     const p = plotX(px);
     const top = g ? g.dims.margins.top : 0;
-    if (!g || p === null || py < top - 12 || py > top + g.dims.plotHeight) return;
+    if (!g || p === null || py < top - MARKER_STRIP_PX || py > top + g.dims.plotHeight) return;
     const q = g.x.invert(p);
     if (!Number.isFinite(q) || q <= 0) return;
     const hit = hitTestPeaks([...shownPeaks], p, (qq) => g.x.to(qq), PEAK_HIT_PX);
@@ -192,7 +193,9 @@ export function WorkspacePlot({
       setHoverQ(null);
       return;
     }
-    const q = g.x.invert(p);
+    const top = g.dims.margins.top;
+    const onMarker = py >= top - MARKER_STRIP_PX && py < top ? hitTestPeaks([...shownPeaks], p, (qq) => g.x.to(qq), PEAK_HIT_PX) : null;
+    const q = onMarker ? onMarker.q : g.x.invert(p);
     setHoverQ(Number.isFinite(q) && q > 0 ? q : null);
   };
 

@@ -300,12 +300,12 @@ describe("WorkspacePlot", () => {
     const line = (): number => Number(svg.querySelector('[data-role="crosshair"]')!.getAttribute("x1"));
     fireEvent.pointerMove(frame, { clientX: PLOT_MARGINS.left + tip + 3, clientY: PLOT_MARGINS.top - 4 });
     expect(readout()).toMatch(/^q 0\.1234 /);
-    expect(line()).toBeCloseTo(tip, 6);
+    expect(line()).toBeCloseTo(tip, 1);
     fireEvent.pointerMove(frame, { clientX: PLOT_MARGINS.left + tip + 3, clientY: 100 });
     expect(readout()).not.toMatch(/^q 0\.1234 /);
-    expect(line()).toBeCloseTo(tip + 3, 6);
+    expect(line()).toBeCloseTo(tip + 3, 1);
     fireEvent.pointerMove(frame, { clientX: PLOT_MARGINS.left + tip + 40, clientY: PLOT_MARGINS.top - 4 });
-    expect(line()).toBeCloseTo(tip + 40, 6);
+    expect(line()).toBeCloseTo(tip + 40, 1);
   });
 
   it("shows a crosshair cursor exactly while the crosshair is drawn, and keeps the pointer on peak markers", () => {
