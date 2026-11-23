@@ -1,3 +1,4 @@
+import { useRef, useState } from "react";
 import type { IndexEntry } from "../api";
 import { PhaseChip } from "./PhaseChip";
 import type { CallRow } from "../workspace/bonnetGroups";
@@ -22,8 +23,35 @@ const look = (on: boolean | "mixed") =>
   "border-transparent " + (on === true ? "bg-accent/25" : on === "mixed" ? "bg-accent/10 hover:bg-accent/15" : "hover:bg-ink/6");
 
 export function CandidateList({ rows, assigned, disabled, formFactor, onToggle, onToggleGroup, onFormFactor, onHover }: Props): JSX.Element {
+  const [pointerFocus, setPointerFocus] = useState(false);
+  const pointerDown = useRef(false);
   return (
-    <div className="flex flex-col gap-1">
+    <div
+      className="flex flex-col gap-1"
+      role="group"
+      aria-label="Phase choices"
+      data-call-choices=""
+      data-pointer-focus={pointerFocus ? "" : undefined}
+      onPointerDown={() => {
+        pointerDown.current = true;
+        setPointerFocus(true);
+      }}
+      onPointerUp={() => {
+        pointerDown.current = false;
+      }}
+      onPointerCancel={() => {
+        pointerDown.current = false;
+      }}
+      onFocus={() => {
+        setPointerFocus(pointerDown.current);
+        pointerDown.current = false;
+      }}
+      onBlur={(e) => {
+        if (e.currentTarget.contains(e.relatedTarget)) return;
+        onHover(undefined);
+        setPointerFocus(false);
+      }}
+    >
       {rows.length === 0 && <Note>No candidate indices for this image.</Note>}
       {rows.length > 0 && <Rows rows={rows} assigned={assigned} disabled={disabled} onToggle={onToggle} onToggleGroup={onToggleGroup} onHover={onHover} />}
       <button
@@ -31,6 +59,7 @@ export function CandidateList({ rows, assigned, disabled, formFactor, onToggle, 
         aria-pressed={formFactor}
         disabled={disabled}
         onClick={onFormFactor}
+        onFocus={() => onHover(undefined)}
         data-testid="workspace-form-factor"
         className={ROW + "grid-cols-[auto_1fr] gap-2 py-[5px] " + look(formFactor)}
       >

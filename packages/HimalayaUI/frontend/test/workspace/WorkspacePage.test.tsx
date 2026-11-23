@@ -25,7 +25,9 @@ const state = {
   experiments: [] as { id: number; name: string }[],
   allCorpus: [] as CorpusSample[],
   allCorpusEnabled: [] as boolean[],
-  setups: [] as { id: number; name: string; folder: string; included: boolean }[],
+  setups: [] as ({ id: number; name: string; folder: string; included: boolean } & Record<string, unknown>)[],
+  detectorSize: undefined as { width: number; height: number } | undefined,
+  sizeRequests: [] as string[],
   corpus: [] as CorpusSample[],
   exposures: [] as Exposure[],
   mateExposures: new Map<number, Exposure[]>(),
@@ -181,6 +183,10 @@ vi.mock("../../src/queries", () => ({
     mutate: (exposureId: number, indexId: number) => calls.push({ hook: "removeFrame", boundTo: exposureId, arg: indexId }),
   }),
   useBridges: () => ({ data: state.bridges }),
+  useDetectorSizes: (urls: readonly string[]) => {
+    state.sizeRequests.push(...urls);
+    return new Map(state.detectorSize ? urls.map((u) => [u, state.detectorSize!] as const) : []);
+  },
   useCompares: () => ({ data: useSyncExternalStore(subscribeCompares, () => compareStore.data) }),
   usePatchCompares: () => ({
     mutate: (arg: { sampleId: number; change: CompareChange }) => {
@@ -325,6 +331,8 @@ beforeEach(() => {
   state.allCorpus = [];
   state.allCorpusEnabled = [];
   state.setups = [];
+  state.detectorSize = undefined;
+  state.sizeRequests = [];
   state.corpus = [
     sample(10, "A1", { assignment_state: "indexed", phase: "Pn3m" }),
     sample(11, "A2"),
@@ -2839,6 +2847,75 @@ describe("WorkspacePage", () => {
     fireEvent.mouseLeave(screen.getByTestId("workspace-candidates"));
     expect(screen.getAllByTestId("workspace-indexing-fit").map((n) => n.textContent)).toEqual([expect.stringMatching(/^Pn3m/)]);
   });
+  it("hovering a candidate or drafting a custom index draws its predicted rings on every image, from that image's setup geometry", () => {
+    state.setups = [{ id: 1, name: "setup1", folder: "setup1", included: true,
+      beam_center_x: 421.409, beam_center_y: 836.946, pixel_size_um: 172, energy_kev: 9, flight_path_m: 1.8095, q_units: "A-1" }];
+    state.corpus = state.corpus.map((s) => (s.id === 10 ? { ...s, setup_id: 1 } : s));
+    state.exposures = [exposure(100, { image_path: "/d/100.tif", image_version: "v" }), exposure(101, { image_path: "/d/101.tif", image_version: "v" })];
+    state.detectorSize = { width: 981, height: 1043 };
+    renderAt("/experiments/1/workspace/10");
+    const strip = screen.getByTestId("workspace-exposures");
+    const ringSets = () => [...strip.querySelectorAll('[data-testid="detector-rings"]')];
+    expect(ringSets()).toHaveLength(0);
+    expect(new Set(state.sizeRequests)).toEqual(new Set(["/api/exposures/100/image?thumb=1&v=v", "/api/exposures/101/image?thumb=1&v=v"]));
+    const rows = within(screen.getByTestId("workspace-candidates")).getAllByRole("button");
+    fireEvent.mouseEnter(rows[1]!);
+    expect(ringSets()).toHaveLength(2);
+    const circles = [...ringSets()[0]!.querySelectorAll("circle")];
+    expect(circles).toHaveLength(2);
+    expect(Number(circles[0]!.getAttribute("r"))).toBeCloseTo(230.7, 0);
+    expect(circles[0]!.getAttribute("stroke")).toBe(phaseColor("Im3m"));
+    fireEvent.mouseLeave(screen.getByTestId("workspace-candidates"));
+    expect(ringSets()).toHaveLength(0);
+    fireEvent.keyDown(window, { key: "i" });
+    expect(ringSets().length).toBe(2);
+  });
+
+  it("draws a same sample's rings from another setup in that setup's geometry but in this sample's q units", () => {
+    const geometry = { beam_center_x: 421.409, beam_center_y: 836.946, pixel_size_um: 172, energy_kev: 9, flight_path_m: 1.8095 };
+    state.setups = [{ id: 1, name: "Short pipe", folder: "s1", included: true, ...geometry, q_units: "A-1" },
+      { id: 2, name: "Long pipe", folder: "s2", included: true, ...geometry, q_units: "nm-1" }];
+    state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
+    state.corpus = state.corpus.map((s) => (s.id === 10 ? { ...s, setup_id: 1 } : s.id === 12 ? { ...s, setup_id: 2, assignment_state: "indexed" } : s));
+    state.exposures = [exposure(100, { image_path: "/d/100.tif", image_version: "v" })];
+    state.mateExposures = new Map([[12, [exposure(200, { sample_id: 12, image_path: "/d/200.tif", image_version: "v" })]]]);
+    state.detectorSize = { width: 981, height: 1043 };
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.mouseEnter(within(screen.getByTestId("workspace-candidates")).getAllByRole("button")[1]!);
+    const radii = [...screen.getByTestId("workspace-exposures").querySelectorAll('[data-testid="detector-rings"]')]
+      .map((set) => Number(set.querySelector("circle")!.getAttribute("r")));
+    expect(radii).toHaveLength(2);
+    expect(radii[0]).toBeCloseTo(230.7, 0);
+    expect(radii[1]).toBeCloseTo(radii[0]!, 6);
+  });
+
+  it("Space opens the enlarged image while a custom index is open, with the draft's rings, and Esc there keeps the draft", () => {
+    state.setups = [{ id: 1, name: "setup1", folder: "setup1", included: true,
+      beam_center_x: 421.409, beam_center_y: 836.946, pixel_size_um: 172, energy_kev: 9, flight_path_m: 1.8095, q_units: "A-1" }];
+    state.corpus = state.corpus.map((s) => (s.id === 10 ? { ...s, setup_id: 1 } : s));
+    state.exposures = [exposure(100, { image_path: "/d/100.tif", image_version: "v" }), exposure(101, { image_path: "/d/101.tif", image_version: "v" })];
+    state.detectorSize = { width: 981, height: 1043 };
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "i" });
+    fireEvent.keyDown(window, { key: " " });
+    const big = screen.getByTestId("workspace-detector-big");
+    expect(big.querySelectorAll('[data-testid="detector-rings"] circle').length).toBeGreaterThan(0);
+    fireEvent.keyDown(big, { key: "Escape" });
+    expect(screen.queryByTestId("workspace-detector-big")).toBeNull();
+    expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
+  });
+
+  it("draws no rings for a setup that lacks its geometry", () => {
+    state.setups = [{ id: 1, name: "setup1", folder: "setup1", included: true, beam_center_x: null }];
+    state.corpus = state.corpus.map((s) => (s.id === 10 ? { ...s, setup_id: 1 } : s));
+    state.exposures = [exposure(100, { image_path: "/d/100.tif", image_version: "v" })];
+    state.detectorSize = { width: 981, height: 1043 };
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.mouseEnter(within(screen.getByTestId("workspace-candidates")).getAllByRole("button")[1]!);
+    expect(screen.getByTestId("workspace-exposures").querySelectorAll('[data-testid="detector-rings"]')).toHaveLength(0);
+    expect(state.sizeRequests).toEqual([]);
+  });
+
   it("the plot keeps the called phase's reflections faded, and draws a hovered candidate's at full strength instead", () => {
     state.trace = makeTrace(1);
     state.peaks = [peak(7, 0.1, "auto")];
@@ -2937,6 +3014,86 @@ describe("WorkspacePage", () => {
     expect(currentFrame()).toBe("Image 2");
   });
 
+  it("Tab and Shift+Tab cycle only the phase choices, wrapping", () => {
+    renderAt("/experiments/1/workspace/10");
+    const rows = within(screen.getByTestId("workspace-candidates")).getAllByRole("button");
+    const ff = screen.getByTestId("workspace-form-factor");
+    const choices = [...rows, ff];
+    expect(fireEvent.keyDown(document.body, { key: "Tab" })).toBe(false);
+    expect(document.activeElement).toBe(choices[0]);
+    for (let i = 1; i < choices.length; i++) {
+      fireEvent.keyDown(document.activeElement!, { key: "Tab" });
+      expect(document.activeElement).toBe(choices[i]);
+    }
+    fireEvent.keyDown(document.activeElement!, { key: "Tab" });
+    expect(document.activeElement).toBe(choices[0]);
+    fireEvent.keyDown(document.activeElement!, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(ff);
+    fireEvent.keyDown(screen.getByRole("button", { name: "Image 1" }), { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(ff);
+  });
+
+  it("leaves Enter on a focused choice to the button, and Space keeps opening the detector view", () => {
+    state.exposures = [exposure(100), exposure(101, { image_path: "/x.tif", image_version: "7" })];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(document.body, { key: "Tab" });
+    expect(fireEvent.keyDown(document.activeElement!, { key: "Enter" })).toBe(true);
+    fireEvent.keyDown(document.activeElement!, { key: " " });
+    expect(screen.getByRole("dialog", { name: "Detector image" })).toBeInTheDocument();
+  });
+
+  it("a stray Esc outside the phase choices leaves Tab on them", () => {
+    renderAt("/experiments/1/workspace/10");
+    expect(fireEvent.keyDown(document.body, { key: "Escape" })).toBe(true);
+    expect(fireEvent.keyDown(document.body, { key: "Tab" })).toBe(false);
+    expect(document.activeElement?.closest("[data-call-choices]")).not.toBeNull();
+  });
+
+  it("Esc leaves the phase choices and lets Tab reach every control until another sample opens", () => {
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(document.body, { key: "Tab" });
+    const first = document.activeElement;
+    expect(fireEvent.keyDown(first!, { key: "Escape" })).toBe(false);
+    expect(document.activeElement).toBe(document.body);
+    expect(fireEvent.keyDown(document.body, { key: "Tab" })).toBe(true);
+    (first as HTMLElement).focus();
+    expect(fireEvent.keyDown(first!, { key: "Tab" })).toBe(true);
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    expect(fireEvent.keyDown(document.body, { key: "Tab" })).toBe(false);
+    expect(document.activeElement?.closest("[data-call-choices]")).not.toBeNull();
+  });
+
+  it("keeps native Tab in text fields and while a custom index is open", () => {
+    renderAt("/experiments/1/workspace/10");
+    const filter = document.getElementById("workspace-filter")!;
+    filter.focus();
+    expect(fireEvent.keyDown(filter, { key: "Tab" })).toBe(true);
+    expect(document.activeElement).toBe(filter);
+    fireEvent.keyDown(window, { key: "i" });
+    expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
+    expect(fireEvent.keyDown(document.body, { key: "Tab" })).toBe(true);
+  });
+
+  it("does not trap Tab when no phase choice can be picked", () => {
+    state.username = undefined;
+    renderAt("/experiments/1/workspace/10");
+    expect(fireEvent.keyDown(document.body, { key: "Tab" })).toBe(true);
+  });
+
+  it("on a short window with Call folded, Tab opens Call and lands on its first choice", () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(max-height: 860px)", media: query, addEventListener: () => {}, removeEventListener: () => {} }));
+    try {
+      renderAt("/experiments/1/workspace/10");
+      const tools = screen.getByRole("complementary", { name: "Tools" });
+      fireEvent.click(within(tools).getByRole("button", { name: /^Image/ }));
+      expect(screen.queryByTestId("workspace-candidates")).toBeNull();
+      fireEvent.keyDown(document.body, { key: "Tab", shiftKey: true });
+      expect(document.activeElement).toBe(screen.getByTestId("workspace-form-factor"));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("0 marks the frame as no phase (form factor), and 0 again clears it", () => {
     state.indices = [];
     renderAt("/experiments/1/workspace/10");
@@ -2988,6 +3145,25 @@ describe("WorkspacePage", () => {
     fireEvent.keyDown(window, { key: " " });
     expect(screen.getByTestId("workspace-detector-caption")).toHaveTextContent("Image 2 of 3, A3 in Long pipe");
     fireEvent.keyDown(window, { key: " " });
+  });
+
+  it("draws no bridge to a sample whose setup is hidden, and draws it again once the setup is shown", () => {
+    state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
+    state.setups = [{ id: 1, name: "Short pipe", folder: "s1", included: true }, { id: 2, name: "Long pipe", folder: "s2", included: false }];
+    state.corpus = state.corpus.map((s) => (s.id === 12 ? { ...s, setup_id: 2 } : { ...s, setup_id: 1 }));
+    state.mateExposures = new Map([[12, [exposure(200, { sample_id: 12 })]]]);
+    const { rerender } = renderAt("/experiments/1/workspace/10");
+    const frames = screen.getByTestId("workspace-exposures");
+    expect(within(frames).queryByTestId("frame-group-header")).toBeNull();
+    expect(within(frames).queryByRole("button", { name: /^Image 1 of A3/ })).toBeNull();
+    expect(screen.queryByText(/^Same as A3/)).toBeNull();
+    expect(screen.getByTestId("workspace-samples").querySelector("[data-bridged]")).toBeNull();
+
+    state.setups = state.setups.map((st) => ({ ...st, included: true }));
+    rerender(page("/experiments/1/workspace/10"));
+    expect(within(screen.getByTestId("workspace-exposures")).getAllByTestId("frame-group-header")).toHaveLength(2);
+    expect(screen.getByText("Same as A3 in Long pipe")).toBeInTheDocument();
+    expect(screen.getByTestId("workspace-samples").querySelector("[data-sample-id='10'] [data-bridged]")).not.toBeNull();
   });
 
   it("the kept count under Frames counts only this sample's own frames", () => {
@@ -3155,7 +3331,7 @@ describe("WorkspacePage", () => {
     expect(within(picker).getAllByRole("button").map((b) => b.getAttribute("data-sample-id"))).toEqual(["11"]);
   });
 
-  it("names a same sample whose setup is hidden, so the note and the leave command match the group", () => {
+  it("leaves a same sample whose setup is hidden out of the note and the leave command, though the bridge stays stored", () => {
     state.setups = [
       { id: 2, name: "setup2", folder: "setup2", included: true },
       { id: 1, name: "setup1", folder: "setup1", included: false },
@@ -3163,10 +3339,11 @@ describe("WorkspacePage", () => {
     state.corpus = [{ ...sample(10, "B1"), setup_id: 2 }, { ...sample(12, "A1"), setup_id: 1 }];
     state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByText("Same as A1 in setup1")).toBeInTheDocument();
+    expect(screen.queryByText(/^Same as A1/)).toBeNull();
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "not the same" } });
-    expect(screen.getByRole("option", { name: "Not the same sample as A1" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /^Not the same sample as/ })).toBeNull();
+    expect(calls.filter((c) => c.hook.includes("bridge"))).toEqual([]);
   });
 
   it("B is not a shortcut, the palette offers no unbridging without bridges, and no bridging before a user is set", () => {

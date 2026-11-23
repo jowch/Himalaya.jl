@@ -2,6 +2,7 @@ import type { Exposure } from "../api";
 import { imageUrl } from "../workspace/model";
 import { detectorLutFilter } from "../detector/detectorLut";
 import { Tooltip } from "./Tooltip";
+import { DetectorRings, type DetectorRingsView } from "./DetectorRings";
 import { releaseMouseFocus, useRovingFocus } from "../hooks/useRovingFocus";
 
 const DETECTOR_COLOUR = { filter: detectorLutFilter("magma") };
@@ -18,9 +19,10 @@ interface Props {
   onPick: (id: number) => void;
   onToggleDrop: (e: Exposure) => void;
   warningOf?: (e: Exposure) => string | undefined;
+  ringsOf?: ((e: Exposure) => DetectorRingsView | null) | undefined;
 }
 
-export function ExposureStrip({ groups, currentId, onPick, onToggleDrop, warningOf }: Props): JSX.Element {
+export function ExposureStrip({ groups, currentId, onPick, onToggleDrop, warningOf, ringsOf }: Props): JSX.Element {
   const ref = useRovingFocus<HTMLDivElement>(currentId);
   const hasCurrent = groups.some((g) => g.exposures.some((e) => e.id === currentId));
   return (
@@ -39,6 +41,7 @@ export function ExposureStrip({ groups, currentId, onPick, onToggleDrop, warning
               const dropped = e.status === "rejected";
               const src = imageUrl(e, true);
               const warning = warningOf?.(e);
+              const ringView = src ? ringsOf?.(e) ?? null : null;
               const name = gi === 0 || g.title === undefined ? `Image ${i + 1}` : `Image ${i + 1} of ${g.title}`;
               return (
                 <li
@@ -70,6 +73,7 @@ export function ExposureStrip({ groups, currentId, onPick, onToggleDrop, warning
                     ) : (
                       <span className="text-xs text-frame-tag">No TIFF</span>
                     )}
+                    {ringView && <DetectorRings view={ringView} fit="cover" />}
                   </button>
                   {dropped && <span className="text-xs text-ink-soft line-through">dropped</span>}
                   {warning !== undefined && <span aria-hidden="true" className="truncate text-xs text-warning">{warning}</span>}
