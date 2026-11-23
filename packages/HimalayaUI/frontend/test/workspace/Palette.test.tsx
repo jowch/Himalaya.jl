@@ -85,6 +85,14 @@ describe("rootRows", () => {
     const ids = rootRows(groups, pages, "compare b3").flatMap((r) => (r.kind === "item" ? [r.item.id] : []));
     expect(ids).toEqual(["compare-B3"]);
   });
+
+  it("finds a command by one of its keywords as well as its label", () => {
+    const groups = [{ title: "This sample", items: [{ id: "bridge", label: "Same sample as…", keywords: ["merge", "bridge"] }, { id: "zoom", label: "Reset zoom" }] }];
+    const ids = (q: string): string[] => rootRows(groups, {}, q).flatMap((r) => (r.kind === "item" ? [r.item.id] : []));
+    expect(ids("merge")).toEqual(["bridge"]);
+    expect(ids("bridge same")).toEqual(["bridge"]);
+    expect(ids("zoom")).toEqual(["zoom"]);
+  });
 });
 
 function open(): { onClose: ReturnType<typeof vi.fn>; rerender: (pages: Record<string, PalettePage>) => void } {
