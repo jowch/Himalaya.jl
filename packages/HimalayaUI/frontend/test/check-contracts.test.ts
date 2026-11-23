@@ -14,6 +14,7 @@ const files: Record<string, string> = {
   "test/skip.test.ts": 'it.skip("is skipped", () => {});\nit.todo("is todo");\nit.only("is only", () => {});\ntest.fixme("is fixme", () => {});',
   "test/long.test.ts": 'it("does the thing and more", () => {});',
   "e2e/x.spec.ts": "test('the user sees it', async () => {});\ntest.describe(\"group\", () => {});",
+  "test/commented.test.ts": '// it("is commented out", () => {});\n/*\n  it("is in a block comment", () => {});\n*/\nconst glob = "src/**/*.ts";\n  it("runs after a glob string", () => {});',
 };
 const read = (p: string): string | undefined => files[p];
 
@@ -57,13 +58,20 @@ describe("checkContract", () => {
     }
   });
 
+  it("rejects a test that is commented out, by a line or a block comment", () => {
+    expect(problems(["| a-b | Does it | built | test/commented.test.ts › is commented out |"])[0]).toMatch(/does not contain the test "is commented out"/);
+    expect(problems(["| a-b | Does it | built | test/commented.test.ts › is in a block comment |"])[0]).toMatch(/does not contain the test "is in a block comment"/);
+  });
+
   it("needs a decision for superseded and an owner for planned", () => {
     expect(problems(["| a-b | Does it | superseded | we changed our minds |"])[0]).toMatch(/a-b.*date, a PR number or a doc path/);
     expect(problems(["| a-b | Does it | superseded | Jonathan 2026-11-21 |"])).toEqual([]);
-    expect(problems(["| a-b | Does it | planned | someday |"])[0]).toMatch(/a-b.*PR number, an issue or a thread/);
+    expect(problems(["| a-b | Does it | planned | someday |"])[0]).toMatch(/a-b.*a planned row must name its owner: a PR number, an issue or a thread/);
     expect(problems(["| a-b | Does it | planned | PR 12 |"])).toEqual([]);
     expect(problems(["| a-b | Does it | planned | #34 |"])).toEqual([]);
     expect(problems(['| a-b | Does it | planned | thread "Do it" |'])).toEqual([]);
+    expect(problems(["| a-b | Does it | contradicted | the list shows it |"])[0]).toMatch(/a-b.*a contradicted row must name its owner/);
+    expect(problems(["| a-b | Does it | contradicted | #7: the list shows it |"])).toEqual([]);
   });
 
   it("rejects an unknown status, empty evidence and a repeated id", () => {
@@ -82,7 +90,9 @@ describe("checkContract", () => {
 
 describe("checkContract on the decisions file", () => {
   const DHEAD = ["| id | Decision | Decided | Status | Evidence |", "|---|---|---|---|---|"];
-  const jl = { "packages/x/test/test_a.jl": '@testset "a decision holds" begin end' };
+  const jl = {
+    "packages/x/test/test_a.jl": '@testset "a decision holds" begin end\n# @testset "was disabled" begin end\n#=\n@testset "sits in a block comment" begin end\n=#',
+  };
   const dread = (p: string): string | undefined => ({ ...jl, ...files } as Record<string, string>)[p];
   const dproblems = (rows: string[]): string[] =>
     checkContract(parseContract([...DHEAD, ...rows].join("\n")), dread, DECISIONS);
@@ -95,6 +105,11 @@ describe("checkContract on the decisions file", () => {
   it("accepts a Julia @testset as a built row's test, and needs no mock-up pin", () => {
     expect(dproblems(["| a-b | Do it | 2026-11-23 | built | packages/x/test/test_a.jl › a decision holds |"])).toEqual([]);
     expect(dproblems(["| a-b | Do it | 2026-11-23 | built | packages/x/test/test_a.jl › a decision", ].map((r) => r + " |"))[0]).toMatch(/does not contain the test "a decision"/);
+  });
+
+  it("rejects a Julia testset that is commented out, by a line or a block comment", () => {
+    expect(dproblems(["| a-b | Do it | 2026-11-23 | built | packages/x/test/test_a.jl › was disabled |"])[0]).toMatch(/does not contain the test "was disabled"/);
+    expect(dproblems(["| a-b | Do it | 2026-11-23 | built | packages/x/test/test_a.jl › sits in a block comment |"])[0]).toMatch(/does not contain the test "sits in a block comment"/);
   });
 
   it("needs the date each decision was made", () => {

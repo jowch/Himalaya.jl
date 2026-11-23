@@ -12,6 +12,7 @@ The mock-up's own behaviours are listed in [mockup-contract.md](mockup-contract.
 | `untested` | The app does it, but no test pins it yet. | What shows it works. Turning a row `built` means writing its test. |
 | `superseded` | A later decision replaced it. Keep the row so the history stays readable. | The replacing decision: a date, a PR number or a doc path. |
 | `planned` | Decided but not built, and someone owns it. | The owner: a PR number, an issue (`#n`) or a thread name. |
+| `contradicted` | The app does the opposite today. A known bug, not a gap. | The owner: a PR number, an issue (`#n`) or a thread name, and where the app contradicts it. |
 
 Every row also needs the date it was decided, as `YYYY-MM-DD`.
 
@@ -35,6 +36,9 @@ Every row also needs the date it was decided, as `YYYY-MM-DD`.
 | keys-space | Space opens the enlarged detector view. | 2026-11-21 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › Space enlarges the shown frame's detector image, and Space or Esc closes it |
 | keys-plot-view | V and Shift+V step through the plot views, from a switcher in the plot's top-right corner. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › V steps forward through the plot views and Shift+V steps back, wrapping |
 | keys-lists | In lists Tab and Shift+Tab move, Enter commits and Esc backs out. | 2026-11-21 | built | packages/HimalayaUI/frontend/test/workspace/Palette.test.tsx › Tab, Shift+Tab and the arrows move the highlight and wrap, with focus kept in the field |
+| keys-lists-filter | The sample filter follows the list rule too: Tab and Shift+Tab move the highlight. | 2026-11-21 | planned | thread "Find decisions that were never built": the filter has Enter for the first match and Esc, but no Tab highlight |
+| keys-lists-symmetry | The custom index's symmetry choice follows the list rule. | 2026-11-21 | planned | thread "Find decisions that were never built": the symmetries are a plain button group |
+| keys-keycap-every-control | Every control with a shortcut shows its key as a keycap. | 2026-11-20 | contradicted | thread "Find decisions that were never built": the Drop button has no X keycap, as in the mock-up; Jonathan to decide which wins |
 | keys-tab-assignment | In the workspace Tab and Shift+Tab cycle only the assignment choices, and Esc frees Tab until the next sample. | 2026-11-23 | planned | PR 506 |
 | keys-drop-moves | Dropping an image moves to the nearest kept one. | 2026-11-21 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › X drops the shown frame and shows the nearest kept frame, so a phase key calls there |
 
@@ -44,7 +48,8 @@ Every row also needs the date it was decided, as `YYYY-MM-DD`.
 |---|---|---|---|---|
 | undo-reads-server | Undo reads the server first and never blindly replays an edit someone else has since changed. | 2026-11-21 | built | packages/HimalayaUI/frontend/test/workspace/editOps.test.tsx › reports nothing sent when the edit is already undone on the server |
 | undo-experiment-meta | Renaming the experiment and editing its description are undoable. | 2026-11-22 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › undoes and redoes renaming the experiment and changing its description from the palette |
-| undo-peak-restores-call | Undoing a peak edit also restores a call the edit dropped. | 2026-11-23 | planned | thread "Audit app against the mock-up" (follow-up to PR 507) |
+| undo-setup-edits | Hiding and renaming a setup are undoable. | 2026-11-22 | built | packages/HimalayaUI/frontend/test/workspace/setupUndo.test.ts › undoes a hide and a rename when the server still shows the edit |
+| undo-peak-restores-call | Undoing a peak edit also restores a call the edit dropped. | 2026-11-23 | contradicted | thread "Find decisions that were never built": on the demo, ⌘Z brings the peak back but the call stays changed; peakEntry and excludeEntry in workspace/undoEntries.ts only toggle the peak. No PR owns the fix yet |
 
 ## Wording
 
@@ -63,12 +68,15 @@ Every row also needs the date it was decided, as `YYYY-MM-DD`.
 | look-type | Source Sans 3, no monospace, four sizes, weights 400 and 600, whole-pixel line heights. | 2026-11-21 | untested | packages/HimalayaUI/frontend/src/styles.css font tokens |
 | look-themes | Light mode is the target; dark mode is a charcoal blue-violet with the same tokens for the system and explicit choice. | 2026-11-21 | built | packages/HimalayaUI/frontend/test/workspace/theme.test.ts › states the same dark tokens for the system setting and the explicit choice |
 | look-phase-status-hues | Phase hues never reuse a status hue; error is crimson so it stays apart from the terracotta accent. | 2026-11-21 | untested | packages/HimalayaUI/frontend/src/styles.css colour tokens (PR 405) |
+| look-beam-off-warning | A beam-off image is flagged like a flare: an outlined tile with the reason, and a dot on the sample row. | 2026-11-21 | planned | thread "Find decisions that were never built": only the plot caption shows it today; it belongs with the suspect-image warning of thread "Show combined curve by default" |
 | look-selection | The selected row is one flat tint; a ring shows only for keyboard focus, and a mouse click leaves no ring. | 2026-11-23 | planned | PR 501 and PR 508 |
 | layout-no-shift | Nothing in the workspace may shift between samples or as data loads. | 2026-11-21 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › lists every exposure field, with a dash for the ones the frame lacks, so the section keeps its height |
-| layout-tools-order | The tools column puts the Call list first, then Indexing, then the image; short windows fold Call and the image as an accordion. | 2026-11-22 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › puts the Call list first in the tools column, then the indexing plot, then the exposure |
+| layout-tools-tall | On a tall window the tools column runs Call, then Indexing, then the image. | 2026-11-22 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › puts the Call list first in the tools column, then the indexing plot, then the exposure |
+| layout-tools-short | On a short window (under 860 px) it runs Call, then the image, then Indexing, with the chart pinned; Call and the image fold as an accordion. | 2026-11-22 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › folds Call and Frame as an accordion on a short window, and opening a custom index shows it in place of Call |
 | plot-fixed | The plot has a fixed size; scrolling zooms q and a click adds or disables a peak. | 2026-11-21 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › a click near an auto peak disables it, near a manual peak removes it, and elsewhere adds one |
 | plot-hover | The plot's cursor is a crosshair; the readout snaps to a hovered peak; the called phase's reflections stay faded when nothing is hovered. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePlot.test.tsx › snaps the crosshair and readout to a peak's q while the pointer is on its marker, and not in the plot below it |
 | tooltip-plate | Hover hints use the Tooltip primitive in the plate look; a DOM title is banned. | 2026-11-22 | built | packages/HimalayaUI/frontend/test/ui/Tooltip.test.tsx › does not open when a mouse click focuses the trigger |
+| tooltip-timing | A tooltip opens after 400 ms, at once while another was just open, and at once on keyboard focus. | 2026-11-22 | built | packages/HimalayaUI/frontend/test/ui/Tooltip.test.tsx › opens a neighbour instantly while warm, and waits again once cold |
 
 ## Per-sample state
 
@@ -78,13 +86,13 @@ Every row also needs the date it was decided, as `YYYY-MM-DD`.
 | state-call-survives-drop | A phase call belongs to the sample and survives dropping the image it was made on. | 2026-11-21 | built | packages/HimalayaUI/test/test_sample_calls.jl › a phase call survives dropping the frame it was made on (#350) |
 | state-recents-local | A local recents cache only ranks picker suggestions and stays in this browser. | 2026-11-21 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › the label picker lists labels added recently first, and the choice stays on this browser only |
 | state-compare-cap | A sample holds at most five comparisons, one per comparison colour. | 2026-11-22 | built | packages/HimalayaUI/test/test_routes_compares.jl › a sample holds at most five comparisons, one per comparison colour |
-| state-compare-live | Comparisons are shared live; chips other people add are hidden by default. | 2026-11-22 | untested | Comparisons sync through SSE (packages/HimalayaUI/frontend/test/queue/compares.test.ts) |
+| state-compare-live | Comparisons are shared live; chips other people add are hidden by default and fetch nothing until shown. | 2026-11-22 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › a comparison someone else added arrives hidden, and yours start shown |
 
 ## Comparisons and subtraction
 
 | id | Decision | Decided | Status | Evidence |
 |---|---|---|---|---|
-| cmp-sidebar-setups | The sample list is grouped by setup. | 2026-11-22 | untested | Sidebar setup headers (beamtime workspace PR 3) |
+| cmp-sidebar-setups | The sample list is grouped by setup. | 2026-11-22 | built | packages/HimalayaUI/frontend/test/workspace/SampleList.test.tsx › heads each run of a setup's samples with its name |
 | cmp-sidebar-click | ⌘/Ctrl-clicking a sidebar row toggles it as a comparison without leaving the sample. | 2026-11-21 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › Ctrl/Cmd-clicking a sidebar row toggles it as a comparison without leaving the sample |
 | cmp-chip-gestures | A click on a chip shows or hides it; ⌘/Ctrl-click makes it the subtraction background. | 2026-11-21 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › a plain click on a chip hides or shows just that trace and keeps the subtraction |
 | cmp-raw-minus | The Raw/Minus toggle shows only while a background is set. | 2026-11-21 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › Ctrl-click subtracts in the main plot, Raw brings the trace and comparisons back, and a dimmed chip goes back to Raw |
@@ -101,6 +109,7 @@ Every row also needs the date it was decided, as `YYYY-MM-DD`.
 |---|---|---|---|---|
 | label-colours | Labels use eight colours, kept distinct within labels; they may overlap phase or status hues. | 2026-11-21 | built | packages/HimalayaUI/test/test_routes_label_colors.jl › the eight colours match the frontend's list, in order |
 | label-system | Buffer (blue), Empty capillary (stone) and Calibrant (ochre) are fixed system labels, added per sample. | 2026-11-21 | built | packages/HimalayaUI/frontend/test/workspace/labels.test.ts › a stored colour never overrides a system label's colour |
+| label-suggestions-stay-removed | A label suggestion the user removed is never suggested again. | 2026-11-21 | built | packages/HimalayaUI/test/test_routes_labels.jl › a removed suggestion is rebuilt from the log as removed |
 
 ## Palette
 
@@ -125,6 +134,7 @@ Every row also needs the date it was decided, as `YYYY-MM-DD`.
 |---|---|---|---|---|
 | bridge-is-merge | A bridge says two samples are the same sample measured in two setups. It is not a comparison and takes no comparison slot. | 2026-11-22 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › the same sample takes no comparison slot, so a fifth comparison goes in past a bridge |
 | bridge-note | A bridged sample shows "Same as X in SETUP" and its mate's images under their own setup heading. | 2026-11-22 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › shows a same sample's frames under their own heading after this sample's, and picking one shows it |
+| bridge-hidden-setup | A bridge to a sample in a hidden setup stays stored but is not drawn. | 2026-11-21 | contradicted | thread "Find decisions that were never built": the mate images and the "Same as" note read every sample, hidden ones included (WorkspacePage.tsx); packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx names a hidden setup's mate and pins the opposite |
 | bridge-shared-call | Bridged samples share one call and their labels, except flight paths. | 2026-11-22 | built | packages/HimalayaUI/test/test_bridge_calls.jl › bridged samples share one call |
 | bridge-keep-call | Opening a bridged pair whose calls differ asks once which call to keep. | 2026-11-22 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › opening a bridged sample whose call state differs from its mate's asks once which call to keep |
 | bridge-export | The export keeps one row per sample and names its bridge mate. | 2026-11-22 | built | packages/HimalayaUI/test/test_routes_bridges.jl › the export names the other bridged sample and its setup, never the row itself |
@@ -144,5 +154,6 @@ Every row also needs the date it was decided, as `YYYY-MM-DD`.
 
 | id | Decision | Decided | Status | Evidence |
 |---|---|---|---|---|
-| export-call | JSON and CSV export read the sample call; an uncalled sample exports call_state "uncalled". | 2026-11-22 | built | packages/HimalayaUI/test/test_routes_export.jl › export routes |
-| export-candidates | Indices hold only call members, and a separate candidates field lists every index. | 2026-11-22 | built | packages/HimalayaUI/test/test_routes_export.jl › export routes |
+| export-call | JSON and CSV export read the sample call; an uncalled sample exports call_state "uncalled". | 2026-11-22 | built | packages/HimalayaUI/test/test_routes_export.jl › an uncalled sample exports call_state uncalled with its candidates and labels, as JSON and CSV |
+| export-call-members | An image's indices hold only the call's members, and its auto_phases keeps the pipeline's own pick for bin/verify. | 2026-11-22 | built | packages/HimalayaUI/test/test_routes_export.jl › an indexed sample's indices hold only its call's members, and auto_phases keeps the auto pick |
+| export-candidates | A separate candidates field lists every index, called or not. | 2026-11-22 | built | packages/HimalayaUI/test/test_routes_export.jl › a form-factor sample exports no indices and lists every index as a candidate |

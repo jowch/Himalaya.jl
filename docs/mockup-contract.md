@@ -16,6 +16,7 @@ When the mock-up changes, extract its behaviours again from the code and update 
 | `untested` | The app does it, but no test pins it yet. | What shows it works. Turning a row `built` means writing its test. |
 | `superseded` | A later product decision replaced it. | The decision: a date, a PR number or a doc path. |
 | `planned` | Not built yet, and someone owns it. | The owner: a PR number, an issue (`#n`) or a thread name. |
+| `contradicted` | The app does the opposite today. A known bug, not a gap. | The owner: a PR number, an issue (`#n`) or a thread name, and where the app contradicts it. |
 
 ## Sample list and header
 

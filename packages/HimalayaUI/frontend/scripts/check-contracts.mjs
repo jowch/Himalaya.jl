@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const FRONTEND = join(dirname(fileURLToPath(import.meta.url)), "..");
 const REPO = join(FRONTEND, "..", "..", "..");
-const STATUSES = new Set(["built", "untested", "superseded", "planned"]);
+const STATUSES = new Set(["built", "untested", "superseded", "planned", "contradicted"]);
 const ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -48,13 +48,22 @@ function escape(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function blank(match) {
+  return match.replace(/[^\n]/g, " ");
+}
+
+function withoutBlockComments(content) {
+  return content.replace(/\/\*[\s\S]*?\*\//g, blank).replace(/#=[\s\S]*?=#/g, blank);
+}
+
 function declaration(content, title) {
-  const re = new RegExp(`\\b(?:it|test)(?:\\.(\\w+))?\\s*\\(\\s*(["'\`])${escape(title)}\\2`, "g");
+  const code = withoutBlockComments(content);
+  const re = new RegExp(`^[ \\t]*(?:it|test)(?:\\.(\\w+))?\\s*\\(\\s*(["'\`])${escape(title)}\\2`, "gm");
   let found;
-  for (const m of content.matchAll(re)) {
+  for (const m of code.matchAll(re)) {
     if (!found || (found.modifier && !m[1])) found = { modifier: m[1] };
   }
-  if (!found && new RegExp(`@testset\\s+"${escape(title)}"`).test(content)) found = {};
+  if (!found && new RegExp(`^[ \\t]*@testset\\s+"${escape(title)}"`, "m").test(code)) found = {};
   return found;
 }
 
@@ -95,8 +104,8 @@ export function checkContract(contract, read, doc = MOCKUP) {
       if (p) problems.push(`${at}: ${p}`);
     } else if (row.status === "superseded" && !/\b\d{4}-\d{2}-\d{2}\b|\bPR \d+|docs\//.test(row.evidence)) {
       problems.push(`${at}: a superseded row must cite its decision with a date, a PR number or a doc path`);
-    } else if (row.status === "planned" && !/\bPR \d+|#\d+|\bthread "/.test(row.evidence)) {
-      problems.push(`${at}: a planned row must name its owner: a PR number, an issue or a thread`);
+    } else if ((row.status === "planned" || row.status === "contradicted") && !/\bPR \d+|#\d+|\bthread "/.test(row.evidence)) {
+      problems.push(`${at}: a ${row.status} row must name its owner: a PR number, an issue or a thread`);
     }
   }
   return problems;
