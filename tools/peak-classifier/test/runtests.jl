@@ -184,6 +184,34 @@ end
     end
 end
 
+@testset "oracle scores the user's own peaks as a ceiling" begin
+    mktempdir() do dir
+        b = eval_fixture(dir)
+        r = evaluate_database(b.path; detectors = [:oracle, :hybrid], io = devnull)
+        o = r.entries[1]
+        @test o.name == "oracle" && o.detector == :oracle && o.threshold === nothing
+        @test o.summary.adds == (144, 144) && o.summary.excluded == (0, 12)
+        @test phase_table(o) == Dict("Lamellar" => (24, 24), "Hexagonal" => (0, 12))
+        @test o.peak_count >= 144
+        @test only(r.paired).phases["Lamellar"][2] == 0
+        @test occursin("oracle", sprint(print_evaluation, r))
+    end
+end
+
+@testset "evaluate checks its options before loading" begin
+    mktempdir() do dir
+        b = eval_fixture(dir)
+        @test_throws ArgumentError evaluate_database(b.path; phase_auto = :typo, io = devnull)
+        @test_logs (:warn, r"--threshold|threshold") evaluate_database(b.path; detectors = [:hybrid], thresholds = 0.7, io = devnull)
+        r = evaluate_database(b.path; detectors = [:recipe], recipe = HPM.default_recipe(n_trees = 10),
+                              thresholds = :sweep, io = devnull)
+        @test r.recipe_id === nothing
+        one = evaluate_database(b.path; detectors = [:recipe], recipe = HPM.default_recipe(n_trees = 10),
+                                thresholds = 0.6, io = devnull)
+        @test one.recipe_id isa String
+    end
+end
+
 @testset "evaluate prints and writes the same numbers" begin
     mktempdir() do dir
         b = eval_fixture(dir)
@@ -216,5 +244,12 @@ end
         g = run.metrics.comparison.hybrid
         @test g.phase == [h.phase...] && g.adds == [h.adds...] && g.excluded == [h.excluded...]
         @test g.peaks == h.peaks && g.exposures == h.exposures
+
+        m = run.metrics.comparison.model
+        thr = run.metrics.comparison.threshold
+        mine = only(evaluate_database(b.path; detectors = [:recipe], recipe = HPM.default_recipe(n_trees = 15),
+                                      thresholds = thr, io = devnull).entries).summary
+        @test m.phase == [mine.phase...] && m.adds == [mine.adds...] && m.excluded == [mine.excluded...]
+        @test m.peaks == mine.peaks && m.exposures == mine.exposures
     end
 end

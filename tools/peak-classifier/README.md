@@ -57,15 +57,18 @@ Tests: `julia --project=. -e 'using Pkg; Pkg.test()'` (synthetic data only; CI j
 ## Evaluate
 
 `evaluate DB` scores peak detectors on one database, with the same scoring
-code the server's training gate uses (`HimalayaUI.peak_eval`), so numbers here
-and in a recorded training run agree.
+code the server's training gate uses (`HimalayaUI.peak_eval`). The `hybrid` row
+agrees with a recorded run's `comparison.hybrid`. A `recipe` row agrees with its
+`comparison.model` only at the gate's chosen threshold (pass it as `--threshold`)
+and with the same learner options; the default here is 0.5.
 
-Options: `--detector` (comma list of `hybrid`, `persistence`, `recipe`; default
+Options: `--detector` (comma list of `hybrid`, `persistence`, `recipe`, `oracle`; default
 `hybrid`), `--threshold X|sweep` (recipe decision threshold; `sweep` scores
-every threshold of the gate's grid, 0.3 to 0.9), `--learner`, `--nms`, `--trees`,
+every threshold of the gate's grid, 0.3 to 0.9 and omits the recipe id; ignored with a warning when `recipe` is not a detector), `--learner`, `--nms`, `--trees`,
 `--no-detector-features` (recipe, as for `cv`), `--phase-auto user_events|all`,
-`--group-by experiment|sample` (fold key; by default what training picks:
-experiments when there are at least 3), `--json PATH`.
+`--group-by experiment|sample` (fold key; by default training's choice,
+experiments when there are at least 3 and otherwise samples; with fewer than
+5 samples training refuses, and `evaluate` still runs, by sample), `--json PATH`.
 
 Every loaded exposure of the database is scored, labelled or not. Output, per
 detector, as numerator/denominator and rate:
@@ -77,6 +80,11 @@ detector, as numerator/denominator and rate:
 - **add recall**: your added peaks the detector finds. Adds in the top 7% of
   the q range are not scored (the hybrid trims it); their count is printed.
 - **excludes detected**: excluded peaks the detector still outputs (lower is better).
+- **oracle** (a ceiling, not a detector): the user's own final peaks for each
+  labelled exposure (kept auto peaks and adds, snapped to the nearest grid point,
+  excludes removed), through the same scoring. Its add recall is 1 by construction.
+  Its phase top-1 is the highest any detector can reach on this metric. Its
+  peaks/exposure counts only labelled exposures' peaks, so ignore that row.
 - **peaks/exposure** over all loaded exposures, and **peaks/form-factor** over
   form-factor exposures.
 
@@ -101,11 +109,12 @@ Biases to keep in mind:
   threshold's numbers as optimistic and compare detectors at a threshold fixed
   beforehand.
 - With few experiments the folds are large and per-phase counts are small.
-- Phase calls are scored on the detector's peaks with excludes applied and
-  adds not. A call the user built from peaks they added by hand (common for
-  custom indices on weak patterns) can only be matched if the detector finds
-  those peaks itself, so a phase can score 0 for every detector. That reflects
-  detection, not a matching error.
+- The phase metric has a ceiling below 100% even with the user's own peaks:
+  it needs the first `auto_group` pick to match a confirmed call within 2% of
+  its basis, and confirmed calls (custom indices, coexisting phases) often do
+  not satisfy that. A phase that scores 0 for every detector may be near 0 for
+  the oracle too, which says nothing about detection. Read each detector
+  against the oracle row of the same phase.
 
 The JSON holds the same numbers (`counts`, `detectors[].metrics`,
 `detectors[].per_phase`, `paired`), with no paths. The output is derived from

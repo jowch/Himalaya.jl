@@ -1,6 +1,15 @@
 using Printf
 
-const DETECTORS = (:hybrid, :persistence, :recipe)
+const DETECTORS = (:hybrid, :persistence, :recipe, :oracle)
+
+function _oracle_picks(exps)
+    map(exps) do e
+        step = HPM.grid_step(e.q)
+        want = vcat(e.adds, e.kept, e.kept_model)
+        idx = unique(argmin(abs.(e.q .- x)) for x in want)
+        sort!([i for i in idx if !any(x -> abs(e.q[i] - x) <= HPM.peak_match_tol(x, step), e.excluded)])
+    end
+end
 
 function _detector_picks(detector::Symbol, exps)
     picks = Vector{Vector{Int}}(undef, length(exps))
@@ -27,7 +36,7 @@ end
                       thresholds = nothing, phase_auto = :user_events, group_by = nothing,
                       io = stderr) -> NamedTuple
 
-Scores each detector (`:hybrid`, `:persistence`, `:recipe`) on every loaded
+Scores each detector (`:hybrid`, `:persistence`, `:recipe`, `:oracle`, the user's own peaks as a ceiling) on every loaded
 exposure of the database, opened read-only, with the training gate's own
 scoring (`HimalayaUI.peak_eval`). `:recipe` is out of fold: one model per held
 out group, as in training. `thresholds` (`nothing` = the recipe's, a number, or
@@ -43,14 +52,17 @@ function evaluate_database(db_path::AbstractString; detectors = [:hybrid],
     detectors = Symbol[Symbol(d) for d in detectors]
     isempty(detectors) && throw(ArgumentError("no detectors given"))
     bad = setdiff(detectors, DETECTORS)
-    isempty(bad) || throw(ArgumentError("unknown detector $(first(bad)); use hybrid, persistence or recipe"))
+    isempty(bad) || throw(ArgumentError("unknown detector $(first(bad)); use hybrid, persistence, recipe or oracle"))
     allunique(detectors) || throw(ArgumentError("detectors must be distinct"))
+    phase_auto in (:user_events, :all) || throw(ArgumentError("phase_auto must be :user_events or :all"))
+    thresholds === nothing || :recipe in detectors ||
+        @warn "thresholds only applies to the recipe detector, which was not requested; ignoring it"
     thrs = _threshold_list(thresholds, recipe)
     db = open_readonly(db_path)
     try
         t0 = time()
         if group_by === nothing
-            group_by = HimalayaUI.cold_start_check(db).counts.experiments >= 3 ? :experiment : :sample
+            group_by = something(HimalayaUI.cold_start_check(db).group_by, :sample)
         end
         exps = HimalayaUI.labeled_exposures(db; group_by, include_unlabelled = true, io)
         ctx = HimalayaUI.eval_context(db, exps; phase_auto)
@@ -65,6 +77,8 @@ function evaluate_database(db_path::AbstractString; detectors = [:hybrid],
             if d === :hybrid
                 picks = ds === nothing ? _detector_picks(:hybrid, exps) : ds.hybrid
                 push!(entries, _entry("hybrid", d, nothing, exps, picks, ctx))
+            elseif d === :oracle
+                push!(entries, _entry("oracle", d, nothing, exps, _oracle_picks(exps), ctx))
             elseif d === :persistence
                 push!(entries, _entry("persistence", d, nothing, exps, _detector_picks(:persistence, exps), ctx))
             else
@@ -85,7 +99,7 @@ function evaluate_database(db_path::AbstractString; detectors = [:hybrid],
                   phase_targets = length(ctx.targets), label_exposures = length(ctx.label_ids))
         println(io, "total $(round(time() - t0; digits = 1)) s")
         (; counts, phase_auto, entries, paired = [_pair(entries[1], e) for e in entries[2:end]],
-           recipe_id = :recipe in detectors ? recipe_id(recipe) : nothing)
+           recipe_id = :recipe in detectors && length(thrs) == 1 ? recipe_id(Recipe(recipe.features, recipe.learner, recipe.weak_keep, thrs[1], recipe.nms)) : nothing)
     finally
         close(db)
     end
