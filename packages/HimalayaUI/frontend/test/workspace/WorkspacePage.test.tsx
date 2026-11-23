@@ -2292,7 +2292,7 @@ describe("WorkspacePage", () => {
     expect(rows()[0]).toBe("A4");
   });
 
-  it("drops a kept zoom that falls outside the next sample's q range, and Z resets the zoom", () => {
+  it("drops a kept zoom that falls outside the next sample's q range, and ⌘/Ctrl+0 resets the zoom", () => {
     state.trace = makeTrace(1);
     const { rerender } = renderAt("/experiments/1/workspace/10");
     const plot = screen.getByTestId("workspace-trace");

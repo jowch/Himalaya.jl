@@ -26,7 +26,7 @@ When the mock-up changes, extract its behaviours again from the code and update 
 | list-prev-unreviewed | Shift with that key jumps to the previous unreviewed sample | planned | held small item from the 2026-11-23 mock-up audit (thread "Audit app against the mock-up") |
 | list-filter | / focuses the filter; it matches names; Enter opens the first match; Esc leaves it | built | test/workspace/WorkspacePage.test.tsx › / puts the cursor in the filter, where letters type, and ? opens the shortcuts only while the filter is empty |
 | list-no-match | An empty filter result says "No samples match." | built | test/workspace/WorkspacePage.test.tsx › says no samples match only when a filter is typed |
-| list-status | Each row shows its call, or an unreviewed mark | built | test/workspace/WorkspacePage.test.tsx › lists only this experiment's samples and marks unreviewed ones |
+| list-status | Each row shows its call, or an unreviewed mark | built | test/workspace/WorkspacePage.test.tsx › updates the list and the count when the corpus status changes |
 | list-every-phase | A coexistence call lists every phase in the row | planned | PR 502 |
 | list-suspect-mark | A row with an undropped suspect image carries a warning mark | planned | thread "Show combined curve by default" |
 | list-follows-call | The row and the progress follow the call as it changes, without a reload | planned | PR 507 (a peak edit that drops the call left them stale) |
@@ -60,7 +60,8 @@ When the mock-up changes, extract its behaviours again from the code and update 
 
 | id | Behaviour | Status | Evidence |
 |---|---|---|---|
-| plot-zoom | Scrolling zooms q around the cursor | built | test/workspace/WorkspacePage.test.tsx › drops a kept zoom that falls outside the next sample's q range, and Z resets the zoom |
+| plot-zoom | Scrolling zooms q | built | test/workspace/WorkspacePage.test.tsx › drops a kept zoom that falls outside the next sample's q range, and ⌘/Ctrl+0 resets the zoom |
+| plot-zoom-anchor | The zoom keeps the q under the cursor in place | built | test/plot/interaction.test.ts › keeps the q under the cursor at the same place on the axis |
 | plot-reset-zoom | A key resets the zoom (mock-up Z) | superseded | ⌘/Ctrl+0 (Jonathan 2026-11-21 keymap) |
 | plot-readout | The cursor reads out q and d | built | test/workspace/WorkspacePlot.test.tsx › shows q and d under the cursor and nothing once it leaves |
 | plot-peak-click | A click near an auto peak turns it off, near a manual one removes it, elsewhere adds one | built | test/workspace/WorkspacePage.test.tsx › a click near an auto peak disables it, near a manual peak removes it, and elsewhere adds one |
