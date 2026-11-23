@@ -612,3 +612,46 @@ for (const width of [1024, 1280, 1440]) {
     });
   }
 }
+
+for (const width of [1024, 1440]) {
+  for (const subtracting of [false, true]) {
+  test(`at ${width} px the plot view switcher sits above the ${subtracting ? "difference" : "trace"} and below the peak markers in every view`, async ({ page }) => {
+    const peakAt = (id: number, q: number) => ({ id, exposure_id: 1, q, intensity: null, prominence: null, sharpness: null, source: "auto", excluded: false });
+    await page.route(/\/api\/exposures\/\d+\/peaks/, (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([peakAt(1, 0.1), peakAt(2, q[q.length - 2]!)]) }));
+    const plain = { q, I: q.map((x) => 1 / (x * x)), sigma: q.map(() => 1) };
+    await page.route(/\/api\/exposures\/\d+\/trace/, (r) => {
+      const eid = Number(/exposures\/(\d+)\//.exec(r.request().url())![1]);
+      return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(Math.floor(eid / 10) === 40 ? trace : plain) });
+    });
+    await openChips(page, width, [42, 44, 46, 48, 50], subtracting);
+    if (subtracting) {
+      await page.getByTestId("workspace-subtraction-toggle").getByRole("button", { name: /^Minus / }).click();
+      await expect(page.locator('[data-role="difference-line"] path')).toBeVisible();
+    }
+    const control = page.getByTestId("workspace-plot-view");
+    const before = await control.boundingBox();
+    for (const name of ["Log", "Linear", "Log-log", "q²I"]) {
+      await control.getByRole("button", { name: `${name === "q²I" ? "q²I (Kratky)" : name} plot`, exact: true }).click();
+      const box = (await control.boundingBox())!;
+      expect(box).toEqual(before);
+      const line = (await page.locator(`[data-role="${subtracting ? "difference-line" : "trace-line"}"] path`).boundingBox())!;
+      expect(box.y + box.height).toBeLessThanOrEqual(line.y);
+      const marks = await page.locator('[data-role="peak-glyph"] polygon').evaluateAll((ns) => ns.map((n) => n.getBoundingClientRect().bottom));
+      expect(marks.length).toBe(2);
+      for (const bottom of marks) expect(box.y).toBeGreaterThanOrEqual(bottom);
+    }
+  });
+  }
+}
+
+test("the plot view switcher stays faint until the pointer is on it", async ({ page }) => {
+  await openChips(page, 1440, [], false);
+  const corner = page.getByTestId("plot-card-corner");
+  const opacity = () => corner.evaluate((n) => Number(getComputedStyle(n).opacity));
+  await page.getByTestId("workspace-trace").hover();
+  await expect.poll(opacity).toBeLessThan(0.5);
+  await page.getByTestId("workspace-plot-view").getByRole("button", { name: "Linear plot", exact: true }).hover();
+  await expect.poll(opacity).toBe(1);
+  await page.mouse.move(0, 0);
+  await expect.poll(opacity).toBeLessThan(0.5);
+});
