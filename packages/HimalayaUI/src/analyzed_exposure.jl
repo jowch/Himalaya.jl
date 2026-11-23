@@ -19,3 +19,11 @@ function analyzed_exposure_id(frames)
     end
     nothing
 end
+
+function analysis_gap(frames)
+    images = [e for e in frames if !is_combined_kind(_frame_kind(e))]
+    isempty(images) && return nothing
+    kept = filter(is_kept_exposure, images)
+    isempty(kept) && return "all_dropped"
+    any(_frame_selected, kept) ? nothing : "none_selected"
+end

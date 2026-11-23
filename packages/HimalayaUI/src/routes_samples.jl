@@ -27,6 +27,7 @@ function register_samples_routes!()
         end
 
         rep_by_sample = Dict{Int, Int}()
+        gap_by_sample = Dict{Int, String}()
         sids = [Int(sm.id) for sm in samples]
         if !isempty(samples)
             ph   = join(fill("?", length(sids)), ",")
@@ -48,6 +49,8 @@ function register_samples_routes!()
             for (sid, exps) in grouped_exps
                 rep = analyzed_exposure_id(exps)
                 rep === nothing || (rep_by_sample[sid] = rep)
+                gap = analysis_gap(exps)
+                gap === nothing || (gap_by_sample[sid] = gap)
             end
         end
         call_states  = sample_call_states(db, sids)
@@ -58,6 +61,7 @@ function register_samples_routes!()
             d[:q_units] = ismissing(sm.setup_id) ? "A-1" :
                 get(qunits_by_setup, Int(sm.setup_id), "A-1")
             d[:analyzed_exposure_id] = get(rep_by_sample, Int(sm.id), nothing)
+            d[:analysis_gap] = get(gap_by_sample, Int(sm.id), nothing)
             state = get(call_states, Int(sm.id), "indexed")
             summary = call_summary(state, get(call_members, Int(sm.id), []))
             d[:assignment_state] = state

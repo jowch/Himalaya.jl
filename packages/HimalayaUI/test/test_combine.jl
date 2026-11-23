@@ -119,7 +119,10 @@ end
         analyzed() = only(filter(s -> s.id == fx.s_id,
             JSON3.read(String(call("GET", "/api/samples?experiment_id=$(fx.exp_id)").body)))).analyzed_exposure_id
         listing() = JSON3.read(String(call("GET", "/api/samples/$(fx.s_id)/exposures").body))
+        gap() = only(filter(s -> s.id == fx.s_id,
+            JSON3.read(String(call("GET", "/api/samples?experiment_id=$(fx.exp_id)").body)))).analysis_gap
         @test analyzed() == cid
+        @test gap() === nothing
 
         combined = only(filter(e -> e.id == cid, listing()))
         @test combined.kind == "combined"
@@ -149,6 +152,7 @@ end
         @test r.status == 200
         @test JSON3.read(String(r.body)).analyzed_exposure_id === nothing
         @test analyzed() === nothing
+        @test gap() == "none_selected"
 
         put(fx.ids)(call)
         @test analyzed() == cid
@@ -158,6 +162,12 @@ end
 
         @test status(call, fx.ids[2], "accepted").status == 200
         @test only(filter(e -> e.id == fx.ids[2], listing())).selected === false
+        @test status(call, fx.ids[2], "rejected").status == 200
+        undo = call("PATCH", "/api/exposures/$(fx.ids[2])/status"; body = JSON3.write(Dict(:status => nothing, :selected => true)), headers = json_hdr)
+        @test undo.status == 200
+        @test HimalayaUI.selected_image_ids(db, fx.s_id) == fx.ids
+        @test call("PATCH", "/api/exposures/$(fx.ids[2])/status"; body = JSON3.write(Dict(:status => nothing, :selected => "yes")), headers = json_hdr).status == 422
+        @test put([fx.ids[1], fx.ids[3]])(call).status == 200
         @test analyzed() == HimalayaUI.combined_for_set(db, fx.s_id, [fx.ids[1], fx.ids[3]])
 
         @test put([fx.ids[2]])(call).status == 200
@@ -166,6 +176,7 @@ end
         @test status(call, fx.ids[2], "rejected").status == 200
         @test isempty(HimalayaUI.selected_image_ids(db, fx.s_id))
         @test analyzed() === nothing
+        @test gap() == "all_dropped"
         @test put(Int[])(call).status == 200
         @test status(call, fx.ids[1], "accepted").status == 200
         @test HimalayaUI.selected_image_ids(db, fx.s_id) == [fx.ids[1]]
@@ -245,4 +256,35 @@ end
         "SELECT analysis_inputs_hash AS h FROM exposures WHERE id = ?", [id]))).h)
     @test hashed(current)
     @test !hashed(stale)
+end
+
+@testset "backfill_averages! builds each selection's missing average once" begin
+    fx = _combine_fixture()
+    db = fx.db
+    other = HimalayaUI.create_sample!(db; experiment_id = fx.exp_id, name = "T")
+    HimalayaUI.create_exposure!(db; experiment_id = fx.exp_id, sample_id = other, filename = "t_tot")
+    @test HimalayaUI.analyzed_exposure_id(db, fx.s_id) === nothing
+    @test HimalayaUI.backfill_averages!(db) == 1
+    cid = HimalayaUI.analyzed_exposure_id(db, fx.s_id)
+    @test cid isa Int
+    runs() = Int(first(HimalayaUI.sqlrows(DBInterface.execute(db,
+        "SELECT COUNT(*) AS n FROM user_actions WHERE action = 'analyze_run'"))).n)
+    before = runs()
+    HimalayaUI.backfill_averages!(db)
+    @test runs() == before
+    @test _kind_count(db, fx.s_id) == 1
+end
+
+@testset "export lists the current average, not averages of an earlier selection" begin
+    fx = _combine_fixture()
+    db = fx.db
+    full = HimalayaUI.refresh_selection!(db, fx.s_id)
+    _select!(db, fx.ids[1:2])
+    pair = HimalayaUI.refresh_selection!(db, fx.s_id)
+    @test pair != full
+    ex = only(HimalayaUI.build_export(db, fx.exp_id))[:exposures]
+    averages = filter(e -> e[:kind] == "combined", ex)
+    @test length(averages) == 1
+    @test only(averages)[:analyzed]
+    @test length(only(averages)[:sources]) == 2
 end

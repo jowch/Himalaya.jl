@@ -29,7 +29,10 @@ function build_export(db::SQLite.DB, experiment_id::Int)
         analyzed = analyzed_exposure_id(db, sid)
         ex_out = Dict[]
         for e in exposures
-            is_combined_kind(e.kind) && length(combined_source_ids(db, Int(e.id))) < MIN_COMBINED_SOURCES && continue
+            if is_combined_kind(e.kind)
+                length(combined_source_ids(db, Int(e.id))) < MIN_COMBINED_SOURCES && continue
+                analyzed == Int(e.id) || any(m -> m.exposure_id == Int(e.id), ms) || continue
+            end
             candidates = sqlrows(DBInterface.execute(db,
                 "SELECT id, phase, basis, score, r_squared, lattice_d
                  FROM indices WHERE exposure_id = ? ORDER BY score DESC, id", [Int(e.id)]))

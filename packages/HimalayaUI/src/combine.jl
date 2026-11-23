@@ -193,3 +193,13 @@ function refresh_selection!(db::SQLite.DB, sample_id::Int)::Union{Int,Nothing}
     end
     cid
 end
+
+function backfill_averages!(db::SQLite.DB)
+    samples = [Int(r.sample_id) for r in sqlrows(DBInterface.execute(db, """
+        SELECT sample_id FROM exposures
+         WHERE kind = 'file' AND sample_id IS NOT NULL
+           AND (status IS NULL OR status != 'rejected') AND deselected = 0
+         GROUP BY sample_id HAVING COUNT(*) >= ?""", [MIN_COMBINED_SOURCES]))]
+    foreach(sid -> refresh_selection!(db, sid), samples)
+    length(samples)
+end

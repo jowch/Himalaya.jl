@@ -131,6 +131,10 @@ function register_exposures_routes!()
                 ["Content-Type" => "application/json"],
                 JSON3.write(Dict(:error => "status must be 'accepted', 'rejected', or null")))
         end
+        selected = get(body, :selected, nothing)
+        selected === nothing || selected isa Bool || return HTTP.Response(422,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "selected must be true, false or absent")))
 
         rows = sqlrows(DBInterface.execute(db,
             "SELECT id, sample_id, kind FROM exposures WHERE id = ?", [id]))
@@ -149,7 +153,7 @@ function register_exposures_routes!()
                    AND (status IS NULL OR status != 'rejected')""", [rows[1].sample_id, id])))
             DBInterface.execute(db,
                 "UPDATE exposures SET status = ?, deselected = CASE WHEN ? THEN ? ELSE deselected END WHERE id = ?",
-                [status, restoring ? 1 : 0, others_selected ? 1 : 0, id])
+                [status, restoring ? 1 : 0, (selected === nothing ? others_selected : !selected) ? 1 : 0, id])
 
             result = apply_event!(InTransaction(), db, req;
                 kind = "set_exposure_status",

@@ -275,6 +275,7 @@ function _boot_background_work(db::SQLite.DB, resume::Bool)
     try
         with_background_db(db) do bg
             backfill_all_monitors!(bg)
+            backfill_averages!(bg)
             resume && resume_ingests!(bg)
         end
     catch err
