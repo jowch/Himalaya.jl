@@ -141,6 +141,7 @@ Frontend dev loop (live backend, port cleanup, side-by-side prod-DB sessions): [
 
 - **TDD by default.** Failing test → minimal implementation → verify pass → commit. Each step is its own commit.
 - **One responsibility per file.** When a `src/` file accumulates multiple concepts, split it.
+- **No comments. Write code that doesn't need them.** Comments go stale and code doesn't, so put the reason in a clear name, a small function, a type, a test or an assertion. This covers every tracked Julia, TypeScript, JavaScript and CSS file: tests, tools, scripts, stories and config included. The one exception is a comment that starts with `physics:` and explains the science. `npm run lint:ratchet` (in `npm run build` and `make lint`) fails if any file's comment count grows. Existing comments are grandfathered per file in `scripts/ratchet-baseline.json`; delete them when you touch the code, then lock in the lower count with `npm run lint:ratchet -- --update`. A file's allowance can't move to another file: a split or a new file starts at zero, and only a pure rename keeps its count.
 - **Regression floors, not hard-coded counts.** For tests against real-data fixtures, prefer `recall ≥ floor` / `spurious ≤ ceiling` assertions over exact counts. Raising a floor is a deliberate commit.
 - **Worktrees for feature branches.** For multi-step rewrites, `git worktree add .claude/worktrees/<topic> -b <topic>`. `.claude/worktrees/` is gitignored.
 - **`Manifest.toml` is gitignored** — Julia library convention. Consumers re-resolve.

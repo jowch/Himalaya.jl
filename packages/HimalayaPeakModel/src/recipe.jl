@@ -38,7 +38,6 @@ function from_dict(::Type{Recipe}, d)
            Float64(fld(d, "weak_keep")), Float64(fld(d, "threshold")), Int(fld(d, "nms")))
 end
 
-# Canonical text: sorted keys, shortest round-trip floats; independent of Dict order.
 function canonical(x)
     x isa AbstractDict ? "{" * join(("$(repr(String(k))):$(canonical(x[k]))" for k in sort!(String.(collect(keys(x))))), ",") * "}" :
     x isa AbstractVector ? "[" * join(canonical.(x), ",") * "]" :
