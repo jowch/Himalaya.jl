@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import type { Assignment, CompareState, IndexEntry, Peak, SampleBridge, SampleCall, SampleLabel } from "../../src/api";
 import { queryKeys, useAddPeak, useEditOps } from "../../src/queries";
 import { useUndoHistory, type UndoEntry } from "../../src/workspace/undo";
-import { bridgeEntry, compareEntry, combinedEntry, customIndexEntry, excludeEntry, labelEntry, peakEntry, tickEntry, unbridgeEntry } from "../../src/workspace/undoEntries";
+import { bridgeEntry, compareEntry, combinedEntry, customIndexEntry, droppedByEdit, excludeEntry, labelEntry, peakEntry, tickEntry, unbridgeEntry } from "../../src/workspace/undoEntries";
 import { pendingDeferreds } from "../../src/lib/queue/deferred";
 
 const server = {
@@ -205,7 +205,7 @@ describe("undo against the server", () => {
     server.assignments.set(101, { exposure_id: 101, state: "null", members: [] });
     act(() => result.current.history.record(excludeEntry(result.current.ops, {
       label: "turned off a peak", sampleId: 10, exposureId: 101, q: 0.0644, excluded: true,
-      call: [{ exposureId: 101, phase: "Im3m", basis: 0.0455, kind: "auto" }],
+      dropped: Promise.resolve([{ exposureId: 101, phase: "Im3m", basis: 0.0455, kind: "auto" }]),
     })));
     let done: Promise<number> | undefined;
     act(() => { done = result.current.history.undo()!.done; });
@@ -229,7 +229,7 @@ describe("undo against the server", () => {
     server.assignments.set(101, { exposure_id: 101, state: "indexed", members: [70] });
     act(() => result.current.history.record(excludeEntry(result.current.ops, {
       label: "turned off a peak", sampleId: 10, exposureId: 101, q: 0.0644, excluded: true,
-      call: [{ exposureId: 101, phase: "Im3m", basis: 0.0455, kind: "auto" }, { exposureId: 101, phase: "Pn3m", basis: 0.07, kind: "auto" }],
+      dropped: Promise.resolve([{ exposureId: 101, phase: "Im3m", basis: 0.0455, kind: "auto" }, { exposureId: 101, phase: "Pn3m", basis: 0.07, kind: "auto" }]),
     })));
     let sent = 0;
     await act(async () => { sent = await result.current.history.undo()!.done; });
@@ -243,7 +243,7 @@ describe("undo against the server", () => {
     server.indices.set(101, [index(80, "Ia3d", 0.05)]);
     act(() => result.current.history.record(peakEntry(result.current.ops, {
       label: "removed a peak", sampleId: 10, exposureId: 101, q: 0.2, added: false,
-      call: [{ exposureId: 101, phase: "Ia3d", basis: 0.05, kind: "auto" }],
+      dropped: Promise.resolve([{ exposureId: 101, phase: "Ia3d", basis: 0.05, kind: "auto" }]),
     })));
     await act(async () => { await result.current.history.undo()!.done; });
     expect(firstArgs(api.addAssignmentPhase)).toEqual([[101, 80]]);
@@ -252,12 +252,69 @@ describe("undo against the server", () => {
     server.peaks = [manual(6, 0.2)];
     act(() => result.current.history.record(peakEntry(result.current.ops, {
       label: "removed a peak", sampleId: 10, exposureId: 101, q: 0.2, added: false,
-      call: [{ exposureId: 101, phase: "Ia3d", basis: 0.05, kind: "auto" }],
+      dropped: Promise.resolve([{ exposureId: 101, phase: "Ia3d", basis: 0.05, kind: "auto" }]),
     })));
     let sent = -1;
     await act(async () => { sent = await result.current.history.undo()!.done; });
     expect(sent).toBe(0);
     expect(api.addAssignmentPhase).not.toHaveBeenCalled();
+  });
+
+  it("after the edit saves, names only the phases its re-fit dropped", async () => {
+    let land: (p: unknown) => void = () => {};
+    mocked(api.setAutoPeakExcluded).mockImplementationOnce(() => new Promise((resolve) => { land = resolve; }));
+    const { result } = setup();
+    act(() => result.current.ops.setPeakExcluded(101, 3, true));
+    let dropped: Promise<readonly unknown[]> | undefined;
+    act(() => {
+      dropped = droppedByEdit(result.current.ops, [
+        { exposureId: 101, phase: "Im3m", basis: 0.0455, kind: "auto" },
+        { exposureId: 101, phase: "Pn3m", basis: 0.07, kind: "auto" },
+      ]);
+    });
+    await waitFor(() => expect(api.setAutoPeakExcluded).toHaveBeenCalled());
+    server.indices.set(101, [index(70, "Im3m", 0.0456), index(71, "Pn3m", 0.09)]);
+    server.assignments.set(101, { exposure_id: 101, state: "indexed", members: [70] });
+    await act(async () => { land({ event_id: 1, view_row_id: null }); });
+    expect(await dropped).toEqual([{ exposureId: 101, phase: "Pn3m", basis: 0.07, kind: "auto" }]);
+  });
+
+  it("undoing a peak edit leaves alone a phase the edit kept, even when another tab unticked it since", async () => {
+    const { result } = setup();
+    server.peaks = [auto(3, 0.0644, false)];
+    server.indices.set(101, [index(70, "Im3m", 0.0456)]);
+    server.assignments.set(101, { exposure_id: 101, state: "indexed", members: [70] });
+    const dropped = droppedByEdit(result.current.ops, [{ exposureId: 101, phase: "Im3m", basis: 0.0455, kind: "auto" }]);
+    expect(await dropped).toEqual([]);
+    act(() => result.current.history.record(excludeEntry(result.current.ops, {
+      label: "turned off a peak", sampleId: 10, exposureId: 101, q: 0.0644, excluded: true, dropped,
+    })));
+    server.peaks = [auto(3, 0.0644, true)];
+    server.assignments.set(101, { exposure_id: 101, state: "null", members: [] });
+    let sent = 0;
+    await act(async () => { sent = await result.current.history.undo()!.done; });
+    expect(sent).toBe(1);
+    expect(api.addAssignmentPhase).not.toHaveBeenCalled();
+  });
+
+  it("redoing a peak edit repeats only the peak edit and leaves the restored call to the server's re-fit", async () => {
+    const { result } = setup();
+    server.peaks = [auto(3, 0.0644, true)];
+    server.indices.set(101, [index(70, "Im3m", 0.0456)]);
+    act(() => result.current.history.record(excludeEntry(result.current.ops, {
+      label: "turned off a peak", sampleId: 10, exposureId: 101, q: 0.0644, excluded: true,
+      dropped: Promise.resolve([{ exposureId: 101, phase: "Im3m", basis: 0.0455, kind: "auto" as const }]),
+    })));
+    await act(async () => { await result.current.history.undo()!.done; });
+    expect(firstArgs(api.addAssignmentPhase)).toEqual([[101, 70]]);
+    server.peaks = [auto(3, 0.0644, false)];
+    server.assignments.set(101, { exposure_id: 101, state: "indexed", members: [70] });
+    let sent = 0;
+    await act(async () => { sent = await result.current.history.redo()!.done; });
+    expect(sent).toBe(1);
+    expect(firstArgs(api.setAutoPeakExcluded)).toEqual([[3, false], [3, true]]);
+    expect(api.removeAssignmentPhase).not.toHaveBeenCalled();
+    expect(firstArgs(api.addAssignmentPhase)).toEqual([[101, 70]]);
   });
 
   it("reports nothing sent when the edit is already undone on the server", async () => {
