@@ -233,6 +233,20 @@ end
     @test HimalayaUI.selected_image_ids(db, fx.s_id) == [fx.ids[2]]
 end
 
+@testset "migration keeps the image holding the call selected over a newer curated image" begin
+    fx = _combine_fixture()
+    db = fx.db
+    ix = Int(DBInterface.lastrowid(DBInterface.execute(db,
+        "INSERT INTO indices (exposure_id, phase, basis, score) VALUES (?, 'Pn3m', 0.1, 0.9)", [fx.ids[1]])))
+    DBInterface.execute(db, "INSERT INTO assignment_members (exposure_id, index_id) VALUES (?, ?)", [fx.ids[1], ix])
+    DBInterface.execute(db,
+        "INSERT INTO user_actions (entity_type, entity_id, action, payload) VALUES ('exposure', ?, 'peak_added', '{}')", [fx.ids[3]])
+    DBInterface.execute(db, "ALTER TABLE exposures DROP COLUMN deselected")
+    DBInterface.execute(db, "DELETE FROM schema_migrations WHERE name = ?", [HimalayaUI.MIGRATION_EXPOSURES_DESELECTED])
+    HimalayaUI.migrate_schema!(db)
+    @test HimalayaUI.selected_image_ids(db, fx.s_id) == [fx.ids[1]]
+end
+
 @testset "analyze skips averages of an earlier selection" begin
     fx = _combine_fixture()
     db = fx.db
