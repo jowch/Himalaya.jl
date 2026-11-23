@@ -75,6 +75,7 @@ import { ComparePicker } from "../ui/ComparePicker";
 import { SubtractToggle } from "../ui/SubtractToggle";
 import { PlotViewToggle } from "../ui/PlotViewToggle";
 import { PlotCard } from "../ui/PlotCard";
+import { BridgeMenu } from "../ui/BridgeMenu";
 import { HelpOverlay, type HelpSection } from "../ui/HelpOverlay";
 import { MOD_KEY } from "../lib/modKey";
 import { DetectorOverlay } from "../ui/DetectorOverlay";
@@ -453,10 +454,10 @@ export function WorkspacePage(): JSX.Element {
     const names = new Map(inExperiment.map((s) => [s.id, s.name]));
     return bridged.map((r) => names.get(r) ?? `Sample ${r}`);
   }, [bridged, inExperiment]);
-  const bridgedTitles = useMemo(
+  const bridgeMates = useMemo(
     () => bridged.map((r) => {
       const s = inExperiment.find((x) => x.id === r);
-      return s ? frameSetupName(s) : `Sample ${r}`;
+      return { id: r, title: s ? frameSetupName(s) : `Sample ${r}` };
     }),
     [bridged, inExperiment, frameSetupName],
   );
@@ -1254,7 +1255,6 @@ export function WorkspacePage(): JSX.Element {
   const keptHint = droppedCount > 0 ? `${ownFrames.length - droppedCount} of ${ownFrames.length} kept` : undefined;
   const reviewed = samples.filter((s) => sampleStatus(s).kind !== "unreviewed").length;
   const countOf = (at: typeof shownFrame): string | undefined => (at ? `Image ${at.index + 1} of ${at.group.exposures.length}` : undefined);
-  const frameCount = averaging ? `Average of ${analysis.selected.length} images` : countOf(shownFrame);
   const tileOwnerSample = tileFrame ? inExperiment.find((s) => s.id === tileFrame.group.sampleId) : undefined;
   const tileOwner = tileOwnerSample ? frameSetupName(tileOwnerSample) : undefined;
   const tileCount = countOf(tileFrame);
@@ -1458,10 +1458,9 @@ export function WorkspacePage(): JSX.Element {
           <>
             <SampleHeading
               name={sample.name}
-              meta={exposure ? frameCount : undefined}
+              badge={bridgeMates.length > 0 ? <BridgeMenu mates={bridgeMates} editable={Boolean(username)} onGo={goSample} onRemove={unbridgeOne} /> : undefined}
               aside={
                 <LabelRow
-                  note={bridgedTitles.length > 0 ? `Same as ${bridgedTitles.join(", ")}` : undefined}
                   labels={sampleLabels}
                   vocabulary={vocabulary}
                   editable={Boolean(username)}
