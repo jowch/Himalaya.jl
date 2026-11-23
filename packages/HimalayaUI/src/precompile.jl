@@ -2,10 +2,25 @@ using PrecompileTools: @setup_workload, @compile_workload
 using ImageCore: Gray
 using ImageCore.FixedPointNumbers: Q0f31
 
-function _workload_trace(path::AbstractString)
+const _WORKLOAD_PHASES = (Himalaya.Lamellar, Himalaya.Hexagonal, Himalaya.Square, Himalaya.Pn3m,
+                          Himalaya.Im3m, Himalaya.Ia3d, Himalaya.Fm3m, Himalaya.Fd3m)
+
+const _WORKLOAD_MIXED_BASES = (0.071, 0.113, 0.131, 0.061, 0.047, 0.039, 0.052, 0.033)
+
+_workload_centers() = vcat(0.05 .* Himalaya.phaseratios(Himalaya.Pn3m)[1:6],
+                           0.09 .* Himalaya.phaseratios(Himalaya.Hexagonal)[1:4])
+
+function _workload_mixed_centers()
+    centers = Float64[]
+    for (P, b) in zip(_WORKLOAD_PHASES, _WORKLOAD_MIXED_BASES)
+        ratios = Himalaya.phaseratios(P)
+        append!(centers, b .* ratios[1:min(end, 6)])
+    end
+    filter!(<(0.45), sort!(unique!(round.(centers; digits = 4))))
+end
+
+function _workload_trace(path::AbstractString, centers = _workload_centers())
     q = collect(range(0.01, 0.5; length = 920))
-    centers = vcat(0.05 .* Himalaya.phaseratios(Himalaya.Pn3m)[1:6],
-                   0.09 .* Himalaya.phaseratios(Himalaya.Hexagonal)[1:4])
     I = @. 2.0e3 * q^-1.5 + 50.0
     for c in centers
         @. I += 3.0e3 * exp(-((q - c) / 0.002)^2 / 2)
@@ -105,6 +120,10 @@ function _workload_requests(send, experiment::Int, sample::Int, other::Int, expo
     _workload_call(send, "POST", "/api/samples/$sample/call/state", Dict(:state => "indexed"))
     _workload_call(send, "POST", "/api/exposures/$exposure/custom-index",
                    Dict(:phase => "Pn3m", :basis => 0.06, :ratios => sqrt.(Float64[2, 3, 4])))
+    for phase in _WORKLOAD_PHASES
+        _workload_call(send, "POST", "/api/exposures/$exposure/custom-index",
+                       Dict(:phase => string(nameof(phase)), :basis => 0.06))
+    end
     _workload_call(send, "POST", "/api/exposures/$exposure/analyze", Dict())
 end
 
@@ -136,6 +155,8 @@ function run_route_workload(dir::AbstractString; record = nothing)
     data_dir = joinpath(dir, "data")
     mkpath(analysis_dir); mkpath(data_dir)
     _workload_trace(joinpath(analysis_dir, replace(DEFAULT_INTEGRATION_PATTERN, "{name}" => "frame")))
+    _workload_trace(joinpath(analysis_dir, replace(DEFAULT_INTEGRATION_PATTERN, "{name}" => "frame_mixed")),
+                    _workload_mixed_centers())
     image = joinpath(data_dir, "frame.tif")
     _workload_frame(image)
     saved = _save_module_state()
@@ -152,6 +173,9 @@ function run_route_workload(dir::AbstractString; record = nothing)
                          scan_id = 1, frame_no = 1, transmitted_counts = 1.0, incident_monitor = 1.0,
                          counting_time = 1.0)
         analyze_exposure!(db, exposure, analysis_dir)
+        mixed = create_exposure!(db; experiment_id = experiment, sample_id = other,
+                                 filename = "frame_mixed", image_path = image)
+        analyze_exposure!(db, mixed, analysis_dir)
 
         Oxygen.resetstate()
         _DB_REF[] = db

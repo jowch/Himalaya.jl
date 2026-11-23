@@ -113,7 +113,7 @@ function apply_event!(::InTransaction, db::SQLite.DB, req;
     client_id    = get_client_id(req)
     client_op_id = get_client_op_id(req)
     user_id      = username === nothing ? nothing : get_or_create_user!(db, username)
-    payload_json = payload === nothing ? nothing : JSON3.write(payload)
+    payload_json = payload === nothing ? nothing : JSON3.write(payload)::String
 
     event_id::Int = 0
     view_row_id::Union{Int, Nothing} = nothing
