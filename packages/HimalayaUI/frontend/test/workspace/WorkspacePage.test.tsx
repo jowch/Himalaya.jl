@@ -3555,6 +3555,38 @@ describe("WorkspacePage", () => {
     expect(calls.filter((c) => c.hook === "op:setSelection").map((c) => c.arg).at(-1)).toEqual([12, [200, 201, 202]]);
   });
 
+  it("Enter selects the shown image or takes it out, on this sample or a same sample, and leaves a focused control alone", () => {
+    state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
+    state.corpus = state.corpus.map((s) => (s.id === 12 ? { ...s, assignment_state: "indexed" } : s));
+    state.mateExposures = new Map([[12, [exposure(200, { sample_id: 12, selected: true }), exposure(201, { sample_id: 12, selected: false })]]]);
+    state.exposures = [exposure(100, { selected: false }), exposure(101, { selected: true }), exposure(102, { status: "rejected", selected: false })];
+    renderAt("/experiments/1/workspace/10");
+    const selections = () => calls.filter((c) => c.hook === "op:setSelection").map((c) => c.arg);
+    fireEvent.keyDown(window, { key: "Enter" });
+    fireEvent.click(screen.getByRole("button", { name: "Image 1" }));
+    fireEvent.keyDown(window, { key: "Enter" });
+    fireEvent.keyDown(window, { key: "Enter", repeat: true });
+    fireEvent.click(screen.getByRole("button", { name: "Image 2 of A3" }));
+    fireEvent.keyDown(window, { key: "Enter" });
+    expect(selections()).toEqual([[10, []], [10, [101, 100]], [12, [200, 201]]]);
+    fireEvent.click(screen.getByRole("button", { name: "Image 3, dropped" }));
+    fireEvent.keyDown(window, { key: "Enter" });
+    const choice = within(screen.getByTestId("workspace-candidates")).getAllByRole("button")[0]!;
+    fireEvent.keyDown(choice, { key: "Enter" });
+    expect(selections()).toHaveLength(3);
+  });
+
+  it("Enter selects the image shown in the enlarged detector view, and its hint says which way", () => {
+    state.exposures = [exposure(100, { selected: false, image_path: "/a.tif", image_version: "1" }), exposure(101, { selected: true, image_path: "/b.tif", image_version: "1" })];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: " " });
+    const dialog = screen.getByRole("dialog", { name: "Detector image" });
+    expect(dialog).toHaveTextContent("Enter deselect");
+    fireEvent.keyDown(dialog, { key: "Enter" });
+    expect(calls.filter((c) => c.hook === "op:setSelection").map((c) => c.arg)).toEqual([[10, []]]);
+    expect(screen.getByRole("dialog", { name: "Detector image" })).toBeInTheDocument();
+  });
+
   it("an unbridged sample's frames have no group heading", () => {
     renderAt("/experiments/1/workspace/10");
     expect(within(screen.getByTestId("workspace-exposures")).queryByTestId("frame-group-header")).toBeNull();
