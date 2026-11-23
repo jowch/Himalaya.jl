@@ -190,6 +190,24 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     expect(indices).toHaveLength(1);
   });
 
+  it("analyze_run that re-detected on an unchanged trace invalidates the peaks cache", () => {
+    qc.setQueryData(queryKeys.indices(5), []);
+    qc.setQueryData<Peak[]>(queryKeys.peaks(5), [
+      { id: 7, exposure_id: 5, q: 0.5, intensity: 1, prominence: 1,
+        sharpness: 30, source: "auto", excluded: false },
+    ]);
+    const invalidateSpy = vi.spyOn(qc, "invalidateQueries");
+    const frame = (findpeaks_skipped: boolean): SseEvent => ({
+      id: 0, kind: "analyze_run", entity_type: "exposure", entity_id: 5,
+      payload: { trace_hash_before: "t", trace_hash_after: "t", findpeaks_skipped },
+      post_state: { analysis_inputs_hash: "h", indices: [] },
+    });
+    applyRemoteToCache(frame(true), qc);
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: queryKeys.peaks(5) });
+    applyRemoteToCache(frame(false), qc);
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.peaks(5) });
+  });
+
   // -------------------------------------------------------------------------
   // F-WIPE W1/W2 — peak_* frames now carry the assignment envelope INSIDE the
   // curation post_state: { analysis_inputs_hash, indices, assignment: {state,
