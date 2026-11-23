@@ -95,11 +95,11 @@ const PEAK_MODEL_CACHE_LOCK = ReentrantLock()
 invalidate_peak_model_cache!() = lock(() -> empty!(PEAK_MODEL_CACHE), PEAK_MODEL_CACHE_LOCK)
 
 function trained_model_from_row(row)::HimalayaPeakModel.TrainedModel
-    recipe = HimalayaPeakModel.from_dict(HimalayaPeakModel.Recipe, JSON3.read(String(row.recipe_json)))
+    recipe = HimalayaPeakModel.from_dict(HimalayaPeakModel.Recipe, JSON3.read(String(row.recipe_json)::String))
     row.feature_version == HimalayaPeakModel.feature_version(recipe.features) ||
         error("the model was trained with feature version $(row.feature_version), not the current one")
-    fitted = HimalayaPeakModel.from_dict(HimalayaPeakModel.Fitted, JSON3.read(String(row.fitted_json)))
-    counts = ismissing(row.counts_json) ? nothing : JSON3.read(String(row.counts_json))
+    fitted = HimalayaPeakModel.from_dict(HimalayaPeakModel.Fitted, JSON3.read(String(row.fitted_json)::String))
+    counts = ismissing(row.counts_json) ? nothing : JSON3.read(String(row.counts_json)::String)
     trained_on = (positive = counts === nothing ? 0 : Int(get(counts, :positive, 0)),
                   negative = counts === nothing ? 0 : Int(get(counts, :negative, 0)))
     HimalayaPeakModel.TrainedModel(recipe, fitted, recipe.threshold, recipe.nms,
@@ -141,7 +141,7 @@ function retire_stale_peak_models!(db::SQLite.DB)
                 "SELECT id, recipe_json, feature_version FROM peak_models WHERE status = 'active' ORDER BY id"))
             usable = try
                 !ismissing(r.recipe_json) && r.feature_version == HimalayaPeakModel.feature_version(
-                    HimalayaPeakModel.from_dict(HimalayaPeakModel.Recipe, JSON3.read(String(r.recipe_json))).features)
+                    HimalayaPeakModel.from_dict(HimalayaPeakModel.Recipe, JSON3.read(String(r.recipe_json)::String)).features)
             catch
                 false
             end
@@ -158,7 +158,7 @@ const PEAK_MODEL_GROWTH = 0.25
 
 function _curation_count(counts_json)
     ismissing(counts_json) && return 0
-    Int(get(JSON3.read(String(counts_json)), :curations, 0))
+    Int(get(JSON3.read(String(counts_json)::String), :curations, 0))
 end
 
 function promote_peak_model!(db::SQLite.DB, id::Integer)
