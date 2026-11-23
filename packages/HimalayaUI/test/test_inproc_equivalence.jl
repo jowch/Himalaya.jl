@@ -83,7 +83,7 @@ end
             ip = with_inproc_routes(db) do call; call("GET", path) end
             @test w.status == 200                          # guard: the contract branch was actually hit
             @test HTTP.header(w, "Content-Type") == "image/png"
-            @test HTTP.header(w, "X-Image-Width") != ""    # full branch only
+            @test HTTP.header(w, "X-Image-Width") != ""
             _assert_equiv(w, ip; label="image-png")        # body bytes + X-Image-*/Cache-Control parity
         end
     end

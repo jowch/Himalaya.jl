@@ -79,42 +79,15 @@ function register_exposures_routes!()
         # identical to the header the client already cached against.
         vtoken = image_version_token(ip)
 
-        raw_w = 0; raw_h = 0
-        bytes = if is_thumb
-            # Thumb path: downscale-before-lognormalize (issue #261, H.1) behind a
-            # disk cache keyed on `image_version_token`. `ensure_thumb_cached`
-            # reads the cached PNG when present, else renders + persists it; on a
-            # `:memory:` DB (no on-disk dir) it renders fresh every call. NOTE: the
-            # full-resolution `load_and_lognormalize` is deliberately NOT called on
-            # this branch — the thumb variant runs the percentile math on the
-            # already-downscaled raster (~250x fewer pixels).
-            ensure_thumb_cached(db, id, path; token = vtoken)
-        else
-            full = ensure_full_cached(db, id, path; token = vtoken)
-            raw_h, raw_w = full.raw_h, full.raw_w
-            full.bytes
-        end
+        img = is_thumb ? ensure_thumb_cached(db, id, path; token = vtoken) :
+                         ensure_full_cached(db, id, path; token = vtoken)
 
-        # The frontend appends `?v=<image_version_token>` to the URL, so the
-        # URL itself is the cache key. We can mark responses immutable and
-        # cache them aggressively — when the underlying TIFF or our
-        # processing code changes, the token (and therefore the URL) changes.
         hdrs = ["Content-Type"    => "image/png",
                 "Cache-Control"   => "private, max-age=31536000, immutable",
-                "X-Image-Version" => vtoken]
-        if !is_thumb
-            # Raw detector pixel dims for the q-ring overlay calibration. Full
-            # branch only — the thumb never carries rings. Frontend tolerates
-            # their absence (→ centered fallback).
-            # NOTE: custom response headers the frontend reads via `headers.get()`
-            # (DetectorImage.tsx). Fine same-origin (prod serves the SPA; the Vite
-            # dev proxy preserves them). If the API is ever served cross-origin, add
-            # `Access-Control-Expose-Headers: X-Image-Width, X-Image-Height` — without
-            # it the browser silently strips them and the rings fall back to centered.
-            push!(hdrs, "X-Image-Width"  => string(raw_w))
-            push!(hdrs, "X-Image-Height" => string(raw_h))
-        end
-        HTTP.Response(200, hdrs, bytes)
+                "X-Image-Version" => vtoken,
+                "X-Image-Width"   => string(img.raw_w),
+                "X-Image-Height"  => string(img.raw_h)]
+        HTTP.Response(200, hdrs, img.bytes)
     end
 
     @patch "/api/exposures/{id}/status" function(req::HTTP.Request, id::Int)
