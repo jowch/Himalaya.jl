@@ -96,6 +96,7 @@ import { callRows, keyedRows } from "./bonnetGroups";
 import { MetaList } from "../ui/MetaList";
 import { MainSection, SampleHeading, Section } from "../ui/Section";
 import { claimedPeaks } from "./claimedPeaks";
+import { callCombs } from "./callCombs";
 import { CustomIndexButton } from "../ui/CustomIndexButton";
 import { LabelRow } from "../ui/LabelRow";
 import { setupNames } from "../lib/sample/setupNames";
@@ -553,10 +554,10 @@ export function WorkspacePage(): JSX.Element {
   );
 
   const draftQs = useMemo(() => (draft ? draftPrediction(draft) : []), [draft]);
-  const combs: CombLine[] = useMemo(() => {
-    if (draft) return [{ id: -1, qs: draftQs, color: phaseColor(draft.phase) }];
-    return candidates.filter((c) => hoverIds?.includes(c.id)).map((c) => ({ id: c.id, qs: c.predicted_q, color: phaseColor(c.phase) }));
-  }, [candidates, hoverIds, draft, draftQs]);
+  const combs: CombLine[] = useMemo(
+    () => callCombs(candidates, hoverIds, assigned, draft ? { phase: draft.phase, qs: draftQs } : null),
+    [candidates, hoverIds, assigned, draft, draftQs],
+  );
 
   const highlight = useMemo(
     () => (draft ? null : claimedPeaks(candidates.filter((c) => hoverIds?.includes(c.id)), peaks.data ?? [])),
