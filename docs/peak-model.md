@@ -1,8 +1,8 @@
 # Per-database peak model
 
-Status: design. Step 1 (packaging) is implemented: the features, labels,
+Status: design. Steps 1 (packaging) and 2 (provenance and pinning) are implemented: the features, labels,
 model and cross-validation live in `packages/HimalayaPeakModel`, the database
-loader is `HimalayaUI.labeled_exposures`, and `tools/peak-classifier/` (#486)
+loader is `HimalayaUI.labeled_exposures` (reading review snapshots), and `tools/peak-classifier/` (#486)
 is the command-line tool on top of both. This document describes how HimalayaUI trains such a model for its own
 database, keeps it up to date as users curate, and uses it.
 
@@ -52,12 +52,17 @@ less manual peak work.
 
 ## Reviewed exposures are pinned
 
-An exposure is **reviewed** once one of these events touches it: a peak add,
-remove, exclude or un-exclude; an assignment add, remove or state change; an
-index confirm or un-confirm; a sample call (which pins every exposure of that
-sample); or an exposure accept or reject. The event sets
+An exposure is **pinned** (also called reviewed) once one of these events
+touches it: a peak add, remove, exclude or un-exclude; an assignment add,
+remove or state change; a sample call (which pins every exposure of that
+sample, including calls made by a bridge); or an exposure accept or reject. The
+retired index confirm and un-confirm kinds are never emitted and are not in the
+list. The event sets
 `exposures.reviewed_at` in the same transaction, so the flag cannot lag the
-event. The same list is the training trigger's label kinds.
+event. Pinning is broad on purpose: it only stops re-detection. An exposure is
+**labelled** only when the user acted on its own peaks or indexing, which is
+narrower (below). The training trigger's label kinds are the labelling events,
+not every pinning event.
 
 A model promotion never re-detects a reviewed exposure. `persist_analysis!`
 re-attaches assignment members by phase and basis, so a changed peak set can
@@ -78,12 +83,24 @@ Each auto peak records where it came from, set by `diff_update_auto_peaks!`:
 - `auto_peaks.found_by`: `hybrid`, `model` or `both`;
 - `auto_peaks.model_id` (NULL when no model was active).
 
+Each snapshot also records whether it is **direct**: 1 when the event targets
+the exposure itself and is a peak add, remove, exclude or un-exclude or an
+assignment add, remove or state change; 0 when it was written because of a
+sample call or bridge on other frames, or an accept or reject. Training labels
+only exposures with at least one direct snapshot (plus form-factor ones). A
+sample call marks many frames the user never looked at, and treating all their
+peaks as accepted gave far more positives and weak negatives than the user
+curated. A bridge-induced call on another sample pins and snapshots those
+frames but never makes them labelled.
+
 Labels do not come from live `auto_peaks`, which a release can re-detect. Each
 reviewing event instead writes a **review snapshot** in the same transaction:
 the exposure's auto peaks at that moment (q, `found_by`, `model_id`), the
 detector on screen (`ANALYSIS_VERSION` plus model id), and the curation.
-Training reads only snapshots, using each exposure's latest one for the peaks
-the user saw and all its curations as they stand now.
+Training reads only snapshots, using each exposure's latest **direct**
+snapshot for the peaks the user saw (a later indirect snapshot, such as a
+sample call after a re-detection, is ignored) and all its curations as they
+stand now.
 
 Labels for training (all by q). They use the app's tolerance function,
 `peak_match_tol`, with the grid step taken from the trace and an
@@ -99,11 +116,12 @@ order, first match wins:
 | candidates within tolerance of a snapshot peak left alone, `found_by` = `model` | dropped |
 | candidates within tolerance of an `exclude` curation, whether or not an auto peak still matches it | strong negative |
 | remaining candidates on a form-factor exposure | strong negative |
-| remaining candidates on a reviewed exposure | weak negative |
+| remaining candidates on a labelled exposure | weak negative |
 
-Kept peaks count as positives on every reviewed exposure. Today the tool
-counts them only on exposures with at least one add or exclude, so this widens
-the positive set.
+Kept peaks count as positives on every labelled exposure, including ones with
+no add or exclude (for example only an assignment edit). Today the tool counts
+them only on exposures with at least one add or exclude, so this widens the
+positive set.
 
 Excludes are labelled at their own q (every candidate within the match
 tolerance of an exclude is a strong negative): after a re-analysis many excludes match
@@ -112,7 +130,46 @@ them would lose real negatives. A model-only peak the user left alone is
 dropped rather than left to the weak-negative rule, which would otherwise
 make it, and its neighbours, a negative. Exposures reviewed before snapshots
 existed get one snapshot from their current auto peaks when the migration
-runs, all `found_by = hybrid`.
+runs, all `found_by = hybrid`, with `direct = 1` when the exposure has a
+peak curation or a logged event of a direct kind on it (including the legacy
+`index_confirmed` and `index_unconfirmed`, which mark pre-Plan-A human
+confirmations) and 0 when it was pinned only by a sample call, a status, or an
+assignment member with no such event. Members alone can be the auto guess that
+`migrate_assignments!` seeded, so they do not count.
+
+Implementation (step 2). The pin and snapshot are written by
+`record_event_reviews!`, called from `apply_event!` after the dispatcher (not
+from `update_view_for_event!`). `exposures.reviewed_at`, `peak_reviews` and
+`auto_peaks.found_by`/`model_id` are bookkeeping, not views: the log cannot
+reproduce them, so `rebuild_views_from_log!` leaves them alone (see
+`docs/event-log.md`). `peak_reviews` holds `exposure_id`, `event_id` (NULL for
+backfilled rows), `created_at`, `shown_detector` (`ANALYSIS_VERSION`),
+`shown_model_id` (NULL until models exist), `backfilled`, `direct` and
+`peaks_json`.
+The backfill pins exposures that have a curation, an assignment member, an
+accept or reject status, or a sample call (all frames of the sample), with
+the first matching event time or the migration time. `labeled_exposures`
+includes exposures with a direct snapshot and reads each one's latest direct
+snapshot. Kept peaks with `found_by = model` go in `LabeledExposure.kept_model`,
+and `label_candidates` drops them and their neighbours. `LabeledExposure.labelled`
+is true for exposures with a direct snapshot.
+
+Bridge call changes emit `sample_call_set_state`, and a `keep_call` bridge
+also emits `assignment_set_state` on the losing side's frames. Both pin and
+snapshot those frames; the bridge passes `review_direct = false`, so none of
+them becomes labelled. The share-bridged-labels and share-bridged-calls
+migrations run with pinning off: they are system changes, and the backfill that
+runs after them pins the resulting calls as indirect. The provenance columns
+are added before them (`migrate_peak_provenance_schema!`).
+
+Growth: every reviewing event appends a full `peaks_json`, so a sample call
+adds one row per frame of the sample, and bridged mates add more. Nothing
+prunes `peak_reviews`. If that matters, store a new snapshot only when its peak
+set differs from the latest one for the exposure.
+
+`diff_update_auto_peaks!` keeps a re-matched row's `found_by` and `model_id`
+unless the caller passes `found_by` (then both are written, `model_id` NULL
+when omitted); inserts default to `hybrid` and NULL.
 
 ## Training
 
@@ -125,7 +182,7 @@ runs, all `found_by = hybrid`.
   forest and metrics as JSON. The server writes the result under
   `_DB_WRITE_LOCK`.
 - **Trigger.** A watermark: the largest `user_actions.id` among the label
-  kinds (the reviewing events above). Training is due when at
+  kinds (the direct labelling events above). Training is due when at
   least N new label events have arrived since the last run and no label event
   has arrived for T minutes. Proposed N = 20, T = 10.
 - **Single flight.** One training process per server. A trigger during a run

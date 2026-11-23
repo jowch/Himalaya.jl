@@ -389,7 +389,7 @@ end
 
 const _INDEX_CHILD_TABLES = ("index_peaks", "index_group_members")
 const _EXPOSURE_CHILD_TABLES = ("assignment_members", "assignments", "index_groups",
-    "indices", "auto_peaks", "peak_curations")
+    "indices", "auto_peaks", "peak_curations", "peak_reviews")
 
 function _delete_experiment_rows!(db::SQLite.DB, id::Int)
     exposures = "SELECT id FROM exposures WHERE experiment_id = ?"

@@ -97,6 +97,7 @@ end
 
 function migrate_share_bridged_labels!(db::SQLite.DB)
     _migrated(db, MIGRATION_BRIDGED_LABELS) && return nothing
+    without_review_pins() do
     SQLite.transaction(db) do
         req = _system_request()
         for (_, members) in sort(collect(_live_bridge_groups(db)); by = first)
@@ -110,7 +111,7 @@ function migrate_share_bridged_labels!(db::SQLite.DB)
             end
         end
         _record_migration!(db, MIGRATION_BRIDGED_LABELS)
-    end
+    end end
     nothing
 end
 

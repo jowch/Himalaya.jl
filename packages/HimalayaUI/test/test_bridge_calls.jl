@@ -283,6 +283,10 @@ _bc_states(db) = Dict(Int(r.sample_id) => String(r.state) for r in Tables.rowtab
                 @test _bc_listed(call, fx.exp_id, fx.b).phases == ["Pn3m"]
                 HimalayaUI.rebuild_views_from_log!(fx.db, fx.eb; entity_type = "exposure")
                 @test _bc_members(fx.db) == [(fx.ea, 10)]
+                cleared = Tables.rowtable(DBInterface.execute(fx.db,
+                    """SELECT r.exposure_id, r.direct FROM peak_reviews r JOIN user_actions u ON u.id = r.event_id
+                        WHERE u.action = 'assignment_set_state'"""))
+                @test !isempty(cleared) && all(c -> c.exposure_id == fx.eb && c.direct == 0, cleared)
             end
         end
     end
