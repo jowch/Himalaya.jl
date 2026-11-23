@@ -627,6 +627,17 @@ test("Tab cycles only the phase choices, wrapping, and Esc lets Tab reach the re
   await expect(choices.nth(0)).toBeFocused();
   await page.keyboard.press("Shift+Tab");
   await expect(choices.nth(6)).toBeFocused();
+  await page.keyboard.press("Tab");
+  const writes: string[] = [];
+  await page.route(/\/api\//, (r) => {
+    if (r.request().method() === "GET") return r.fallback();
+    writes.push(`${r.request().method()} ${new URL(r.request().url()).pathname}`);
+    return r.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+  });
+  await page.keyboard.press("Enter");
+  await expect.poll(() => writes.length).toBeGreaterThan(0);
+  await expect(page.getByRole("dialog", { name: "Detector image" })).toHaveCount(0);
+  await page.keyboard.press("Shift+Tab");
   await page.keyboard.press("Escape");
   await expect(choices.nth(6)).not.toBeFocused();
   await page.keyboard.press("Tab");

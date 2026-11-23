@@ -2863,7 +2863,7 @@ describe("WorkspacePage", () => {
     expect(currentFrame()).toBe("Image 2");
   });
 
-  it("Tab and Shift+Tab cycle only the phase choices, wrapping, and Enter ticks the one in focus", () => {
+  it("Tab and Shift+Tab cycle only the phase choices, wrapping", () => {
     renderAt("/experiments/1/workspace/10");
     const rows = within(screen.getByTestId("workspace-candidates")).getAllByRole("button");
     const ff = screen.getByTestId("workspace-form-factor");
@@ -2880,6 +2880,22 @@ describe("WorkspacePage", () => {
     expect(document.activeElement).toBe(ff);
     fireEvent.keyDown(screen.getByRole("button", { name: "Image 1" }), { key: "Tab", shiftKey: true });
     expect(document.activeElement).toBe(ff);
+  });
+
+  it("leaves Enter on a focused choice to the button, and Space keeps opening the detector view", () => {
+    state.exposures = [exposure(100), exposure(101, { image_path: "/x.tif", image_version: "7" })];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(document.body, { key: "Tab" });
+    expect(fireEvent.keyDown(document.activeElement!, { key: "Enter" })).toBe(true);
+    fireEvent.keyDown(document.activeElement!, { key: " " });
+    expect(screen.getByRole("dialog", { name: "Detector image" })).toBeInTheDocument();
+  });
+
+  it("a stray Esc outside the phase choices leaves Tab on them", () => {
+    renderAt("/experiments/1/workspace/10");
+    expect(fireEvent.keyDown(document.body, { key: "Escape" })).toBe(true);
+    expect(fireEvent.keyDown(document.body, { key: "Tab" })).toBe(false);
+    expect(document.activeElement?.closest("[data-call-choices]")).not.toBeNull();
   });
 
   it("Esc leaves the phase choices and lets Tab reach every control until another sample opens", () => {

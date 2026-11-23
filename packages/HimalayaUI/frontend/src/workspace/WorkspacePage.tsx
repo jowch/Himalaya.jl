@@ -127,8 +127,8 @@ function helpSections(mod: string): HelpSection[] {
       rows: [
         { keys: ["1–9"], what: "Tick or untick a phase candidate" },
         { keys: ["0"], what: "Mark no phase (form factor), or clear it" },
-        { keys: ["Tab", "⇧ Tab"], what: "Step through the phase choices, wrapping at the ends. Press Enter or Space to tick the one in focus." },
-        { keys: ["Esc"], what: "Let Tab reach every other control until you open another sample" },
+        { keys: ["Tab", "⇧ Tab"], what: "Step through the phase choices, wrapping at the ends. Press Enter to tick the one in focus." },
+        { keys: ["Esc"], what: "Leave the phase choices and let Tab reach every other control until you open another sample" },
         { keys: ["I"], what: "Custom index: pick a symmetry and drag the lattice. Press Enter to add it or Esc to cancel." },
         { keys: ["L"], what: "Label the sample, e.g. Buffer. Press Enter to add it or Esc to close." },
       ],
@@ -1024,9 +1024,10 @@ export function WorkspacePage(): JSX.Element {
           break;
         }
         case "Escape":
-          tabFree.current = true;
-          if (inCallChoices(ev.target)) (ev.target as HTMLElement).blur();
-          else handled = false;
+          if (inCallChoices(ev.target)) {
+            tabFree.current = true;
+            (ev.target as HTMLElement).blur();
+          } else handled = false;
           break;
         case "ArrowDown":
           step(1);
