@@ -165,7 +165,11 @@ function git(args) {
 
 function baseRef() {
   const asked = process.env.CONTRACTS_BASE;
-  if (asked) return git(["rev-parse", "--verify", `${asked}^{commit}`]) && asked;
+  if (asked) {
+    if (git(["rev-parse", "--verify", `${asked}^{commit}`])) return asked;
+    console.error(`CONTRACTS_BASE is ${asked}, which is not a commit here. Fetch it (CI checks out with fetch-depth 2), or unset it to check row floors only.`);
+    process.exit(1);
+  }
   return git(["merge-base", "HEAD", "origin/main"]);
 }
 
