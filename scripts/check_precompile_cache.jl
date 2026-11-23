@@ -12,7 +12,7 @@ end
 
 _checked(m::Method) =
     (m.module === HimalayaUI && !endswith(String(m.file), "precompile.jl")) ||
-    m.name === :format_response!
+    (parentmodule(m) === Oxygen.Core.Util && m.name === :format_response!)
 
 function check()
     total = 0
@@ -21,7 +21,7 @@ function check()
     Base.visit(Core.methodtable) do m
         _checked(m) || return
         for mi in Base.specializations(m)
-            mi isa Core.MethodInstance && isdefined(mi, :cache) || continue
+            mi isa Core.MethodInstance || continue
             Base.isdispatchtuple(mi.specTypes) || continue
             total += 1
             m.name === :with_idempotency && (idempotent += 1)

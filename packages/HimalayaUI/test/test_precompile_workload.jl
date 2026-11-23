@@ -101,7 +101,7 @@ end
     for file in readdir(src; join = true)
         endswith(file, ".jl") || continue
         for (n, line) in enumerate(eachline(file))
-            occursin("Tables.rowtable(", line) && push!(offenders, "$(basename(file)):$n")
+            occursin(r"\browtable\b", line) && push!(offenders, "$(basename(file)):$n")
         end
     end
     @test offenders == String[]

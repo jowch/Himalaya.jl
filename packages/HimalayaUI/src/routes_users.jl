@@ -4,7 +4,7 @@ function register_users_routes!()
     @get "/api/users" function(req::HTTP.Request)
         rows = sqlrows(DBInterface.execute(current_db(),
             "SELECT id, username, first_name, last_name FROM users ORDER BY id"))
-        HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(rows_to_json(rows)))
+        _json(200, rows_to_json(rows))
     end
 
     @post "/api/users" function(req::HTTP.Request)
