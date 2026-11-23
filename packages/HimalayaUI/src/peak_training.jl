@@ -66,10 +66,6 @@ function top_call_matches(q::AbstractVector, sharpness::AbstractVector, confirme
     any(p == name && abs(Himalaya.basis(top) / b - 1) < PHASE_BASIS_TOL for (p, b) in confirmed)
 end
 
-"""
-Which exposures a comparison scores: `label_ids` are labelled exposures whose
-latest direct review was shown without a model, `targets` their confirmed calls.
-"""
 function eval_context(db::SQLite.DB, exps; phase_auto::Symbol = :user_events)
     shown = no_model_shown_ids(db)
     label_ids = intersect(Set(e.id for e in exps if e.labelled), shown)
@@ -122,12 +118,6 @@ function peak_summary(exps, picks; kwargs...)
     peak_eval(exps, picks; kwargs...).summary
 end
 
-"""
-Scores `picks` (grid indices per exposure). Returns the `summary` the training
-gate compares, one `phase_rows` entry per exposure with a confirmed call (its
-first confirmed phase and whether the top call matches any confirmed call), and
-the total peak counts behind the per-exposure rates.
-"""
 function peak_eval(exps, picks; targets = Dict{Int, Vector{Tuple{String, Float64}}}(),
                    label_ids = Set(e.id for e in exps if e.labelled))
     phase_rows = NamedTuple{(:id, :phase, :ok), Tuple{Int, String, Bool}}[]
