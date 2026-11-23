@@ -37,7 +37,10 @@ import {
   useEditOps,
   useCompares,
   usePatchCompares,
+  useDetectorSizes,
 } from "../queries";
+import { detectorGeometry, ringCircles } from "../lib/detectorRings";
+import type { DetectorRingsView } from "../ui/DetectorRings";
 import { comparesOf, EMPTY_COMPARES } from "../lib/compares";
 import { byRecent, recentRank, recordRecent } from "../lib/recents";
 import { helpKeyFromEmptyField, inDialog, isEditable, suppressGlobalKeys } from "../lib/keys";
@@ -280,7 +283,8 @@ export function WorkspacePage(): JSX.Element {
 
   const bridges = useBridges(experimentId);
   const bridgeList = useMemo(() => bridges.data ?? [], [bridges.data]);
-  const bridged = useMemo(() => (sampleId === undefined ? [] : bridgedWith(bridgeList, sampleId)), [bridgeList, sampleId]);
+  const shownBridges = useMemo(() => bridgeList.filter((b) => !hiddenSamples.has(b.sample_id)), [bridgeList, hiddenSamples]);
+  const bridged = useMemo(() => (sampleId === undefined ? [] : bridgedWith(shownBridges, sampleId)), [shownBridges, sampleId]);
   const exposures = useExposures(sampleId);
   const mateExposures = useSamplesExposures(bridged);
   const [exposureId, setExposureId] = useState<number | undefined>(linkedExposure);
@@ -414,7 +418,7 @@ export function WorkspacePage(): JSX.Element {
     }),
     [bridged, inExperiment, frameSetupName],
   );
-  const counts = useMemo(() => bridgeCounts(bridgeList), [bridgeList]);
+  const counts = useMemo(() => bridgeCounts(shownBridges), [shownBridges]);
   const bridgeSamples = useBridgeSamples(experimentId);
   const unbridgeSample = useUnbridgeSample(experimentId);
   const shownRefs = useMemo(() => refs.filter((r) => !hiddenSamples.has(r)), [refs, hiddenSamples]);
@@ -581,6 +585,40 @@ export function WorkspacePage(): JSX.Element {
   const combs: CombLine[] = useMemo(
     () => callCombs(candidates, hoverIds, assigned, draft ? { phase: draft.phase, qs: draftQs } : null),
     [candidates, hoverIds, assigned, draft, draftQs],
+  );
+
+  const ringSets = useMemo(
+    () => (draft
+      ? [{ color: phaseColor(draft.phase), qs: draftQs }]
+      : candidates.filter((c) => hoverIds?.includes(c.id)).map((c) => ({ color: phaseColor(c.phase), qs: c.predicted_q }))),
+    [draft, draftQs, candidates, hoverIds],
+  );
+  const setupOfSample = useMemo(
+    () => new Map(inExperiment.map((s) => [s.id, setups.find((st) => st.id === s.setup_id)] as const)),
+    [inExperiment, setups],
+  );
+  const qUnits = setupOfSample.get(sampleId ?? -1)?.q_units;
+  const geometryOf = useCallback((e: Exposure) => detectorGeometry(setupOfSample.get(e.sample_id ?? -1)), [setupOfSample]);
+  const sizeUrls = useMemo(
+    () => exposureList.flatMap((e) => {
+      const url = geometryOf(e) ? imageUrl(e, true) : null;
+      return url ? [url] : [];
+    }),
+    [exposureList, geometryOf],
+  );
+  const detectorSizes = useDetectorSizes(sizeUrls);
+  const ringsOf = useCallback(
+    (e: Exposure): DetectorRingsView | null => {
+      if (ringSets.length === 0) return null;
+      const g = geometryOf(e);
+      const url = imageUrl(e, true);
+      const size = url ? detectorSizes.get(url) : undefined;
+      const centre = g ? ringCircles([], qUnits, g, size) : null;
+      if (!g || !size || !centre) return null;
+      const rings = ringSets.flatMap((set) => (ringCircles(set.qs, qUnits, g, size)?.radii ?? []).map((r) => ({ r, color: set.color })));
+      return { size, cx: centre.cx, cy: centre.cy, rings };
+    },
+    [ringSets, geometryOf, detectorSizes, qUnits],
   );
 
   const highlight = useMemo(
@@ -1025,6 +1063,10 @@ export function WorkspacePage(): JSX.Element {
         } else if (ev.key === "?") {
           ev.preventDefault();
           setHelpOpen(true);
+        } else if (ev.key === " " && !ev.repeat && exposure && imageUrl(exposure, false)) {
+          if (ev.target instanceof HTMLElement && ev.target.closest("button,a")) return;
+          ev.preventDefault();
+          setBigOpen(true);
         }
         return;
       }
@@ -1308,6 +1350,7 @@ export function WorkspacePage(): JSX.Element {
               }}
               onToggleDrop={username ? () => toggleDrop(exposure) : undefined}
               onClose={() => setBigOpen(false)}
+              ringsOf={ringsOf}
             />
           )}
           {paletteOpen && <Palette groups={palette.groups} pages={palette.pages} start={paletteStart} onClose={() => { setPaletteOpen(false); setPaletteStart(undefined); }} onType={paletteCorpus.onType} />}
@@ -1415,7 +1458,7 @@ export function WorkspacePage(): JSX.Element {
               </PlotCard>
             </div>
             <MainSection title="Images" hint={keptHint}>
-              <ExposureStrip groups={groups.map((g) => ({ key: g.sampleId, title: g.title, exposures: g.exposures }))} currentId={exposure?.id} onPick={setExposureId} onToggleDrop={toggleDrop} />
+              <ExposureStrip groups={groups.map((g) => ({ key: g.sampleId, title: g.title, exposures: g.exposures }))} currentId={exposure?.id} onPick={setExposureId} onToggleDrop={toggleDrop} ringsOf={ringsOf} />
             </MainSection>
           </>
         ) : (

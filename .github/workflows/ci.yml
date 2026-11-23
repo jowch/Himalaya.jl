@@ -161,7 +161,7 @@ jobs:
   e2e:
     name: Frontend E2E (mocked)
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: packages/HimalayaUI/frontend
@@ -173,8 +173,12 @@ jobs:
           cache: npm
           cache-dependency-path: packages/HimalayaUI/frontend/package-lock.json
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
-      - run: npx playwright test --trace retain-on-failure
+      - name: Install Chromium
+        timeout-minutes: 14
+        uses: ./.github/actions/playwright-chromium
+      - name: Playwright tests
+        timeout-minutes: 10
+        run: npx playwright test --trace retain-on-failure
       - if: failure()
         uses: actions/upload-artifact@v4
         with:
@@ -204,9 +208,13 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: packages/HimalayaUI/frontend/package-lock.json
-      - name: Install
+      - name: Install frontend
+        run: cd packages/HimalayaUI/frontend && npm ci
+      - name: Install Chromium
+        timeout-minutes: 14
+        uses: ./.github/actions/playwright-chromium
+      - name: Install Julia packages
         run: |
-          (cd packages/HimalayaUI/frontend && npm ci && npx playwright install --with-deps chromium)
           julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
       - name: Check the demo against TRUTH.csv
         run: make verify-truth

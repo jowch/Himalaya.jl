@@ -17,45 +17,47 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         DBInterface.execute(db, "INSERT INTO sample_labels (sample_id, label, state) VALUES (?, ?, ?)", [s_id, label, state])
     end
 
-    with_inproc_routes(db) do call
-        # JSON
-        r = call("GET", "/api/experiments/$exp_id/export?format=json")
-        @test r.status == 200
-        @test occursin("application/json", HTTP.header(r, "Content-Type"))
-        body = JSON3.read(String(r.body))
-        @test length(body) == 1
-        s = body[1]
-        @test s.name == "D1"
-        @test length(s.exposures) == 1
-        @test s.exposures[1].filename == "example_tot"
-        @test isempty(s.exposures[1].indices)
-        @test length(s.exposures[1].candidates) >= 1
-        @test collect(s.labels) == ["Buffer", "37C"]
-        @test s.call_state == "uncalled"
-        @test s.phase === nothing
-        @test !s.exposures[1].called
-        @test !isempty(s.exposures[1].auto_phases)
-        @test !haskey(s, :tags)
+    @testset "an uncalled sample exports call_state uncalled with its candidates and labels, as JSON and CSV" begin
+        with_inproc_routes(db) do call
+            # JSON
+            r = call("GET", "/api/experiments/$exp_id/export?format=json")
+            @test r.status == 200
+            @test occursin("application/json", HTTP.header(r, "Content-Type"))
+            body = JSON3.read(String(r.body))
+            @test length(body) == 1
+            s = body[1]
+            @test s.name == "D1"
+            @test length(s.exposures) == 1
+            @test s.exposures[1].filename == "example_tot"
+            @test isempty(s.exposures[1].indices)
+            @test length(s.exposures[1].candidates) >= 1
+            @test collect(s.labels) == ["Buffer", "37C"]
+            @test s.call_state == "uncalled"
+            @test s.phase === nothing
+            @test !s.exposures[1].called
+            @test !isempty(s.exposures[1].auto_phases)
+            @test !haskey(s, :tags)
 
-        # CSV
-        r = call("GET", "/api/experiments/$exp_id/export?format=csv")
-        @test r.status == 200
-        @test occursin("text/csv", HTTP.header(r, "Content-Type"))
-        csv_body = String(r.body)
-        @test startswith(csv_body, "sample_name,exposure_filename,call_state,call_phases,auto_phases,phases")
-        @test occursin("D1,example_tot,uncalled,,$(join(s.exposures[1].auto_phases, ";")),,,,,Buffer;37C", csv_body)
-        @test strip(last(split(first(split(csv_body, "\n")), ","))) == "bridged_with"
-        @test endswith(strip(split(csv_body, "\n")[2]), ",Buffer;37C,$(s.setup),")
-        @test s.setup isa String
-        @test isempty(s.bridged_with)
+            # CSV
+            r = call("GET", "/api/experiments/$exp_id/export?format=csv")
+            @test r.status == 200
+            @test occursin("text/csv", HTTP.header(r, "Content-Type"))
+            csv_body = String(r.body)
+            @test startswith(csv_body, "sample_name,exposure_filename,call_state,call_phases,auto_phases,phases")
+            @test occursin("D1,example_tot,uncalled,,$(join(s.exposures[1].auto_phases, ";")),,,,,Buffer;37C", csv_body)
+            @test strip(last(split(first(split(csv_body, "\n")), ","))) == "bridged_with"
+            @test endswith(strip(split(csv_body, "\n")[2]), ",Buffer;37C,$(s.setup),")
+            @test s.setup isa String
+            @test isempty(s.bridged_with)
 
-        # Default = json
-        r = call("GET", "/api/experiments/$exp_id/export")
-        @test occursin("application/json", HTTP.header(r, "Content-Type"))
+            # Default = json
+            r = call("GET", "/api/experiments/$exp_id/export")
+            @test occursin("application/json", HTTP.header(r, "Content-Type"))
 
-        # Invalid format
-        r = call("GET", "/api/experiments/$exp_id/export?format=xml")
-        @test r.status == 400
+            # Invalid format
+            r = call("GET", "/api/experiments/$exp_id/export?format=xml")
+            @test r.status == 400
+        end
     end
 
     auto_before = with_inproc_routes(db) do call
@@ -71,45 +73,51 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
     @test !isempty(Tables.rowtable(DBInterface.execute(db,
         "SELECT 1 FROM index_groups WHERE exposure_id = ? AND active = 1", [e_id])))
 
-    with_inproc_routes(db) do call
-        s = JSON3.read(String(call("GET", "/api/experiments/$exp_id/export").body))[1]
-        @test s.call_state == "indexed"
-        @test s.phase == "Im3m"
-        @test collect(s.call_phases) == ["Im3m"]
-        ex = s.exposures[1]
-        @test ex.called
-        @test [ix.phase for ix in ex.indices] == ["Im3m"]
-        @test ex.indices[1].lattice_d == 177.7
-        @test !haskey(ex, :active_group_kind)
-        @test collect(ex.auto_phases) == auto_before
-        @test "Im3m" ∉ ex.auto_phases
+    @testset "an indexed sample's indices hold only its call's members, and auto_phases keeps the auto pick" begin
+        with_inproc_routes(db) do call
+            s = JSON3.read(String(call("GET", "/api/experiments/$exp_id/export").body))[1]
+            @test s.call_state == "indexed"
+            @test s.phase == "Im3m"
+            @test collect(s.call_phases) == ["Im3m"]
+            ex = s.exposures[1]
+            @test ex.called
+            @test [ix.phase for ix in ex.indices] == ["Im3m"]
+            @test ex.indices[1].lattice_d == 177.7
+            @test !haskey(ex, :active_group_kind)
+            @test collect(ex.auto_phases) == auto_before
+            @test "Im3m" ∉ ex.auto_phases
 
-        lines = split(strip(String(call("GET", "/api/experiments/$exp_id/export?format=csv").body)), "\n")
-        @test startswith(lines[1], "sample_name,exposure_filename,call_state,call_phases,auto_phases,phases,")
-        @test startswith(lines[2], "D1,example_tot,indexed,Im3m,$(join(auto_before, ";")),Im3m,177.7,")
+            lines = split(strip(String(call("GET", "/api/experiments/$exp_id/export?format=csv").body)), "\n")
+            @test startswith(lines[1], "sample_name,exposure_filename,call_state,call_phases,auto_phases,phases,")
+            @test startswith(lines[2], "D1,example_tot,indexed,Im3m,$(join(auto_before, ";")),Im3m,177.7,")
+        end
     end
 
     DBInterface.execute(db, "UPDATE sample_calls SET state = 'form_factor' WHERE sample_id = ?", [s_id])
     DBInterface.execute(db, "DELETE FROM assignment_members WHERE exposure_id = ?", [e_id])
 
-    with_inproc_routes(db) do call
-        s = JSON3.read(String(call("GET", "/api/experiments/$exp_id/export").body))[1]
-        @test s.call_state == "form_factor"
-        @test s.phase === nothing
-        @test isempty(s.call_phases)
-        ex = s.exposures[1]
-        @test !ex.called
-        @test isempty(ex.indices)
-        @test sort([ix.phase for ix in ex.candidates]) ==
-              sort([String(r.phase) for r in Tables.rowtable(DBInterface.execute(db,
-                  "SELECT phase FROM indices WHERE exposure_id = ?", [e_id]))])
-        @test length(ex.candidates) == length(auto_ids) + 1
+    @testset "a form-factor sample exports no indices and lists every index as a candidate" begin
+        with_inproc_routes(db) do call
+            s = JSON3.read(String(call("GET", "/api/experiments/$exp_id/export").body))[1]
+            @test s.call_state == "form_factor"
+            @test s.phase === nothing
+            @test isempty(s.call_phases)
+            ex = s.exposures[1]
+            @test !ex.called
+            @test isempty(ex.indices)
+            @test sort([ix.phase for ix in ex.candidates]) ==
+                  sort([String(r.phase) for r in Tables.rowtable(DBInterface.execute(db,
+                      "SELECT phase FROM indices WHERE exposure_id = ?", [e_id]))])
+            @test length(ex.candidates) == length(auto_ids) + 1
+        end
     end
 
     DBInterface.execute(db, "UPDATE sample_calls SET state = 'null' WHERE sample_id = ?", [s_id])
-    with_inproc_routes(db) do call
-        s = JSON3.read(String(call("GET", "/api/experiments/$exp_id/export").body))[1]
-        @test s.call_state == "uncalled"
-        @test isempty(s.exposures[1].indices)
+    @testset "a cleared call exports as uncalled" begin
+        with_inproc_routes(db) do call
+            s = JSON3.read(String(call("GET", "/api/experiments/$exp_id/export").body))[1]
+            @test s.call_state == "uncalled"
+            @test isempty(s.exposures[1].indices)
+        end
     end
 end
