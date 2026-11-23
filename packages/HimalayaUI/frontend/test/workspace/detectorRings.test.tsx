@@ -16,13 +16,13 @@ describe("predicted rings on the enlarged detector image", () => {
   const overlay = (v: DetectorRingsView | null) =>
     render(<DetectorOverlay exposures={[exp(1)]} currentId={1} onStep={() => {}} onToggleDrop={undefined} onClose={() => {}} ringsOf={() => v} />);
 
-  it("draws each ring as a thin dashed half-circle on its side of the beam, so the other half shows the data", () => {
+  it("draws each ring as a dashed half-circle on its side of the beam, so the other half shows the data", () => {
     const halves = (side: "left" | "right" | "top" | "bottom") => {
       const { unmount } = overlay({ ...view, side, rings: [{ r: 100, color: "red" }] });
       const svg = rings(document)[0]!;
       expect(svg.querySelectorAll("circle")).toHaveLength(0);
       const arc = svg.querySelector('[data-role="det-ring"]')!;
-      expect(arc.getAttribute("stroke-dasharray")).toBe("4 3");
+      expect(arc.getAttribute("stroke-dasharray")).toBe("6 4");
       const d = arc.getAttribute("d");
       unmount();
       return d;

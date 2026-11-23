@@ -38,8 +38,8 @@ export function DetectorRings({ view, fit }: Props): JSX.Element {
           fill="none"
           stroke={color}
           strokeOpacity={0.85}
-          strokeWidth={1}
-          strokeDasharray="4 3"
+          strokeWidth={1.5}
+          strokeDasharray="6 4"
           vectorEffect="non-scaling-stroke"
         />
       ))}
