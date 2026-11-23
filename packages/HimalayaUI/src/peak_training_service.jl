@@ -44,8 +44,15 @@ function _record_training_outcome!(db::SQLite.DB, watermark::Integer, outcome)
         lock(_DB_WRITE_LOCK) do
             if outcome isa AbstractString
                 insert_failed_peak_model!(bg; watermark, error = outcome)
+                false
             else
-                insert_peak_model!(bg, outcome)
+                id = insert_peak_model!(bg, outcome)
+                outcome["status"] == "passed" && try
+                    promote_peak_model!(bg, id)
+                catch err
+                    @warn "peak model $id could not be promoted" exception = err
+                    false
+                end
             end
         end
     end
@@ -79,12 +86,13 @@ function _run_peak_training_child(db::SQLite.DB, watermark::Integer)
                 "peak model training printed no usable result ($(first(sprint(showerror, e), 150))): $(_stderr_tail(err))"
             end
         end
-        _record_training_outcome!(db, outcome isa AbstractString ? watermark : outcome["watermark"], outcome)
+        promoted = _record_training_outcome!(db, outcome isa AbstractString ? watermark : outcome["watermark"], outcome)
         if outcome isa AbstractString
             @warn "peak model training failed" error = outcome
         else
-            @info "peak model training finished" status = outcome["status"] watermark = outcome["watermark"] threshold = outcome["threshold"] reasons = collect(outcome["metrics"].gate.reasons)
+            @info "peak model training finished" status = outcome["status"] watermark = outcome["watermark"] threshold = outcome["threshold"] reasons = collect(outcome["metrics"].gate.reasons) promoted
         end
+        promoted === true && start_peak_model_pass!(db)
         nothing
     catch e
         PEAK_TRAINING.cancelled || @warn "peak model training run failed" exception = (e, catch_backtrace())

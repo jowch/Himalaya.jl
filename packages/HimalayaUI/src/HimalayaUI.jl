@@ -45,6 +45,7 @@ include("beamtime.jl")
 include("db_connections.jl")
 include("server.jl")
 include("peak_training_service.jl")
+include("peak_model_pass.jl")
 include("ingest.jl")
 include("precompile.jl")
 
