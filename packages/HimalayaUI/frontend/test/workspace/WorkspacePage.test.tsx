@@ -1870,12 +1870,13 @@ describe("WorkspacePage", () => {
     state.trace = makeTrace(1);
     renderAt("/experiments/1/workspace/10");
     const group = screen.getByRole("group", { name: "Plot view" });
-    fireEvent.click(within(group).getByRole("button", { name: "Log-log" }));
+    fireEvent.click(within(group).getByRole("button", { name: "Log-log plot" }));
     expect(currentView()).toBe("Log-log");
-    fireEvent.click(within(group).getByRole("button", { name: "q²I (Kratky)" }));
+    fireEvent.click(within(group).getByRole("button", { name: "q²I (Kratky) plot" }));
     expect(currentView()).toBe("q²I (Kratky)");
-    expect(within(group).getByRole("button", { name: "q²I (Kratky)" })).toHaveAttribute("aria-pressed", "true");
-    expect(within(group).getByRole("button", { name: "Log" })).toHaveAttribute("aria-pressed", "false");
+    expect(within(group).getByRole("button", { name: "q²I (Kratky) plot" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(group).getByRole("button", { name: "Log plot" })).toHaveAttribute("aria-pressed", "false");
+    expect(fireEvent.mouseDown(within(group).getByRole("button", { name: "Linear plot" }))).toBe(false);
   });
 
   it("the difference replaces the trace and follows the plot view", () => {

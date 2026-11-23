@@ -4,7 +4,7 @@ export function PlotCard({ children, notice, corner }: { children: ReactNode; no
   return (
     <div className="relative overflow-hidden rounded-sm border border-hair bg-plate">
       {children}
-      {corner && <div className="absolute right-3 top-6 z-10 flex">{corner}</div>}
+      {corner && <div data-testid="plot-card-corner" className="absolute right-3 top-6 z-10 flex opacity-40 transition-opacity duration-150 hover:opacity-100 has-focus-visible:opacity-100">{corner}</div>}
       {notice && (
         <p role="status" data-testid="workspace-plot-notice" className={"pointer-events-none absolute inset-x-0 mx-auto w-fit max-w-[80%] rounded-sm border border-hair bg-paper px-2.5 py-1 text-center text-caption text-ink-soft " + (corner ? "top-12" : "top-3")}>
           {notice}
