@@ -2870,6 +2870,8 @@ describe("WorkspacePage", () => {
     expect(screen.getAllByTestId("workspace-indexing-fit").map((n) => n.textContent)).toEqual([expect.stringMatching(/^Pn3m/)]);
   });
   it("the enlarged image draws half-rings for the ticked phases only, never for a hovered candidate, and the image cards draw none", () => {
+    state.indices = [...state.indices, { ...index(3, "Ia3d", 0.2), kind: "speculative" }];
+    state.assignment = { exposure_id: 101, state: "indexed", members: [2, 3] };
     state.setups = [{ id: 1, name: "setup1", folder: "setup1", included: true,
       beam_center_x: 421.409, beam_center_y: 836.946, pixel_size_um: 172, energy_kev: 9, flight_path_m: 1.8095, q_units: "A-1" }];
     state.corpus = state.corpus.map((s) => (s.id === 10 ? { ...s, setup_id: 1 } : s));
@@ -2884,7 +2886,7 @@ describe("WorkspacePage", () => {
     expect(document.querySelectorAll('[data-testid="detector-rings"]')).toHaveLength(1);
     const arcs = [...big.querySelectorAll('[data-role="det-ring"]')];
     expect(arcs.length).toBeGreaterThan(0);
-    expect(new Set(arcs.map((a) => a.getAttribute("stroke")))).toEqual(new Set([phaseColor("Pn3m")]));
+    expect(new Set(arcs.map((a) => a.getAttribute("stroke")))).toEqual(new Set([phaseColor("Pn3m"), phaseColor("Ia3d")]));
     const [, x0, y0, , r, , , , sweep, x1, y1] = arcs[0]!.getAttribute("d")!.split(" ");
     expect(sweep).toBe("0");
     expect([x1, Number(y1) - Number(y0)]).toEqual([x0, 2 * Number(r)]);

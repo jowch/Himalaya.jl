@@ -81,7 +81,7 @@ export function DetectorOverlay({ exposures, currentId, caption, onStep, onToggl
           <span><Kbd>←</Kbd> <Kbd>→</Kbd> images</span>
           {onToggleDrop && <span><Kbd>X</Kbd> {dropped ? "restore" : "drop"}</span>}
           <span><Kbd>Esc</Kbd> close</span>
-          {ringView && <span>Press and hold the image to hide the rings.</span>}
+          <span className={ringView && ringView.rings.length > 0 ? undefined : "invisible"}>Press and hold the image to hide the rings.</span>
         </p>
       </div>
     </Overlay>

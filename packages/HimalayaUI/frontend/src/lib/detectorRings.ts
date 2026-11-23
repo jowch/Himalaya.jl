@@ -51,6 +51,12 @@ function radiusPx(qPerAngstrom: number, g: DetectorGeometry): number | null {
   return (g.distanceM * Math.tan(2 * Math.asin(s))) / g.pixelM;
 }
 
+function narrower(before: number, after: number, a: RingSide, b: RingSide): RingSide {
+  if (before <= 0) return b;
+  if (after <= 0) return a;
+  return before < after ? a : b;
+}
+
 // physics: setup_info gives the beam centre in detector pixels from the bottom-left corner with y up; the image's rows run top-down.
 export function ringCircles(
   qs: readonly number[], qUnits: string | null | undefined, g: DetectorGeometry, size: ImageSize | undefined,
@@ -61,7 +67,7 @@ export function ringCircles(
   const cx = g.beamX + 0.5;
   const cy = size.height - g.beamY - 0.5;
   const side: RingSide = size.width >= size.height
-    ? (cy < size.height - cy ? "top" : "bottom")
-    : (cx < size.width - cx ? "left" : "right");
+    ? narrower(cy, size.height - cy, "top", "bottom")
+    : narrower(cx, size.width - cx, "left", "right");
   return { cx, cy, side, radii };
 }

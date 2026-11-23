@@ -59,10 +59,15 @@ describe("predicted rings on the enlarged detector image", () => {
     expect(rings(document)).toHaveLength(1);
   });
 
-  it("draws nothing and gives no hint when the page has no rings for the image", () => {
-    overlay(null);
-    expect(rings(document)).toHaveLength(0);
-    expect(screen.queryByText("Press and hold the image to hide the rings.")).toBeNull();
+  it("draws nothing and hides the hint, keeping its place, when the image has no rings", () => {
+    for (const v of [null, { ...view, rings: [] }]) {
+      const { unmount } = overlay(v);
+      expect(document.querySelectorAll('[data-role="det-ring"]')).toHaveLength(0);
+      expect(screen.getByText("Press and hold the image to hide the rings.")).toHaveClass("invisible");
+      unmount();
+    }
+    overlay(view);
+    expect(screen.getByText("Press and hold the image to hide the rings.")).not.toHaveClass("invisible");
   });
 
   it("never draws rings on the image cards, which are too small to judge them", () => {
