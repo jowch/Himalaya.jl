@@ -703,3 +703,29 @@ for (const viewport of [{ width: 800, height: 1300 }, { width: 1024, height: 130
     }
   });
 }
+
+test("each image's checkbox sits inside a square plate in the tile's corner, and a click anywhere on the plate ticks it", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/experiments/17/workspace/44");
+  await page.route(/\/api\/samples\/\d+\/selection$/, (r) => {
+    const { exposure_ids } = r.request().postDataJSON() as { exposure_ids: number[] };
+    return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ sample_id: 44, exposure_ids, analyzed_exposure_id: null }) });
+  });
+  await openSample(page, 44);
+  const plate = page.getByTestId("exposure-select-plate").first();
+  const box = plate.getByRole("checkbox");
+  const p = (await plate.boundingBox())!;
+  const tile = (await page.locator("[data-testid=workspace-exposures] li button").first().boundingBox())!;
+  expect(Math.round(p.width)).toBe(24);
+  expect(Math.round(p.height)).toBe(24);
+  expect(p.x).toBeGreaterThanOrEqual(tile.x);
+  expect(p.y).toBeGreaterThanOrEqual(tile.y);
+  const circle = (await box.locator("[data-testid=check-circle]").boundingBox())!;
+  expect(circle.x).toBeGreaterThanOrEqual(p.x);
+  expect(circle.y).toBeGreaterThanOrEqual(p.y);
+  expect(circle.x + circle.width).toBeLessThanOrEqual(p.x + p.width);
+  expect(circle.y + circle.height).toBeLessThanOrEqual(p.y + p.height);
+  const before = await box.getAttribute("aria-checked");
+  await page.mouse.click(p.x + 2, p.y + 2);
+  await expect(box).not.toHaveAttribute("aria-checked", before!);
+});

@@ -110,7 +110,15 @@ export function ExposureStrip({ groups, currentId, selection, onPick, onToggleDr
                       )}
                     </button>
                     {selectable && selection && (
-                      <span data-testid="exposure-select-plate" className="absolute left-1 top-1 flex h-6 w-6 items-center justify-center rounded-sm border border-hair bg-paper">
+                      <span
+                        data-testid="exposure-select-plate"
+                        onClick={(ev) => {
+                          if (ev.target !== ev.currentTarget) return;
+                          if (ev.shiftKey) selection.onRange(e.id);
+                          else selection.onToggle(e.id);
+                        }}
+                        className="absolute left-1 top-1 flex h-6 w-6 cursor-pointer items-center justify-center rounded-sm border border-hair bg-paper"
+                      >
                         <Checkbox
                           checked={selected}
                           tabIndex={stop}
