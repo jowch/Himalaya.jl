@@ -519,4 +519,5 @@ test("--gate invariants reports TRUTH problems without failing on them, and stil
 test("check-truth refuses an unknown gate and --gate invariants with --strict", async () => {
   await assert.rejects(checkTruth({}, { gate: "truth" }), /unknown --gate truth/);
   await assert.rejects(checkTruth({}, { gate: "invariants", strict: true }), /disagree/);
+  await assert.rejects(checkTruth({}, { gate: "invariants", expect: "triaged" }), /--expect disagree/);
 });

@@ -494,6 +494,7 @@ export async function checkTruth(cfg, flags, { views = readViews } = {}) {
   const gate = flags.gate ?? null;
   if (gate !== null && gate !== "invariants") throw new UsageError(`unknown --gate ${gate}`, "use --gate invariants, or leave it out to gate on TRUTH too");
   if (gate !== null && flags.strict) throw new UsageError("--gate invariants and --strict disagree", "--strict gates on TRUTH's generated phases; --gate invariants ignores TRUTH");
+  if (gate !== null && flags.expect) throw new UsageError("--gate invariants and --expect disagree", "--expect gates on TRUTH's drop column; --gate invariants ignores TRUTH");
   const truth = loadTruth(cfg, flags);
   const experimentId = await resolveExperiment(cfg, flags);
   const expect = flags.expect ?? null;

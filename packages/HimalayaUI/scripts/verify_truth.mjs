@@ -150,7 +150,7 @@ const [cmd, ...args] = process.argv.slice(2);
 function broken(file) {
   const r = read(file);
   const invariants = Object.entries(r.invariants ?? {}).filter(([, v]) => v.ok === false).map(([name, v]) => ({ invariant: name, violations: v.violations }));
-  report({ ok: false, gate: r.gate, invariants, ...(r.traces?.ok === false ? { traces: r.traces } : {}), ...((r.strays ?? []).length ? { strays: r.strays } : {}) });
+  console.log(JSON.stringify({ gate: r.gate, invariants, ...(r.traces?.ok === false ? { traces: r.traces } : {}), ...((r.strays ?? []).length ? { strays: r.strays } : {}) }, null, 2));
 }
 
 const commands = { broken, confirm, confirmed, unchanged, target, custom, twin, "twin-state": twinState, "bridge-call": bridgeCall };
