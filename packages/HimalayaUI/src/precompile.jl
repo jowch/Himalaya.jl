@@ -34,10 +34,24 @@ function _workload_trace(path::AbstractString, centers = _workload_centers())
 end
 
 function _workload_frame(path::AbstractString)
-    n = 96
+    n = 160
     counts = Int32[round(Int32, 2.0e3 * exp(-hypot(i - n / 2, j - n / 2) / 8)) for i in 1:n, j in 1:n]
     counts[1:4, :] .= -1
     FileIO.save(path, Gray.(reinterpret.(Q0f31, counts)))
+end
+
+function _workload_prp(path::AbstractString)
+    write(path, """
+        Image file name: frame.tif
+        I_signal=1000.0 (corrected for dark counts)
+        I_0(daqIon3.0)=1.5
+        Exposure time=1
+        Counting time=1.05
+        Beam energy=9000.0 eV
+        Pipe length=1700 mm
+        Horizontal position=1.0 mm
+        Detector=Pilatus 1M
+        """)
 end
 
 function _workload_headers()
@@ -69,7 +83,7 @@ function _workload_call(send, method::AbstractString, target::AbstractString, bo
     isempty(res.body) || !json_body ? nothing : JSON3.read(res.body)
 end
 
-function _workload_requests(send, experiment::Int, sample::Int, other::Int, exposure::Int)
+function _workload_requests(send, experiment::Int, sample::Int, other::Int, exposure::Int, mixed::Int)
     _workload_call(send, "GET", "/api/health")
     _workload_call(send, "GET", "/api/users")
     _workload_call(send, "GET", "/api/experiments")
@@ -97,6 +111,9 @@ function _workload_requests(send, experiment::Int, sample::Int, other::Int, expo
     peaks = _workload_call(send, "GET", "/api/exposures/$exposure/peaks")
     indices = _workload_call(send, "GET", "/api/exposures/$exposure/indices")
     _workload_call(send, "GET", "/api/exposures/$exposure/assignment")
+    for part in ("trace", "peaks", "indices", "assignment")
+        _workload_call(send, "GET", "/api/exposures/$mixed/$part")
+    end
 
     added = _workload_call(send, "POST", "/api/exposures/$exposure/peaks", Dict(:q => 0.3))
     _workload_call(send, "DELETE", "/api/peaks/manual/$(added.id)")
@@ -124,6 +141,21 @@ function _workload_requests(send, experiment::Int, sample::Int, other::Int, expo
         _workload_call(send, "POST", "/api/exposures/$exposure/custom-index",
                        Dict(:phase => string(nameof(phase)), :basis => 0.06))
     end
+    autos = [p for p in peaks if p.source == "auto"]
+    if length(autos) >= 2
+        spec = _workload_call(send, "POST", "/api/exposures/$exposure/speculative",
+                              Dict(:phase => "Pn3m", :anchor_peak_id => autos[1].id, :anchor_ratio => 1,
+                                   :additional => [Dict(:ratio_position => 2, :peak_id => autos[2].id)]))
+        _workload_call(send, "DELETE", "/api/indices/$(spec.id)")
+    end
+    _workload_call(send, "PATCH", "/api/experiments/$experiment", Dict(:name => "precompile renamed", :description => "precompile"))
+    _workload_call(send, "PATCH", "/api/experiments/$experiment", Dict(:name => "precompile", :description => nothing))
+    for setup in get(_workload_call(send, "GET", "/api/experiments/$experiment"), :setups, [])
+        _workload_call(send, "PATCH", "/api/setups/$(setup.id)", Dict(:name => "precompile setup"))
+        _workload_call(send, "PATCH", "/api/setups/$(setup.id)", Dict(:name => nothing))
+    end
+    _workload_call(send, "GET", "/api/experiments/$experiment/export")
+    _workload_call(send, "GET", "/api/experiments/$experiment/export?format=csv")
     _workload_call(send, "POST", "/api/exposures/$exposure/analyze", Dict())
 end
 
@@ -133,7 +165,8 @@ function _save_module_state()
      subscribers = lock(() -> copy(SSE_SUBSCRIBERS[]), SSE_LOCK),
      op_ids = lock(() -> Set(keys(OP_LOCKS)), OP_LOCKS_MU),
      hashes = lock(() -> (copy(_PEAK_SET_HASH_CACHE), copy(_PEAK_SET_HASH_CACHE_ORDER)), _PEAK_SET_HASH_CACHE_LOCK),
-     cache_bytes = lock(() -> copy(_CACHE_BYTES), _IMAGE_CACHE_LOCK))
+     cache_bytes = lock(() -> copy(_CACHE_BYTES), _IMAGE_CACHE_LOCK),
+     prp = lock(() -> copy(PRP_DETAILS), PRP_DETAILS_LOCK))
 end
 
 function _restore_module_state!(saved)
@@ -147,6 +180,7 @@ function _restore_module_state!(saved)
         empty!(_PEAK_SET_HASH_CACHE_ORDER); append!(_PEAK_SET_HASH_CACHE_ORDER, saved.hashes[2])
     end
     lock(() -> (empty!(_CACHE_BYTES); merge!(_CACHE_BYTES, saved.cache_bytes)), _IMAGE_CACHE_LOCK)
+    lock(() -> (empty!(PRP_DETAILS); merge!(PRP_DETAILS, saved.prp)), PRP_DETAILS_LOCK)
     nothing
 end
 
@@ -159,6 +193,8 @@ function run_route_workload(dir::AbstractString; record = nothing)
                     _workload_mixed_centers())
     image = joinpath(data_dir, "frame.tif")
     _workload_frame(image)
+    prp = joinpath(data_dir, "frame.prp")
+    _workload_prp(prp)
     saved = _save_module_state()
     db = open_db(joinpath(dir, "himalaya.db"))
     try
@@ -166,9 +202,11 @@ function run_route_workload(dir::AbstractString; record = nothing)
         sample = create_sample!(db; experiment_id = experiment, name = "precompile")
         other = create_sample!(db; experiment_id = experiment, name = "precompile_b")
         exposure = create_exposure!(db; experiment_id = experiment, sample_id = sample,
-                                    filename = "frame", image_path = image)
+                                    filename = "frame", image_path = image, prp_path = prp,
+                                    exposure_time = 1.0, transmitted_counts = 1000.0,
+                                    incident_monitor = 1.5, counting_time = 1.05)
         create_exposure!(db; experiment_id = experiment, sample_id = sample,
-                         filename = "frame_b", image_path = image, prp_path = joinpath(data_dir, "frame.prp"),
+                         filename = "frame_b", image_path = image, prp_path = prp,
                          timestamp = "2026-01-01T00:00:00", exposure_time = 1.0, horizontal_position = 1.0,
                          scan_id = 1, frame_no = 1, transmitted_counts = 1.0, incident_monitor = 1.0,
                          counting_time = 1.0)
@@ -184,14 +222,16 @@ function run_route_workload(dir::AbstractString; record = nothing)
 
         inproc = _recording(_workload_inproc, record)
         _workload_call(inproc, "POST", "/api/users", Dict(:username => "precompile"))
-        _workload_requests(inproc, experiment, sample, other, exposure)
+        _workload_requests(inproc, experiment, sample, other, exposure, mixed)
+        _gc_sweep(db, 3600)
+        _boot_background_work(db, false)
         port = find_free_port()
         Oxygen.serve(; host = "127.0.0.1", port, async = true, show_banner = false,
                      docs = false, metrics = false, parallel = true,
                      middleware = [db_connection_middleware])
         try
             _wait_for_server(port)
-            _workload_requests(_recording(_workload_socket(port), record), experiment, sample, other, exposure)
+            _workload_requests(_recording(_workload_socket(port), record), experiment, sample, other, exposure, mixed)
         finally
             Oxygen.terminate()
         end
