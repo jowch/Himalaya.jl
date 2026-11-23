@@ -35,8 +35,8 @@ function record_review!(db::SQLite.DB, exposure_id::Integer;
     DBInterface.execute(db,
         """INSERT INTO peak_reviews
                (exposure_id, event_id, created_at, shown_detector, shown_model_id, backfilled, direct, peaks_json)
-           VALUES (?, ?, ?, ?, NULL, ?, ?, ?)""",
-        [Int(exposure_id), event_id, String(at), ANALYSIS_VERSION, backfilled ? 1 : 0,
+           VALUES (?, ?, ?, ?, (SELECT peak_model_version FROM exposures WHERE id = ?), ?, ?, ?)""",
+        [Int(exposure_id), event_id, String(at), ANALYSIS_VERSION, Int(exposure_id), backfilled ? 1 : 0,
          direct ? 1 : 0, _snapshot_peaks_json(db, exposure_id)])
     nothing
 end
@@ -71,6 +71,8 @@ function migrate_peak_provenance_schema!(db::SQLite.DB)
         DBInterface.execute(db, "ALTER TABLE auto_peaks ADD COLUMN model_id INTEGER")
     "reviewed_at" in cols_of(db, "exposures") ||
         DBInterface.execute(db, "ALTER TABLE exposures ADD COLUMN reviewed_at TEXT")
+    "peak_model_version" in cols_of(db, "exposures") ||
+        DBInterface.execute(db, "ALTER TABLE exposures ADD COLUMN peak_model_version INTEGER")
     "direct" in cols_of(db, "peak_reviews") ||
         DBInterface.execute(db, "ALTER TABLE peak_reviews ADD COLUMN direct INTEGER NOT NULL DEFAULT 0")
     nothing
