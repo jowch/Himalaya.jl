@@ -288,3 +288,69 @@ end
         DBInterface.close!(b.db)
     end
 end
+
+@testset "a passed run becomes active when nothing is active" begin
+    mktempdir() do dir
+        db = open_prepared_clone(dir)
+        id = _pma_add_model!(db; curations = 100)
+        @test HimalayaUI.promote_peak_model!(db, id)
+        @test _pma_status(db, id) == (status = "active", has_fitted = 1)
+        @test HimalayaUI.production_detector(db).id == id
+        @test !HimalayaUI.promote_peak_model!(db, id)
+        DBInterface.close!(db)
+    end
+end
+
+@testset "a later run replaces the active model only after 25% more curations" begin
+    mktempdir() do dir
+        db = open_prepared_clone(dir)
+        first = _pma_add_model!(db; curations = 100)
+        @test HimalayaUI.promote_peak_model!(db, first)
+        cached = HimalayaUI.production_detector(db)
+        small = _pma_add_model!(db; curations = 124)
+        @test !HimalayaUI.promote_peak_model!(db, small)
+        @test _pma_status(db, small) == (status = "passed", has_fitted = 1)
+        @test _pma_status(db, first).status == "active"
+        @test HimalayaUI.production_detector(db) === cached
+        grown = _pma_add_model!(db; curations = 125)
+        @test _pma_status(db, small) == (status = "passed", has_fitted = 0)
+        @test HimalayaUI.promote_peak_model!(db, grown)
+        @test _pma_status(db, grown) == (status = "active", has_fitted = 1)
+        @test _pma_status(db, first) == (status = "retired", has_fitted = 0)
+        @test HimalayaUI.production_detector(db).id == grown
+        DBInterface.close!(db)
+    end
+end
+
+@testset "growth is measured from the active model, and an unusable active model does not block" begin
+    mktempdir() do dir
+        db = open_prepared_clone(dir)
+        a = _pma_add_model!(db; curations = 100)
+        HimalayaUI.promote_peak_model!(db, a)
+        b = _pma_add_model!(db; curations = 130)
+        @test HimalayaUI.promote_peak_model!(db, b)
+        c = _pma_add_model!(db; curations = 140)
+        @test !HimalayaUI.promote_peak_model!(db, c)
+        DBInterface.execute(db, "UPDATE peak_models SET feature_version = 'default-1;old' WHERE id = ?", [b])
+        HimalayaUI.invalidate_peak_model_cache!()
+        @test @test_logs (:warn, r"peak model") HimalayaUI.promote_peak_model!(db, c)
+        @test _pma_status(db, b).status == "retired" && _pma_status(db, c).status == "active"
+        DBInterface.close!(db)
+    end
+end
+
+@testset "a run whose model cannot be loaded stays passed, as does a rejected one" begin
+    mktempdir() do dir
+        db = open_prepared_clone(dir)
+        id = HimalayaUI.insert_peak_model!(db, Dict{String, Any}("status" => "passed", "watermark" => 1,
+            "counts" => Dict("curations" => 1), "recipe" => Dict("version" => 1), "recipe_id" => "r",
+            "feature_version" => "fv", "core_version" => "0", "threshold" => 0.5, "nms" => 8,
+            "metrics" => Dict("gate" => Dict("passed" => true)), "fitted" => Dict("kind" => "fake")))
+        @test (@test_logs (:warn, r"peak model") HimalayaUI.promote_peak_model!(db, id)) == false
+        @test _pma_status(db, id).status == "passed"
+        rej = HimalayaUI.insert_peak_model!(db, merge(_pma_result(), Dict{String, Any}("status" => "rejected")))
+        @test !HimalayaUI.promote_peak_model!(db, rej)
+        @test HimalayaUI.production_detector(db) === nothing
+        DBInterface.close!(db)
+    end
+end

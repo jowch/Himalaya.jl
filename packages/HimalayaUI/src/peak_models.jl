@@ -154,6 +154,36 @@ function retire_stale_peak_models!(db::SQLite.DB)
     end
 end
 
+const PEAK_MODEL_GROWTH = 0.25
+
+function _curation_count(counts_json)
+    ismissing(counts_json) && return 0
+    Int(get(JSON3.read(String(counts_json)), :curations, 0))
+end
+
+function promote_peak_model!(db::SQLite.DB, id::Integer)
+    lock(_DB_WRITE_LOCK) do
+        row = only(sqlrows(DBInterface.execute(db,
+            "SELECT status, counts_json FROM peak_models WHERE id = ?", [Int(id)])))
+        row.status == "passed" || return false
+        _load_production_model(db, Int(id)) === nothing && return false
+        active = sqlrows(DBInterface.execute(db,
+            "SELECT id, counts_json FROM peak_models WHERE status = 'active' ORDER BY id DESC LIMIT 1"))
+        if !isempty(active) && _load_production_model(db, Int(active[1].id)) !== nothing
+            old = _curation_count(active[1].counts_json)
+            grown = _curation_count(row.counts_json)
+            (old == 0 ? grown > 0 : (grown - old) >= PEAK_MODEL_GROWTH * old) || return false
+        end
+        SQLite.transaction(db) do
+            DBInterface.execute(db,
+                "UPDATE peak_models SET status = 'retired', fitted_json = NULL WHERE status = 'active'")
+            DBInterface.execute(db, "UPDATE peak_models SET status = 'active' WHERE id = ?", [Int(id)])
+        end
+        invalidate_peak_model_cache!()
+        true
+    end
+end
+
 function insert_failed_peak_model!(db::SQLite.DB; watermark::Integer, error::AbstractString)
     _insert_peak_model_row!(db; status = "failed", watermark,
         metrics = Dict("error" => first(String(error), 2000)))
