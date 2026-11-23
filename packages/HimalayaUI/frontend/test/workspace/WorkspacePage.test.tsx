@@ -672,6 +672,14 @@ describe("WorkspacePage", () => {
     expect(screen.getByTestId("workspace-progress")).toHaveTextContent("3 of 4 reviewed");
   });
 
+  it("lists every phase of a coexistence call, as the mock-up does", () => {
+    const { rerender } = renderAt("/experiments/1/workspace/11");
+    state.corpus = state.corpus.map((s) => (s.id === 11 ? { ...s, assignment_state: "indexed", phase: "Im3m", call_phases: ["Im3m", "Pn3m"] } : s));
+    rerender(page("/experiments/1/workspace/11"));
+    const row = within(screen.getByTestId("workspace-samples")).getByRole("button", { current: true });
+    expect(within(row).getByTestId("workspace-status")).toHaveTextContent("Im3m + Pn3m");
+  });
+
   it("Z jumps to the next unreviewed sample, like Gradescope's next ungraded", () => {
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "z" });
@@ -1173,6 +1181,21 @@ describe("WorkspacePage", () => {
       state.peaks = [...peakList(101, { auto: [{ q: 0.1, excluded: true }, 0.12] }), { ...peak(9, 0.2, "manual") }];
       await undo();
       expect(ops()).toEqual([["addPeak", 101, 0.2], ["setPeakExcluded", 101, 1, false]]);
+    });
+
+    it("undoing a peak edit that dropped the call ticks the phase again on the re-fitted candidate", async () => {
+      state.trace = makeTrace(1);
+      state.peaks = peakList(101, { auto: [0.1, 0.12] });
+      state.indices = [index(2, "Pn3m", 0.9), index(3, "Im3m", 0.5)];
+      state.assignment = { exposure_id: 101, state: "indexed", members: [2] };
+      renderAt("/experiments/1/workspace/10");
+      clickPlotAt(0.1);
+      state.peaks = peakList(101, { auto: [{ q: 0.1, excluded: true }, 0.12] });
+      server.indices.set(101, [{ ...index(33, "Pn3m", 0.9), basis: 0.102 }, { ...index(34, "Im3m", 0.5), basis: 0.3 }]);
+      onServer(101, { state: "null", members: [] });
+      await undo();
+      expect(ops()).toEqual([["setPeakExcluded", 101, 1, false], ["addPhase", 101, 33]]);
+      expect(toasts.at(-1)).toBe("Undone: turned off a peak on image 2 of A1");
     });
 
     it("does not record removing a peak that is still saving", async () => {
@@ -2333,7 +2356,7 @@ describe("WorkspacePage", () => {
     expect(rows()[0]).toBe("A4");
   });
 
-  it("drops a kept zoom that falls outside the next sample's q range, and Z resets the zoom", () => {
+  it("drops a kept zoom that falls outside the next sample's q range, and ⌘/Ctrl+0 resets the zoom", () => {
     state.trace = makeTrace(1);
     const { rerender } = renderAt("/experiments/1/workspace/10");
     const plot = screen.getByTestId("workspace-trace");
@@ -2572,23 +2595,23 @@ describe("WorkspacePage", () => {
 
   it("titles the phase list Call and the exposure details Exposure", () => {
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByRole("heading", { name: "Call" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Assignment" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Image" })).toBeInTheDocument();
   });
 
-  it("folds Call and Frame as an accordion on a short window, and opening a custom index shows it in place of Call", () => {
+  it("folds Assignment and Image as an accordion on a short window, and opening a custom index from the folded Assignment header shows it in place of the list", () => {
     vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(max-height: 860px)", media: query, addEventListener: () => {}, removeEventListener: () => {} }));
     try {
       renderAt("/experiments/1/workspace/10");
       const tools = screen.getByRole("complementary", { name: "Tools" });
-      const call = within(tools).getByRole("button", { name: /Call/ });
+      const call = within(tools).getByRole("button", { name: /Assignment/ });
       const exposure = within(tools).getByRole("button", { name: /^Image/ });
       expect(call).toHaveAttribute("aria-expanded", "true");
       expect(exposure).toHaveAttribute("aria-expanded", "false");
       expect(within(tools).queryByText("File")).toBeNull();
       fireEvent.click(exposure);
       expect(exposure).toHaveAttribute("aria-expanded", "true");
-      expect(within(tools).getByRole("button", { name: /Call/ })).toHaveAttribute("aria-expanded", "false");
+      expect(within(tools).getByRole("button", { name: /Assignment/ })).toHaveAttribute("aria-expanded", "false");
       expect(within(tools).getByText("File")).toBeInTheDocument();
       fireEvent.click(screen.getByRole("button", { name: /Custom index/ }));
       expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
@@ -2623,19 +2646,22 @@ describe("WorkspacePage", () => {
     }
   });
 
-  it("puts the Call list first in the tools column, then the indexing plot, then the exposure", () => {
+  it("puts the Assignment list first in the tools column, then the indexing plot, then the exposure", () => {
     renderAt("/experiments/1/workspace/10");
     const tools = screen.getByRole("complementary", { name: "Tools" });
     const headings = within(tools).getAllByRole("heading").map((h) => h.textContent);
-    expect(headings).toEqual(["Call", "Indexing", "Image"]);
+    expect(headings).toEqual(["Assignment", "Indexing", "Image"]);
   });
 
-  it("the Custom index button in the indexing section opens a custom index", () => {
+  it("the Custom index button sits in the Assignment header and stays there while the custom index it opens replaces the list", () => {
     renderAt("/experiments/1/workspace/10");
-    const button = screen.getByRole("button", { name: /Custom index/ });
+    const header = () => screen.getByRole("heading", { name: "Assignment" }).closest("header")!;
+    const button = within(header()).getByRole("button", { name: /Custom index/ });
+    expect(within(screen.getByRole("heading", { name: "Indexing" }).closest("header")!).queryByRole("button", { name: /Custom index/ })).toBeNull();
     expect(button).toHaveTextContent("Custom index I");
     fireEvent.click(button);
     expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
+    expect(within(header()).getByRole("button", { name: /Custom index/ })).toBe(button);
     expect(button).toHaveAttribute("aria-pressed", "true");
     expect(button).toHaveTextContent("Custom index Esc");
   });

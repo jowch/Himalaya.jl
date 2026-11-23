@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { frameFromLabels, keptFromLabels, openSampleBy, statusFromText, workspaceStart } from "../views.mjs";
+import { callFromText, frameFromLabels, keptFromLabels, openSampleBy, statusFromText, workspaceStart } from "../views.mjs";
 import { tracked } from "../settle.mjs";
 
 test("the pressed thumbnail's frame number maps to the exposure list order", () => {
@@ -60,4 +60,11 @@ test("a sample that is already open is reopened by switching away and back, so t
   assert.deepEqual(openSampleBy(`${ui}/experiments/1/workspace/7`, 1, 8), { click: true });
   assert.deepEqual(openSampleBy(`${ui}/experiments/2/workspace/7`, 1, 7), { click: true });
   assert.deepEqual(openSampleBy("about:blank", 1, 7), { click: true });
+});
+
+test("callFromText reads every phase the list shows", () => {
+  assert.equal(callFromText("Im3m + Pn3m"), "Im3m+Pn3m");
+  assert.equal(callFromText(" Pn3m "), "Pn3m");
+  assert.equal(callFromText("Unreviewed"), null);
+  assert.equal(callFromText("Form factor"), null);
 });
