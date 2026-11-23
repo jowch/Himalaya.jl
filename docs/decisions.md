@@ -158,6 +158,8 @@ Every row also needs the date it was decided, as `YYYY-MM-DD`.
 | beamtime-one-workspace | One workspace per beamtime folder, with one setup per subfolder. | 2026-11-21 | built | packages/HimalayaUI/test/test_beamtime.jl › POST /api/experiments with setups makes one beamtime |
 | beamtime-rescan-adds | A rescan adds a new setup folder to the beamtime. | 2026-11-21 | built | packages/HimalayaUI/test/test_beamtime.jl › a rescan adds a new setup folder to the beamtime |
 | beamtime-merge-cli | `himalaya merge` folds per-setup experiments into one beamtime, as a dry run unless --apply. | 2026-11-21 | built | packages/HimalayaUI/test/test_beamtime.jl › merge folds per-setup experiments into one beamtime |
+| home-collection-ribbon | Each experiment card shows a progress ribbon: its samples in measured order on clock time, reviewed ones in the success hue, images taken with the beam off marked, and gaps over ten minutes left empty. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/ExperimentsHomePage.test.tsx › shows when each beamtime collected its samples and how many are left to review |
+| home-ribbon-wording | The ribbon counts samples "to review", not "to call", matching the workspace's reviewed progress. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/lib/collectionRibbon.test.ts › gives the start, the length and how many samples are left to review |
 
 ## Phases
 

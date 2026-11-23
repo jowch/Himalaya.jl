@@ -8,6 +8,7 @@ import { Kicker } from "../ui/Kicker";
 import { Dot } from "../ui/Dot";
 import { EmptyState } from "../ui/EmptyState";
 import { NoticePill } from "../ui/NoticePill";
+import { CollectionRibbon } from "../ui/CollectionRibbon";
 import type { NoticePillTone } from "../ui/NoticePill";
 import type { Experiment } from "../api";
 import { suppressGlobalKeys } from "../lib/keys";
@@ -212,6 +213,7 @@ export function ExperimentsHomePage(): JSX.Element {
                             {" loads"}
                           </div>
                         )}
+                        <CollectionRibbon timeline={stats?.timeline} className="mt-3" />
                       </Card>
                     );
                   })}

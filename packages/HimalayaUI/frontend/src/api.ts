@@ -46,7 +46,13 @@ export interface Experiment {
   ingest_status: IngestStatus;
   ingest_error?: string | null;
   setups?: Setup[];
-  stats?: { loads: number; samples: number; exposures: number; sessions: number; span_hours: number; started_at: string | null };
+  stats?: { loads: number; samples: number; exposures: number; sessions: number; span_hours: number; started_at: string | null; timeline?: CollectionTimeline | null };
+}
+
+export interface CollectionTimeline {
+  start: string;
+  samples: [from: number, to: number, reviewed: 0 | 1][];
+  beam_off: number[];
 }
 
 export interface Sample {
