@@ -4,6 +4,7 @@ import { imageUrl } from "../workspace/model";
 import { detectorLutFilter } from "../detector/detectorLut";
 import { Checkbox } from "./Checkbox";
 import { Tooltip } from "./Tooltip";
+import { releaseMouseFocus, useRovingFocus } from "../hooks/useRovingFocus";
 
 const DETECTOR_COLOUR = { filter: detectorLutFilter("magma") };
 
@@ -41,7 +42,10 @@ function selectionCaption(selection: ExposureSelection): string {
 }
 
 export function ExposureStrip({ groups, currentId, selection, onPick, onToggleDrop }: Props): JSX.Element {
-  const click = (ev: MouseEvent, id: number): void => {
+  const ref = useRovingFocus<HTMLDivElement>(currentId);
+  const hasCurrent = groups.some((g) => g.exposures.some((e) => e.id === currentId));
+  const click = (ev: MouseEvent<HTMLElement>, id: number): void => {
+    releaseMouseFocus(ev);
     const canSelect = selection?.selectableIds.has(id) ?? false;
     if (canSelect && ev.shiftKey) selection?.onRange(id);
     else if (canSelect && (ev.metaKey || ev.ctrlKey)) selection?.onToggle(id);
@@ -49,7 +53,7 @@ export function ExposureStrip({ groups, currentId, selection, onPick, onToggleDr
   };
   const all = selection ? [...selection.selectableIds].every((id) => selection.selectedIds.has(id)) : true;
   return (
-    <div className="flex flex-col gap-1.5" data-testid="workspace-exposures">
+    <div ref={ref} className="flex flex-col gap-1.5" data-testid="workspace-exposures">
       {selection && (
         <div className="flex items-center gap-1.5" data-testid="exposure-selection-tools">
           <span className="mr-auto text-xs text-ink-soft" data-testid="exposure-selection-caption">{selectionCaption(selection)}</span>
@@ -67,6 +71,7 @@ export function ExposureStrip({ groups, currentId, selection, onPick, onToggleDr
           <ul className="m-0 grid list-none grid-cols-6 gap-2 p-0">
             {g.exposures.map((e, i) => {
               const cur = e.id === currentId;
+              const stop = cur || (!hasCurrent && gi === 0 && i === 0) ? 0 : -1;
               const dropped = e.status === "rejected";
               const selectable = selection?.selectableIds.has(e.id) ?? false;
               const selected = selection?.selectedIds.has(e.id) ?? false;
@@ -87,6 +92,8 @@ export function ExposureStrip({ groups, currentId, selection, onPick, onToggleDr
                       type="button"
                       aria-current={cur ? "true" : undefined}
                       aria-label={`${name}${dropped ? ", dropped" : ""}`}
+                      tabIndex={stop}
+                      data-roving="image"
                       onClick={(ev) => click(ev, e.id)}
                       className="grid aspect-square w-full place-items-center overflow-hidden rounded-[3px] bg-frame-edge"
                     >
@@ -100,6 +107,8 @@ export function ExposureStrip({ groups, currentId, selection, onPick, onToggleDr
                       <span className="absolute left-0.5 top-0.5 rounded-full bg-paper">
                         <Checkbox
                           checked={selected}
+                          tabIndex={stop}
+                          data-roving="select"
                           aria-label={`Analyze ${name.toLowerCase()}`}
                           onChange={() => selection.onToggle(e.id)}
                           onClickCapture={(ev) => {
@@ -114,7 +123,16 @@ export function ExposureStrip({ groups, currentId, selection, onPick, onToggleDr
                   </div>
                   {dropped && <span className="text-xs text-ink-soft line-through">dropped</span>}
                   <div className={(cur ? "visible" : "invisible group-hover:visible group-focus-within:visible") + " flex gap-1"}>
-                    <button type="button" onClick={() => onToggleDrop(e)} className={ACTION}>
+                    <button
+                      type="button"
+                      tabIndex={stop}
+                      data-roving="drop"
+                      onClick={(ev) => {
+                        releaseMouseFocus(ev);
+                        onToggleDrop(e);
+                      }}
+                      className={ACTION}
+                    >
                       {dropped ? "Restore" : "Drop"}
                     </button>
                   </div>

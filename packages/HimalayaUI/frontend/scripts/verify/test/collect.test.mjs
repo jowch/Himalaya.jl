@@ -21,8 +21,8 @@ function routes(demoDir) {
       { id: 4, setups: [{ data_dir: path.join(demoDir, "data") }], ingest_status: "complete" },
     ],
     "/api/samples?experiment_id=4": [
-      { id: 10, name: "MO_H2O_S1 (S01P01)", assignment_state: "indexed", phase: "Pn3m", analyzed_exposure_id: 1 },
-      { id: 11, name: "MO_PEG5_S3 (S01P02)", assignment_state: "indexed", phase: "Pn3m", analyzed_exposure_id: 3 },
+      { id: 10, name: "MO_H2O_S1 (S01P01)", assignment_state: "indexed", phase: "Pn3m", call_phases: ["Pn3m"], analyzed_exposure_id: 1 },
+      { id: 11, name: "MO_PEG5_S3 (S01P02)", assignment_state: "indexed", phase: "Pn3m", call_phases: ["Im3m", "Pn3m"], analyzed_exposure_id: 3 },
     ],
     "/api/experiments/4/labels": [],
     "/api/experiments/4/bridges": [],
@@ -75,7 +75,7 @@ test("check-truth reads the backend's real endpoint shapes end to end", async ()
     assert.deepEqual(h2o.auto_calls.map((c) => [c.frame, c.expected]), [["MO_H2O_S1", "Pn3m"], ["MO_H2O_S2", "none"]]);
     assert.deepEqual(h2o.shown, { status: "phase", call: "Pn3m", frame: "MO_H2O_S1", exposure_id: 1 });
     assert.deepEqual(h2o.assigned_frames, [{ frame: "MO_H2O_S1", call: "Pn3m" }]);
-    assert.deepEqual(peg.shown, { status: "phase", call: "Pn3m", frame: "MO_PEG5_S3", exposure_id: 3 });
+    assert.deepEqual(peg.shown, { status: "phase", call: "Im3m+Pn3m", frame: "MO_PEG5_S3", exposure_id: 3 });
     assert.deepEqual(peg.assigned_frames, [{ frame: "MO_PEG5_S3", call: "Im3m+Pn3m" }]);
     assert.deepEqual(r.summary.invariants_failed, []);
     assert.ok(stub.seen.includes("/api/samples?experiment_id=4"));
@@ -158,7 +158,7 @@ test("check-truth --ui hands the reader each sample's exposure order and folds i
     asked.push({ experimentId, samples });
     return new Map([
       [10, { workspace_kept: "2/2", workspace: "MO_H2O_S2", workspace_text: "Pn3m", workspace_rail: RAIL_PN3M }],
-      [11, { workspace_kept: "1/1", workspace: "MO_PEG5_S3", workspace_text: "Pn3m", workspace_rail: RAIL_PN3M }],
+      [11, { workspace_kept: "1/1", workspace: "MO_PEG5_S3", workspace_text: "Pn3m + Im3m", workspace_rail: RAIL_PN3M }],
     ]);
   };
   try {
@@ -202,7 +202,7 @@ test("check-truth --ui fails when the workspace list, read in place after a writ
   const views = async () =>
     new Map([
       [10, { workspace: "MO_H2O_S1", workspace_text: "Unreviewed", workspace_reused: true }],
-      [11, { workspace: "MO_PEG5_S3", workspace_text: "Pn3m", workspace_reused: true }],
+      [11, { workspace: "MO_PEG5_S3", workspace_text: "Pn3m + Im3m", workspace_reused: true }],
     ]);
   try {
     const r = await checkTruth(cfg, { ui: true }, { views });
