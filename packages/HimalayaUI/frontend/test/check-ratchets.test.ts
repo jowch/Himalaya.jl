@@ -5,6 +5,8 @@ import {
   countJuliaComments,
   compareToBaseline,
   canUpdate,
+  TS_ROOTS,
+  JULIA_ROOTS,
 } from "../scripts/check-ratchets.mjs";
 
 describe("countAppearance", () => {
@@ -167,5 +169,29 @@ describe("canUpdate", () => {
   it("refuses when a kind's total grows", () => {
     const baseline = { appearance: { "a.tsx": 3 }, comments: {} };
     expect(canUpdate(baseline, { appearance: { "a.tsx": 2, "b.tsx": 2 }, comments: {} })).toBe(false);
+  });
+});
+
+describe("comment scope", () => {
+  it("covers every Julia and TypeScript package, tests and tools included", () => {
+    expect(JULIA_ROOTS).toEqual(
+      expect.arrayContaining([
+        "src",
+        "test",
+        "packages/HimalayaUI/src",
+        "packages/HimalayaUI/test",
+        "packages/HimalayaPeakModel",
+        "packages/HimalayaDB",
+        "tools",
+      ]),
+    );
+    expect(TS_ROOTS).toEqual(
+      expect.arrayContaining([
+        "packages/HimalayaUI/frontend/src",
+        "packages/HimalayaUI/frontend/test",
+        "packages/HimalayaUI/frontend/e2e",
+        "packages/HimalayaUI/frontend/scripts",
+      ]),
+    );
   });
 });

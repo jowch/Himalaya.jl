@@ -42,9 +42,6 @@ function predict_proba(f::ForestFitted, X::AbstractMatrix)
     j === nothing ? zeros(size(X, 1)) : Float64.(P[:, j])
 end
 
-# A leaf stores its majority class and the training counts per class. A forest
-# prediction uses only the majority (one vote per tree in DecisionTree 0.12);
-# the counts rebuild `Leaf.values`, so per-tree class fractions match too.
 function tree_dict(l::DecisionTree.Leaf)
     n = Dict{String, Any}("0" => count(==(0), l.values), "1" => count(==(1), l.values))
     Dict{String, Any}("c" => Int(l.majority), "n" => n)

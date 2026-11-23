@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync, writeFileSync, readdirSync } from "node:fs";
+import { readFileSync, writeFileSync, readdirSync, existsSync } from "node:fs";
 import { join, relative, sep, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
@@ -7,7 +7,11 @@ import ts from "typescript";
 const SCRIPTS_DIR = dirname(fileURLToPath(import.meta.url));
 const PKG_DIR = join(SCRIPTS_DIR, "..", "..");
 const FRONTEND_SRC = join(PKG_DIR, "frontend", "src");
-const BACKEND_SRC = join(PKG_DIR, "src");
+const REPO = join(PKG_DIR, "..", "..");
+const SKIP_DIRS = new Set(["node_modules", "dist", "storybook-static", "test-results", "playwright-report", ".git", ".claude", "scratch"]);
+
+export const TS_ROOTS = ["packages/HimalayaUI/frontend/src", "packages/HimalayaUI/frontend/test", "packages/HimalayaUI/frontend/e2e", "packages/HimalayaUI/frontend/scripts"];
+export const JULIA_ROOTS = ["src", "test", "scripts", "packages/HimalayaUI/src", "packages/HimalayaUI/test", "packages/HimalayaUI/scripts", "packages/HimalayaPeakModel", "packages/HimalayaDB", "tools"];
 const BASELINE_PATH = join(SCRIPTS_DIR, "ratchet-baseline.json");
 
 const APPEARANCE_EXEMPT_PREFIXES = ["ui/", "plot/", "detector/"];
@@ -251,10 +255,14 @@ export function canUpdate(baseline, current) {
 }
 
 function walk(dir, exts, out = []) {
+  if (!existsSync(dir)) return out;
   for (const ent of readdirSync(dir, { withFileTypes: true })) {
     const p = join(dir, ent.name);
-    if (ent.isDirectory()) walk(p, exts, out);
-    else if (exts.some((e) => ent.name.endsWith(e))) out.push(p);
+    if (ent.isDirectory()) {
+      if (!SKIP_DIRS.has(ent.name)) walk(p, exts, out);
+      continue;
+    }
+    if (exts.some((e) => ent.name.endsWith(e))) out.push(p);
   }
   return out;
 }
@@ -267,17 +275,22 @@ export function measure() {
   for (const abs of walk(FRONTEND_SRC, [".ts", ".tsx"])) {
     const rel = posix(relative(FRONTEND_SRC, abs));
     if (rel.includes(".stories.")) continue;
-    const key = `frontend/src/${rel}`;
-    const content = readFileSync(abs, "utf8");
-    const a = countAppearance(rel, content);
-    const c = countTsComments(content);
-    if (a > 0) appearance[key] = a;
-    if (c > 0) comments[key] = c;
+    const a = countAppearance(rel, readFileSync(abs, "utf8"));
+    if (a > 0) appearance[`frontend/src/${rel}`] = a;
   }
-  for (const abs of walk(BACKEND_SRC, [".jl"])) {
-    const key = `src/${posix(relative(BACKEND_SRC, abs))}`;
-    const c = countJuliaComments(readFileSync(abs, "utf8"));
-    if (c > 0) comments[key] = c;
+  for (const root of TS_ROOTS) {
+    for (const abs of walk(join(REPO, root), [".ts", ".tsx", ".mjs", ".mts", ".js"])) {
+      const key = posix(relative(REPO, abs));
+      if (key.includes(".stories.")) continue;
+      const c = countTsComments(readFileSync(abs, "utf8"));
+      if (c > 0) comments[key] = c;
+    }
+  }
+  for (const root of JULIA_ROOTS) {
+    for (const abs of walk(join(REPO, root), [".jl"])) {
+      const c = countJuliaComments(readFileSync(abs, "utf8"));
+      if (c > 0) comments[posix(relative(REPO, abs))] = c;
+    }
   }
   return { appearance, comments };
 }
@@ -286,7 +299,7 @@ const FIX = {
   appearance:
     "Styling belongs in a src/ui primitive. Use an existing primitive or add a variant to one; a consumer className carries placement only (margin, position, grid).",
   comments:
-    "HimalayaUI code is comment-free. Put the reason in a name, a test or an assertion. Allowed: comments that start with `physics:`, `eslint-disable… -- <reason>`, `@ts-expect-error` and `/// <reference>` directives.",
+    "Code in this repo is comment-free, tests and tools included. Put the reason in a name, a test or an assertion. Allowed: comments that start with `physics:`, `eslint-disable… -- <reason>`, `@ts-expect-error` and `/// <reference>` directives.",
 };
 
 function writeBaseline(current, verb) {

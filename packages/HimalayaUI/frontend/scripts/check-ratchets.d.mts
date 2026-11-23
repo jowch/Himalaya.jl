@@ -19,3 +19,5 @@ export function countJuliaComments(content: string): number;
 export function compareToBaseline(baseline: Measure, current: Measure): { increased: Change[]; decreased: Change[] };
 export function canUpdate(baseline: Measure, current: Measure): boolean;
 export function measure(): Measure;
+export const TS_ROOTS: readonly string[];
+export const JULIA_ROOTS: readonly string[];
