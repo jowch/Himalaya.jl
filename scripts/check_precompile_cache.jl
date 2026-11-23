@@ -1,17 +1,31 @@
 using HimalayaUI
 using Oxygen
 
-function _kept(mi::Core.MethodInstance)
+_live(ci::Core.CodeInstance) = ci.max_world == typemax(UInt)
+
+function _cached(mi::Core.MethodInstance)
     ci = isdefined(mi, :cache) ? mi.cache : nothing
     while ci !== nothing
-        ci.max_world == typemax(UInt) && return true
+        _live(ci) && return true
         ci = isdefined(ci, :next) ? ci.next : nothing
     end
     false
 end
 
+_in_workload(mi) = mi isa Core.MethodInstance && mi.def isa Method && endswith(String(mi.def.file), "precompile.jl")
+
+_live_caller(b) =
+    (b isa Core.CodeInstance && !_in_workload(b.def) && _live(b)) ||
+    (b isa Core.MethodInstance && !_in_workload(b) && _cached(b))
+
+_called_from_live_code(mi::Core.MethodInstance) = isdefined(mi, :backedges) && any(_live_caller, mi.backedges)
+
+_kept(mi::Core.MethodInstance) = _cached(mi) || _called_from_live_code(mi)
+
+const _MODULES = (HimalayaUI, HimalayaUI.Himalaya, HimalayaUI.HimalayaPeakModel)
+
 _checked(m::Method) =
-    (m.module === HimalayaUI && !endswith(String(m.file), "precompile.jl")) ||
+    (parentmodule(m) in _MODULES && !endswith(String(m.file), "precompile.jl")) ||
     (parentmodule(m) === Oxygen.Core.Util && m.name === :format_response!)
 
 function check()
@@ -40,8 +54,8 @@ if idempotent == 0
 end
 if !isempty(rejected)
     println(stderr, """
-        $(length(rejected)) of $total precompiled HimalayaUI specializations were thrown away when HimalayaUI \
-        loaded, so the routes that use them compile again on first use.
+        $(length(rejected)) of $total precompiled specializations of HimalayaUI, Himalaya and HimalayaPeakModel were thrown away when \
+        HimalayaUI loaded, so the routes that use them compile again on first use.
         A method added after HimalayaUI was compiled invalidated something they call. The usual cause is a \
         call on an abstract argument type, such as `JSON3.read(::AbstractString)` or `replace(::AbstractString, …)`: \
         convert to `String` first. A route that returns a plain Julia value goes through Oxygen's JSON.jl \
@@ -51,4 +65,4 @@ if !isempty(rejected)
     foreach(r -> println(stderr, "  ", r), rejected)
     exit(1)
 end
-println("All $total precompiled HimalayaUI specializations survived loading.")
+println("All $total precompiled specializations of HimalayaUI, Himalaya and HimalayaPeakModel survived loading.")

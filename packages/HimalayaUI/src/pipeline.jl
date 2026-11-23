@@ -630,9 +630,8 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
         [exposure_id])
     group_db_id = Int(DBInterface.lastrowid(res))
 
-    group_set = Set(group_indices)
     for (ci, idx) in enumerate(candidates)
-        idx in group_set || continue
+        any(g -> g === idx, group_indices) || continue
         db_id = candidate_to_db_id[ci]
         DBInterface.execute(db,
             "INSERT INTO index_group_members (group_id, index_id) VALUES (?, ?)",

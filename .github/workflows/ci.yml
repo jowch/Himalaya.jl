@@ -208,8 +208,6 @@ jobs:
         run: |
           (cd packages/HimalayaUI/frontend && npm ci && npx playwright install --with-deps chromium)
           julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
-      - name: Check that precompiled edit routes survive loading
-        run: julia --threads=4,1 --project=packages/HimalayaUI scripts/check_precompile_cache.jl
       - name: Check the demo against TRUTH.csv
         run: make verify-truth
       - if: always()
@@ -222,10 +220,42 @@ jobs:
             scratch/demo/backend.log
           if-no-files-found: ignore
 
+  cold-start:
+    name: Cold start (first-use compile)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ env.JULIA_VERSION }}
+      - uses: julia-actions/cache@v2
+        with:
+          cache-name: cold-start-${{ env.JULIA_CPU_TARGET }}
+      - name: Install
+        run: julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
+      - name: Cached code survives loading
+        run: julia --threads=4,1 --project=packages/HimalayaUI scripts/check_precompile_cache.jl
+      - name: Demo data
+        run: make demo-data
+      - name: Ingest the demo
+        run: julia --threads=4,1 --project=packages/HimalayaUI scripts/check_first_use.jl prepare scratch/demo-experiment scratch/cold-start.db
+      - name: First use stays within its compile budget
+        run: julia --threads=4,1 --trace-compile=scratch/cold-start-trace.jl --trace-compile-timing --project=packages/HimalayaUI scripts/check_first_use.jl measure scratch/cold-start.db
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cold-start-trace
+          path: scratch/cold-start-trace.jl
+          if-no-files-found: ignore
+
   ci-ok:
     name: CI ok
     if: always()
-    needs: [core, himalayadb, ui-groups, ui-backend, frontend, e2e, demo-truth]
+    needs: [core, himalayadb, ui-groups, ui-backend, frontend, e2e, demo-truth, cold-start]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

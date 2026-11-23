@@ -34,13 +34,10 @@ end
 
 const _COLD_ROUTES_OFF_THE_TRIAGE_PATH = Set([
     "GET /**",
-    "POST /api/experiments", "PATCH /api/experiments/{id}", "DELETE /api/experiments/{id}",
+    "POST /api/experiments", "DELETE /api/experiments/{id}",
     "POST /api/experiments/{id}/scan", "POST /api/experiments/{id}/setups",
-    "GET /api/experiments/{id}/export",
     "GET /api/fs/manifest", "GET /api/fs/preview", "GET /api/fs/suggest",
-    "PATCH /api/samples/{id}", "PATCH /api/setups/{id}",
-    "DELETE /api/indices/{id}",
-    "POST /api/exposures/{id}/speculative",
+    "PATCH /api/samples/{id}",
 ])
 
 function _registered_routes()
