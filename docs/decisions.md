@@ -99,6 +99,7 @@ Every row also needs the date it was decided, as `YYYY-MM-DD`.
 | id | Decision | Decided | Status | Evidence |
 |---|---|---|---|---|
 | cmp-sidebar-setups | The sample list is grouped by setup. | 2026-11-22 | built | packages/HimalayaUI/frontend/test/workspace/SampleList.test.tsx › heads each run of a setup's samples with its name |
+| sidebar-phase-short | The sample list shortens lamellar to Lα (a real subscript α) and hexagonal to plain H, since SAXS cannot tell H_I from H_II. Hovering shows the full names. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/workspace/SampleList.test.tsx › shortens lamellar to L with a subscript alpha and hexagonal to H, and names them in full |
 | cmp-sidebar-click | ⌘/Ctrl-clicking a sidebar row toggles it as a comparison without leaving the sample. | 2026-11-21 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › Ctrl/Cmd-clicking a sidebar row toggles it as a comparison without leaving the sample |
 | cmp-chip-gestures | A click on a chip shows or hides it; ⌘/Ctrl-click makes it the subtraction background. | 2026-11-21 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › a plain click on a chip hides or shows just that trace and keeps the subtraction |
 | cmp-raw-minus | The Raw/Minus toggle shows only while a background is set. | 2026-11-21 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › Ctrl-click subtracts in the main plot, Raw brings the trace and comparisons back, and a dimmed chip goes back to Raw |

@@ -1,14 +1,10 @@
-import type { CSSProperties, HTMLAttributes } from "react";
+import { Fragment, type CSSProperties, type HTMLAttributes } from "react";
 import { phaseColor } from "../phases";
+import { PhaseShortName } from "./PhaseName";
 
 export type PhaseChipVariant = "tint" | "solid";
 export type PhaseChipSize = "sm" | "md";
 
-const PHASE_SHORT: Record<string, string> = {
-  Pn3m: "Pn3m", Im3m: "Im3m", Ia3d: "Ia3d", Fm3m: "Fm3m",
-  Fd3m: "Fd3m", Hexagonal: "Hex", Lamellar: "Lam", Square: "Sq",
-};
-function short(p: string): string { return PHASE_SHORT[p] ?? p; }
 
 interface PhaseChipProps
   extends Omit<HTMLAttributes<HTMLSpanElement>, "color" | "children" | "title"> {
@@ -70,7 +66,12 @@ export function PhaseChip({
   const coexist = coexistWith ?? [];
   const text =
     coexist.length > 0
-      ? [p, ...coexist].map(short).join(" + ")
+      ? [p, ...coexist].map((q, i) => (
+          <Fragment key={q}>
+            {i > 0 && " + "}
+            <PhaseShortName phase={q} />
+          </Fragment>
+        ))
       : p;
   return (
     <span

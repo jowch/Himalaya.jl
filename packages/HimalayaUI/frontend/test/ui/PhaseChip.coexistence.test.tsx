@@ -13,14 +13,15 @@ describe("<PhaseChip> coexistence", () => {
   it("renders two-phase label with dominant first", () => {
     render(<PhaseChip phase="Pn3m" coexistWith={["Lamellar"]} />);
     const chip = screen.getByTestId("phase-chip");
-    expect(chip.textContent).toBe("Pn3m + Lam");
+    expect(chip.textContent).toBe("Pn3m + Lα");
+    expect(chip.querySelector("sub")).toHaveTextContent("α");
     expect(chip.getAttribute("data-coexist")).toBe("true");
     expect(chip.getAttribute("data-coexist-count")).toBe("2");
   });
   it("renders three-phase label with dominant first", () => {
     render(<PhaseChip phase="Pn3m" coexistWith={["Lamellar", "Hexagonal"]} />);
     const chip = screen.getByTestId("phase-chip");
-    expect(chip.textContent).toBe("Pn3m + Lam + Hex");
+    expect(chip.textContent).toBe("Pn3m + Lα + H");
     expect(chip.getAttribute("data-coexist")).toBe("true");
     expect(chip.getAttribute("data-coexist-count")).toBe("3");
   });

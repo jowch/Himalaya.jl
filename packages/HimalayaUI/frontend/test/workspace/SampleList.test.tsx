@@ -172,3 +172,29 @@ describe("SampleList analysis gaps", () => {
     expect(screen.getByRole("img", { name: "Unreviewed" })).toHaveTextContent("○");
   });
 });
+
+describe("SampleList phase names", () => {
+  const called = (id: number, phases: string[]) =>
+    ({ ...sample(id, `S${id}`), assignment_state: "indexed", phase: phases[0], call_phases: phases }) as CorpusSample;
+
+  it("shortens lamellar to L with a subscript alpha and hexagonal to H, and names them in full", () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    render(<SampleList samples={[called(1, ["Lamellar", "Hexagonal"])]} currentId={1} filter="" onFilter={() => {}} onPick={() => {}} />);
+    const mark = screen.getByRole("img", { name: "Lamellar + Hexagonal" });
+    expect(mark).toHaveTextContent("LαH");
+    expect(mark.querySelector("sub")).toHaveTextContent("α");
+  });
+
+  it("keeps space group names as they are", () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    render(<SampleList samples={[called(1, ["Im3m", "Pn3m"])]} currentId={1} filter="" onFilter={() => {}} onPick={() => {}} />);
+    expect(screen.getByRole("img", { name: "Im3m + Pn3m" })).toHaveTextContent("Im3mPn3m");
+  });
+
+  it("shows the full name on hover when a name is shortened", async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    render(<SampleList samples={[called(1, ["Pn3m", "Lamellar"])]} currentId={1} filter="" onFilter={() => {}} onPick={() => {}} />);
+    fireEvent.mouseEnter(screen.getByRole("img", { name: "Pn3m + Lamellar" }));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Pn3m + Lamellar");
+  });
+});
