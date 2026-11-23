@@ -2,6 +2,7 @@ import type { Exposure } from "../api";
 import { imageUrl } from "../workspace/model";
 import { detectorLutFilter } from "../detector/detectorLut";
 import { Tooltip } from "./Tooltip";
+import { releaseMouseFocus, useRovingFocus } from "../hooks/useRovingFocus";
 
 const DETECTOR_COLOUR = { filter: detectorLutFilter("magma") };
 
@@ -20,8 +21,10 @@ interface Props {
 }
 
 export function ExposureStrip({ groups, currentId, onPick, onToggleDrop, warningOf }: Props): JSX.Element {
+  const ref = useRovingFocus<HTMLDivElement>(currentId);
+  const hasCurrent = groups.some((g) => g.exposures.some((e) => e.id === currentId));
   return (
-    <div className="flex flex-col gap-1.5" data-testid="workspace-exposures">
+    <div ref={ref} className="flex flex-col gap-1.5" data-testid="workspace-exposures">
       {groups.map((g, gi) => (
         <section key={g.key} aria-label={g.title} className="flex flex-col gap-1">
           {g.title !== undefined && (
@@ -32,6 +35,7 @@ export function ExposureStrip({ groups, currentId, onPick, onToggleDrop, warning
           <ul className="m-0 grid list-none grid-cols-6 gap-2 p-0">
             {g.exposures.map((e, i) => {
               const cur = e.id === currentId;
+              const stop = cur || (!hasCurrent && gi === 0 && i === 0) ? 0 : -1;
               const dropped = e.status === "rejected";
               const src = imageUrl(e, true);
               const warning = warningOf?.(e);
@@ -50,7 +54,12 @@ export function ExposureStrip({ groups, currentId, onPick, onToggleDrop, warning
                     type="button"
                     aria-current={cur ? "true" : undefined}
                     aria-label={`${name}${dropped ? ", dropped" : ""}${warning !== undefined ? `, ${warning.toLowerCase()}` : ""}`}
-                    onClick={() => onPick(e.id)}
+                    tabIndex={stop}
+                    data-roving="image"
+                    onClick={(ev) => {
+                      releaseMouseFocus(ev);
+                      onPick(e.id);
+                    }}
                     className={
                       "relative grid aspect-square w-full place-items-center overflow-hidden rounded-[3px] bg-frame-edge" +
                       (warning !== undefined ? " outline outline-2 -outline-offset-2 outline-warning" : "")
@@ -67,7 +76,12 @@ export function ExposureStrip({ groups, currentId, onPick, onToggleDrop, warning
                   <div className={(cur ? "visible" : "invisible group-hover:visible group-focus-within:visible") + " flex gap-1"}>
                     <button
                       type="button"
-                      onClick={() => onToggleDrop(e)}
+                      tabIndex={stop}
+                      data-roving="drop"
+                      onClick={(ev) => {
+                        releaseMouseFocus(ev);
+                        onToggleDrop(e);
+                      }}
                       className="flex-1 rounded-[4px] border border-hair bg-paper py-0.5 text-xs text-ink hover:border-hair-strong"
                     >
                       {dropped ? "Restore" : "Drop"}
