@@ -2957,6 +2957,25 @@ describe("WorkspacePage", () => {
     fireEvent.keyDown(window, { key: " " });
   });
 
+  it("draws no bridge to a sample whose setup is hidden, and draws it again once the setup is shown", () => {
+    state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
+    state.setups = [{ id: 1, name: "Short pipe", folder: "s1", included: true }, { id: 2, name: "Long pipe", folder: "s2", included: false }];
+    state.corpus = state.corpus.map((s) => (s.id === 12 ? { ...s, setup_id: 2 } : { ...s, setup_id: 1 }));
+    state.mateExposures = new Map([[12, [exposure(200, { sample_id: 12 })]]]);
+    const { rerender } = renderAt("/experiments/1/workspace/10");
+    const frames = screen.getByTestId("workspace-exposures");
+    expect(within(frames).queryByTestId("frame-group-header")).toBeNull();
+    expect(within(frames).queryByRole("button", { name: /^Image 1 of A3/ })).toBeNull();
+    expect(screen.queryByText(/^Same as A3/)).toBeNull();
+    expect(screen.getByTestId("workspace-samples").querySelector("[data-bridged]")).toBeNull();
+
+    state.setups = state.setups.map((st) => ({ ...st, included: true }));
+    rerender(page("/experiments/1/workspace/10"));
+    expect(within(screen.getByTestId("workspace-exposures")).getAllByTestId("frame-group-header")).toHaveLength(2);
+    expect(screen.getByText("Same as A3 in Long pipe")).toBeInTheDocument();
+    expect(screen.getByTestId("workspace-samples").querySelector("[data-sample-id='10'] [data-bridged]")).not.toBeNull();
+  });
+
   it("the kept count under Frames counts only this sample's own frames", () => {
     state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
     state.corpus = state.corpus.map((s) => (s.id === 12 ? { ...s, assignment_state: "indexed" } : s));
@@ -3122,7 +3141,7 @@ describe("WorkspacePage", () => {
     expect(within(picker).getAllByRole("button").map((b) => b.getAttribute("data-sample-id"))).toEqual(["11"]);
   });
 
-  it("names a same sample whose setup is hidden, so the note and the leave command match the group", () => {
+  it("leaves a same sample whose setup is hidden out of the note and the leave command, though the bridge stays stored", () => {
     state.setups = [
       { id: 2, name: "setup2", folder: "setup2", included: true },
       { id: 1, name: "setup1", folder: "setup1", included: false },
@@ -3130,10 +3149,11 @@ describe("WorkspacePage", () => {
     state.corpus = [{ ...sample(10, "B1"), setup_id: 2 }, { ...sample(12, "A1"), setup_id: 1 }];
     state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByText("Same as A1 in setup1")).toBeInTheDocument();
+    expect(screen.queryByText(/^Same as A1/)).toBeNull();
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "not the same" } });
-    expect(screen.getByRole("option", { name: "Not the same sample as A1" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /^Not the same sample as/ })).toBeNull();
+    expect(calls.filter((c) => c.hook.includes("bridge"))).toEqual([]);
   });
 
   it("B is not a shortcut, the palette offers no unbridging without bridges, and no bridging before a user is set", () => {
