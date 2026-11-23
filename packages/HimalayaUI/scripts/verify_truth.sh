@@ -136,6 +136,26 @@ step 13-calls-match log bash -c '
     if (!inv.checked) { console.log(\"bridged_calls_match did not run: check-truth saw no bridge\"); process.exit(1); }
     if (!inv.ok) { console.log(JSON.stringify(inv.violations, null, 2)); process.exit(1); }
     console.log(\"bridged_calls_match checked and held\");" "$out/13-bridged.json"' _ "$OUT"
+step 13-bridge-selection log bash -c '
+  set -e
+  out=$1
+  json() { node -e "let d=\"\";process.stdin.on(\"data\",c=>d+=c).on(\"end\",()=>process.stdout.write(String(($1)(JSON.parse(d)))))"; }
+  pair=$(bin/verify api GET "/api/samples?experiment_id=1" | json "r=>r.body.slice(0,2).map(s=>s.id).join(\" \")")
+  read -r a b <<< "$pair"
+  name=$(bin/verify api GET "/api/samples?experiment_id=1" | json "r=>r.body.find(s=>s.id===$b).name")
+  selected() { bin/verify api GET "/api/samples/$1/exposures" | json "r=>r.body.filter(e=>e.kind!==\"combined\"&&e.selected).map(e=>e.id).join(\",\")"; }
+  nth=$(bin/verify api GET "/api/samples/$b/exposures" | json "r=>r.body.filter(e=>e.kind!==\"combined\").findIndex(e=>e.selected)+1")
+  [[ $nth -gt 0 ]] || { echo "$name has no selected image to untick"; exit 1; }
+  own=$(selected $a); before=$(selected $b)
+  bin/verify open "/experiments/1/workspace/$a" > "$out/13-selection-open.json"
+  bin/verify click --role checkbox --name "Analyze image $nth of $name" > "$out/13-selection-untick.json"
+  after=$(selected $b)
+  [[ $after != "$before" ]] || { echo "unticking image $nth of $name from sample $a left $name selecting [$before]"; exit 1; }
+  [[ $(selected $a) == "$own" ]] || { echo "unticking a same sample image changed sample $a selection from [$own] to [$(selected $a)]"; exit 1; }
+  bin/verify check-truth > "$out/13-selection-truth.json" || { echo "check-truth failed after the untick"; exit 1; }
+  bin/verify click --role checkbox --name "Analyze image $nth of $name" > "$out/13-selection-retick.json"
+  [[ $(selected $b) == "$before" ]] || { echo "ticking image $nth of $name again left [$(selected $b)], not [$before]"; exit 1; }
+  echo "image $nth of $name toggled from sample $a: [$before] -> [$after] -> [$before]; sample $a stayed [$own]"' _ "$OUT"
 step 14-call-lost-in-place log bash -c '
   set -e
   out=$1 help=$2 label=$3

@@ -27,6 +27,7 @@ image) measures nothing, so the selection is the user's call, made cheap.
 | Click a tile | Only looks: Image panel and detector view. The selection doesn't change |
 | Checkbox in a tile's top-left corner, or ⌘/Ctrl-click | Toggles that image |
 | Shift-click | Adds the range from the last toggled tile |
+| A bridged sample's strip | Each same sample's images, under its own heading, have their own checkboxes, caption and Select all / Select none. Ticking one changes that sample's selection, never this one's, so images from different samples or setups are never averaged together |
 | Drop an image | It leaves the selection, and a dropped image can't be selected |
 | Drop the last kept image | Allowed: nothing is analyzed (a leaked capillary can leave no usable image). The sample row says "All dropped" |
 | Restore an image | It comes back unselected, unless nothing else is selected |
