@@ -66,9 +66,10 @@ export function BridgeMenu({ mates, editable, onGo, onRemove }: Props): JSX.Elem
           aria-haspopup="dialog"
           data-same-sample
           onClick={() => setOpen((o) => !o)}
-          className="inline-flex items-center rounded px-1 text-base leading-6 text-ink-faint tabular-nums hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          className="inline-flex h-7 items-center gap-1 rounded px-1 text-base text-ink-faint tabular-nums hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         >
-          <span aria-hidden="true">⇄{mates.length}</span>
+          <span aria-hidden="true" className="text-xl leading-none">⇄</span>
+          <span aria-hidden="true" className="leading-none">{mates.length}</span>
         </button>
       </Tooltip>
       {open && (
