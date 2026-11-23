@@ -1,7 +1,7 @@
 import { getJson, request } from "./http.mjs";
 import { findDemoExperiment, readTruth } from "./demo.mjs";
 import { UsageError, intFlag } from "./args.mjs";
-import { readViews, statusFromText } from "./views.mjs";
+import { callFromText, readViews, statusFromText } from "./views.mjs";
 import { heldTraces } from "./late.mjs";
 
 export function normalizeCall(phases) {
@@ -70,9 +70,16 @@ function assignedCall(assignment) {
 }
 
 export function shownStatus(shown) {
-  if (shown.phase) return { status: "phase", call: normalizeCall([shown.phase]) };
+  if (shown.phase) {
+    const full = Array.isArray(shown.call_phases) && shown.call_phases.length > 0;
+    return { status: "phase", call: normalizeCall(full ? shown.call_phases : [shown.phase]), ...(full ? { full } : {}) };
+  }
   if (shown.state === "form_factor") return { status: "form_factor", call: "none" };
   return { status: "unreviewed", call: null };
+}
+
+function withoutFull({ full: _full, ...status }) {
+  return status;
 }
 
 function filenameOf(frames, id) {
@@ -110,7 +117,8 @@ function railViolation(app, kept, call) {
 function statusMatches(shown, call) {
   if (call === null) return shown.status === "unreviewed";
   if (shown.status === "form_factor") return call === "none";
-  return shown.status === "phase" && call.split("+").includes(shown.call);
+  if (shown.status !== "phase") return false;
+  return shown.full ? shown.call === call : call.split("+").includes(shown.call);
 }
 
 const VIEW_NAMES = { workspace: "the workspace" };
@@ -137,7 +145,7 @@ function sampleInvariants(app, frames, held = new Set()) {
   const workspaceRead = app.views ? statusFromText(app.workspaceText) : null;
   return {
     plot_matches_trace: app.views && app.workspacePlot !== undefined ? ((m) => (m ? [m] : null))(plotMismatch(app.views.workspace, app.workspacePlot, held)) : null,
-    workspace_status_matches: app.views && workspaceRead !== shown.status ? [{ shown: shownLabel(shown), workspace: app.workspaceText ?? null }] : null,
+    workspace_status_matches: app.views && (workspaceRead !== shown.status || (shown.status === "phase" && callFromText(app.workspaceText) !== shown.call)) ? [{ shown: shownLabel(shown), workspace: app.workspaceText ?? null }] : null,
     status_matches_assignment: statusMatches(shown, confirmed) ? null : [{ shown: shownLabel(shown), confirmed }],
     rail_matches_call: railViolation(app, kept, confirmed),
     representative_kept: onDropped.length ? onDropped : null,
@@ -273,7 +281,10 @@ export function compareTruth(truthRows, appSamples, { strict = false, expect = n
     const droppedEarly = frames.filter((f) => !isKept(f)).map((f) => f.filename);
     if (expect === "fresh" && droppedEarly.length) problems.push(`frames dropped before triage: ${droppedEarly.join(" ")}`);
     const one = matches.length === 1 ? matches[0] : null;
-    const shown = one ? { ...shownStatus(one.shown), frame: filenameOf(one.frames, one.shown.representative_id ?? null) } : null;
+    const shown = one ? { ...withoutFull(shownStatus(one.shown)), frame: filenameOf(one.frames, one.shown.representative_id ?? null) } : null;
+    if (one && one.shown.phase && !(Array.isArray(one.shown.call_phases) && one.shown.call_phases.length > 0)) {
+      problems.push(`GET /api/samples gives ${one.name} the phase ${one.shown.phase} but no call_phases, so check-truth can't tell whether the list shows every phase of the call`);
+    }
     const unread = one ? unreadViews(one) : [];
     if (one && one.views) {
       shown.workspace_text = one.workspaceText ?? null;
@@ -374,7 +385,7 @@ export async function collectApp(cfg, experimentId) {
       return {
         id: s.id,
         name: s.name,
-        shown: { phase: s.phase ?? null, state: s.assignment_state ?? null, representative_id: s.representative_exposure_id ?? null },
+        shown: { phase: s.phase ?? null, call_phases: s.call_phases, state: s.assignment_state ?? null, representative_id: s.representative_exposure_id ?? null },
         frameOrder: exposures.map((e) => e.filename),
         frames,
         bridged: bridged.has(s.id),
