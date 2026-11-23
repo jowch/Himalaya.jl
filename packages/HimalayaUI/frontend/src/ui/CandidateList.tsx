@@ -5,6 +5,7 @@ import type { CallRow } from "../workspace/bonnetGroups";
 import { formatCurvature, gaussianCurvature } from "../workspace/curvature";
 import { Kbd } from "./Kbd";
 import { Note } from "./Note";
+import { SELECTED_ROW } from "./selectedRow";
 import { Tooltip } from "./Tooltip";
 
 interface Props {
@@ -20,7 +21,7 @@ interface Props {
 
 const ROW = "grid w-full items-center rounded-sm border px-2 text-left text-base disabled:opacity-50 ";
 const look = (on: boolean | "mixed") =>
-  "border-transparent " + (on === true ? "bg-accent/25" : on === "mixed" ? "bg-accent/10 hover:bg-accent/15" : "hover:bg-ink/6");
+  "border-transparent " + (on === true ? SELECTED_ROW : on === "mixed" ? "bg-accent/10 hover:bg-accent/15" : "hover:bg-ink/6");
 
 export function CandidateList({ rows, assigned, disabled, formFactor, onToggle, onToggleGroup, onFormFactor, onHover }: Props): JSX.Element {
   const [pointerFocus, setPointerFocus] = useState(false);
