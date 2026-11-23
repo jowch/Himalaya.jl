@@ -144,6 +144,55 @@ end
     end
 end
 
+@testset "experiment stats carry a collection timeline of samples in measured order" begin
+    tmp = mktempdir()
+    db = open_prepared_clone(tmp)
+    eid = HimalayaUI.init_experiment!(db;
+        name = "Timeline", path = tmp,
+        data_dir = joinpath(tmp, "data"),
+        analysis_dir = joinpath(tmp, "analysis"))
+    later = HimalayaUI.create_sample!(db; experiment_id = eid, name = "later")
+    first_measured = HimalayaUI.create_sample!(db; experiment_id = eid, name = "first")
+    HimalayaUI.create_exposure!(db; experiment_id = eid, sample_id = first_measured,
+        filename = "f1", timestamp = "2026-04-25T10:00:15", exposure_time = 15.0)
+    HimalayaUI.create_exposure!(db; experiment_id = eid, sample_id = first_measured,
+        filename = "f2", timestamp = "2026-04-25T10:02:15", exposure_time = 15.0)
+    off = HimalayaUI.create_exposure!(db; experiment_id = eid, sample_id = later,
+        filename = "l1", timestamp = "2026-04-25T11:00:00")
+    HimalayaUI.create_exposure!(db; experiment_id = eid, sample_id = later,
+        filename = "untimed")
+    HimalayaUI.create_exposure!(db; experiment_id = eid, sample_id = later,
+        kind = "combined", timestamp = "2026-04-25T12:00:00")
+    DBInterface.execute(db, "UPDATE exposures SET trace_median = 0.2 WHERE id = ?", [off])
+    DBInterface.execute(db, "INSERT INTO sample_calls (sample_id, state) VALUES (?, 'form_factor')", [first_measured])
+    DBInterface.execute(db, "INSERT INTO sample_calls (sample_id, state) VALUES (?, 'null')", [later])
+
+    hidden = HimalayaUI.create_setup!(db; experiment_id = eid, folder = "hidden",
+        root_dir = tmp, data_dir = tmp, analysis_dir = tmp, included = false)
+    h = HimalayaUI.create_sample!(db; experiment_id = eid, name = "h", setup_id = hidden)
+    HimalayaUI.create_exposure!(db; experiment_id = eid, sample_id = h, setup_id = hidden,
+        filename = "h1", timestamp = "2026-04-25T09:00:00")
+
+    with_inproc_routes(db) do call
+        tl = JSON3.read(String(call("GET", "/api/experiments/$eid").body)).stats.timeline
+        @test tl.start == "2026-04-25T10:00:00"
+        @test [collect(Int, s) for s in tl.samples] == [[0, 135, 1], [3600, 3600, 0]]
+        @test collect(Int, tl.beam_off) == [3600]
+
+        listed = first(filter(e -> e.id == eid, JSON3.read(String(call("GET", "/api/experiments").body))))
+        @test listed.stats.timeline == tl
+    end
+end
+
+@testset "an experiment with no timed images has no timeline" begin
+    tmp = mktempdir()
+    db = open_prepared_clone(tmp)
+    eid = HimalayaUI.create_experiment!(db; path = tmp, data_dir = "data", analysis_dir = "analysis")
+    with_inproc_routes(db) do call
+        @test JSON3.read(String(call("GET", "/api/experiments/$eid").body)).stats.timeline === nothing
+    end
+end
+
 @testset "an experiment sends its configuration only under setups" begin
     tmp = mktempdir()
     db = open_prepared_clone(tmp)
