@@ -96,7 +96,7 @@ When the mock-up changes, extract its behaviours again from the code and update 
 | call-empty | No candidates says "Broad bumps only, no Bragg peaks." or "No peaks." | planned | held small item from the 2026-11-23 mock-up audit (thread "Audit app against the mock-up") |
 | call-no-phase | Unticking every phase leaves the sample reviewed with no phase | superseded | 0 marks no phase (form factor) (Jonathan 2026-11-20) |
 | call-index-chart | The indexing chart shows the hovered candidate's fit, else the ticked ones | built | test/workspace/WorkspacePage.test.tsx › hovering a candidate shows its fit in place of the ticked ones |
-| call-index-legend | The chart legend gives each fit's lattice, R² and reflections on peaks | built | test/workspace/WorkspacePage.test.tsx › the indexing plot shows the assigned candidate's fit against the peaks |
+| call-index-legend | The chart legend gives each fit's lattice, R² and reflections on peaks | superseded | 2026-11-23 docs/decisions.md phase-curvature-legend |
 
 ## Custom index
 
