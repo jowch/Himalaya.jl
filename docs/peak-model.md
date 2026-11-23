@@ -419,8 +419,8 @@ What is built, and where it differs from "Analysis with a model" above.
 
 **Resolver.** `production_detector(db)` returns the newest `active` row as a `ProductionModel` (id and
 `TrainedModel`) or `nothing` for the hybrid. It reads the active id with one query per call and keeps the
-parsed model in memory per database file, keyed by that id, so a promotion, a retire or an edit to the row is
-seen on the next call without a hook (`invalidate_peak_model_cache!` also empties it). The model is rebuilt
+parsed model in memory per database file, keyed by that id, so a promotion or retire (a new or missing active id) is
+seen on the next call without a hook. Promotion and `invalidate_peak_model_cache!` empty it, which an edit to a row that keeps its id needs. The model is rebuilt
 from the row: the recipe, the fitted learner and the stored feature version. A row whose feature version differs from
 `feature_version` of its recipe's features, or that cannot be parsed, is not used (a warning is logged and the
 hybrid is the detector). That is what keeps `bin/himalaya analyze` and the ingest pass from using a stale model after a core
@@ -456,7 +456,7 @@ and handles them one at a time on its own connection, yielding between exposures
 matching hashes. `only_unreviewed` re-checks `reviewed_at` and the active id inside the transaction and skips the
 exposure otherwise (so a curation that lands during the prediction is never overwritten, and a prediction failure leaves the
 exposure for the next sweep rather than writing hybrid peaks). `log_event = false` writes no `user_actions` row. The pass sends no ingest frames. It does send the
-`analyze_run` frame, with entity id and `id` 0 (no event row), so open clients replace stale peak ids. An error on
+`analyze_run` frame, with `id` 0 (no event row), so open clients replace stale peak ids. An error on
 one exposure is logged and does not stop the sweep, and the pass does not write `analysis_error`. `stop_peak_model_pass!` sets `stopped` (cleared by
 `start_background!` when it resumes work) and waits for the task. The frame needed a client change: `applyRemoteToCache` invalidated the
 peaks cache of an `analyze_run` frame only when the trace hash changed, and now also when `findpeaks_skipped` is false (detection ran).

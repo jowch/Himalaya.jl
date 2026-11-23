@@ -448,6 +448,11 @@ this doc:
   load-bearing observability value. (The trace-unchanged fast path skips
   the row entirely; the manual analyze route's slow-path no-op still writes
   the row but mirrors the `_maybe_broadcast_event!` frame suppression.)
+- **The model pass sends `analyze_run` frames with no row.** After a peak-model promotion the background pass
+  re-detects unreviewed exposures with `log_event = false`: no `user_actions` row, so the frame's `id` is 0 and it
+  has no `client_id` or `client_op_id`. Clients treat it as a cache update (`post_state` indices and assignment,
+  and the peaks cache is invalidated because `findpeaks_skipped` is false). Reviewed exposures are never in the pass,
+  so no frame carries `assignment_dropped`. See `docs/peak-model.md`.
 - **Post-commit broadcast queue.** Events emitted inside the outer tx
   defer their SSE frame until commit. Each request handler has its own
   queue via `task_local_storage()`; `_flush_post_commit_broadcasts!()`
