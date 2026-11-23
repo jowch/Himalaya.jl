@@ -236,7 +236,7 @@ end
     @test exec[end - 3:end] == ["--db", "/x/h.db", "--trees", "5"]
 end
 
-@testset "the real training command on a synthetic database records a run and changes no peaks" begin
+@testset "the real training command on a synthetic database records and promotes a run, and changes no reviewed peaks" begin
     mktempdir() do dir
         b = _pt_db(dir)
         db = b.db
@@ -248,11 +248,14 @@ end
                           Tables.rowtable(DBInterface.execute(db, "SELECT id, analysis_version, reviewed_at FROM exposures ORDER BY id")))
             before = snapshot()
             HimalayaUI.PEAK_TRAINING.stopped = false
+            HimalayaUI.set_peak_model_pass_stopped!(false)
             HimalayaUI.PEAK_TRAINING_COMMAND[] = path -> HimalayaUI.default_peak_training_command(path; extra = ["--trees", "20"])
             @test HimalayaUI.maybe_start_peak_training!(db; min_events = 1, quiet_seconds = 0.0) === :started
             HimalayaUI.wait_peak_training()
+            HimalayaUI.wait_peak_model_pass()
             row = only(_pts_rows(db))
-            @test row.status == "passed"
+            @test row.status == "active"
+            @test HimalayaUI.production_detector(db).id == row.id
             @test row.label_watermark == HimalayaUI.label_watermark(db)
             @test row.core_version == string(pkgversion(HimalayaUI.Himalaya))
             @test JSON3.read(row.metrics_json).gate.passed
@@ -265,7 +268,24 @@ end
         finally
             HimalayaUI.PEAK_TRAINING_COMMAND[] = old
             HimalayaUI.stop_peak_training!()
+            HimalayaUI.stop_peak_model_pass!()
             DBInterface.close!(db)
+        end
+    end
+end
+
+@testset "a stale model makes the service retrain once without new labels" begin
+    mktempdir() do dir
+        _pts_with_service(dir; command = _pts_fake(_PTS_PRINT; env = ["FAKE_RESULT" => _pts_result(status = "rejected", watermark = 1)])) do db
+            HimalayaUI.PEAK_TRAINING.attempted_stale = false
+            _pts_events!(db, 2)
+            DBInterface.execute(db, """INSERT INTO peak_models (created_at, status, label_watermark, core_version, feature_version)
+                                       VALUES ('t', 'retired', 2, '0', 'default-1;old')""")
+            kw = (min_events = 20, quiet_seconds = 600.0)
+            @test HimalayaUI.maybe_start_peak_training!(db; kw...) === :started
+            HimalayaUI.wait_peak_training()
+            @test HimalayaUI.maybe_start_peak_training!(db; kw...) === :not_due
+            @test length(_pts_rows(db)) == 2
         end
     end
 end

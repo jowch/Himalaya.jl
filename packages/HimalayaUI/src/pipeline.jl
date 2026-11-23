@@ -1014,7 +1014,11 @@ setup's integration pattern (`integration_pattern_for`).
 function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String;
                             trace_known_unchanged::Bool=false,
                             defer_broadcast::Bool=false,
-                            req::Union{HTTP.Request, Nothing}=nothing)
+                            req::Union{HTTP.Request, Nothing}=nothing,
+                            force_detect::Bool=false,
+                            only_unreviewed::Bool=false,
+                            log_event::Bool=true,
+                            warn_prediction::Bool=true)
     t0 = time()
 
     rows = sqlrows(DBInterface.execute(db,
@@ -1042,7 +1046,7 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
 
     # Fast path: no file I/O at all when caller guarantees trace unchanged AND
     # no add curations (which require sharpness from the trace).
-    if findpeaks_skipped && !any_add_curations(db, exposure_id)
+    if findpeaks_skipped && !force_detect && !any_add_curations(db, exposure_id)
         new_inputs_hash = hash_peak_set_from_db(db, exposure_id)
         # #297/#268: hash match alone proves no-op-ness — even for exposures
         # whose peak set legitimately indexes to zero candidates. Never-analyzed
@@ -1064,10 +1068,13 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
         # never-analyzed exposures can't match (stored is nothing).
         findpeaks_skipped = stored_trace_hash == new_trace_hash
     end
+    force_detect && (findpeaks_skipped = false)
 
     q, I, σ = load_dat(dat_path)
     q_step = grid_step(q)
     fresh_peaks_result = findpeaks_skipped ? nothing : Himalaya.findpeaks(q, I, σ; method = :hybrid)
+    production, model_peaks = fresh_peaks_result === nothing ? (nothing, nothing) :
+        predict_model_peaks(db, exposure_id, q, I, σ, fresh_peaks_result, q_step; warn = warn_prediction)
 
     # Issue #42: bracket the entire write sequence — diff_update + trace_hash
     # UPDATE + persist_analysis! + the durable analyze_run row — in one tx.
@@ -1094,6 +1101,8 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     # other in-tx bindings (`eff`, `new_inputs_hash`, `indexpeaks_skipped`)
     # stay closure-local because they're only read inside the same closure.
     local event_result, payload, post_state
+    skipped_for_review = false
+    unchanged_by_pass = false
     # F-WIPE W1: persist_analysis! returns the assignment members it had to
     # drop; stays empty on the indexpeaks-skipped path (no rebuild, no wipe).
     dropped_assignment_phases = String[]
@@ -1105,30 +1114,41 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     # everything commits atomically.
     lock(_DB_WRITE_LOCK) do
     SQLite.transaction(db) do
+        use_model = model_peaks !== nothing && !peak_reviewed(db, exposure_id) &&
+                    active_peak_model_id(db) == production.id
+        if only_unreviewed && (peak_reviewed(db, exposure_id) || !use_model)
+            skipped_for_review = true
+            return nothing
+        end
         q_step === nothing || DBInterface.execute(db,
             "UPDATE exposures SET q_step = ? WHERE id = ?", [q_step, exposure_id])
+        detected_peaks = use_model ? model_peaks.result : fresh_peaks_result
+        peaks_before = force_detect ? auto_peak_qs(db, exposure_id) : nothing
         if !findpeaks_skipped
-            diff_update_auto_peaks!(db, exposure_id, fresh_peaks_result, I)
+            diff_update_auto_peaks!(db, exposure_id, detected_peaks, I;
+                found_by = use_model ? model_peaks.found_by : "hybrid",
+                model_id = use_model ? production.id : nothing)
             DBInterface.execute(db,
-                "UPDATE exposures SET trace_hash = ? WHERE id = ?",
-                [new_trace_hash, exposure_id])
+                "UPDATE exposures SET trace_hash = ?, peak_model_version = ? WHERE id = ?",
+                [new_trace_hash, use_model ? production.id : nothing, exposure_id])
         end
 
         # Reuse sharps_full from fresh findpeaks output when available; on the
         # findpeaks-skipped slow path it's not available and effective_peaks
         # lazily computes it iff add curations exist.
-        sharps_full_for_eff = fresh_peaks_result === nothing ?
-            nothing : fresh_peaks_result.sharpness_full
+        sharps_full_for_eff = detected_peaks === nothing ?
+            nothing : detected_peaks.sharpness_full
         eff = effective_peaks(db, exposure_id, q, I;
                               sharps_full = sharps_full_for_eff)
         new_inputs_hash    = hash_peak_set(eff)
         # Same predicate as the fast path above (#297/#268): hash match alone.
         indexpeaks_skipped = stored_inputs_hash == new_inputs_hash
+        unchanged_by_pass = force_detect && indexpeaks_skipped && peaks_before == auto_peak_qs(db, exposure_id)
 
         if !indexpeaks_skipped
-            peaks_result_for_persist = fresh_peaks_result === nothing ?
+            peaks_result_for_persist = detected_peaks === nothing ?
                 synthesize_peaks_result(db, exposure_id, q, I) :
-                fresh_peaks_result
+                detected_peaks
             candidates = Himalaya.indexpeaks(eff.q, eff.sharpness)
             group = auto_group(candidates, eff)
             # `persist_analysis!` writes both the index/group rows AND the
@@ -1182,20 +1202,24 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
         DBInterface.execute(db,
             "UPDATE exposures SET analysis_version = ?, analysis_error = NULL, analysis_trace_stat = NULL WHERE id = ?",
             [ANALYSIS_VERSION, exposure_id])
-        event_result = apply_event!(InTransaction(), db, event_req;
-            kind        = "analyze_run",
-            entity_type = "exposure",
-            entity_id   = exposure_id,
-            payload     = payload,
-            post_state  = post_state)
+        event_result = log_event ?
+            apply_event!(InTransaction(), db, event_req;
+                kind        = "analyze_run",
+                entity_type = "exposure",
+                entity_id   = exposure_id,
+                payload     = payload,
+                post_state  = post_state) :
+            (event_id = 0, user_id = nothing, client_id = nothing, client_op_id = nothing,
+             payload_json = JSON3.write(payload))
     end
     end  # lock(_DB_WRITE_LOCK)
+    skipped_for_review && return (dropped_assignment_phases = String[],)
 
     # After the outer tx commits, fire the broadcast unless the caller asked
     # to defer (route handlers wrapped in `with_idempotency` always defer; they
     # own their own enrichment + post-commit enqueue path).
     # `_maybe_broadcast_event!` honors the M0.4 no-op suppression rule.
-    if !defer_broadcast
+    if !defer_broadcast && !unchanged_by_pass
         _maybe_broadcast_event!(db, event_result, "analyze_run",
                                 "exposure", exposure_id, payload, post_state)
     end

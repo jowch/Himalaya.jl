@@ -159,11 +159,41 @@ function _workload_requests(send, experiment::Int, sample::Int, other::Int, expo
     _workload_call(send, "POST", "/api/exposures/$exposure/analyze", Dict())
 end
 
+function _workload_peak_model!(db::SQLite.DB, experiment::Int, sample::Int, image::AbstractString, analysis_dir::AbstractString)
+    _workload_trace(joinpath(analysis_dir, replace(DEFAULT_INTEGRATION_PATTERN, "{name}" => "frame_model")))
+    exposure = create_exposure!(db; experiment_id = experiment, sample_id = sample,
+                                filename = "frame_model", image_path = image)
+    analyze_exposure!(db, exposure, analysis_dir)
+    recipe = HimalayaPeakModel.default_recipe(n_trees = 3, threshold = 0.3)
+    rng = HimalayaPeakModel.MersenneTwister(1)
+    X = [mod(0.37i + 0.11j + 0.013i * j, 1.0) for i in 1:80, j in eachindex(HimalayaPeakModel.feature_names(recipe.features))]
+    fitted = HimalayaPeakModel.fit(recipe.learner, X, X[:, 1] .> 0.5; rng)
+    id = insert_peak_model!(db, Dict{String, Any}("status" => "passed", "watermark" => 0,
+        "counts" => Dict("curations" => 1), "recipe" => HimalayaPeakModel.to_dict(recipe),
+        "recipe_id" => HimalayaPeakModel.recipe_id(recipe),
+        "feature_version" => HimalayaPeakModel.feature_version(recipe.features),
+        "core_version" => string(pkgversion(Himalaya)), "threshold" => recipe.threshold, "nms" => recipe.nms,
+        "metrics" => Dict{String, Any}(), "fitted" => HimalayaPeakModel.to_dict(fitted)))
+    promote_peak_model!(db, id) || error("precompile workload: the synthetic peak model was not promoted")
+    isempty(retire_stale_peak_models!(db)) || error("precompile workload: the synthetic peak model was retired")
+    stopped = peak_model_pass_stopped()
+    set_peak_model_pass_stopped!(false)
+    try
+        run_peak_model_pass!(db)
+    finally
+        set_peak_model_pass_stopped!(stopped)
+    end
+    only(sqlrows(DBInterface.execute(db, "SELECT peak_model_version AS v FROM exposures WHERE id = ?", [exposure]))).v == id ||
+        error("precompile workload: the peak model did not write the synthetic exposure's peaks")
+    nothing
+end
+
 function _save_module_state()
     (db = _DB_REF[],
      pool = _READER_POOL[],
      subscribers = lock(() -> copy(SSE_SUBSCRIBERS[]), SSE_LOCK),
      op_ids = lock(() -> Set(keys(OP_LOCKS)), OP_LOCKS_MU),
+     models = lock(() -> copy(PEAK_MODEL_CACHE), PEAK_MODEL_CACHE_LOCK),
      hashes = lock(() -> (copy(_PEAK_SET_HASH_CACHE), copy(_PEAK_SET_HASH_CACHE_ORDER)), _PEAK_SET_HASH_CACHE_LOCK),
      cache_bytes = lock(() -> copy(_CACHE_BYTES), _IMAGE_CACHE_LOCK),
      prp = lock(() -> copy(PRP_DETAILS), PRP_DETAILS_LOCK))
@@ -175,6 +205,7 @@ function _restore_module_state!(saved)
     _READER_POOL[] = saved.pool
     lock(() -> SSE_SUBSCRIBERS[] = saved.subscribers, SSE_LOCK)
     lock(() -> filter!(kv -> kv.first in saved.op_ids, OP_LOCKS), OP_LOCKS_MU)
+    lock(() -> (empty!(PEAK_MODEL_CACHE); merge!(PEAK_MODEL_CACHE, saved.models)), PEAK_MODEL_CACHE_LOCK)
     lock(_PEAK_SET_HASH_CACHE_LOCK) do
         empty!(_PEAK_SET_HASH_CACHE); merge!(_PEAK_SET_HASH_CACHE, saved.hashes[1])
         empty!(_PEAK_SET_HASH_CACHE_ORDER); append!(_PEAK_SET_HASH_CACHE_ORDER, saved.hashes[2])
@@ -223,6 +254,7 @@ function run_route_workload(dir::AbstractString; record = nothing)
         inproc = _recording(_workload_inproc, record)
         _workload_call(inproc, "POST", "/api/users", Dict(:username => "precompile"))
         _workload_requests(inproc, experiment, sample, other, exposure, mixed)
+        _workload_peak_model!(db, experiment, sample, image, analysis_dir)
         _gc_sweep(db, 3600)
         _boot_background_work(db, false)
         port = find_free_port()

@@ -273,10 +273,9 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
     }
     case "analyze_run": {
       applyPostState();
-      if (payload?.trace_hash_before !== payload?.trace_hash_after) {
-        qc.invalidateQueries({ queryKey: queryKeys.trace(id) });
-        qc.invalidateQueries({ queryKey: queryKeys.peaks(id) });
-      }
+      const traceChanged = payload?.trace_hash_before !== payload?.trace_hash_after;
+      if (traceChanged) qc.invalidateQueries({ queryKey: queryKeys.trace(id) });
+      if (traceChanged || payload?.findpeaks_skipped === false) refreshPeaks(qc, id);
       break;
     }
     case "ingest_started":

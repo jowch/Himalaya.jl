@@ -155,7 +155,8 @@ CREATE TABLE IF NOT EXISTS exposures (
     analysis_error       TEXT,
     analysis_trace_stat  TEXT,
     setup_id             INTEGER REFERENCES setups(id),
-    reviewed_at          TEXT
+    reviewed_at          TEXT,
+    peak_model_version   INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS exposure_sources (

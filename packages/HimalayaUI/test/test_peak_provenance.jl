@@ -37,6 +37,7 @@ _n_events(db) = only(Tables.rowtable(DBInterface.execute(db, "SELECT COUNT(*) AS
         ("assignment_remove",    "exposure", fx -> Dict(:index_id => fx.ix)),
         ("assignment_set_state", "exposure", fx -> Dict(:state => "null")),
         ("set_exposure_status",  "exposure", fx -> Dict(:status => "rejected")),
+        ("speculative_created",  "exposure", fx -> Dict(:phase => "Pn3m")),
     ]
     for (kind, etype, payload) in cases
         mktempdir() do dir

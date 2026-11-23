@@ -13,9 +13,10 @@ mutable struct PeakTrainingState
     exit_hook::Bool
     stopped::Bool
     attempted_watermark::Int
+    attempted_stale::Bool
 end
 
-const PEAK_TRAINING = PeakTrainingState(ReentrantLock(), nothing, nothing, false, nothing, false, false, 0)
+const PEAK_TRAINING = PeakTrainingState(ReentrantLock(), nothing, nothing, false, nothing, false, false, 0, false)
 
 peak_training_threads() = max(1, min(Threads.nthreads(:default), Sys.CPU_THREADS ÷ 2))
 
@@ -43,8 +44,15 @@ function _record_training_outcome!(db::SQLite.DB, watermark::Integer, outcome)
         lock(_DB_WRITE_LOCK) do
             if outcome isa AbstractString
                 insert_failed_peak_model!(bg; watermark, error = outcome)
+                false
             else
-                insert_peak_model!(bg, outcome)
+                id = insert_peak_model!(bg, outcome)
+                outcome["status"] == "passed" && try
+                    promote_peak_model!(bg, id)
+                catch err
+                    @warn "peak model $id could not be promoted" exception = err
+                    false
+                end
             end
         end
     end
@@ -78,12 +86,13 @@ function _run_peak_training_child(db::SQLite.DB, watermark::Integer)
                 "peak model training printed no usable result ($(first(sprint(showerror, e), 150))): $(_stderr_tail(err))"
             end
         end
-        _record_training_outcome!(db, outcome isa AbstractString ? watermark : outcome["watermark"], outcome)
+        promoted = _record_training_outcome!(db, outcome isa AbstractString ? watermark : outcome["watermark"], outcome)
         if outcome isa AbstractString
             @warn "peak model training failed" error = outcome
         else
-            @info "peak model training finished" status = outcome["status"] watermark = outcome["watermark"] threshold = outcome["threshold"] reasons = collect(outcome["metrics"].gate.reasons)
+            @info "peak model training finished" status = outcome["status"] watermark = outcome["watermark"] threshold = outcome["threshold"] reasons = collect(outcome["metrics"].gate.reasons) promoted
         end
+        promoted === true && start_peak_model_pass!(db)
         nothing
     catch e
         PEAK_TRAINING.cancelled || @warn "peak model training run failed" exception = (e, catch_backtrace())
@@ -100,9 +109,11 @@ function maybe_start_peak_training!(db::SQLite.DB; min_events::Integer = PEAK_TR
     lock(PEAK_TRAINING.lock) do
         PEAK_TRAINING.stopped && return :stopped
         due = with_background_db(bg -> peak_training_due(bg; min_events, quiet_seconds,
-                                                         after = PEAK_TRAINING.attempted_watermark), db)
+                                                         after = PEAK_TRAINING.attempted_watermark,
+                                                         stale_attempted = PEAK_TRAINING.attempted_stale), db)
         due || return :not_due
         peak_training_running() && return :busy
+        PEAK_TRAINING.attempted_stale = true
         watermark = with_background_db(label_watermark, db)
         PEAK_TRAINING.attempted_watermark = max(PEAK_TRAINING.attempted_watermark, watermark)
         PEAK_TRAINING.cancelled = false
@@ -135,6 +146,7 @@ function start_peak_training_timer!(db::SQLite.DB; interval::Real = PEAK_TRAININ
     lock(PEAK_TRAINING.lock) do
         PEAK_TRAINING.stopped = false
         PEAK_TRAINING.attempted_watermark = 0
+        PEAK_TRAINING.attempted_stale = false
     end
     if !PEAK_TRAINING.exit_hook
         PEAK_TRAINING.exit_hook = true

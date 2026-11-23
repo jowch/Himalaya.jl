@@ -14,7 +14,7 @@ _pm_result(; status = "passed", watermark = 5, fitted = Dict("kind" => "rf", "tr
            reasons = String[]) = Dict{String,Any}(
     "status" => status, "watermark" => watermark,
     "counts" => Dict("curations" => 120),
-    "recipe" => Dict("version" => 1), "recipe_id" => "abc123", "feature_version" => "default-1;x",
+    "recipe" => Dict("version" => 1), "recipe_id" => "abc123", "feature_version" => HimalayaUI.current_peak_feature_version(),
     "core_version" => "0.5.3", "threshold" => 0.55, "nms" => 8,
     "metrics" => Dict("gate" => Dict("passed" => status == "passed", "reasons" => reasons)),
     "fitted" => fitted)
