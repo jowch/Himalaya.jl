@@ -1,7 +1,3 @@
-# Models are stored as plain dictionaries of JSON types. `from_dict` reads
-# only those values and dispatches on a registered `kind`; it never evaluates
-# or deserialises code.
-
 """
 A learning algorithm and its hyperparameters. Implement
 `fit(::MyLearner, X, y; rng) -> Fitted` and `to_dict`, give it an `Int` field
