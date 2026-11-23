@@ -184,6 +184,7 @@
    */
   :root {
     color-scheme: light;
+    --peak-manual-grow: 0px;
     --color-compare-1: #8a8178;
     --color-compare-2: #5f86a8;
     --color-compare-3: #a57c45;
@@ -403,6 +404,7 @@
      .print-range focus treatment; SVG :focus-visible stroke can't be expressed
      in Tailwind, so it lives here. */
   [data-observed-hit] { outline: none; cursor: pointer; }
+  .peak-manual { stroke-width: var(--peak-manual-grow); stroke-linejoin: round; }
   [data-observed-hit]:focus-visible { stroke: var(--color-accent); stroke-width: 2; }
 
 }
@@ -418,6 +420,7 @@
 
 @media (prefers-color-scheme: dark) {
   [data-theme="system"] {
+    --peak-manual-grow: 1px;
     --color-paper:       oklch(0.165 0.005 280);
     --color-paper-sunk:  oklch(0.140 0.005 280);
     --color-plate:       oklch(0.195 0.006 280);
@@ -464,6 +467,7 @@
   }
 }
 [data-theme="dark"] {
+  --peak-manual-grow: 1px;
   --color-paper:       oklch(0.165 0.005 280);
   --color-paper-sunk:  oklch(0.140 0.005 280);
   --color-plate:       oklch(0.195 0.006 280);
