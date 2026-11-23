@@ -2503,6 +2503,28 @@ describe("WorkspacePage", () => {
     expect(arg.ratios[1]).toBeCloseTo(Math.sqrt(3 / 2), 6);
   });
 
+  it("Tab and Shift+Tab step the custom index's symmetry with wrap, from the page or from inside the panel", () => {
+    state.trace = makeTrace(1);
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "i" });
+    const panel = screen.getByTestId("workspace-custom-index");
+    const pressed = (): string | null => within(panel).getAllByRole("button", { pressed: true })[0]!.textContent;
+    const symmetries = within(within(panel).getByRole("group", { name: "Symmetry" })).getAllByRole("button").map((b) => b.textContent);
+    expect(pressed()).toBe("Pn3m");
+    const at = symmetries.indexOf("Pn3m");
+    fireEvent.keyDown(window, { key: "Tab" });
+    expect(pressed()).toBe(symmetries[(at + 1) % symmetries.length]);
+    fireEvent.keyDown(window, { key: "Tab", shiftKey: true });
+    fireEvent.keyDown(window, { key: "Tab", shiftKey: true });
+    expect(pressed()).toBe(symmetries[(at - 1 + symmetries.length) % symmetries.length]);
+    const field = within(panel).getByRole("spinbutton");
+    field.focus();
+    fireEvent.keyDown(field, { key: "Tab" });
+    expect(pressed()).toBe("Pn3m");
+    expect(document.activeElement).toBe(field);
+    expect(calls).toEqual([]);
+  });
+
   it("Escape cancels a custom index without writing", () => {
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "i" });

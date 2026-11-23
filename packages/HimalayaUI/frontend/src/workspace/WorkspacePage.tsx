@@ -80,7 +80,7 @@ import { PLOT_VIEWS, stepView, usePlotView } from "./plotView";
 import { positiveExtent } from "../plot/projection";
 import { CustomIndexPanel, NUDGE_STEP, NUDGE_STEP_LARGE } from "../ui/CustomIndexPanel";
 import { IndexingPlot, type IndexSeries } from "../ui/IndexingPlot";
-import { clampLattice, draftCommit, draftPrediction, indexFit, initialDraft, latticeParam, storedFit, type CustomDraft } from "./indexing";
+import { clampLattice, stepSymmetry, draftCommit, draftPrediction, indexFit, initialDraft, latticeParam, storedFit, type CustomDraft } from "./indexing";
 import { latticeBounds, latticeForFirstOrderOnPeak } from "../lib/customIndex";
 
 import { WorkspaceHeader } from "../ui/WorkspaceHeader";
@@ -111,7 +111,7 @@ function helpSections(mod: string): HelpSection[] {
       rows: [
         { keys: ["↑", "↓"], what: "Previous or next sample in the list" },
         { keys: ["Z"], what: "Next unreviewed sample" },
-        { keys: ["/"], what: "Filter samples by name or label" },
+        { keys: ["/"], what: "Filter samples by name or label. Press Tab to move through the matches and Enter to open one." },
       ],
     },
     {
@@ -127,7 +127,7 @@ function helpSections(mod: string): HelpSection[] {
       rows: [
         { keys: ["1–9"], what: "Tick or untick a phase candidate" },
         { keys: ["0"], what: "Mark no phase (form factor), or clear it" },
-        { keys: ["I"], what: "Custom index: pick a symmetry and drag the lattice. Press Enter to add it or Esc to cancel." },
+        { keys: ["I"], what: "Custom index: press Tab or Shift+Tab to change the symmetry and ← → to nudge the lattice. Press Enter to add it or Esc to cancel." },
         { keys: ["L"], what: "Label the sample, e.g. Buffer. Press Enter to add it or Esc to close." },
       ],
     },
@@ -985,6 +985,9 @@ export function WorkspacePage(): JSX.Element {
           ev.preventDefault();
           const step = (ev.key === "ArrowRight" ? 1 : -1) * (ev.shiftKey ? NUDGE_STEP_LARGE : NUDGE_STEP);
           setDraftClamped({ ...draft, lattice: draft.lattice + step });
+        } else if (ev.key === "Tab") {
+          ev.preventDefault();
+          setDraftClamped({ ...draft, phase: stepSymmetry(draft.phase, ev.shiftKey ? -1 : 1) });
         } else if (ev.key === "?") {
           ev.preventDefault();
           setHelpOpen(true);

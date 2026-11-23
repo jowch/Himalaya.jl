@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { act, render, screen, fireEvent } from "@testing-library/react";
 import { SampleList } from "../../src/ui/SampleList";
 import type { CorpusSample } from "../../src/api";
 
@@ -16,6 +16,51 @@ describe("SampleList filter keys", () => {
     expect(onPick).not.toHaveBeenCalled();
     fireEvent.keyDown(box, { key: "Enter" });
     expect(onPick).toHaveBeenCalledWith(1);
+  });
+
+  it("Tab and Shift+Tab move a highlight through the matches with wrap, focus stays in the field, and Enter opens the highlighted one", () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    const onPick = vi.fn();
+    render(
+      <SampleList samples={[sample(1, "JC001"), sample(2, "JC002"), sample(3, "JC003")]} currentId={undefined} filter="JC" onFilter={() => {}} onPick={onPick} />,
+    );
+    const box = screen.getByLabelText("Filter samples");
+    const highlighted = (): string | null | undefined =>
+      document.querySelector("[data-testid=workspace-samples] [data-highlighted]")?.getAttribute("data-sample-id");
+    expect(highlighted()).toBeUndefined();
+    act(() => box.focus());
+    expect(highlighted()).toBe("1");
+    expect(box).toHaveAttribute("aria-activedescendant", "workspace-sample-1");
+    fireEvent.keyDown(box, { key: "Tab" });
+    expect(highlighted()).toBe("2");
+    expect(document.activeElement).toBe(box);
+    fireEvent.keyDown(box, { key: "Tab", shiftKey: true });
+    fireEvent.keyDown(box, { key: "Tab", shiftKey: true });
+    expect(highlighted()).toBe("3");
+    fireEvent.keyDown(box, { key: "Tab" });
+    expect(highlighted()).toBe("1");
+    fireEvent.keyDown(box, { key: "ArrowDown" });
+    expect(highlighted()).toBe("2");
+    fireEvent.keyDown(box, { key: "Enter" });
+    expect(onPick).toHaveBeenCalledWith(2);
+  });
+
+  it("starts the highlight over on the first match when the filter changes, and Esc leaves the field without picking", () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    const onPick = vi.fn();
+    const list = (filter: string) => (
+      <SampleList samples={filter === "JC" ? [sample(1, "JC001"), sample(2, "JC002")] : [sample(2, "JC002")]} currentId={undefined} filter={filter} onFilter={() => {}} onPick={onPick} />
+    );
+    const { rerender } = render(list("JC"));
+    const box = screen.getByLabelText("Filter samples");
+    act(() => box.focus());
+    fireEvent.keyDown(box, { key: "Tab" });
+    rerender(list("JC002"));
+    expect(document.querySelector("[data-highlighted]")?.getAttribute("data-sample-id")).toBe("2");
+    fireEvent.keyDown(box, { key: "Escape" });
+    expect(document.activeElement).not.toBe(box);
+    expect(document.querySelector("[data-highlighted]")).toBeNull();
+    expect(onPick).not.toHaveBeenCalled();
   });
 });
 

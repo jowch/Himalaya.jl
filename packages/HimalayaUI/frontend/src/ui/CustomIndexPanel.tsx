@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { CUSTOM_PHASES, type CustomDraft } from "../workspace/indexing";
+import { CUSTOM_PHASES, stepSymmetry, type CustomDraft } from "../workspace/indexing";
 import { Kbd } from "./Kbd";
 
 interface Props {
@@ -53,6 +53,9 @@ export function CustomIndexPanel({ draft, min, max, landed, total, disabled, onC
         if (e.key === "Escape") {
           e.preventDefault();
           onCancel();
+        } else if (e.key === "Tab" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+          e.preventDefault();
+          onChange({ ...draft, phase: stepSymmetry(draft.phase, e.shiftKey ? -1 : 1) });
         } else if (e.key === "Enter" && target.tagName !== "BUTTON") {
           e.preventDefault();
           if (invalid) settle();
