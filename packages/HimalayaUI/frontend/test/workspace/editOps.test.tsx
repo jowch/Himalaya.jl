@@ -199,7 +199,7 @@ describe("undo against the server", () => {
 
   it("undoing a peak edit that dropped the call ticks the phase again once the re-fit has landed", async () => {
     let land: (p: unknown) => void = () => {};
-    mocked(api.setAutoPeakExcluded).mockImplementation(() => new Promise((resolve) => { land = resolve; }));
+    mocked(api.setAutoPeakExcluded).mockImplementationOnce(() => new Promise((resolve) => { land = resolve; }));
     const { result } = setup();
     server.peaks = [auto(3, 0.0644, true)];
     server.assignments.set(101, { exposure_id: 101, state: "null", members: [] });
@@ -239,7 +239,7 @@ describe("undo against the server", () => {
 
   it("undoing a removed peak brings back the call it dropped, and an undo the server already made touches no call", async () => {
     const { result } = setup();
-    mocked(api.addPeak).mockImplementation(async () => ({ event_id: 1, view_row_id: null, ...manual(6, 0.2) }));
+    mocked(api.addPeak).mockImplementationOnce(async () => ({ event_id: 1, view_row_id: null, ...manual(6, 0.2) }));
     server.indices.set(101, [index(80, "Ia3d", 0.05)]);
     act(() => result.current.history.record(peakEntry(result.current.ops, {
       label: "removed a peak", sampleId: 10, exposureId: 101, q: 0.2, added: false,

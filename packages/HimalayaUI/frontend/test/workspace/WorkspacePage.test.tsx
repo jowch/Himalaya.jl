@@ -1187,7 +1187,7 @@ describe("WorkspacePage", () => {
       onServer(101, { state: "null", members: [] });
       await undo();
       expect(ops()).toEqual([["setPeakExcluded", 101, 1, false], ["addPhase", 101, 33]]);
-      expect(toasts.at(-1)).toBe("Undone: turned off a peak on image 2");
+      expect(toasts.at(-1)).toBe("Undone: turned off a peak on image 2 of A1");
     });
 
     it("does not record removing a peak that is still saving", async () => {

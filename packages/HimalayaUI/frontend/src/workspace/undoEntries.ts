@@ -145,22 +145,30 @@ async function setManualPeak(ops: EditOps, exposureId: number, q: number, presen
   return 1;
 }
 
-export function peakEntry(ops: EditOps, at: Where & { exposureId: number; q: number; added: boolean }): UndoEntry {
+async function thenRetick(ops: EditOps, sent: number, call: readonly PhaseIdentity[] | undefined): Promise<number> {
+  if (sent === 0 || !call?.length) return sent;
+  await ops.whenSaved();
+  return sent + (await setEach(ops, call, true));
+}
+
+type PeakEdit = Where & { exposureId: number; q: number; call?: readonly PhaseIdentity[] };
+
+export function peakEntry(ops: EditOps, at: PeakEdit & { added: boolean }): UndoEntry {
   return {
     ...at,
-    undo: () => setManualPeak(ops, at.exposureId, at.q, !at.added),
+    undo: async () => thenRetick(ops, await setManualPeak(ops, at.exposureId, at.q, !at.added), at.call),
     redo: () => setManualPeak(ops, at.exposureId, at.q, at.added),
   };
 }
 
-export function excludeEntry(ops: EditOps, at: Where & { exposureId: number; q: number; excluded: boolean }): UndoEntry {
+export function excludeEntry(ops: EditOps, at: PeakEdit & { excluded: boolean }): UndoEntry {
   const set = async (excluded: boolean): Promise<number> => {
     const hit = near(await ops.read.peaks(at.exposureId), at.q, true);
     if (!hit || hit.excluded === excluded) return 0;
     ops.setPeakExcluded(at.exposureId, hit.id, excluded);
     return 1;
   };
-  return { ...at, undo: () => set(!at.excluded), redo: () => set(at.excluded) };
+  return { ...at, undo: async () => thenRetick(ops, await set(!at.excluded), at.call), redo: () => set(at.excluded) };
 }
 
 export function customIndexEntry(
