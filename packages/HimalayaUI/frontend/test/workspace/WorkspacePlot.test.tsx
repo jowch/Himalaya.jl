@@ -304,6 +304,9 @@ describe("WorkspacePlot", () => {
     fireEvent.pointerMove(frame, { clientX: PLOT_MARGINS.left + tip + 3, clientY: 100 });
     expect(readout()).not.toMatch(/^q 0\.1234 /);
     expect(line()).toBeCloseTo(tip + 3, 1);
+    fireEvent.pointerMove(frame, { clientX: PLOT_MARGINS.left + tip + 3, clientY: 2 });
+    expect(readout()).not.toMatch(/^q 0\.1234 /);
+    expect(line()).toBeCloseTo(tip + 3, 1);
     fireEvent.pointerMove(frame, { clientX: PLOT_MARGINS.left + tip + 40, clientY: PLOT_MARGINS.top - 4 });
     expect(line()).toBeCloseTo(tip + 40, 1);
   });
