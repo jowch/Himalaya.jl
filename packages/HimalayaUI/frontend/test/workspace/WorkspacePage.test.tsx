@@ -2863,6 +2863,70 @@ describe("WorkspacePage", () => {
     expect(currentFrame()).toBe("Image 2");
   });
 
+  it("Tab and Shift+Tab cycle only the phase choices, wrapping, and Enter ticks the one in focus", () => {
+    renderAt("/experiments/1/workspace/10");
+    const rows = within(screen.getByTestId("workspace-candidates")).getAllByRole("button");
+    const ff = screen.getByTestId("workspace-form-factor");
+    const choices = [...rows, ff];
+    expect(fireEvent.keyDown(document.body, { key: "Tab" })).toBe(false);
+    expect(document.activeElement).toBe(choices[0]);
+    for (let i = 1; i < choices.length; i++) {
+      fireEvent.keyDown(document.activeElement!, { key: "Tab" });
+      expect(document.activeElement).toBe(choices[i]);
+    }
+    fireEvent.keyDown(document.activeElement!, { key: "Tab" });
+    expect(document.activeElement).toBe(choices[0]);
+    fireEvent.keyDown(document.activeElement!, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(ff);
+    fireEvent.keyDown(screen.getByRole("button", { name: "Image 1" }), { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(ff);
+  });
+
+  it("Esc leaves the phase choices and lets Tab reach every control until another sample opens", () => {
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(document.body, { key: "Tab" });
+    const first = document.activeElement;
+    expect(fireEvent.keyDown(first!, { key: "Escape" })).toBe(false);
+    expect(document.activeElement).toBe(document.body);
+    expect(fireEvent.keyDown(document.body, { key: "Tab" })).toBe(true);
+    (first as HTMLElement).focus();
+    expect(fireEvent.keyDown(first!, { key: "Tab" })).toBe(true);
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    expect(fireEvent.keyDown(document.body, { key: "Tab" })).toBe(false);
+    expect(document.activeElement?.closest("[data-call-choices]")).not.toBeNull();
+  });
+
+  it("keeps native Tab in text fields and while a custom index is open", () => {
+    renderAt("/experiments/1/workspace/10");
+    const filter = document.getElementById("workspace-filter")!;
+    filter.focus();
+    expect(fireEvent.keyDown(filter, { key: "Tab" })).toBe(true);
+    expect(document.activeElement).toBe(filter);
+    fireEvent.keyDown(window, { key: "i" });
+    expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
+    expect(fireEvent.keyDown(document.body, { key: "Tab" })).toBe(true);
+  });
+
+  it("does not trap Tab when no phase choice can be picked", () => {
+    state.username = undefined;
+    renderAt("/experiments/1/workspace/10");
+    expect(fireEvent.keyDown(document.body, { key: "Tab" })).toBe(true);
+  });
+
+  it("on a short window with Call folded, Tab opens Call and lands on its first choice", () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(max-height: 860px)", media: query, addEventListener: () => {}, removeEventListener: () => {} }));
+    try {
+      renderAt("/experiments/1/workspace/10");
+      const tools = screen.getByRole("complementary", { name: "Tools" });
+      fireEvent.click(within(tools).getByRole("button", { name: /^Image/ }));
+      expect(screen.queryByTestId("workspace-candidates")).toBeNull();
+      fireEvent.keyDown(document.body, { key: "Tab", shiftKey: true });
+      expect(document.activeElement).toBe(screen.getByTestId("workspace-form-factor"));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("0 marks the frame as no phase (form factor), and 0 again clears it", () => {
     state.indices = [];
     renderAt("/experiments/1/workspace/10");

@@ -22,7 +22,15 @@ const look = (on: boolean) => (on ? "border-ink-soft bg-paper-sunk" : "border-tr
 
 export function CandidateList({ rows, assigned, disabled, formFactor, onToggle, onToggleGroup, onFormFactor, onHover }: Props): JSX.Element {
   return (
-    <div className="flex flex-col gap-1">
+    <div
+      className="flex flex-col gap-1"
+      role="group"
+      aria-label="Phase choices"
+      data-call-choices=""
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) onHover(undefined);
+      }}
+    >
       {rows.length === 0 && <Note>No candidate indices for this image.</Note>}
       {rows.length > 0 && <Rows rows={rows} assigned={assigned} disabled={disabled} onToggle={onToggle} onToggleGroup={onToggleGroup} onHover={onHover} />}
       <button
@@ -30,6 +38,7 @@ export function CandidateList({ rows, assigned, disabled, formFactor, onToggle, 
         aria-pressed={formFactor}
         disabled={disabled}
         onClick={onFormFactor}
+        onFocus={() => onHover(undefined)}
         data-testid="workspace-form-factor"
         className={ROW + "grid-cols-[auto_1fr] gap-2 py-[5px] " + look(formFactor)}
       >

@@ -612,3 +612,23 @@ for (const width of [1024, 1280, 1440]) {
     });
   }
 }
+
+test("Tab cycles only the phase choices, wrapping, and Esc lets Tab reach the rest of the page", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/experiments/17/workspace/41");
+  await openSample(page, 41);
+  const choices = page.locator("[data-call-choices] button");
+  await expect(choices).toHaveCount(7);
+  for (let i = 0; i < 7; i++) {
+    await page.keyboard.press("Tab");
+    await expect(choices.nth(i)).toBeFocused();
+  }
+  await page.keyboard.press("Tab");
+  await expect(choices.nth(0)).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(choices.nth(6)).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(choices.nth(6)).not.toBeFocused();
+  await page.keyboard.press("Tab");
+  expect(await page.evaluate(() => document.activeElement?.closest("[data-call-choices]") === null && document.activeElement !== document.body)).toBe(true);
+});
