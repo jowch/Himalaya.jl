@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { IndexEntry } from "../api";
 import { PhaseChip } from "./PhaseChip";
 import type { CallRow } from "../workspace/bonnetGroups";
@@ -21,14 +22,22 @@ const ROW = "grid w-full items-center rounded-sm border px-2 text-left text-base
 const look = (on: boolean) => (on ? "border-ink-soft bg-paper-sunk" : "border-transparent hover:border-hair-strong");
 
 export function CandidateList({ rows, assigned, disabled, formFactor, onToggle, onToggleGroup, onFormFactor, onHover }: Props): JSX.Element {
+  const [pointerFocus, setPointerFocus] = useState(false);
   return (
     <div
       className="flex flex-col gap-1"
       role="group"
       aria-label="Phase choices"
       data-call-choices=""
+      data-pointer-focus={pointerFocus ? "" : undefined}
+      onPointerDown={() => setPointerFocus(true)}
+      onKeyDown={(e) => {
+        if (e.key === "Tab") setPointerFocus(false);
+      }}
       onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget)) onHover(undefined);
+        if (e.currentTarget.contains(e.relatedTarget)) return;
+        onHover(undefined);
+        setPointerFocus(false);
       }}
     >
       {rows.length === 0 && <Note>No candidate indices for this image.</Note>}

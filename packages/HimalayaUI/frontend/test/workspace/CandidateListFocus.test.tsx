@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import type { IndexEntry } from "../../src/api";
 import { CandidateList } from "../../src/ui/CandidateList";
 
@@ -49,10 +49,10 @@ describe("CandidateList focus ring", () => {
   it("forgets the mouse once focus leaves the choices", () => {
     const { group, first, second } = setup();
     fireEvent.pointerDown(first);
-    first.focus();
-    second.focus();
+    act(() => first.focus());
+    act(() => second.focus());
     expect(group).toHaveAttribute("data-pointer-focus");
-    screen.getByRole("button", { name: "outside" }).focus();
+    act(() => screen.getByRole("button", { name: "outside" }).focus());
     expect(group).not.toHaveAttribute("data-pointer-focus");
   });
 });
