@@ -1029,7 +1029,8 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     integration_pattern = integration_pattern_for_exposure(db, exposure_id)
     dat_path = joinpath(analysis_dir, replace(integration_pattern, "{name}" => filename))
 
-    current_version = read_analysis_version(db, exposure_id) == ANALYSIS_VERSION
+    current_version = read_analysis_version(db, exposure_id) == ANALYSIS_VERSION ||
+        (!force_detect && peak_reviewed(db, exposure_id))
     stored_trace_hash  = current_version ? read_trace_hash(db, exposure_id) : nothing
     stored_inputs_hash = current_version ? read_inputs_hash(db, exposure_id) : nothing
 

@@ -72,10 +72,15 @@ toast. Pinning prevents both. Curation routes never re-detect because of the
 model either: the curation itself pins the exposure with the peaks the user
 saw.
 
-A core `ANALYSIS_VERSION` bump re-detects every exposure, pinned or not, as
-today, with whatever detector is in production at that moment; assignments
-can be dropped exactly as on any release today. Labels are unaffected, because
-training reads review snapshots, not live auto peaks (below).
+An `ANALYSIS_VERSION` bump does not re-detect reviewed exposures either: the
+ingest pass skips a reviewed exposure whose version is stale, and
+`analyze_exposure!` honours a reviewed exposure's stored hashes whatever its
+version, so a curation never triggers re-detection. Only a changed trace file
+re-detects a reviewed exposure. Re-detecting would change the peaks behind the
+user's curations and could drop assignment members (`persist_analysis!`
+re-attaches them by phase and basis). Unreviewed exposures are re-analysed on a
+bump as before. Labels are unaffected either way, because training reads
+review snapshots, not live auto peaks (below).
 
 ## Provenance bookkeeping
 
@@ -411,8 +416,8 @@ production stays.
 - After a core version bump, boot re-analysis of unreviewed exposures was
   designed to wait for the boot retrain (and its gate), so they go to the new
   model, or to the hybrid, once instead of hybrid then model. Step 4 does not
-  wait (see "Model-written peaks (step 4)"). Reviewed exposures are
-  re-analysed straight away with the hybrid.
+  wait (see "Model-written peaks (step 4)"). Reviewed exposures are not
+  re-analysed on a bump.
 - The model's output uses the pipeline's peak shape: indices on the trace
   grid, sharpness from `sharpness_full` with the hybrid's fallback (the median
   positive value for sharpness ≤ 0), prominence from persistence or 0 when the

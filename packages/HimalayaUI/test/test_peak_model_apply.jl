@@ -166,18 +166,19 @@ end
     end
 end
 
-@testset "a reviewed exposure re-detected after a version bump goes back to the hybrid's provenance" begin
+@testset "a reviewed exposure keeps the model's peaks after a version bump" begin
     mktempdir() do dir
         b = _pma_db(dir)
         e = b.eids[1]
         id = _pma_add_model!(b.db; status = "active")
         HimalayaUI.analyze_exposure!(b.db, e, b.adir)
         @test _pma_version(b.db, e).v == id
+        before = _pma_peaks(b.db, e)
         _pma_review!(b.db, e)
         DBInterface.execute(b.db, "UPDATE exposures SET analysis_version = 'older' WHERE id = ?", [e])
         HimalayaUI.analyze_exposure!(b.db, e, b.adir)
-        @test all(p -> p.found_by == "hybrid" && ismissing(p.model_id), _pma_peaks(b.db, e))
-        @test ismissing(_pma_version(b.db, e).v)
+        @test _pma_peaks(b.db, e) == before
+        @test _pma_version(b.db, e).v == id
         DBInterface.close!(b.db)
     end
 end

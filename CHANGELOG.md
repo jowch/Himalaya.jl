@@ -13,7 +13,13 @@ under `Unreleased` are application-level unless stated otherwise.
   existing exposures.** The migration that adds `exposures.analysis_version` used
   to stamp the current version on every analyzed exposure, so a database upgraded
   across several analysis changes kept its old peaks. It now leaves the version
-  empty, and the first pass after the upgrade re-analyzes those exposures.
+  empty, and the first pass after the upgrade re-analyzes those exposures. A
+  database that already ran `exposures_ingest_state_v1` keeps its stamped
+  versions; an `ANALYSIS_VERSION` bump re-analyzes it.
+- **A version change no longer re-detects reviewed exposures.** Exposures a user
+  has curated, assigned, called or accepted keep the peaks the user worked on,
+  so assignments are not dropped by a release. Only a changed trace file
+  re-detects them.
 
 ### Added
 

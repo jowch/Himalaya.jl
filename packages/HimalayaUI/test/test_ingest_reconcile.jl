@@ -134,6 +134,44 @@ const _T0 = DateTime(2026, 4, 26, 23, 0, 0)
         DBInterface.close!(db)
     end
 
+    @testset "a reviewed exposure keeps its peaks when the analysis version changes" begin
+        dir, data, ana = _recon_tree()
+        _recon_exposure!(data, ana, "A_S0001_0_001"; t = _T0, h = 58.9)
+        _recon_exposure!(data, ana, "A_S0002_0_001"; t = _T0 + Second(30), h = 58.9)
+        db, id = _recon_db(dir, data, ana)
+        HimalayaUI.scan_and_group!(db, id)
+        reviewed = Int(first(_rows(db, "SELECT id FROM exposures WHERE filename = 'A_S0001_0_001'")).id)
+        DBInterface.execute(db, "UPDATE exposures SET reviewed_at = '2026-01-01T00:00:00.000Z' WHERE id = ?", [reviewed])
+        DBInterface.execute(db, "UPDATE auto_peaks SET q = q + 1e-4 WHERE exposure_id = ?", [reviewed])
+        peaks_before = _rows(db, "SELECT id, q FROM auto_peaks WHERE exposure_id = ? ORDER BY id", [reviewed])
+        DBInterface.execute(db, "UPDATE exposures SET analysis_version = 'old' WHERE experiment_id = ?", [id])
+        @test HimalayaUI.pending_analysis_ids(db, id) == Int[Int(first(_rows(db, "SELECT id FROM exposures WHERE filename = 'A_S0002_0_001'")).id)]
+        HimalayaUI.scan_and_group!(db, id)
+        @test _rows(db, "SELECT id, q FROM auto_peaks WHERE exposure_id = ? ORDER BY id", [reviewed]) == peaks_before
+        @test !HimalayaUI.ingest_has_work(db, id)
+        analysis_dir = String(HimalayaUI.exposure_setup(db, reviewed).analysis_dir)
+        HimalayaUI.analyze_exposure!(db, reviewed, analysis_dir; trace_known_unchanged = true)
+        @test _rows(db, "SELECT id, q FROM auto_peaks WHERE exposure_id = ? ORDER BY id", [reviewed]) == peaks_before
+    end
+
+    @testset "a reviewed exposure that holds assignments is not analyzed for the first time by a pass" begin
+        dir, data, ana = _recon_tree()
+        _recon_exposure!(data, ana, "A_S0001_0_001"; t = _T0, h = 58.9)
+        db, id = _recon_db(dir, data, ana)
+        HimalayaUI.scan_and_group!(db, id)
+        e = Int(first(_rows(db, "SELECT id FROM exposures WHERE filename = 'A_S0001_0_001'")).id)
+        DBInterface.execute(db, "UPDATE exposures SET trace_hash = NULL, reviewed_at = '2026-01-01T00:00:00.000Z' WHERE id = ?", [e])
+        members = _n(db, "SELECT COUNT(*) AS n FROM assignment_members WHERE exposure_id = ?", [e])
+        if members == 0
+            ix = Int(first(_rows(db, "SELECT id FROM indices WHERE exposure_id = ? LIMIT 1", [e])).id)
+            DBInterface.execute(db, "INSERT INTO assignment_members (exposure_id, index_id) VALUES (?, ?)", [e, ix])
+        end
+        @test isempty(HimalayaUI.pending_analysis_ids(db, id))
+        DBInterface.execute(db, "DELETE FROM assignment_members WHERE exposure_id = ?", [e])
+        DBInterface.execute(db, "DELETE FROM auto_peaks WHERE exposure_id = ?", [e])
+        @test HimalayaUI.pending_analysis_ids(db, id) == [e]
+    end
+
     @testset "a failed analysis is retried when its trace file changes" begin
         dir, data, ana = _recon_tree()
         _recon_exposure!(data, ana, "A_S0001_0_001"; t = _T0, h = 58.9, dat = false)
