@@ -4,6 +4,7 @@ import type { CombLine } from "../ui/WorkspacePlot";
 import { storedFit } from "./indexing";
 
 function fittedQs(c: IndexEntry): readonly number[] {
+  if (c.kind === "speculative") return c.predicted_q;
   const q1 = c.predicted_q[0] ?? 0;
   const fit = storedFit(c);
   if (fit.landed === 0 || !(q1 > 0) || !(fit.slope > 0)) return c.predicted_q;
