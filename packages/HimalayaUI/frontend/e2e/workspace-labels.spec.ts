@@ -193,3 +193,24 @@ test("the same-sample icon sits by the name, centred on it, and names every same
   const list = page.getByRole("dialog", { name: "Same sample as" });
   await expect(list.getByRole("button", { name: /^Go to / })).toHaveCount(3);
 });
+
+test("a bridged sample's heading is exactly as tall as a plain one, so nothing below it moves", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 800 });
+  const json = (body: unknown) => ({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+  const names = ["MO_H2O_S2401", "MO_H2O_S2401", "DOPC_S2417"];
+  await page.route((url) => url.pathname === "/api/samples", (r) =>
+    r.fulfill(json(names.map((name, i) => ({ id: 42 + i, experiment_id: 17, display_name: name, name, notes: null, q_units: "A-1" })))));
+  await page.route("**/api/experiments/17/bridges", (r) => r.fulfill(json([{ sample_id: 42, group_id: 1 }, { sample_id: 43, group_id: 1 }])));
+  const measure = async (id: number) => {
+    await page.goto(`/experiments/17/workspace/${id}`);
+    const heading = page.locator("[data-sample-heading]");
+    await expect(heading).toBeVisible();
+    await expect(page.locator("[data-same-sample]")).toHaveCount(id === 44 ? 0 : 1);
+    const box = (await heading.boundingBox())!;
+    const title = (await page.getByRole("heading", { level: 2, name: names[id - 42] }).boundingBox())!;
+    return { top: box.y, height: box.height, titleTop: title.y };
+  };
+  const bridged = await measure(42);
+  const plain = await measure(44);
+  expect(bridged).toEqual(plain);
+});
