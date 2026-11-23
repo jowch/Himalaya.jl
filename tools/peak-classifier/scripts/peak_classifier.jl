@@ -2,6 +2,8 @@
 #   julia --threads=auto --project=. scripts/peak_classifier.jl cv    DB [--group-by experiment|sample]
 #   julia --threads=auto --project=. scripts/peak_classifier.jl train DB --out models/lab.json
 #   julia --threads=auto --project=. scripts/peak_classifier.jl predict MODEL TRACE.dat
+#   julia --threads=auto --project=. scripts/peak_classifier.jl evaluate DB [--detector hybrid,persistence,recipe]
+#       [--threshold X|sweep] [--phase-auto user_events|all] [--group-by experiment|sample] [--json out.json]
 # Shared options for cv and train: --learner rf|logistic --threshold 0.5 --nms 8 --trees 200 --no-form-factor --no-detector-features
 using PeakClassifier, HimalayaUI
 using HimalayaPeakModel: recipe_id
@@ -25,7 +27,7 @@ function parse_opts(args)
 end
 
 function main(args)
-    isempty(args) && error("usage: peak_classifier.jl cv|train|predict ...")
+    isempty(args) && error("usage: peak_classifier.jl cv|train|predict|evaluate ...")
     cmd, rest = args[1], args[2:end]
     pos, opt = parse_opts(rest)
     features = DefaultFeatures(!haskey(opt, "no-detector-features"))
@@ -33,7 +35,8 @@ function main(args)
     learner = learner == "rf" ? RandomForestLearner(n_trees = parse(Int, get(opt, "trees", "200"))) :
               learner == "logistic" ? LogisticLearner() :
               error("unknown learner $learner; use rf or logistic")
-    recipe = Recipe(features, learner; threshold = parse(Float64, get(opt, "threshold", "0.5")),
+    sweep = cmd == "evaluate" && get(opt, "threshold", "") == "sweep"
+    recipe = Recipe(features, learner; threshold = sweep ? 0.5 : parse(Float64, get(opt, "threshold", "0.5")),
                     nms = parse(Int, get(opt, "nms", "8")))
     if cmd == "predict"
         length(pos) == 2 || error("predict needs MODEL and TRACE.dat")
@@ -43,6 +46,16 @@ function main(args)
         return
     end
     length(pos) == 1 || error("$cmd needs a database path")
+    if cmd == "evaluate"
+        detectors = Symbol.(split(get(opt, "detector", "hybrid"), ','; keepempty = false))
+        r = evaluate_database(pos[1]; detectors, recipe, thresholds = sweep ? :sweep : haskey(opt, "threshold") ? recipe.threshold : nothing,
+                              phase_auto = Symbol(get(opt, "phase-auto", "user_events")),
+                              group_by = haskey(opt, "group-by") ? Symbol(opt["group-by"]) : nothing)
+        println()
+        print_evaluation(stdout, r)
+        haskey(opt, "json") && println("wrote ", write_evaluation(opt["json"], r))
+        return
+    end
     t0 = time()
     exps = load_labeled_exposures(pos[1]; group_by = Symbol(get(opt, "group-by", "experiment")),
                                   include_form_factor = !haskey(opt, "no-form-factor"))

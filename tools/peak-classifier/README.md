@@ -16,9 +16,9 @@ files to exist or its directory to be writable, so a read-only open may leave
 empty `-shm` and `-wal` side files next to it; those are the only files it may
 add. The safest input is a copy of the database.
 
-Trained models and feature files are lab data: the
-repository ignores `tools/peak-classifier/models/` and `features/`. Keep
-models there and never commit one.
+Trained models, feature files and evaluation outputs are lab data: the
+repository ignores `tools/peak-classifier/models/`, `features/` and
+`evaluations/`. Keep them there and never commit one.
 
 ## Run
 
@@ -28,6 +28,7 @@ From `tools/peak-classifier/`, once: `julia --project=. -e 'using Pkg; Pkg.insta
 julia --threads=auto --project=. scripts/peak_classifier.jl cv    DB
 julia --threads=auto --project=. scripts/peak_classifier.jl train DB --out models/lab.json
 julia --project=. scripts/peak_classifier.jl predict models/lab.json TRACE_tot.dat
+julia --threads=auto --project=. scripts/peak_classifier.jl evaluate DB --detector hybrid,persistence,recipe --json evaluations/run.json
 ```
 
 Options for `cv` and `train`: `--learner rf|logistic` (default `rf`), `--threshold` (default 0.5), `--nms` (8 grid
@@ -52,6 +53,58 @@ estimated, and predictions can differ from what was validated.
 
 Tests: `julia --project=. -e 'using Pkg; Pkg.test()'` (synthetic data only; CI job
 "Peak classifier tool").
+
+## Evaluate
+
+`evaluate DB` scores peak detectors on one database, with the same scoring
+code the server's training gate uses (`HimalayaUI.peak_eval`), so numbers here
+and in a recorded training run agree.
+
+Options: `--detector` (comma list of `hybrid`, `persistence`, `recipe`; default
+`hybrid`), `--threshold X|sweep` (recipe decision threshold; `sweep` scores
+every threshold of the gate's grid, 0.3 to 0.9), `--learner`, `--nms`, `--trees`,
+`--no-detector-features` (recipe, as for `cv`), `--phase-auto user_events|all`,
+`--group-by experiment|sample` (fold key; by default what training picks:
+experiments when there are at least 3), `--json PATH`.
+
+Every loaded exposure of the database is scored, labelled or not. Output, per
+detector, as numerator/denominator and rate:
+
+- **phase top-1**: of the labelled exposures that have a confirmed call, how many
+  have the first pick of `auto_group` (computed from the detector's peaks, minus
+  peaks the user excluded) matching a confirmed call in phase and basis (2%).
+  A second table gives this per phase, using each exposure's first confirmed call.
+- **add recall**: your added peaks the detector finds. Adds in the top 7% of
+  the q range are not scored (the hybrid trims it); their count is printed.
+- **excludes detected**: excluded peaks the detector still outputs (lower is better).
+- **peaks/exposure** over all loaded exposures, and **peaks/form-factor** over
+  form-factor exposures.
+
+With more than one detector, each is compared with the first on the same
+exposures: per phase, wins (this detector right, the first wrong) and losses.
+Wins minus losses is the difference in correct calls.
+
+`recipe` is out of fold: a model trained on all other groups scores each held-out
+group (leave one experiment out, or one sample with fewer than 3 experiments).
+`hybrid` and `persistence` (`findpeaks` defaults) have no fitting, so the
+whole database is held out by construction.
+
+Biases to keep in mind:
+
+- Labels and confirmed calls were made while some detector's peaks were on
+  screen, so that detector is favoured. Only exposures last reviewed without a
+  model count, and `--phase-auto all` also counts auto calls nobody edited, which
+  favours whatever detector produced them.
+- A confirmed call is a proxy for the true phase: it is the user's latest
+  accepted call, and a wrong or loosely accepted call counts as truth.
+- A threshold sweep picks the best row on the data it scores. Treat the best
+  threshold's numbers as optimistic and compare detectors at a threshold fixed
+  beforehand.
+- With few experiments the folds are large and per-phase counts are small.
+
+The JSON holds the same numbers (`counts`, `detectors[].metrics`,
+`detectors[].per_phase`, `paired`), with no paths. The output is derived from
+lab data: keep it under `evaluations/` and do not commit it.
 
 ## How it works
 
