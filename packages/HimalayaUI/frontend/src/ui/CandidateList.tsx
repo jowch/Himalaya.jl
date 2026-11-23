@@ -18,7 +18,8 @@ interface Props {
 }
 
 const ROW = "grid w-full items-center rounded-sm border px-2 text-left text-base disabled:opacity-50 ";
-const look = (on: boolean) => (on ? "border-ink-soft bg-paper-sunk" : "border-transparent hover:border-hair-strong");
+const look = (on: boolean | "mixed") =>
+  "border-transparent " + (on === true ? "bg-accent/25" : on === "mixed" ? "bg-accent/10 hover:bg-accent/15" : "hover:bg-ink/6");
 
 export function CandidateList({ rows, assigned, disabled, formFactor, onToggle, onToggleGroup, onFormFactor, onHover }: Props): JSX.Element {
   return (
@@ -68,6 +69,7 @@ function Rows({ rows, assigned, disabled, onToggle, onToggleGroup, onHover }: Om
           disabled={disabled}
           onClick={() => onToggle(c)}
           onMouseEnter={() => onHover([c.id])}
+          onMouseMove={() => onHover([c.id])}
           onFocus={() => onHover([c.id])}
           className={ROW + "grid-cols-[auto_auto_1fr_auto] py-[5px] " + (inGroup ? "gap-1 " : "gap-1.5 ") + look(on)}
         >
@@ -102,9 +104,10 @@ function Rows({ rows, assigned, disabled, onToggle, onToggleGroup, onHover }: Om
               disabled={disabled}
               onClick={() => onToggleGroup(row.members)}
               onMouseEnter={() => onHover(ids)}
+              onMouseMove={() => onHover(ids)}
               onFocus={() => onHover(ids)}
               data-testid="workspace-bonnet-group"
-              className={ROW + "grid-cols-[auto_1fr_auto] gap-1.5 py-[6px] " + (pressed === "mixed" ? "border-dashed border-ink-soft" : look(pressed === true))}
+              className={ROW + "grid-cols-[auto_1fr_auto] gap-1.5 py-[6px] " + look(pressed)}
             >
               <Key n={key} />
               <span className="min-w-0 truncate whitespace-nowrap">

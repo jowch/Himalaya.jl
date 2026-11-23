@@ -35,6 +35,12 @@ function writeAssignmentFromPostState(
   });
 }
 
+function sameAssignment(a: Pick<Assignment, "state" | "members"> | undefined, b: Pick<Assignment, "state" | "members">): boolean {
+  if (!a || a.state !== b.state || a.members.length !== b.members.length) return false;
+  const sorted = [...b.members].sort((x, y) => x - y);
+  return [...a.members].sort((x, y) => x - y).every((m, i) => m === sorted[i]);
+}
+
 export function applyPostStateOnly(remote: SseEvent, qc: QueryClient): void {
   if (!remote.post_state) return;
   const ps = remote.post_state as CurationPostState;
@@ -48,7 +54,12 @@ export function applyPostStateOnly(remote: SseEvent, qc: QueryClient): void {
   // invalidate or touch the assignment cache, preserving the previous
   // behavior.
   if (ps.assignment) {
+    const before = qc.getQueryData<Assignment>(queryKeys.assignment(id));
     writeAssignmentFromPostState(id, ps.assignment, qc);
+    if (!sameAssignment(before, ps.assignment)) {
+      qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
+      invalidateSampleCalls(qc);
+    }
   }
   // Announce dropped call members. Consequential state change → visible
   // toast; the Toast surface is itself the aria-live region (role="alert"
