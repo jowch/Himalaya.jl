@@ -27,13 +27,32 @@ export function parseContract(text) {
   return { version, sha256, rows };
 }
 
+const SKIPPED = new Set(["skip", "todo", "only", "fixme", "fails"]);
+
+function escape(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function declaration(content, title) {
+  const re = new RegExp(`\\b(?:it|test)(?:\\.(\\w+))?\\s*\\(\\s*(["'\`])${escape(title)}\\2`, "g");
+  let found;
+  for (const m of content.matchAll(re)) {
+    if (!found || (found.modifier && !m[1])) found = { modifier: m[1] };
+  }
+  return found;
+}
+
 function builtProblem(row, read) {
   const m = /^(\S+) › (.+)$/.exec(row.evidence);
   if (!m) return "a built row's evidence must be `path › test title`";
   const [, path, title] = m;
   const content = read(path);
   if (content === undefined) return `${path} does not exist`;
-  if (!content.includes(title)) return `${path} does not contain the test "${title}"`;
+  const decl = declaration(content, title);
+  if (!decl) return `${path} does not contain the test "${title}"`;
+  if (decl.modifier && SKIPPED.has(decl.modifier)) {
+    return `the test "${title}" is marked .${decl.modifier}, so it does not run as written; cite a test that runs`;
+  }
   return null;
 }
 
