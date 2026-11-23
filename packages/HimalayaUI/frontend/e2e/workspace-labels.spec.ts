@@ -165,7 +165,7 @@ test("on a narrow window labels fold into +N before the sample name truncates", 
   await expect(page.getByRole("button", { name: "+ Label L" })).toBeVisible();
 });
 
-test("the same-sample note gets only the room the name and labels leave", async ({ page }) => {
+test("the same-sample icon sits by the name, centred on it, and names every same sample in its tooltip", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 800 });
   const json = (body: unknown) => ({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
   const names = ["MO_H2O_S2401 (S01P01)", "MO_H2O_37C_S2404 (S01P02)", "MO_PEG5_S2406 (S01P03)", "MO_PEG10_S2409 (S01P04)"];
@@ -178,12 +178,18 @@ test("the same-sample note gets only the room the name and labels leave", async 
   const title = page.getByRole("heading", { level: 2, name: names[0] });
   await expect(title).toBeVisible();
   const full = `Same as ${names.slice(1).join(", ")}`;
-  const note = page.getByText(full, { exact: true });
-  await expect(note).toBeVisible();
+  const icon = page.getByRole("button", { name: full });
+  await expect(icon).toHaveText("⇄3");
   expect(await title.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  const t = (await title.boundingBox())!;
+  const b = (await icon.boundingBox())!;
+  expect(b.x).toBeGreaterThanOrEqual(t.x + t.width);
+  expect(Math.abs(b.y + b.height / 2 - (t.y + t.height / 2))).toBeLessThanOrEqual(2);
   await expect(page.getByTestId("workspace-labels-more")).toBeHidden();
   for (const label of ["Buffer", "37C", "heated twice"]) await expect(page.locator(`[data-label="${label}"]`).first()).toBeVisible();
-  expect(await note.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
-  await note.hover();
+  await icon.hover();
   await expect(page.getByRole("tooltip")).toHaveText(full);
+  await icon.click();
+  const list = page.getByRole("dialog", { name: "Same sample as" });
+  await expect(list.getByRole("button", { name: /^Go to / })).toHaveCount(3);
 });

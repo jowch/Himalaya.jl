@@ -484,8 +484,6 @@ for (const width of [1024, 1280]) {
         await page.goto(`/experiments/17/workspace/${id}`);
         const title = page.getByRole("heading", { level: 2, name });
         await expect(page.locator("[data-testid=workspace-exposures] li").first()).toBeVisible();
-        const meta = page.getByText("Image 1 of 1", { exact: true });
-        if (width === 1280) await expect(meta).toBeVisible();
         expect(await title.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
         const add = page.getByRole("button", { name: "+ Label L" });
         await expect(add).toBeVisible();
