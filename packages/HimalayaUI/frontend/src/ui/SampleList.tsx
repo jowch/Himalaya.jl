@@ -1,9 +1,10 @@
-import { Fragment, useEffect, useRef, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { CorpusSample } from "../api";
 import { sampleStatus } from "../workspace/model";
 import { COMPARE_DASH } from "./WorkspacePlot";
 import { SELECTED_ROW } from "./selectedRow";
 import { Tooltip } from "./Tooltip";
+import { useListHighlight } from "./useListHighlight";
 import { Dot } from "./Dot";
 import { releaseMouseFocus, useRovingFocus } from "../hooks/useRovingFocus";
 
@@ -48,6 +49,25 @@ export function SampleList({ samples, setupHeaders, currentId, filter, onFilter,
   useEffect(() => {
     currentRef.current?.scrollIntoView({ block: "nearest" });
   }, [currentId]);
+  const filterRef = useRef<HTMLInputElement | null>(null);
+  const [filterFocused, setFilterFocused] = useState(false);
+  const ids = useMemo(() => samples.map((s) => s.id), [samples]);
+  const highlight = useListHighlight({
+    count: samples.length,
+    keys: ids,
+    resetKey: filter,
+    onCommit: (i) => {
+      const picked = samples[i];
+      if (!picked) return;
+      filterRef.current?.blur();
+      onPick(picked.id);
+    },
+    onEscape: () => filterRef.current?.blur(),
+  });
+  const highlightedId = filterFocused ? samples[highlight.at]?.id : undefined;
+  useEffect(() => {
+    if (highlightedId !== undefined) document.getElementById(`workspace-sample-${highlightedId}`)?.scrollIntoView({ block: "nearest" });
+  }, [highlightedId]);
   const listRef = useRovingFocus<HTMLUListElement>(currentId);
   const hasCurrent = samples.some((s) => s.id === currentId);
   return (
@@ -58,20 +78,13 @@ export function SampleList({ samples, setupHeaders, currentId, filter, onFilter,
           type="search"
           value={filter}
           onChange={(e) => onFilter(e.target.value)}
+          ref={filterRef}
+          onFocus={() => setFilterFocused(true)}
+          onBlur={() => setFilterFocused(false)}
           onKeyDown={(e) => {
-            if (e.nativeEvent.isComposing) return;
-            if (e.key === "Escape") {
-              e.preventDefault();
-              e.currentTarget.blur();
-            } else if (e.key === "Enter") {
-              e.preventDefault();
-              const first = samples[0];
-              if (first) {
-                e.currentTarget.blur();
-                onPick(first.id);
-              }
-            }
+            highlight.onKeyDown(e);
           }}
+          aria-activedescendant={highlightedId !== undefined ? `workspace-sample-${highlightedId}` : undefined}
           placeholder="Filter  /"
           aria-label="Filter samples"
           className="w-full rounded-sm border border-hair bg-plate px-2 py-[5px] text-base text-ink placeholder:text-ink-faint focus:outline-2 focus:-outline-offset-1 focus:outline-accent"
@@ -99,7 +112,9 @@ export function SampleList({ samples, setupHeaders, currentId, filter, onFilter,
             <li>
               <button
                 ref={cur ? currentRef : undefined}
+                id={`workspace-sample-${s.id}`}
                 type="button"
+                data-highlighted={s.id === highlightedId ? "" : undefined}
                 aria-current={cur ? "true" : undefined}
                 tabIndex={cur || (!hasCurrent && i === 0) ? 0 : -1}
                 data-roving="row"
@@ -116,7 +131,7 @@ export function SampleList({ samples, setupHeaders, currentId, filter, onFilter,
                 }}
                 className={
                   "flex w-full items-center justify-between gap-2 px-2.5 py-[5px] text-left text-base text-ink " +
-                  (cur ? "font-semibold " + SELECTED_ROW : "hover:bg-paper-sunk")
+                  (cur ? "font-semibold " + SELECTED_ROW : s.id === highlightedId ? "bg-paper-sunk" : "hover:bg-paper-sunk")
                 }
               >
                 <span className="flex min-w-0 items-center gap-2">

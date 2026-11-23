@@ -94,6 +94,12 @@ export function storedFit(ix: Pick<IndexEntry, "predicted_q" | "peaks" | "basis"
 
 export const CUSTOM_PHASES = Object.keys(SYMS);
 
+export function stepSymmetry(phase: string, dir: 1 | -1): string {
+  const at = CUSTOM_PHASES.indexOf(phase);
+  const n = CUSTOM_PHASES.length;
+  return CUSTOM_PHASES[((at < 0 ? 0 : at) + dir + n) % n]!;
+}
+
 export function latticeParam(phase: string): string {
   return SYMS[phase]?.param ?? "a";
 }

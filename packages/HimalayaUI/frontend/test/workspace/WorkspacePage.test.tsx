@@ -2533,6 +2533,28 @@ describe("WorkspacePage", () => {
     expect(arg.ratios[1]).toBeCloseTo(Math.sqrt(3 / 2), 6);
   });
 
+  it("Tab and Shift+Tab step the custom index's symmetry with wrap, from the page or from inside the panel", () => {
+    state.trace = makeTrace(1);
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "i" });
+    const panel = screen.getByTestId("workspace-custom-index");
+    const pressed = (): string | null => within(panel).getAllByRole("button", { pressed: true })[0]!.textContent;
+    const symmetries = within(within(panel).getByRole("group", { name: "Symmetry" })).getAllByRole("button").map((b) => b.textContent);
+    expect(pressed()).toBe("Pn3m");
+    const at = symmetries.indexOf("Pn3m");
+    fireEvent.keyDown(window, { key: "Tab" });
+    expect(pressed()).toBe(symmetries[(at + 1) % symmetries.length]);
+    fireEvent.keyDown(window, { key: "Tab", shiftKey: true });
+    fireEvent.keyDown(window, { key: "Tab", shiftKey: true });
+    expect(pressed()).toBe(symmetries[(at - 1 + symmetries.length) % symmetries.length]);
+    const field = within(panel).getByRole("spinbutton");
+    field.focus();
+    fireEvent.keyDown(field, { key: "Tab" });
+    expect(pressed()).toBe("Pn3m");
+    expect(document.activeElement).toBe(field);
+    expect(calls).toEqual([]);
+  });
+
   it("Escape cancels a custom index without writing", () => {
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "i" });
@@ -3063,15 +3085,24 @@ describe("WorkspacePage", () => {
     expect(document.activeElement?.closest("[data-call-choices]")).not.toBeNull();
   });
 
-  it("keeps native Tab in text fields and while a custom index is open", () => {
+  it("gives Tab to the filter's matches and to a custom index's symmetry, never to the phase choices", () => {
+    state.trace = makeTrace(1);
     renderAt("/experiments/1/workspace/10");
+    const inChoices = (): boolean => document.activeElement?.closest("[data-call-choices]") != null;
     const filter = document.getElementById("workspace-filter")!;
-    filter.focus();
-    expect(fireEvent.keyDown(filter, { key: "Tab" })).toBe(true);
+    act(() => filter.focus());
+    expect(fireEvent.keyDown(filter, { key: "Tab" })).toBe(false);
     expect(document.activeElement).toBe(filter);
+    expect(inChoices()).toBe(false);
+    expect(document.querySelector("[data-testid=workspace-samples] [data-highlighted]")).not.toBeNull();
+    act(() => filter.blur());
     fireEvent.keyDown(window, { key: "i" });
-    expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
-    expect(fireEvent.keyDown(document.body, { key: "Tab" })).toBe(true);
+    const panel = screen.getByTestId("workspace-custom-index");
+    const pressed = (): string | null => within(panel).getAllByRole("button", { pressed: true })[0]!.textContent;
+    const before = pressed();
+    expect(fireEvent.keyDown(document.body, { key: "Tab" })).toBe(false);
+    expect(pressed()).not.toBe(before);
+    expect(inChoices()).toBe(false);
   });
 
   it("does not trap Tab when no phase choice can be picked", () => {
