@@ -61,7 +61,7 @@ import { useCorpusPalette } from "../hooks/useCorpusPalette";
 import { allFrames, frameGroups, frameOf } from "./frameGroups";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
-import { firstUnreviewed, i0BelowZero, traceIsDark, imageUrl, nearestKeptExposure, nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
+import { beamOffWarning, firstUnreviewed, i0BelowZero, imageUrl, nearestKeptExposure, nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
 import { samePeak, type PeakRef } from "../lib/peakRef";
 import { clampDomain, compareScale, COMPARES_FULL, MAX_COMPARES, scaledTrace, subtractTrace } from "./compare";
 import type { CompareScale } from "./compare";
@@ -312,8 +312,8 @@ export function WorkspacePage(): JSX.Element {
   const trace = useTrace(exposure?.id);
   const noTrace = trace.error instanceof ApiError && trace.error.status === 404;
   const i0Hint = i0BelowZero(exposure);
-  const darkNotice = traceIsDark(trace.data)
-    ? `No counts on the detector: the beam was likely off or the shutter closed.${i0Hint ? " I₀ also reads below zero." : ""}`
+  const darkNotice = exposure?.beam_off && trace.data
+    ? `Beam likely off: the detector recorded no counts, so the beam was off or the shutter closed.${i0Hint ? " I₀ also reads below zero." : ""}`
     : undefined;
   const tracePending = problemRows.some((p) => p.problem === "no_trace" && p.exposure_id === exposure?.id);
   const noTraceMessage = !noTrace
@@ -1455,7 +1455,7 @@ export function WorkspacePage(): JSX.Element {
               </PlotCard>
             </div>
             <MainSection title="Images" hint={keptHint}>
-              <ExposureStrip groups={groups.map((g) => ({ key: g.sampleId, title: g.title, exposures: g.exposures }))} currentId={exposure?.id} onPick={setExposureId} onToggleDrop={toggleDrop} ringsOf={ringsOf} />
+              <ExposureStrip groups={groups.map((g) => ({ key: g.sampleId, title: g.title, exposures: g.exposures }))} currentId={exposure?.id} onPick={setExposureId} onToggleDrop={toggleDrop} warningOf={beamOffWarning} ringsOf={ringsOf} />
             </MainSection>
           </>
         ) : (

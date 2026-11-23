@@ -4,6 +4,7 @@ import { sampleStatus } from "../workspace/model";
 import { COMPARE_DASH } from "./WorkspacePlot";
 import { SELECTED_ROW } from "./selectedRow";
 import { Tooltip } from "./Tooltip";
+import { Dot } from "./Dot";
 import { releaseMouseFocus, useRovingFocus } from "../hooks/useRovingFocus";
 
 interface Props {
@@ -86,6 +87,8 @@ export function SampleList({ samples, setupHeaders, currentId, filter, onFilter,
             : undefined;
           const bridges = bridgeCounts?.get(s.id) ?? 0;
           const compareColor = compareColors?.get(s.id);
+          const beamOff = s.beam_off_images ?? 0;
+          const beamOffText = beamOff === 1 ? "1 image likely beam-off" : `${beamOff} images likely beam-off`;
           return (
             <Fragment key={s.id}>
             {header !== undefined && (
@@ -128,6 +131,13 @@ export function SampleList({ samples, setupHeaders, currentId, filter, onFilter,
                   )}
                 </span>
                 <span className="flex shrink-0 items-center gap-2">
+                  {beamOff > 0 && (
+                    <Tooltip content={beamOffText}>
+                      <span data-warned="" className="flex">
+                        <Dot tone="warning" size="xs" label={beamOffText} />
+                      </span>
+                    </Tooltip>
+                  )}
                   {compareColor !== undefined && (
                     <svg width={14} height={4} role="img" aria-label={hiddenCompares?.has(s.id) ? "Compared, hidden" : "Compared"} style={{ color: compareColor }} className={"shrink-0" + (hiddenCompares?.has(s.id) ? " opacity-45" : "")}>
                       <line x1={0} x2={14} y1={2} y2={2} stroke="currentColor" strokeWidth={2} strokeDasharray={COMPARE_DASH} />
