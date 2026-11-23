@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, type ReactNode } from "react";
 import type { CorpusSample } from "../api";
 import { sampleStatus } from "../workspace/model";
 import { COMPARE_DASH } from "./WorkspacePlot";
+import { SELECTED_ROW } from "./selectedRow";
 import { Tooltip } from "./Tooltip";
 import { Dot } from "./Dot";
 import { releaseMouseFocus, useRovingFocus } from "../hooks/useRovingFocus";
@@ -115,7 +116,7 @@ export function SampleList({ samples, setupHeaders, currentId, filter, onFilter,
                 }}
                 className={
                   "flex w-full items-center justify-between gap-2 px-2.5 py-[5px] text-left text-base text-ink " +
-                  (cur ? "font-semibold bg-row-cursor shadow-[inset_3px_0_0_var(--color-accent)]" : "hover:bg-paper-sunk")
+                  (cur ? "font-semibold " + SELECTED_ROW : "hover:bg-paper-sunk")
                 }
               >
                 <span className="flex min-w-0 items-center gap-2">
