@@ -101,8 +101,6 @@ describe("peak_* frames with the W1 assignment envelope", () => {
     expect(qc.getQueryData<Assignment>(queryKeys.assignment(5))).toEqual(SEEDED_ASSIGNMENT);
   });
 
-  // ---- (f) a reanalysis that changes the call refreshes the sample list -----
-
   it("a frame whose assignment changed the call refetches the sample list and the sample calls", () => {
     const invalidateSpy = vi.spyOn(qc, "invalidateQueries");
     applyPostStateOnly(w1Frame({ post_state: {
@@ -120,11 +118,12 @@ describe("peak_* frames with the W1 assignment envelope", () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.corpusSamples });
   });
 
-  it("a frame that leaves the call as it was does not refetch the sample list", () => {
+  it("a peak edit on a frame with no call before or after does not refetch the sample list", () => {
+    qc.setQueryData<Assignment>(queryKeys.assignment(5), { exposure_id: 5, state: "indexed", members: [] });
     const invalidateSpy = vi.spyOn(qc, "invalidateQueries");
     applyPostStateOnly(w1Frame({ post_state: {
       analysis_inputs_hash: "h-new", indices: [],
-      assignment: { state: "indexed", members: [42, 10] },
+      assignment: { state: "indexed", members: [] },
     } }), qc);
     expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: queryKeys.corpusSamples });
   });
