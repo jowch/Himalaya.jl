@@ -183,6 +183,7 @@ Module-specific conventions and anti-patterns live in the AGENTS.md file nearest
 - [mutation-queue.md](docs/mutation-queue.md) — server-reconciliation queue architecture, `client_op_id` lifecycle, replay-as-rerun, `with_idempotency`.
 - [contract-testing.md](docs/contract-testing.md) — six-layer rule and canonical paired test files.
 - [future-feature-ideas.md](docs/future-feature-ideas.md) — intentionally-deferred features.
+- [mockup-contract.md](docs/mockup-contract.md) — every behaviour of the approved workspace mock-up and where it stands (built with a test, superseded, planned). `npm run lint:mockup` checks it; update a row in any PR that builds, changes or replaces a mock-up behaviour.
 
 **Package-specific:**
 
