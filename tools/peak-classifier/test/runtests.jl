@@ -37,6 +37,12 @@ end
     pl = joinpath(mktempdir(), "lr.json"); save_model(pl, lr)
     @test predict_peaks(load_model(pl), e.q, e.I, e.σ) == predict_peaks(lr, e.q, e.I, e.σ)
 
+    stale = JSON3.read(read(path, String), Dict{String, Any})
+    stale["model"]["feature_version"] = "default-1;detector_features=true;himalaya=0.0.0"
+    ps = joinpath(mktempdir(), "stale.json")
+    write(ps, JSON3.write(stale))
+    @test_throws "retrain" load_model(ps)
+
     old = joinpath(mktempdir(), "old.json")
     write(old, JSON3.write(Dict("file_version" => 2, "model" => Dict())))
     @test_throws "retrain" load_model(old)

@@ -4,8 +4,9 @@
 
 """
 A learning algorithm and its hyperparameters. Implement
-`fit(::MyLearner, X, y; rng) -> Fitted`, `to_dict`, `from_dict(::Type{Learner}, d)`
-via `register_learner!`, and `seed`.
+`fit(::MyLearner, X, y; rng) -> Fitted` and `to_dict`, give it an `Int` field
+`seed` (or define `HimalayaPeakModel.seed(::MyLearner)`), and make it loadable with
+`register_learner!`.
 """
 abstract type Learner end
 
@@ -45,19 +46,30 @@ const FITTED = Dict{String, Function}()
 const FEATURESETS = Dict{String, Function}()
 
 """
-    register_learner!(kind, learner_loader, fitted_loader)
+    register_learner!(kind, learner_loader, fitted_loader; replace = false)
 
 Makes a learner selectable by recipes and loadable from stored models. Each
 loader takes the dictionary and returns the object. Loaders must not execute
-anything taken from the data.
+anything taken from the data. Registering a `kind` twice is an error unless
+`replace = true`.
+
+An external package must call this from its `__init__`: a top-level call runs
+during that package's precompilation, and the change to this module's registry
+is not saved.
 """
-function register_learner!(kind::AbstractString, learner_loader, fitted_loader)
+function register_learner!(kind::AbstractString, learner_loader, fitted_loader; replace::Bool = false)
+    replace || !(haskey(LEARNERS, kind) || haskey(FITTED, kind)) || error("learner kind \"$kind\" is already registered")
     LEARNERS[kind] = learner_loader
     FITTED[kind] = fitted_loader
     nothing
 end
 
-register_features!(kind::AbstractString, loader) = (FEATURESETS[kind] = loader; nothing)
+"""`register_features!(kind, loader; replace = false)`; same rules as `register_learner!`."""
+function register_features!(kind::AbstractString, loader; replace::Bool = false)
+    replace || !haskey(FEATURESETS, kind) || error("feature set kind \"$kind\" is already registered")
+    FEATURESETS[kind] = loader
+    nothing
+end
 
 function load_kind(registry, what, d)
     kind = String(fld(d, "kind"))

@@ -46,4 +46,3 @@ function default_features_from_dict(d)
 end
 
 register_features!("default", default_features_from_dict)
-from_dict(::Type{DefaultFeatures}, d) = default_features_from_dict(d)

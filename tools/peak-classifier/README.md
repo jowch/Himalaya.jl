@@ -41,9 +41,10 @@ A model file is JSON: `{"file_version": 3, "model": ...}`, where `model` is
 `HimalayaPeakModel.to_dict` of the trained model (recipe, recipe id, feature
 names, threshold, NMS window and the fitted model, each tree as nested split and
 leaf nodes). Loading reads data only and runs no code from the file, and it does
-not depend on the Julia or DecisionTree.jl version. A file from an older
-version of the tool (a `Serialization` dump, or file version below 3) is
-refused with "retrain it". Any learner kind registered in `HimalayaPeakModel`
+not depend on the Julia version (it is rebuilt into DecisionTree.jl 0.12's
+tree structs). A file from an older version of the tool (a `Serialization`
+dump, or file version below 3), or one trained with a different feature
+version (for example after a core Himalaya upgrade), is refused with "retrain it". Any learner kind registered in `HimalayaPeakModel`
 (`register_learner!`) can be saved and loaded; `--learner` selects among the
 built-in `rf` (random forest) and `logistic`. Pass
 the trace's `σ` to `predict_peaks` when you have it; without it `σ` is

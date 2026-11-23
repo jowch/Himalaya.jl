@@ -3,6 +3,7 @@ function fit end
 """Probability of a real peak for each row of `X`."""
 function predict_proba end
 
+"""Seed for the training RNG. Defaults to the learner's `seed` field; override for a learner without one."""
 seed(l::Learner) = l.seed
 
 """
@@ -41,16 +42,21 @@ function predict_proba(f::ForestFitted, X::AbstractMatrix)
     j === nothing ? zeros(size(X, 1)) : Float64.(P[:, j])
 end
 
-# DecisionTree's prediction is the fraction of trees voting for each class, and
-# a tree votes with its leaf's majority class, so a leaf needs only `c`.
-tree_dict(l::DecisionTree.Leaf) = Dict{String, Any}("c" => Int(l.majority))
+# A leaf stores its majority class and the training counts per class. A forest
+# prediction uses only the majority (one vote per tree in DecisionTree 0.12);
+# the counts rebuild `Leaf.values`, so per-tree class fractions match too.
+function tree_dict(l::DecisionTree.Leaf)
+    n = Dict{String, Any}("0" => count(==(0), l.values), "1" => count(==(1), l.values))
+    Dict{String, Any}("c" => Int(l.majority), "n" => n)
+end
 tree_dict(n::DecisionTree.Node) = Dict{String, Any}("f" => n.featid, "t" => Float64(n.featval),
     "l" => tree_dict(n.left), "r" => tree_dict(n.right))
 
 function tree_from_dict(d)
     if haskey(d, :c) || haskey(d, "c")
-        c = Int(fld(d, "c"))
-        DecisionTree.Leaf{Int}(c, [c])
+        n = fld(d, "n")
+        values = Int[fill(0, Int(fld(n, "0"))); fill(1, Int(fld(n, "1")))]
+        DecisionTree.Leaf{Int}(Int(fld(d, "c")), values)
     else
         DecisionTree.Node{Float64, Int}(Int(fld(d, "f")), Float64(fld(d, "t")),
             tree_from_dict(fld(d, "l")), tree_from_dict(fld(d, "r")))
@@ -75,12 +81,12 @@ end
 
 function to_dict(f::ForestFitted)
     ens = f.forest.ensemble
-    Dict{String, Any}("kind" => "random_forest", "version" => 1, "n_features" => ens.n_feat,
+    Dict{String, Any}("kind" => "random_forest", "version" => 2, "n_features" => ens.n_feat,
         "classes" => Int.(f.forest.classes), "trees" => Any[tree_dict(t) for t in ens.trees])
 end
 
 function rf_fitted_from_dict(d)
-    check_version(d, 1, "random_forest model")
+    check_version(d, 2, "random_forest model")
     n = Int(fld(d, "n_features"))
     trees = DecisionTree.LeafOrNode{Float64, Int}[tree_from_dict(t) for t in fld(d, "trees")]
     classes = Int[Int(c) for c in fld(d, "classes")]
@@ -122,6 +128,7 @@ function fit(l::LogisticLearner, X::AbstractMatrix, y::AbstractVector{Bool}; rng
         w .-= l.lr .* (Z' * r ./ n .+ l.l2 .* w)
         b -= l.lr * sum(r) / n
     end
+    (all(isfinite, w) && isfinite(b)) || error("logistic fit diverged (non-finite weights); lower lr")
     LogisticFitted(μ, s, w, b)
 end
 

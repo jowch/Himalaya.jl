@@ -209,7 +209,8 @@ can each change without touching the rest:
 
 - **Learner** (`Learner`/`Fitted`: `fit`, `predict_proba`, `to_dict`,
   `from_dict`). The package has `RandomForestLearner` and `LogisticLearner`.
-  A new learner is a new type plus one `register_learner!` entry. Nothing else
+  A new learner is a new type plus one `register_learner!` entry (from the
+  defining package's `__init__`; a duplicate kind is an error). Nothing else
   changes: training, cross-validation, the gate and storage take any learner,
   and old rows keep loading by their `kind`.
 - **Feature set** (`FeatureSet`: `feature_names`, `feature_version`,
@@ -219,6 +220,11 @@ can each change without touching the rest:
 - **Recipe**: feature set, learner, label options (`weak_keep`), threshold and
   NMS window, with a stable `recipe_id` (hash of its dict). Changing any
   setting is a new recipe and a new id.
+
+Scope: a recipe describes a per-candidate classifier (candidate rows, a
+probability threshold, NMS). A model of another shape, such as a whole-trace
+model, would need `Recipe` and `TrainedModel` to become abstract with their own
+`train` and `predict_peaks`.
 
 A swap does not decide anything by itself. A model trained from a new recipe
 is a pending candidate and the promotion gate below decides whether it replaces
@@ -271,14 +277,16 @@ production stays.
 - The fitted model is `to_dict` of the learner's `Fitted` object, stored as JSON
   in a TEXT column, only for the active and a pending model; it is set to NULL
   on rejected and retired rows. For the random forest each tree is nested split
-  and leaf nodes with exact Float64 thresholds. JSON loads without running code
-  (a `Serialization` file runs code when loaded, and the directory next to the
-  database is group-writable) and does not depend on the Julia or DecisionTree
-  version. Loading dispatches on the dictionary's `kind` through a registry and
-  rebuilds DecisionTree's own tree objects, so prediction is DecisionTree's
-  code, and a test checks that a JSON round trip gives identical
-  probabilities. The recipe row is enough to retrain the same model from the
-  stored labels.
+  nodes (exact Float64 thresholds) and leaves holding the majority class and the
+  training count per class. JSON loads without running code (a `Serialization`
+  file runs code when loaded, and the directory next to the database is
+  group-writable) and does not depend on the Julia version. Loading dispatches
+  on the dictionary's `kind` through a registry and rebuilds DecisionTree 0.12's
+  own tree structs, so prediction is DecisionTree's code. That ties the stored
+  forest format to DecisionTree 0.12's struct layout; `[compat]` holds the
+  bound, and the round-trip tests (identical forest and per-tree
+  probabilities) must pass on any upgrade. The recipe row is enough to retrain
+  the same model from the stored labels.
 - The feature version includes `pkgversion(Himalaya)`, because candidates and
   the detector-agreement features come from `findpeaks`. After a core upgrade
   the server retrains from the stored labels at boot and runs the gate, so a

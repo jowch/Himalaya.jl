@@ -53,6 +53,10 @@ recipe_id(r::Recipe) = bytes2hex(sha1(canonical(to_dict(r))))[1:16]
 """
 A fitted model with the recipe that produced it. `feature_names` are the
 columns `fitted` expects. `trained_on` counts the training candidates.
+`feature_version` is the feature set's version when the model was trained; a
+loaded model keeps the stored value, so callers can compare it with
+`feature_version(model.recipe.features)` to see whether candidate generation
+has changed since.
 """
 struct TrainedModel
     recipe::Recipe
@@ -61,6 +65,7 @@ struct TrainedModel
     nms::Int
     feature_names::Vector{String}
     trained_on::NamedTuple{(:positive, :negative), Tuple{Int, Int}}
+    feature_version::String
 end
 
 """
@@ -86,7 +91,7 @@ function train(recipe::Recipe, ds::Dataset; rows = nothing)
     any(isnothing, cols) && error("dataset lacks features $(names[isnothing.(cols)]); build it with the recipe's feature set")
     fitted = fit(recipe.learner, ds.X[sel, cols], y; rng)
     TrainedModel(recipe, fitted, recipe.threshold, recipe.nms, names,
-                 (positive = count(y), negative = count(!, y)))
+                 (positive = count(y), negative = count(!, y)), feature_version(recipe.features))
 end
 
 """
@@ -133,7 +138,7 @@ function predict_peaks(m::TrainedModel, q, I, σ = nothing; hybrid = nothing)
 end
 
 to_dict(m::TrainedModel) = Dict{String, Any}("version" => 1, "recipe" => to_dict(m.recipe),
-    "recipe_id" => recipe_id(m.recipe), "feature_version" => feature_version(m.recipe.features),
+    "recipe_id" => recipe_id(m.recipe), "feature_version" => m.feature_version,
     "feature_names" => m.feature_names, "threshold" => m.threshold, "nms" => m.nms,
     "trained_on" => Dict{String, Any}("positive" => m.trained_on.positive, "negative" => m.trained_on.negative),
     "fitted" => to_dict(m.fitted))
@@ -147,5 +152,6 @@ function from_dict(::Type{TrainedModel}, d)
     t = fld(d, "trained_on")
     TrainedModel(recipe, from_dict(Fitted, fld(d, "fitted")), Float64(fld(d, "threshold")),
                  Int(fld(d, "nms")), names,
-                 (positive = Int(fld(t, "positive")), negative = Int(fld(t, "negative"))))
+                 (positive = Int(fld(t, "positive")), negative = Int(fld(t, "negative"))),
+                 String(fld(d, "feature_version")))
 end

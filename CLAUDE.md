@@ -37,7 +37,7 @@ If this is your first session on this repo, skim these in order before touching 
 ```
 src/                                # core Himalaya package — see src/AGENTS.md
 test/                               # core tests
-packages/HimalayaPeakModel/         # peak candidates, features, labels, forest, CV (depends only on Himalaya)
+packages/HimalayaPeakModel/         # peak candidates, features, labels, swappable learner/feature-set/recipe, CV (depends on Himalaya, DecisionTree, SHA)
 tools/peak-classifier/              # CLI over HimalayaPeakModel + HimalayaUI.labeled_exposures
 packages/HimalayaDB/                # read-only Julia reader of the central DB for analysis scripts; contract-tested against HimalayaUI
 packages/HimalayaUI/
