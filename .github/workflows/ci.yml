@@ -232,6 +232,50 @@ jobs:
             scratch/demo/backend.log
           if-no-files-found: ignore
 
+  upgrade-drill:
+    name: Upgrade drill (base DB opened on head)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ env.JULIA_VERSION }}
+      - uses: julia-actions/cache@v2
+        with:
+          cache-name: upgrade-drill-${{ env.JULIA_CPU_TARGET }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: packages/HimalayaUI/frontend/package-lock.json
+      - name: Install frontend
+        run: cd packages/HimalayaUI/frontend && npm ci
+      - name: Install Chromium
+        timeout-minutes: 14
+        uses: ./.github/actions/playwright-chromium
+      - name: Install Julia packages
+        run: |
+          julia --project=packages/HimalayaUI -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
+      - name: Review a demo DB on the base, then open it on this head
+        env:
+          UPGRADE_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || 'HEAD^' }}
+        run: make upgrade-drill
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: upgrade-drill
+          path: |
+            scratch/upgrade/out/
+            scratch/upgrade/db/backend.log
+            scratch/verify/demo.log
+          if-no-files-found: ignore
+
   cold-start:
     name: Cold start (first-use compile)
     runs-on: ubuntu-24.04
@@ -267,7 +311,7 @@ jobs:
   ci-ok:
     name: CI ok
     if: always()
-    needs: [core, himalayadb, ui-groups, ui-backend, frontend, e2e, demo-truth, cold-start]
+    needs: [core, himalayadb, ui-groups, ui-backend, frontend, e2e, demo-truth, upgrade-drill, cold-start]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

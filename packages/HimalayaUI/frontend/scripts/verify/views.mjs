@@ -97,11 +97,17 @@ async function workspaceRail(page) {
     els.map((el) => ({
       phase: (el.querySelector("[data-testid='phase-chip']")?.textContent ?? "").trim(),
       on: el.getAttribute("aria-pressed") === "true",
+      unsupported: el.hasAttribute("data-unsupported"),
     })),
   );
   const ff = page.locator("[data-testid='workspace-form-factor']");
   const formFactor = (await ff.count()) ? (await ff.getAttribute("aria-pressed")) === "true" : false;
-  return { ticked: rows.filter((r) => r.on).map((r) => r.phase), candidates: rows.map((r) => r.phase), form_factor: formFactor };
+  return {
+    ticked: rows.filter((r) => r.on).map((r) => r.phase),
+    candidates: rows.filter((r) => !r.unsupported).map((r) => r.phase),
+    unsupported: rows.filter((r) => r.unsupported).map((r) => r.phase),
+    form_factor: formFactor,
+  };
 }
 
 async function currentWorkspaceFrame(page, frameOrder) {
