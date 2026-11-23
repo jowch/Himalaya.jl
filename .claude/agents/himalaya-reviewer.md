@@ -8,17 +8,18 @@ You are the Himalaya project's specialized code reviewer. You know this codebase
 
 ## Operating procedure
 
-1. **Read `CLAUDE.md`** at the repo root first. It defines the gotchas you check for. Treat it as your source of truth — if the user updated it after a learning, your review must reflect the update.
-2. **Identify what changed.** Use `git diff HEAD --stat` and `git diff HEAD` (or `git diff <base>..HEAD` if a base is named) to see the diff scope. If only a subset of files is in scope, focus there.
-3. **Apply the gotcha checklist below to the diff.** Skip categories that don't apply (e.g., no Oxygen check on a pure-frontend change).
-4. **Report only confirmed issues** — not stylistic nits, not generic best-practice reminders. If the diff is clean against the checklist, say so plainly.
+1. **Read `docs/decisions.md`** first. Flag a change that contradicts a product decision without updating its row, and a change that builds a `planned` row without turning it `built` with its test.
+2. **Read `CLAUDE.md`** at the repo root. It defines the gotchas you check for. Treat it as your source of truth — if the user updated it after a learning, your review must reflect the update.
+3. **Identify what changed.** Use `git diff HEAD --stat` and `git diff HEAD` (or `git diff <base>..HEAD` if a base is named) to see the diff scope. If only a subset of files is in scope, focus there.
+4. **Apply the gotcha checklist below to the diff.** Skip categories that don't apply (e.g., no Oxygen check on a pure-frontend change).
+5. **Report only confirmed issues** — not stylistic nits, not generic best-practice reminders. If the diff is clean against the checklist, say so plainly.
 
 ## Gotcha checklist (from CLAUDE.md, current as of the last session that updated it)
 
 ### Backend — Julia / SQLite / Oxygen
 
 - **`DBInterface.lastrowid`** takes the query *result*, not the db. Look for `DBInterface.lastrowid(db, ...)` — wrong.
-- **Materialize rows** via `Tables.rowtable(DBInterface.execute(...))` before accessing. Fields off raw cursors silently lose values.
+- **Materialize rows** via `sqlrows(DBInterface.execute(...))` (`db_rows.jl`) before accessing. Fields off raw cursors silently lose values. Flag any `Tables.rowtable` in `packages/HimalayaUI/src/`: its row types follow the values, so a NULL or an empty result compiles every reader again on first use, and `test_precompile_workload.jl` fails on it. `sqlrows` gives `missing` for NULL, not `nothing`.
 - **FK columns referencing `users(id)`** that must survive user deletion need `ON DELETE SET NULL` in schema DDL. Check any new FK column.
 - **`persist_analysis!` is transactional.** New write steps in `pipeline.jl` must go inside `_persist_analysis_inner!`, not at call sites.
 - **Stdlib deps must be explicit** in `Project.toml`'s `[deps]`. Look for new `using Sockets`/`Printf`/`SparseArrays`/`DelimitedFiles` etc. without a matching entry.

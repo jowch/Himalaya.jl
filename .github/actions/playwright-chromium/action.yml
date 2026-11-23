@@ -1,0 +1,50 @@
+name: Playwright Chromium
+description: >
+  Restore Playwright's Chromium from the Actions cache, keyed on the installed
+  Playwright version, and install the system libraries only when Chromium
+  cannot start without them. The runner image already ships nearly all of
+  them, so apt, the slow and flaky part, is normally skipped.
+inputs:
+  working-directory:
+    description: Directory whose node_modules holds @playwright/test.
+    default: packages/HimalayaUI/frontend
+  timeout:
+    description: Upper bound on each download or apt step, as a timeout(1) duration.
+    default: 6m
+runs:
+  using: composite
+  steps:
+    - id: version
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: echo "playwright=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+    - id: cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-chromium-${{ runner.os }}-${{ runner.arch }}-${{ steps.version.outputs.playwright }}
+    - if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        for attempt in 1 2; do
+          timeout "${{ inputs.timeout }}" npx playwright install chromium && exit 0
+          echo "::warning::playwright install chromium failed (attempt $attempt)"
+        done
+        exit 1
+    - shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        launch() { timeout 60s node -e "require('@playwright/test').chromium.launch().then((b) => b.close())"; }
+        if launch; then
+          echo "Chromium starts with the runner's own libraries; skipping apt."
+          exit 0
+        fi
+        echo "::warning::Chromium could not start; reinstalling it in case the cached copy is broken."
+        timeout "${{ inputs.timeout }}" npx playwright install --force chromium && launch && exit 0
+        echo "::warning::Chromium still could not start; installing its system libraries with apt."
+        for attempt in 1 2; do
+          timeout "${{ inputs.timeout }}" npx playwright install-deps chromium && launch && exit 0
+          echo "::warning::playwright install-deps chromium failed (attempt $attempt)"
+        done
+        exit 1

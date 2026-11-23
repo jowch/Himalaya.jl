@@ -3007,6 +3007,86 @@ describe("WorkspacePage", () => {
     expect(currentFrame()).toBe("Image 2");
   });
 
+  it("Tab and Shift+Tab cycle only the phase choices, wrapping", () => {
+    renderAt("/experiments/1/workspace/10");
+    const rows = within(screen.getByTestId("workspace-candidates")).getAllByRole("button");
+    const ff = screen.getByTestId("workspace-form-factor");
+    const choices = [...rows, ff];
+    expect(fireEvent.keyDown(document.body, { key: "Tab" })).toBe(false);
+    expect(document.activeElement).toBe(choices[0]);
+    for (let i = 1; i < choices.length; i++) {
+      fireEvent.keyDown(document.activeElement!, { key: "Tab" });
+      expect(document.activeElement).toBe(choices[i]);
+    }
+    fireEvent.keyDown(document.activeElement!, { key: "Tab" });
+    expect(document.activeElement).toBe(choices[0]);
+    fireEvent.keyDown(document.activeElement!, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(ff);
+    fireEvent.keyDown(screen.getByRole("button", { name: "Image 1" }), { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(ff);
+  });
+
+  it("leaves Enter on a focused choice to the button, and Space keeps opening the detector view", () => {
+    state.exposures = [exposure(100), exposure(101, { image_path: "/x.tif", image_version: "7" })];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(document.body, { key: "Tab" });
+    expect(fireEvent.keyDown(document.activeElement!, { key: "Enter" })).toBe(true);
+    fireEvent.keyDown(document.activeElement!, { key: " " });
+    expect(screen.getByRole("dialog", { name: "Detector image" })).toBeInTheDocument();
+  });
+
+  it("a stray Esc outside the phase choices leaves Tab on them", () => {
+    renderAt("/experiments/1/workspace/10");
+    expect(fireEvent.keyDown(document.body, { key: "Escape" })).toBe(true);
+    expect(fireEvent.keyDown(document.body, { key: "Tab" })).toBe(false);
+    expect(document.activeElement?.closest("[data-call-choices]")).not.toBeNull();
+  });
+
+  it("Esc leaves the phase choices and lets Tab reach every control until another sample opens", () => {
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(document.body, { key: "Tab" });
+    const first = document.activeElement;
+    expect(fireEvent.keyDown(first!, { key: "Escape" })).toBe(false);
+    expect(document.activeElement).toBe(document.body);
+    expect(fireEvent.keyDown(document.body, { key: "Tab" })).toBe(true);
+    (first as HTMLElement).focus();
+    expect(fireEvent.keyDown(first!, { key: "Tab" })).toBe(true);
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    expect(fireEvent.keyDown(document.body, { key: "Tab" })).toBe(false);
+    expect(document.activeElement?.closest("[data-call-choices]")).not.toBeNull();
+  });
+
+  it("keeps native Tab in text fields and while a custom index is open", () => {
+    renderAt("/experiments/1/workspace/10");
+    const filter = document.getElementById("workspace-filter")!;
+    filter.focus();
+    expect(fireEvent.keyDown(filter, { key: "Tab" })).toBe(true);
+    expect(document.activeElement).toBe(filter);
+    fireEvent.keyDown(window, { key: "i" });
+    expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
+    expect(fireEvent.keyDown(document.body, { key: "Tab" })).toBe(true);
+  });
+
+  it("does not trap Tab when no phase choice can be picked", () => {
+    state.username = undefined;
+    renderAt("/experiments/1/workspace/10");
+    expect(fireEvent.keyDown(document.body, { key: "Tab" })).toBe(true);
+  });
+
+  it("on a short window with Call folded, Tab opens Call and lands on its first choice", () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(max-height: 860px)", media: query, addEventListener: () => {}, removeEventListener: () => {} }));
+    try {
+      renderAt("/experiments/1/workspace/10");
+      const tools = screen.getByRole("complementary", { name: "Tools" });
+      fireEvent.click(within(tools).getByRole("button", { name: /^Image/ }));
+      expect(screen.queryByTestId("workspace-candidates")).toBeNull();
+      fireEvent.keyDown(document.body, { key: "Tab", shiftKey: true });
+      expect(document.activeElement).toBe(screen.getByTestId("workspace-form-factor"));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("0 marks the frame as no phase (form factor), and 0 again clears it", () => {
     state.indices = [];
     renderAt("/experiments/1/workspace/10");
@@ -3058,6 +3138,25 @@ describe("WorkspacePage", () => {
     fireEvent.keyDown(window, { key: " " });
     expect(screen.getByTestId("workspace-detector-caption")).toHaveTextContent("Image 2 of 3, A3 in Long pipe");
     fireEvent.keyDown(window, { key: " " });
+  });
+
+  it("draws no bridge to a sample whose setup is hidden, and draws it again once the setup is shown", () => {
+    state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
+    state.setups = [{ id: 1, name: "Short pipe", folder: "s1", included: true }, { id: 2, name: "Long pipe", folder: "s2", included: false }];
+    state.corpus = state.corpus.map((s) => (s.id === 12 ? { ...s, setup_id: 2 } : { ...s, setup_id: 1 }));
+    state.mateExposures = new Map([[12, [exposure(200, { sample_id: 12 })]]]);
+    const { rerender } = renderAt("/experiments/1/workspace/10");
+    const frames = screen.getByTestId("workspace-exposures");
+    expect(within(frames).queryByTestId("frame-group-header")).toBeNull();
+    expect(within(frames).queryByRole("button", { name: /^Image 1 of A3/ })).toBeNull();
+    expect(screen.queryByText(/^Same as A3/)).toBeNull();
+    expect(screen.getByTestId("workspace-samples").querySelector("[data-bridged]")).toBeNull();
+
+    state.setups = state.setups.map((st) => ({ ...st, included: true }));
+    rerender(page("/experiments/1/workspace/10"));
+    expect(within(screen.getByTestId("workspace-exposures")).getAllByTestId("frame-group-header")).toHaveLength(2);
+    expect(screen.getByText("Same as A3 in Long pipe")).toBeInTheDocument();
+    expect(screen.getByTestId("workspace-samples").querySelector("[data-sample-id='10'] [data-bridged]")).not.toBeNull();
   });
 
   it("the kept count under Frames counts only this sample's own frames", () => {
@@ -3225,7 +3324,7 @@ describe("WorkspacePage", () => {
     expect(within(picker).getAllByRole("button").map((b) => b.getAttribute("data-sample-id"))).toEqual(["11"]);
   });
 
-  it("names a same sample whose setup is hidden, so the note and the leave command match the group", () => {
+  it("leaves a same sample whose setup is hidden out of the note and the leave command, though the bridge stays stored", () => {
     state.setups = [
       { id: 2, name: "setup2", folder: "setup2", included: true },
       { id: 1, name: "setup1", folder: "setup1", included: false },
@@ -3233,10 +3332,11 @@ describe("WorkspacePage", () => {
     state.corpus = [{ ...sample(10, "B1"), setup_id: 2 }, { ...sample(12, "A1"), setup_id: 1 }];
     state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByText("Same as A1 in setup1")).toBeInTheDocument();
+    expect(screen.queryByText(/^Same as A1/)).toBeNull();
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "not the same" } });
-    expect(screen.getByRole("option", { name: "Not the same sample as A1" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /^Not the same sample as/ })).toBeNull();
+    expect(calls.filter((c) => c.hook.includes("bridge"))).toEqual([]);
   });
 
   it("B is not a shortcut, the palette offers no unbridging without bridges, and no bridging before a user is set", () => {

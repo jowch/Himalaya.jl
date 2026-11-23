@@ -312,6 +312,10 @@
     outline-offset: -2px;
   }
 
+  [data-pointer-focus] :focus-visible {
+    outline: none;
+  }
+
   /* tabindex=-1 elements are programmatic focus ANCHORS, never Tab destinations:
      interaction-scope containers (the cursored row / dock count are the real
      indicators), overflow scrollers (sheet-scroll, thumbnail-gallery, opted out

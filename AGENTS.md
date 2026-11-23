@@ -30,6 +30,7 @@ Julia monorepo for indexing SAXS diffraction patterns. Core `Himalaya` package (
 ## First session
 
 Read these in order before touching code:
+0. `docs/decisions.md` — Jonathan's product decisions, one row each, with the code or test that implements it or "planned". Authors and reviewers check a change against it first; a change that contradicts a row updates the row.
 1. `docs/peak-finding.md` — peak-finding design (load-bearing)
 2. `docs/experiment-config.md` — if touching the New-experiment funnel, experiment create/scan, or config.jl
 3. `docs/scoring.md` — if touching score/auto_group/remove_subsets
