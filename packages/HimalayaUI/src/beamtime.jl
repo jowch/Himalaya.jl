@@ -4,13 +4,13 @@ _same_dir(a, b) = _canonical_dir(a) == _canonical_dir(b)
 
 function _setup_data_dir_taken(db::SQLite.DB, data_dir::AbstractString)
     plain = rstrip(String(data_dir), '/')
-    !isempty(Tables.rowtable(DBInterface.execute(db,
+    !isempty(sqlrows(DBInterface.execute(db,
         "SELECT 1 FROM setups WHERE rtrim(data_dir, '/') IN (?, ?) LIMIT 1",
         [plain, _canonical_dir(data_dir)])))
 end
 
 function _unknown_setup_roots(db::SQLite.DB, experiment_id::Integer)::Vector{String}
-    rows = Tables.rowtable(DBInterface.execute(db,
+    rows = sqlrows(DBInterface.execute(db,
         "SELECT path FROM experiments WHERE id = ?", [Int(experiment_id)]))
     isempty(rows) && return String[]
     path = String(first(rows).path)
@@ -37,7 +37,7 @@ unrecognized_setup_roots(db::SQLite.DB, experiment_id::Integer) =
     filter(!_layout_detected, _unknown_setup_roots(db, experiment_id))
 
 function _next_position(db::SQLite.DB, experiment_id::Integer)
-    rows = Tables.rowtable(DBInterface.execute(db,
+    rows = sqlrows(DBInterface.execute(db,
         "SELECT MAX(position) AS p FROM setups WHERE experiment_id = ?", [Int(experiment_id)]))
     p = first(rows).p
     ismissing(p) ? 0 : Int(p) + 1
@@ -89,7 +89,7 @@ function _common_dir(paths::Vector{String})
 end
 
 function _experiment_summary(db::SQLite.DB, id::Integer)
-    rows = Tables.rowtable(DBInterface.execute(db, """
+    rows = sqlrows(DBInterface.execute(db, """
         SELECT x.id, x.name, x.path, x.ingest_status,
                (SELECT COUNT(*) FROM samples s WHERE s.experiment_id = x.id) AS samples,
                (SELECT COUNT(*) FROM exposures e WHERE e.experiment_id = x.id) AS exposures

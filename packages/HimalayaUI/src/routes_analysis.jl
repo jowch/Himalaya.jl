@@ -2,11 +2,11 @@ using HTTP, JSON3, DBInterface, Tables, Oxygen, SQLite
 using Himalaya
 
 function _assignment_body(db::SQLite.DB, exposure_id::Int)
-    srow = Tables.rowtable(DBInterface.execute(db,
+    srow = sqlrows(DBInterface.execute(db,
         "SELECT sample_id FROM exposures WHERE id = ?", [exposure_id]))
     sid = isempty(srow) ? missing : srow[1].sample_id
     state = ismissing(sid) ? "indexed" : sample_call_state(db, Int(sid))
-    members = Tables.rowtable(DBInterface.execute(db,
+    members = sqlrows(DBInterface.execute(db,
         "SELECT index_id FROM assignment_members WHERE exposure_id = ? ORDER BY index_id",
         [exposure_id]))
     Dict(:exposure_id => exposure_id,
@@ -37,7 +37,7 @@ function _bonnet_for_index(db::SQLite.DB, exposure_id::Integer,
     a = Float64(lattice_d)
     a > 0 || return nothing
 
-    anchors = Tables.rowtable(DBInterface.execute(db,
+    anchors = sqlrows(DBInterface.execute(db,
         """SELECT i.phase, i.lattice_d
            FROM assignment_members m JOIN indices i ON i.id = m.index_id
            WHERE m.exposure_id = ? AND i.id != ?
@@ -60,12 +60,12 @@ end
 function register_analysis_routes!()
     @get "/api/exposures/{id}/indices" function(req::HTTP.Request, id::Int)
         db = current_db()
-        indices = Tables.rowtable(DBInterface.execute(db,
+        indices = sqlrows(DBInterface.execute(db,
             """SELECT id, exposure_id, phase, basis, score, r_squared, lattice_d,
                   status, kind, inputs_hash
            FROM indices WHERE exposure_id = ? ORDER BY score DESC""", [id]))
         out = map(indices) do ix
-            peak_rows = Tables.rowtable(DBInterface.execute(db,
+            peak_rows = sqlrows(DBInterface.execute(db,
                 """SELECT ip.peak_id, ip.ratio_position, ip.residual,
                           COALESCE(ap.q, pc.q) AS q_observed
                    FROM index_peaks ip
@@ -146,7 +146,7 @@ function register_analysis_routes!()
                 JSON3.write(Dict(:error => "index_id must be an integer")))
         end
         return with_idempotency(db, req) do
-            isempty(Tables.rowtable(DBInterface.execute(db,
+            isempty(sqlrows(DBInterface.execute(db,
                 "SELECT 1 FROM indices WHERE id = ? AND exposure_id = ?", [index_id, id]))) &&
                 return HTTP.Response(409, ["Content-Type" => "application/json"],
                     JSON3.write(Dict(:error => "this index changed after re-analysis, so pick it again")))
@@ -243,12 +243,12 @@ function register_analysis_routes!()
                 result.user_id, result.client_id, result.client_op_id,
                 result.payload_json)
 
-            rows = Tables.rowtable(DBInterface.execute(db,
+            rows = sqlrows(DBInterface.execute(db,
                 """SELECT id, exposure_id, phase, basis, score, r_squared, lattice_d,
                   status, kind, inputs_hash
            FROM indices WHERE id = ?""", [nid]))
             ix = rows[1]
-            peak_rows = Tables.rowtable(DBInterface.execute(db,
+            peak_rows = sqlrows(DBInterface.execute(db,
                 """SELECT ip.peak_id, ip.ratio_position, ip.residual,
                           COALESCE(ap.q, pc.q) AS q_observed
                    FROM index_peaks ip
@@ -321,12 +321,12 @@ function register_analysis_routes!()
                     Dict(:state => ab[:state], :members => ab[:members])))
             broadcast_call_states!(db, mates)
 
-            rows = Tables.rowtable(DBInterface.execute(db,
+            rows = sqlrows(DBInterface.execute(db,
                 """SELECT id, exposure_id, phase, basis, score, r_squared, lattice_d,
                       status, kind, inputs_hash
                FROM indices WHERE id = ?""", [nid]))
             ix = rows[1]
-            peak_rows = Tables.rowtable(DBInterface.execute(db,
+            peak_rows = sqlrows(DBInterface.execute(db,
                 """SELECT ip.peak_id, ip.ratio_position, ip.residual,
                           COALESCE(ap.q, pc.q) AS q_observed
                    FROM index_peaks ip
@@ -347,7 +347,7 @@ function register_analysis_routes!()
     @delete "/api/indices/{id}" function(req::HTTP.Request, id::Int)
         db = current_db()
         return with_idempotency(db, req) do
-            rows = Tables.rowtable(DBInterface.execute(db,
+            rows = sqlrows(DBInterface.execute(db,
                 "SELECT id, kind, exposure_id FROM indices WHERE id = ?", [id]))
             isempty(rows) && return HTTP.Response(404,
                 ["Content-Type" => "application/json"],
@@ -358,7 +358,7 @@ function register_analysis_routes!()
                 JSON3.write(Dict(:error => "only speculative indices can be deleted; use group exclusion for auto indices")))
 
             exposure_id = Int(rows[1].exposure_id)
-            was_member = !isempty(Tables.rowtable(DBInterface.execute(db,
+            was_member = !isempty(sqlrows(DBInterface.execute(db,
                 "SELECT 1 FROM assignment_members WHERE exposure_id = ? AND index_id = ?",
                 [exposure_id, id])))
 

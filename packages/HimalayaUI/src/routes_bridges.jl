@@ -3,7 +3,7 @@ using HTTP, JSON3, DBInterface, Tables, Oxygen
 _json_ok(body) = HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(body))
 
 function bridge_groups_for_experiment(db, exp_id::Int)
-    rows = Tables.rowtable(DBInterface.execute(db,
+    rows = sqlrows(DBInterface.execute(db,
         """SELECT b.sample_id, b.group_id
              FROM sample_bridges b JOIN samples s ON s.id = b.sample_id
             WHERE s.experiment_id = ?
@@ -17,21 +17,21 @@ function bridge_groups_for_experiment(db, exp_id::Int)
 end
 
 function _bridge_group_of(db, sample_id::Int)
-    rows = Tables.rowtable(DBInterface.execute(db,
+    rows = sqlrows(DBInterface.execute(db,
         "SELECT group_id FROM sample_bridges WHERE sample_id = ?", [sample_id]))
     isempty(rows) ? nothing : Int(rows[1].group_id)
 end
 
-_bridge_members(db, group_id::Int) = [Int(r.sample_id) for r in Tables.rowtable(DBInterface.execute(db,
+_bridge_members(db, group_id::Int) = [Int(r.sample_id) for r in sqlrows(DBInterface.execute(db,
     "SELECT sample_id FROM sample_bridges WHERE group_id = ? ORDER BY sample_id", [group_id]))]
 
-_next_bridge_group_id(db) = Int(first(Tables.rowtable(DBInterface.execute(db,
+_next_bridge_group_id(db) = Int(first(sqlrows(DBInterface.execute(db,
     "SELECT COALESCE(MAX(group_id), 0) + 1 AS g FROM sample_bridges"))).g)
 
 function _live_sample_count(db, sample_ids::Vector{Int})
     isempty(sample_ids) && return 0
     marks = join(fill("?", length(sample_ids)), ", ")
-    Int(first(Tables.rowtable(DBInterface.execute(db,
+    Int(first(sqlrows(DBInterface.execute(db,
         "SELECT COUNT(*) AS n FROM samples WHERE id IN ($marks)",
         sample_ids))).n)
 end
@@ -54,7 +54,7 @@ end
 function bridge_mates(db, sample_id::Int)
     g = _bridge_group_of(db, sample_id)
     g === nothing && return Int[]
-    [Int(r.id) for r in Tables.rowtable(DBInterface.execute(db,
+    [Int(r.id) for r in sqlrows(DBInterface.execute(db,
         """SELECT s.id FROM sample_bridges b JOIN samples s ON s.id = b.sample_id
             WHERE b.group_id = ? AND s.id <> ?
             ORDER BY s.id""", [g, sample_id]))]
@@ -64,7 +64,7 @@ function _confirmed_shared_labels(db, sample_ids::Vector{Int})
     isempty(sample_ids) && return Dict{String, String}()
     marks = join(fill("?", length(sample_ids)), ", ")
     out = Dict{String, String}()
-    for r in Tables.rowtable(DBInterface.execute(db,
+    for r in sqlrows(DBInterface.execute(db,
             "SELECT label FROM sample_labels WHERE sample_id IN ($marks) AND state = 'confirmed' ORDER BY id",
             sample_ids))
         label = String(r.label)
@@ -88,7 +88,7 @@ end
 
 function _live_bridge_groups(db)
     groups = Dict{Int, Vector{Int}}()
-    for r in Tables.rowtable(DBInterface.execute(db,
+    for r in sqlrows(DBInterface.execute(db,
             "SELECT group_id, sample_id FROM sample_bridges ORDER BY group_id, sample_id"))
         push!(get!(groups, Int(r.group_id), Int[]), Int(r.sample_id))
     end
@@ -100,7 +100,7 @@ function migrate_share_bridged_labels!(db::SQLite.DB)
     SQLite.transaction(db) do
         req = _system_request()
         for (_, members) in sort(collect(_live_bridge_groups(db)); by = first)
-            exp_id = Int(first(Tables.rowtable(DBInterface.execute(db,
+            exp_id = Int(first(sqlrows(DBInterface.execute(db,
                 "SELECT experiment_id FROM samples WHERE id = ?", [first(members)]))).experiment_id)
             labels = sort(collect(values(_confirmed_shared_labels(db, members))))
             for sid in members, label in labels
@@ -144,7 +144,7 @@ function register_bridge_routes!()
         to = raw isa Integer ? Int(raw) : nothing
         to === nothing && return _json_error(400, "to_sample_id is required")
         to == id && return _json_error(400, "a sample cannot be bridged to itself")
-        both = Tables.rowtable(DBInterface.execute(db,
+        both = sqlrows(DBInterface.execute(db,
             "SELECT id, experiment_id FROM samples WHERE id IN (?, ?)", [id, to]))
         length(both) == 2 || return _json_error(404, "sample not found")
         Int(both[1].experiment_id) == Int(both[2].experiment_id) ||
@@ -162,7 +162,7 @@ function register_bridge_routes!()
 
     @delete "/api/samples/{id}/bridge" function(req::HTTP.Request, id::Int)
         db = current_db()
-        rows = Tables.rowtable(DBInterface.execute(db,
+        rows = sqlrows(DBInterface.execute(db,
             "SELECT experiment_id FROM samples WHERE id = ?", [id]))
         isempty(rows) && return _json_error(404, "sample not found")
         exp_id = Int(rows[1].experiment_id)

@@ -53,7 +53,7 @@ end
 For each ratio position of `phase`, return the predicted q (basis × ratio)
 and the closest non-anchor peak whose relative deviation is within `tol`.
 `peak_rows` is any iterable of NamedTuples with `id::Int` and `q::Real`
-fields (e.g. the result of `Tables.rowtable` over a `peaks` query).
+fields (e.g. the result of `sqlrows` over a `peaks` query).
 
 `allowed_ratios` restricts the scan to the ratio positions whose NORMALIZED
 ratio appears in the supplied set (default: every position). Callers that must
@@ -220,11 +220,11 @@ Determine whether `peak_id` references an `auto_peaks` row or a
 Returns `"auto"` or `"curation"`. Errors if not found in either table.
 """
 function _kind_for(db::SQLite.DB, exposure_id::Int, peak_id::Int)
-    if !isempty(Tables.rowtable(DBInterface.execute(db,
+    if !isempty(sqlrows(DBInterface.execute(db,
         "SELECT 1 FROM auto_peaks WHERE id = ? AND exposure_id = ?",
         [peak_id, exposure_id])))
         return "auto"
-    elseif !isempty(Tables.rowtable(DBInterface.execute(db,
+    elseif !isempty(sqlrows(DBInterface.execute(db,
         "SELECT 1 FROM peak_curations WHERE id = ? AND exposure_id = ? AND kind = 'add'",
         [peak_id, exposure_id])))
         return "curation"
@@ -272,7 +272,7 @@ actually won a snap — the collision `insert_speculative_index!` guards against
 by re-querying the resolved table.
 """
 function _effective_peak_rows(db::SQLite.DB, exposure_id::Int)
-    auto = Tables.rowtable(DBInterface.execute(db,
+    auto = sqlrows(DBInterface.execute(db,
         "SELECT id, q, sharpness FROM auto_peaks WHERE exposure_id = ? ORDER BY id",
         [exposure_id]))
     fl = curation_flags(db, exposure_id, [Float64(r.q) for r in auto])
@@ -327,9 +327,9 @@ function insert_speculative_index!(db::SQLite.DB, exposure_id::Int,
         # colliding curation row's q shadow an auto peak's (curation rows come
         # last) — freezing the wrong q into durable intent state.
         q_row = pk_kind == "auto" ?
-            Tables.rowtable(DBInterface.execute(db,
+            sqlrows(DBInterface.execute(db,
                 "SELECT q FROM auto_peaks WHERE id = ?", [peak_id])) :
-            Tables.rowtable(DBInterface.execute(db,
+            sqlrows(DBInterface.execute(db,
                 "SELECT q FROM peak_curations WHERE id = ?", [peak_id]))
         DBInterface.execute(db,
             """INSERT INTO index_peaks (index_id, peak_id, peak_kind, ratio_position, residual)

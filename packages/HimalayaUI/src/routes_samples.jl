@@ -14,14 +14,14 @@ function register_samples_routes!()
         end
 
         samples = exp_filter === nothing ?
-            Tables.rowtable(DBInterface.execute(db,
+            sqlrows(DBInterface.execute(db,
                 "SELECT * FROM samples ORDER BY id")) :
-            Tables.rowtable(DBInterface.execute(db,
+            sqlrows(DBInterface.execute(db,
                 "SELECT * FROM samples WHERE experiment_id = ? ORDER BY id",
                 [exp_filter]))
 
         qunits_by_setup = Dict{Int, String}()
-        for sr in Tables.rowtable(DBInterface.execute(db,
+        for sr in sqlrows(DBInterface.execute(db,
                 "SELECT id, q_units FROM setups"))
             qunits_by_setup[Int(sr.id)] = ismissing(sr.q_units) ? "A-1" : String(sr.q_units)
         end
@@ -31,7 +31,7 @@ function register_samples_routes!()
         if !isempty(samples)
             ph   = join(fill("?", length(sids)), ",")
             grouped_exps = Dict{Int, Vector{NamedTuple}}()
-            for e in Tables.rowtable(DBInterface.execute(db,
+            for e in sqlrows(DBInterface.execute(db,
                     "SELECT id, sample_id, status FROM exposures
                      WHERE sample_id IN ($ph) ORDER BY sample_id ASC, id ASC", sids))
                 push!(get!(grouped_exps, Int(e.sample_id), NamedTuple[]), e)
@@ -91,7 +91,7 @@ function register_samples_routes!()
                 payload = update_payload)
             _enqueue_broadcast_from_result!(result, "update_sample", "sample", id)
 
-            rows = Tables.rowtable(DBInterface.execute(db,
+            rows = sqlrows(DBInterface.execute(db,
                 "SELECT * FROM samples WHERE id = ?", [id]))
             HTTP.Response(200, ["Content-Type" => "application/json"],
                 JSON3.write(row_to_json(rows[1])))

@@ -26,7 +26,7 @@ function labeled_exposures(db::SQLite.DB; group_by::Symbol = :experiment,
     group_by in (:experiment, :sample) || throw(ArgumentError("group_by must be :experiment or :sample"))
     out = HimalayaPeakModel.LabeledExposure[]
     skips = Dict{Symbol, Int}()
-    rows = Tables.rowtable(DBInterface.execute(db, """
+    rows = sqlrows(DBInterface.execute(db, """
         SELECT e.id, e.filename, e.sample_id, e.experiment_id,
                EXISTS(SELECT 1 FROM peak_curations c WHERE c.exposure_id = e.id) AS curated,
                COALESCE((SELECT sc.state = 'form_factor' FROM sample_calls sc
@@ -40,12 +40,12 @@ function labeled_exposures(db::SQLite.DB; group_by::Symbol = :experiment,
             key = group_by === :experiment ? r.experiment_id : r.sample_id
             ismissing(key) && throw(SkipExposure(:no_group))
             q, I, σ = _load_label_trace(db, r)
-            auto = Tables.rowtable(DBInterface.execute(db,
+            auto = sqlrows(DBInterface.execute(db,
                 "SELECT q FROM auto_peaks WHERE exposure_id = ? ORDER BY id", [r.id]))
             aq = Float64[x.q for x in auto]
             fl = curation_flags(db, r.id, aq)
             kept = aq[.!fl.excluded .& .!fl.superseded]
-            excl = Float64[x.q for x in Tables.rowtable(DBInterface.execute(db,
+            excl = Float64[x.q for x in sqlrows(DBInterface.execute(db,
                 "SELECT q FROM peak_curations WHERE exposure_id = ? AND kind = 'exclude' ORDER BY id", [r.id]))]
             push!(out, HimalayaPeakModel.LabeledExposure(r.id, Int(key), q, I, σ,
                 Float64[a.q for a in fl.adds], kept, excl, r.curated == 1, r.ff == 1))

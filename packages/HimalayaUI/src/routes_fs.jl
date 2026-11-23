@@ -6,7 +6,7 @@ _setup_infos(dir::AbstractString)::Vector{String} =
                if startswith(f, "setup_info_") && endswith(f, ".txt")] :
         String[]
 
-_listdir(dir::AbstractString) = try readdir(dir) catch; String[] end
+_listdir(dir::AbstractString) = try readdir(String(dir)) catch; String[] end
 
 _subdirs(d::AbstractString) = isdir(d) ?
     String[joinpath(d, x) for x in _listdir(d) if !startswith(x, ".") && isdir(joinpath(d, x))] :
@@ -248,7 +248,7 @@ _canonical_dir(p) = (q = rstrip(String(p), '/'); isempty(q) ? "/" : (ispath(q) ?
 
 function experiment_using_dir(db, dir)
     plain = rstrip(String(dir), '/')
-    rows = Tables.rowtable(DBInterface.execute(db,
+    rows = sqlrows(DBInterface.execute(db,
         """SELECT x.id, x.name FROM setups st JOIN experiments x ON x.id = st.experiment_id
             WHERE rtrim(st.data_dir, '/') IN (?, ?) ORDER BY x.id LIMIT 1""",
         [plain, _canonical_dir(dir)]))
@@ -257,7 +257,7 @@ end
 
 function experiment_at_path(db, dir)
     plain = rstrip(String(dir), '/')
-    rows = Tables.rowtable(DBInterface.execute(db,
+    rows = sqlrows(DBInterface.execute(db,
         "SELECT id, name FROM experiments WHERE rtrim(path, '/') IN (?, ?) ORDER BY id LIMIT 1",
         [plain, _canonical_dir(dir)]))
     isempty(rows) ? nothing : (; id = Int(first(rows).id), name = String(first(rows).name))

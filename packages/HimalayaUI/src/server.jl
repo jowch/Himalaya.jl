@@ -218,13 +218,13 @@ function wait_prewarm(experiment_id::Int)
 end
 
 function _ingest_phase(db::SQLite.DB, experiment_id::Int)
-    rows = Tables.rowtable(DBInterface.execute(db,
+    rows = sqlrows(DBInterface.execute(db,
         "SELECT last_scanned_at FROM experiments WHERE id = ?", [experiment_id]))
     (isempty(rows) || ismissing(first(rows).last_scanned_at)) ? nothing : "rescan"
 end
 
 function resume_ingests!(db::SQLite.DB)
-    rows = Tables.rowtable(DBInterface.execute(db, "SELECT id, ingest_status FROM experiments ORDER BY id"))
+    rows = sqlrows(DBInterface.execute(db, "SELECT id, ingest_status FROM experiments ORDER BY id"))
     for r in rows
         id = Int(r.id)
         try
@@ -248,7 +248,7 @@ function try_backfill_monitors!(db::SQLite.DB, experiment_id::Int)
 end
 
 function backfill_all_monitors!(db::SQLite.DB)
-    ids = Tables.rowtable(DBInterface.execute(db,
+    ids = sqlrows(DBInterface.execute(db,
         "SELECT DISTINCT experiment_id FROM exposures
           WHERE prp_path IS NOT NULL AND monitors_read = 0 AND experiment_id IS NOT NULL"))
     for r in ids

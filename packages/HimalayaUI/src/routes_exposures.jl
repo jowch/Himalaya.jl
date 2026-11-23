@@ -28,9 +28,9 @@ function register_exposures_routes!()
     @get "/api/samples/{id}/exposures" function(req::HTTP.Request, id::Int)
         db = current_db()
         sql = "SELECT * FROM exposures WHERE sample_id = ? ORDER BY id"
-        exs = Tables.rowtable(DBInterface.execute(db, sql, [id]))
+        exs = sqlrows(DBInterface.execute(db, sql, [id]))
         out = map(exs) do e
-            srcs = Tables.rowtable(DBInterface.execute(db,
+            srcs = sqlrows(DBInterface.execute(db,
                 "SELECT source_exposure_id, role FROM exposure_sources
                  WHERE averaged_exposure_id = ?", [Int(e.id)]))
             d = row_to_json(e)
@@ -46,7 +46,7 @@ function register_exposures_routes!()
 
     @get "/api/exposures/{id}/image" function(req::HTTP.Request, id::Int)
         db   = current_db()
-        rows = Tables.rowtable(DBInterface.execute(db,
+        rows = sqlrows(DBInterface.execute(db,
             "SELECT image_path FROM exposures WHERE id = ?", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
@@ -128,7 +128,7 @@ function register_exposures_routes!()
                 JSON3.write(Dict(:error => "status must be 'accepted', 'rejected', or null")))
         end
 
-        rows = Tables.rowtable(DBInterface.execute(db,
+        rows = sqlrows(DBInterface.execute(db,
             "SELECT id FROM exposures WHERE id = ?", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
@@ -151,7 +151,7 @@ function register_exposures_routes!()
 
     @post "/api/exposures/{id}/analyze" function(req::HTTP.Request, id::Int)
         db   = current_db()
-        rows = Tables.rowtable(DBInterface.execute(db,
+        rows = sqlrows(DBInterface.execute(db,
             "SELECT e.id, st.analysis_dir
              FROM exposures e JOIN samples s ON s.id = e.sample_id
              JOIN setups st ON st.id = e.setup_id
@@ -187,14 +187,14 @@ function register_exposures_routes!()
             # disambiguation handle. Defend anyway — fall back to LIMIT 1
             # ORDER BY id DESC, which matches the prior behaviour.
             evt = if client_op_id === nothing
-                Tables.rowtable(DBInterface.execute(db,
+                sqlrows(DBInterface.execute(db,
                     """SELECT id, user_id, payload
                        FROM user_actions
                        WHERE action = 'analyze_run' AND entity_type = 'exposure'
                          AND entity_id = ?
                        ORDER BY id DESC LIMIT 1""", [id]))
             else
-                Tables.rowtable(DBInterface.execute(db,
+                sqlrows(DBInterface.execute(db,
                     """SELECT id, user_id, payload
                        FROM user_actions
                        WHERE action = 'analyze_run' AND entity_type = 'exposure'

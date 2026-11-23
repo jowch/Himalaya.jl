@@ -28,14 +28,14 @@ function suggested_role(name::AbstractString)
 end
 
 function suggest_labels!(db, sample_id::Int)
-    rows = Tables.rowtable(DBInterface.execute(db,
+    rows = sqlrows(DBInterface.execute(db,
         "SELECT name FROM samples WHERE id = ?", [sample_id]))
     (isempty(rows) || ismissing(rows[1].name)) && return nothing
     role = suggested_role(String(rows[1].name))
     role === nothing && return nothing
     roles = [first(r) for r in ROLE_WORDS]
     placeholders = join(fill("?", length(roles)), ", ")
-    carried = Tables.rowtable(DBInterface.execute(db,
+    carried = sqlrows(DBInterface.execute(db,
         "SELECT 1 FROM sample_labels WHERE sample_id = ? AND label COLLATE NOCASE IN ($placeholders) LIMIT 1",
         [sample_id; roles]))
     isempty(carried) || return nothing
@@ -51,12 +51,12 @@ const DISTANCE_LABEL = r"^\s*\d+(\.\d+)?\s*m\s*$"
 flight_path_label(m::Real) = "$(round(m; digits = 1)) m"
 
 function suggest_flight_path!(db, sample_id::Int)
-    lengths = [Float64(r.pipe_length_m) for r in Tables.rowtable(DBInterface.execute(db,
+    lengths = [Float64(r.pipe_length_m) for r in sqlrows(DBInterface.execute(db,
         "SELECT pipe_length_m FROM exposures WHERE sample_id = ? AND pipe_length_m IS NOT NULL", [sample_id]))]
     isempty(lengths) && return nothing
     labels = unique(flight_path_label.(lengths))
     length(labels) == 1 || return nothing
-    taken = Tables.rowtable(DBInterface.execute(db,
+    taken = sqlrows(DBInterface.execute(db,
         "SELECT label FROM sample_labels WHERE sample_id = ?", [sample_id]))
     any(r -> occursin(DISTANCE_LABEL, String(r.label)), taken) && return nothing
     DBInterface.execute(db,
@@ -67,7 +67,7 @@ function suggest_flight_path!(db, sample_id::Int)
 end
 
 function suggest_labels_for_experiment!(db, experiment_id::Int)
-    ids = [Int(r.id) for r in Tables.rowtable(DBInterface.execute(db,
+    ids = [Int(r.id) for r in sqlrows(DBInterface.execute(db,
         "SELECT id FROM samples WHERE experiment_id = ?", [experiment_id]))]
     for id in ids
         suggest_labels!(db, id)
@@ -89,7 +89,7 @@ end
 
 function migrate_label_suggestions!(db::SQLite.DB)
     _migrated(db, MIGRATION_LABEL_SUGGESTIONS) && return nothing
-    for r in Tables.rowtable(DBInterface.execute(db, "SELECT id FROM experiments"))
+    for r in sqlrows(DBInterface.execute(db, "SELECT id FROM experiments"))
         try
             SQLite.transaction(() -> suggest_labels_for_experiment!(db, Int(r.id)), db)
         catch err

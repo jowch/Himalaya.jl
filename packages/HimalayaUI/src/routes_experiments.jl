@@ -5,20 +5,20 @@ const _PLAIN_PATCH_FIELDS = ["name", "description"]
 const _CLEARABLE_PATCH_FIELDS = ("description",)
 
 function _experiment_stats(db::SQLite.DB, exp_id::Integer)
-    loads = Tables.rowtable(DBInterface.execute(db,
+    loads = sqlrows(DBInterface.execute(db,
         "SELECT COUNT(*) AS c FROM loads WHERE experiment_id = ?", [exp_id]))[1].c
-    samples = Tables.rowtable(DBInterface.execute(db,
+    samples = sqlrows(DBInterface.execute(db,
         "SELECT COUNT(*) AS c FROM samples WHERE experiment_id = ?", [exp_id]))[1].c
-    exposures = Tables.rowtable(DBInterface.execute(db,
+    exposures = sqlrows(DBInterface.execute(db,
         "SELECT COUNT(*) AS c FROM exposures WHERE experiment_id = ?", [exp_id]))[1].c
-    span = Tables.rowtable(DBInterface.execute(db,
+    span = sqlrows(DBInterface.execute(db,
         "SELECT (julianday(MAX(timestamp)) - julianday(MIN(timestamp))) * 24 AS h " *
         "FROM exposures WHERE experiment_id = ? AND timestamp IS NOT NULL", [exp_id]))[1].h
     span_hours = (span === missing || span === nothing) ? 0.0 : round(Float64(span); digits = 1)
-    sessions = Tables.rowtable(DBInterface.execute(db,
+    sessions = sqlrows(DBInterface.execute(db,
         "SELECT COUNT(DISTINCT session_id) AS c FROM loads WHERE experiment_id = ? AND session_id IS NOT NULL",
         [exp_id]))[1].c
-    t = Tables.rowtable(DBInterface.execute(db,
+    t = sqlrows(DBInterface.execute(db,
         "SELECT MIN(timestamp) AS t FROM exposures WHERE experiment_id = ? AND timestamp IS NOT NULL",
         [exp_id]))[1].t
     started_at = (t === missing || t === nothing) ? nothing : String(t)
@@ -163,7 +163,7 @@ function _beamtime_setup_specs(db, path, raw_setups)
 end
 
 function _add_beamtime_setups(db, id, body)
-    rows = Tables.rowtable(DBInterface.execute(db, "SELECT path FROM experiments WHERE id = ?", [id]))
+    rows = sqlrows(DBInterface.execute(db, "SELECT path FROM experiments WHERE id = ?", [id]))
     isempty(rows) && return _json_error(404, Dict(:error => "experiment not found"))
     path = _canonical_dir(String(first(rows).path))
     any(st -> _same_dir(st.root_dir, path), setups_of(db, id)) && return _json_error(400,
@@ -229,7 +229,7 @@ function register_experiments_routes!()
 
     @get "/api/experiments" function(req::HTTP.Request)
         db   = current_db()
-        rows = Tables.rowtable(DBInterface.execute(db,
+        rows = sqlrows(DBInterface.execute(db,
             "SELECT * FROM experiments ORDER BY id"))
         out = [_experiment_row_to_json(r, db) for r in rows]
         HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(out))
@@ -237,7 +237,7 @@ function register_experiments_routes!()
 
     @get "/api/experiments/{id}" function(req::HTTP.Request, id::Int)
         db   = current_db()
-        rows = Tables.rowtable(DBInterface.execute(db,
+        rows = sqlrows(DBInterface.execute(db,
             "SELECT * FROM experiments WHERE id = ?", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
@@ -248,7 +248,7 @@ function register_experiments_routes!()
 
     @patch "/api/experiments/{id}" function(req::HTTP.Request, id::Int)
         db   = current_db()
-        rows = Tables.rowtable(DBInterface.execute(db,
+        rows = sqlrows(DBInterface.execute(db,
             "SELECT id FROM experiments WHERE id = ?", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
@@ -300,7 +300,7 @@ function register_experiments_routes!()
                 entity_type = "experiment", entity_id = id,
                 payload = changed)
             _enqueue_broadcast_from_result!(result, "experiment_updated", "experiment", id)
-            updated_rows = Tables.rowtable(DBInterface.execute(db,
+            updated_rows = sqlrows(DBInterface.execute(db,
                 "SELECT * FROM experiments WHERE id = ?", [id]))
             HTTP.Response(200, ["Content-Type" => "application/json"],
                 JSON3.write(_experiment_row_to_json(updated_rows[1], db)))
@@ -309,7 +309,7 @@ function register_experiments_routes!()
 
     @get "/api/experiments/{id}/problems" function(req::HTTP.Request, id::Int)
         db = current_db()
-        rows = Tables.rowtable(DBInterface.execute(db,
+        rows = sqlrows(DBInterface.execute(db,
             "SELECT ingest_error FROM experiments WHERE id = ?", [id]))
         isempty(rows) && return _json(404, Dict(:error => "experiment not found"))
         _json(200, Dict(:ingest_error => coalesce(first(rows).ingest_error, nothing),
@@ -333,14 +333,14 @@ function register_experiments_routes!()
 
     @post "/api/experiments/{id}/scan" function(req::HTTP.Request, id::Int)
         db   = current_db()
-        rows = Tables.rowtable(DBInterface.execute(db,
+        rows = sqlrows(DBInterface.execute(db,
             "SELECT id, ingest_status FROM experiments WHERE id = ?", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
             JSON3.write(Dict(:error => "experiment not found")))
 
         req_body = isempty(req.body) ? Dict{String,Any}() : try
-            JSON3.read(req.body)
+            JSON3.read(String(copy(req.body::Vector{UInt8})))
         catch
             Dict{String,Any}()
         end
@@ -364,7 +364,7 @@ function register_experiments_routes!()
 
     @delete "/api/experiments/{id}" function(req::HTTP.Request, id::Int)
         db   = current_db()
-        rows = Tables.rowtable(DBInterface.execute(db,
+        rows = sqlrows(DBInterface.execute(db,
             "SELECT id, ingest_status FROM experiments WHERE id = ?", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],

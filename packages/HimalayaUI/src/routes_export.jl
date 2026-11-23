@@ -1,11 +1,11 @@
 using HTTP, JSON3, DBInterface, Tables, Oxygen, CSV, SQLite
 
 function build_export(db::SQLite.DB, experiment_id::Int)
-    samples = Tables.rowtable(DBInterface.execute(db,
+    samples = sqlrows(DBInterface.execute(db,
         "SELECT * FROM samples WHERE experiment_id = ? ORDER BY id",
         [experiment_id]))
     sids = [Int(sm.id) for sm in samples]
-    setup_names = Dict(Int(r.id) => setup_display_name(r) for r in Tables.rowtable(DBInterface.execute(db,
+    setup_names = Dict(Int(r.id) => setup_display_name(r) for r in sqlrows(DBInterface.execute(db,
         "SELECT id, display_name, folder FROM setups WHERE experiment_id = ?", [experiment_id])))
     setup_of(sm) = sm.setup_id === missing ? nothing : get(setup_names, Int(sm.setup_id), nothing)
     who = Dict(Int(sm.id) => Dict(:name => String(sm.name), :setup => setup_of(sm)) for sm in samples)
@@ -15,7 +15,7 @@ function build_export(db::SQLite.DB, experiment_id::Int)
     out = Dict[]
     for sm in samples
         sid  = Int(sm.id)
-        labels = [String(r.label) for r in Tables.rowtable(DBInterface.execute(db,
+        labels = [String(r.label) for r in sqlrows(DBInterface.execute(db,
             "SELECT label FROM sample_labels WHERE sample_id = ? AND state = 'confirmed' ORDER BY id", [sid]))]
         state = get(states, sid, "indexed")
         ms = get(members, sid, [])
@@ -23,15 +23,15 @@ function build_export(db::SQLite.DB, experiment_id::Int)
         called = summary.phase !== nothing
         called_ids = Set(m.index_id for m in ms)
 
-        exposures = Tables.rowtable(DBInterface.execute(db,
+        exposures = sqlrows(DBInterface.execute(db,
             "SELECT * FROM exposures WHERE sample_id = ? ORDER BY id", [sid]))
 
         ex_out = Dict[]
         for e in exposures
-            candidates = Tables.rowtable(DBInterface.execute(db,
+            candidates = sqlrows(DBInterface.execute(db,
                 "SELECT id, phase, basis, score, r_squared, lattice_d
                  FROM indices WHERE exposure_id = ? ORDER BY score DESC, id", [Int(e.id)]))
-            auto_phases = [String(r.phase) for r in Tables.rowtable(DBInterface.execute(db,
+            auto_phases = [String(r.phase) for r in sqlrows(DBInterface.execute(db,
                 "SELECT i.phase FROM indices i
                  JOIN index_group_members m ON m.index_id = i.id
                  JOIN index_groups g ON g.id = m.group_id

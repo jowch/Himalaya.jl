@@ -2,9 +2,9 @@ using HTTP, JSON3, DBInterface, Tables, Oxygen
 
 function register_users_routes!()
     @get "/api/users" function(req::HTTP.Request)
-        rows = Tables.rowtable(DBInterface.execute(current_db(),
+        rows = sqlrows(DBInterface.execute(current_db(),
             "SELECT id, username, first_name, last_name FROM users ORDER BY id"))
-        rows_to_json(rows)
+        HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(rows_to_json(rows)))
     end
 
     @post "/api/users" function(req::HTTP.Request)
@@ -26,7 +26,7 @@ function register_users_routes!()
         last_name  = haskey(body, :last_name)  ? (isnothing(body.last_name)  ? nothing : String(body.last_name))  : nothing
 
         db   = current_db()
-        rows = Tables.rowtable(DBInterface.execute(db,
+        rows = sqlrows(DBInterface.execute(db,
             "SELECT id, username, first_name, last_name FROM users WHERE username = ?", [username]))
         if !isempty(rows)
             existing = rows[1]
@@ -38,7 +38,7 @@ function register_users_routes!()
                 DBInterface.execute(db,
                     "UPDATE users SET first_name = ?, last_name = ? WHERE id = ?",
                     [new_first, new_last, existing.id])
-                rows = Tables.rowtable(DBInterface.execute(db,
+                rows = sqlrows(DBInterface.execute(db,
                     "SELECT id, username, first_name, last_name FROM users WHERE id = ?", [existing.id]))
             end
             return HTTP.Response(200, ["Content-Type" => "application/json"],

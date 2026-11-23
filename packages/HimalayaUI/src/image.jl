@@ -217,9 +217,9 @@ end
 function prewarm_thumbnails!(db::SQLite.DB; threads::Bool = true,
                              experiment_id::Union{Integer, Nothing} = nothing)
     rows = experiment_id === nothing ?
-        Tables.rowtable(DBInterface.execute(db,
+        sqlrows(DBInterface.execute(db,
             "SELECT id, image_path FROM exposures WHERE image_path IS NOT NULL")) :
-        Tables.rowtable(DBInterface.execute(db,
+        sqlrows(DBInterface.execute(db,
             "SELECT id, image_path FROM exposures WHERE image_path IS NOT NULL AND experiment_id = ?",
             [Int(experiment_id)]))
 
