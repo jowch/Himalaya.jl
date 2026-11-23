@@ -277,6 +277,8 @@ function _boot_background_work(db::SQLite.DB, resume::Bool)
             backfill_all_monitors!(bg)
             resume && resume_ingests!(bg)
             backfill_trace_medians!(bg)
+            deselect_beam_off_once!(bg)
+            backfill_averages!(bg)
         end
     catch err
         @warn "boot background work failed" exception = err

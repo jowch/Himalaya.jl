@@ -302,15 +302,14 @@ surface yet; a summary table (above) is the natural home for a download.
 
 ### Multi-frame overlay on the trace
 
-Overlay several frames of one sample on the same plot with configurable
-I-offsets, to see flares and frame-to-frame consistency at a glance. Compare
-overlays other samples' representative frames only.
+Configurable I-offsets for the faint per-image lines under an average
+([image-selection.md](image-selection.md)), to see flares and frame-to-frame
+consistency at a glance. Compare overlays other samples' analyzed images only.
 
 ### Derived-exposure construction
 
-The schema supports derived exposures (e.g. background-subtracted) but
-there's no UI to create them. It fits with combining frames in the workspace
-(per-frame include toggles, time-weighted sum or median).
+Averages of selected images are built ([image-selection.md](image-selection.md)).
+Background-subtracted derived exposures and a median method are not.
 
 ### Reshoot grouping for new scans
 

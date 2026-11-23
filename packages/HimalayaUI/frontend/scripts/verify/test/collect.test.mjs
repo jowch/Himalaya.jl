@@ -21,8 +21,8 @@ function routes(demoDir) {
       { id: 4, setups: [{ data_dir: path.join(demoDir, "data") }], ingest_status: "complete" },
     ],
     "/api/samples?experiment_id=4": [
-      { id: 10, name: "MO_H2O_S1 (S01P01)", assignment_state: "indexed", phase: "Pn3m", call_phases: ["Pn3m"], representative_exposure_id: 1 },
-      { id: 11, name: "MO_PEG5_S3 (S01P02)", assignment_state: "indexed", phase: "Pn3m", call_phases: ["Im3m", "Pn3m"], representative_exposure_id: 3 },
+      { id: 10, name: "MO_H2O_S1 (S01P01)", assignment_state: "indexed", phase: "Pn3m", call_phases: ["Pn3m"], analyzed_exposure_id: 1 },
+      { id: 11, name: "MO_PEG5_S3 (S01P02)", assignment_state: "indexed", phase: "Pn3m", call_phases: ["Im3m", "Pn3m"], analyzed_exposure_id: 3 },
     ],
     "/api/experiments/4/labels": [],
     "/api/experiments/4/bridges": [],
@@ -73,9 +73,9 @@ test("check-truth reads the backend's real endpoint shapes end to end", async ()
     assert.deepEqual(r.summary.known_gaps, ["MO_PEG5"]);
     const [h2o, peg] = r.samples;
     assert.deepEqual(h2o.auto_calls.map((c) => [c.frame, c.expected]), [["MO_H2O_S1", "Pn3m"], ["MO_H2O_S2", "none"]]);
-    assert.deepEqual(h2o.shown, { status: "phase", call: "Pn3m", frame: "MO_H2O_S1" });
+    assert.deepEqual(h2o.shown, { status: "phase", call: "Pn3m", frame: "MO_H2O_S1", exposure_id: 1 });
     assert.deepEqual(h2o.assigned_frames, [{ frame: "MO_H2O_S1", call: "Pn3m" }]);
-    assert.deepEqual(peg.shown, { status: "phase", call: "Im3m+Pn3m", frame: "MO_PEG5_S3" });
+    assert.deepEqual(peg.shown, { status: "phase", call: "Im3m+Pn3m", frame: "MO_PEG5_S3", exposure_id: 3 });
     assert.deepEqual(peg.assigned_frames, [{ frame: "MO_PEG5_S3", call: "Im3m+Pn3m" }]);
     assert.deepEqual(r.summary.invariants_failed, []);
     assert.ok(stub.seen.includes("/api/samples?experiment_id=4"));
@@ -166,10 +166,10 @@ test("check-truth --ui hands the reader each sample's exposure order and folds i
     assert.equal(asked[0].experimentId, 4);
     assert.deepEqual(asked[0].samples[0], { id: 10, name: "MO_H2O_S1 (S01P01)", frameOrder: ["MO_H2O_S2", "MO_H2O_S1"], heldIds: [] });
     assert.equal(r.ok, false);
-    assert.deepEqual(r.summary.invariants_failed, ["representative_kept", "views_agree"]);
+    assert.deepEqual(r.summary.invariants_failed, ["analyzed_kept", "views_agree"]);
     assert.equal(r.invariants.views_agree.checked, true);
     assert.deepEqual(r.invariants.views_agree.violations, [{ sample: "MO_H2O", corpus_api: "MO_H2O_S1", workspace: "MO_H2O_S2" }]);
-    assert.deepEqual(r.invariants.representative_kept.violations.map((v) => v.view), ["workspace"]);
+    assert.deepEqual(r.invariants.analyzed_kept.violations.map((v) => v.view), ["workspace"]);
   } finally {
     await stub.close();
   }

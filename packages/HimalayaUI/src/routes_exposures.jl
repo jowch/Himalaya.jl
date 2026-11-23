@@ -39,6 +39,8 @@ function register_exposures_routes!()
             d[:beam_off] = is_beam_off(e.trace_median, e.analysis_error, e.incident_monitor)
             delete!(d, :reviewed_at)
             delete!(d, :peak_model_version)
+            is_combined_kind(e.kind) || (d[:selected] = is_kept_exposure(e) && coalesce(e.deselected, 0) == 0)
+            delete!(d, :deselected)
             d[:sources]       = rows_to_json(srcs)
             d[:image_version] = image_version_token(e.image_path)
             merge!(d, prp_details(e.prp_path))
@@ -104,16 +106,29 @@ function register_exposures_routes!()
                 ["Content-Type" => "application/json"],
                 JSON3.write(Dict(:error => "status must be 'accepted', 'rejected', or null")))
         end
+        selected = get(body, :selected, nothing)
+        selected === nothing || selected isa Bool || return HTTP.Response(422,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "selected must be true, false or absent")))
 
         rows = sqlrows(DBInterface.execute(db,
-            "SELECT id FROM exposures WHERE id = ?", [id]))
+            "SELECT id, sample_id, kind FROM exposures WHERE id = ?", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
             JSON3.write(Dict(:error => "image not found")))
+        is_combined_kind(rows[1].kind) && return HTTP.Response(422,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "An averaged curve can't be dropped. Change the selection instead.")))
 
-        return with_idempotency(db, req) do
+        resp = with_idempotency(db, req) do
+            was = sqlrows(DBInterface.execute(db, "SELECT status FROM exposures WHERE id = ?", [id]))[1].status
+            restoring = was isa AbstractString && was == "rejected" && status != "rejected"
+            others_selected = !ismissing(rows[1].sample_id) && !isempty(sqlrows(DBInterface.execute(db, """
+                SELECT 1 AS x FROM exposures WHERE sample_id = ? AND id != ? AND kind = 'file' AND deselected = 0
+                   AND (status IS NULL OR status != 'rejected')""", [rows[1].sample_id, id])))
             DBInterface.execute(db,
-                "UPDATE exposures SET status = ? WHERE id = ?", [status, id])
+                "UPDATE exposures SET status = ?, deselected = CASE WHEN ? THEN ? ELSE deselected END WHERE id = ?",
+                [status, restoring ? 1 : 0, (selected === nothing ? others_selected : !selected) ? 1 : 0, id])
 
             result = apply_event!(InTransaction(), db, req;
                 kind = "set_exposure_status",
@@ -124,6 +139,45 @@ function register_exposures_routes!()
             HTTP.Response(200, ["Content-Type" => "application/json"],
                 JSON3.write(Dict(:id => id, :status => status)))
         end
+        _refresh_combined_after!(db, resp, rows[1].sample_id)
+        resp
+    end
+
+    @put "/api/samples/{id}/selection" function(req::HTTP.Request, id::Int)
+        db   = current_db()
+        body = json(req)
+        raw  = get(body, :exposure_ids, nothing)
+        (raw isa AbstractVector && all(x -> x isa Integer, raw)) || return HTTP.Response(422,
+            ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "exposure_ids must be a list of image ids")))
+        wanted = sort(unique(Int.(raw)))
+        isempty(sqlrows(DBInterface.execute(db, "SELECT 1 AS x FROM samples WHERE id = ?", [id]))) &&
+            return HTTP.Response(404, ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:error => "sample not found")))
+        kept = Set(Int[Int(r.id) for r in sqlrows(DBInterface.execute(db, """
+            SELECT id FROM exposures WHERE sample_id = ? AND kind = 'file'
+               AND (status IS NULL OR status != 'rejected')""", [id]))])
+        stray = filter(x -> x ∉ kept, wanted)
+        isempty(stray) || return HTTP.Response(422, ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:error => "Only this sample's kept images can be selected.", :exposure_ids => stray)))
+
+        resp = with_idempotency(db, req) do
+            for eid in kept
+                DBInterface.execute(db, "UPDATE exposures SET deselected = ? WHERE id = ?",
+                    [eid in wanted ? 0 : 1, eid])
+            end
+            result = apply_event!(InTransaction(), db, req;
+                kind = "set_selection",
+                entity_type = "sample", entity_id = id,
+                payload = Dict(:exposure_ids => wanted))
+            _enqueue_broadcast_from_result!(result, "set_selection", "sample", id)
+            HTTP.Response(200, ["Content-Type" => "application/json"],
+                JSON3.write(Dict(:sample_id => id, :exposure_ids => wanted)))
+        end
+        resp.status == 200 || return resp
+        analyzed = refresh_selection!(db, id)
+        HTTP.Response(200, ["Content-Type" => "application/json"],
+            JSON3.write(Dict(:sample_id => id, :exposure_ids => wanted, :analyzed_exposure_id => analyzed)))
     end
 
     @post "/api/exposures/{id}/analyze" function(req::HTTP.Request, id::Int)
@@ -221,4 +275,10 @@ function register_exposures_routes!()
                 )))
         end
     end
+end
+
+function _refresh_combined_after!(db::SQLite.DB, resp::HTTP.Response, sample_id)
+    (resp.status == 200 && !ismissing(sample_id)) || return nothing
+    refresh_selection!(db, Int(sample_id))
+    nothing
 end

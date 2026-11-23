@@ -127,16 +127,19 @@ Every row also needs the date it was decided, as `YYYY-MM-DD`.
 | id | Decision | Decided | Status | Evidence |
 |---|---|---|---|---|
 | combine-include-toggle | Each image has an include toggle; the combined trace is a time-weighted sum, or the median. | 2026-11-20 | superseded | combine-select, 2026-11-23 |
-| combine-select | What you select is what is analysed. Images are selected by a checkbox, Shift-click or ⌘-click; one image is that image, several are their monitor-normalised average with its own peaks, keyed by the set. Every kept image starts selected, with Select all and Select none. A plain click only views. The call stays with the sample. | 2026-11-23 | planned | thread "Show combined curve by default" |
-| combine-keep-one | Dropping the last kept image is refused. | 2026-11-23 | planned | thread "Show combined curve by default" |
-| combine-no-cross-setup | Images never combine across setups. | 2026-11-22 | planned | thread "Show combined curve by default" |
+| combine-select | What you select is what is analysed. Images are selected by a checkbox, Shift-click or ⌘-click; one image is that image, several are their monitor-normalised average with its own peaks, keyed by the set. Every kept image starts selected, with Select all and Select none. A plain click only views. The call stays with the sample. | 2026-11-23 | built | packages/HimalayaUI/test/test_combine.jl › refresh_selection! averages every selected image, one curve per set |
+| combine-keep-one | Dropping the last kept image is refused. | 2026-11-23 | superseded | combine-drop-last, 2026-11-23 |
+| combine-drop-last | The last kept image can be dropped. Nothing is analysed, and the sample row says why ("All dropped" or "None selected") instead of blocking the drop. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/workspace/SampleList.test.tsx › says on the row why nothing is analyzed |
+| combine-restore-unselected | A dropped image that is restored comes back unselected, unless nothing else is selected. Undo of a drop puts back the selection it had. | 2026-11-23 | built | packages/HimalayaUI/test/test_combine.jl › selection, drop and restore routes |
+| combine-beam-off-deselected | Beam-off images start deselected, so they are averaged in only when ticked. | 2026-11-23 | built | packages/HimalayaUI/test/test_ingest_reconcile.jl › a beam-off image starts left out of the selection, at ingest and when its trace lands late |
+| combine-no-cross-setup | Images never combine across setups. | 2026-11-22 | built | packages/HimalayaUI/test/test_combine.jl › a bridged sample averages only its own images |
 
 ## Bridges and beamtimes
 
 | id | Decision | Decided | Status | Evidence |
 |---|---|---|---|---|
 | bridge-is-merge | A bridge says two samples are the same sample measured in two setups. It is not a comparison and takes no comparison slot. | 2026-11-22 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › the same sample takes no comparison slot, so a fifth comparison goes in past a bridge |
-| bridge-note | A bridged sample shows "Same as X in SETUP" and its mate's images under their own setup heading. | 2026-11-22 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › shows a same sample's frames under their own heading after this sample's, and picking one shows it |
+| bridge-note | A bridged sample shows "Same as X in SETUP" and its mate's images under their own setup heading. | 2026-11-22 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › shows a same sample's frames under their own heading after this sample's, and picking one shows its image |
 | bridge-hidden-setup | A bridge to a sample in a hidden setup stays stored but is not drawn. | 2026-11-21 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › draws no bridge to a sample whose setup is hidden, and draws it again once the setup is shown |
 | bridge-shared-call | Bridged samples share one call and their labels, except flight paths. | 2026-11-22 | built | packages/HimalayaUI/test/test_bridge_calls.jl › bridged samples share one call |
 | bridge-keep-call | Opening a bridged pair whose calls differ asks once which call to keep. | 2026-11-22 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › opening a bridged sample whose call state differs from its mate's asks once which call to keep |

@@ -26,8 +26,13 @@ function build_export(db::SQLite.DB, experiment_id::Int)
         exposures = sqlrows(DBInterface.execute(db,
             "SELECT * FROM exposures WHERE sample_id = ? ORDER BY id", [sid]))
 
+        analyzed = analyzed_exposure_id(db, sid)
         ex_out = Dict[]
         for e in exposures
+            if is_combined_kind(e.kind)
+                length(combined_source_ids(db, Int(e.id))) < MIN_COMBINED_SOURCES && continue
+                analyzed == Int(e.id) || any(m -> m.exposure_id == Int(e.id), ms) || continue
+            end
             candidates = sqlrows(DBInterface.execute(db,
                 "SELECT id, phase, basis, score, r_squared, lattice_d
                  FROM indices WHERE exposure_id = ? ORDER BY score DESC, id", [Int(e.id)]))
@@ -38,8 +43,14 @@ function build_export(db::SQLite.DB, experiment_id::Int)
                  WHERE g.exposure_id = ? AND g.kind = 'auto'
                  ORDER BY i.score DESC, i.id", [Int(e.id)]))]
             indices = called ? filter(ix -> Int(ix.id) in called_ids, candidates) : empty(candidates)
+            sources = is_combined_kind(e.kind) ? [String(r.filename) for r in sqlrows(DBInterface.execute(db,
+                "SELECT x.filename FROM exposure_sources s JOIN exposures x ON x.id = s.source_exposure_id
+                  WHERE s.averaged_exposure_id = ? ORDER BY x.id", [Int(e.id)]))] : String[]
             push!(ex_out, Dict(
                 :filename => e.filename,
+                :kind     => e.kind,
+                :sources  => sources,
+                :analyzed => analyzed == Int(e.id),
                 :called   => called,
                 :auto_phases => auto_phases,
                 :indices  => [delete!(ix, :id) for ix in rows_to_json(indices)],
@@ -64,7 +75,7 @@ end
 
 function _export_csv(summary)
     header = ["sample_name","exposure_filename","call_state","call_phases","auto_phases",
-              "phases","lattice_ds","r_squareds","scores","labels","setup","bridged_with"]
+              "phases","lattice_ds","r_squareds","scores","labels","setup","bridged_with","analyzed"]
     rows = Vector{Vector{Any}}()
     for sm in summary
         label_str = join(sm[:labels], ";")
@@ -72,7 +83,7 @@ function _export_csv(summary)
         bridged_str = join([b[:setup] === nothing ? b[:name] : "$(b[:name]) ($(b[:setup]))" for b in sm[:bridged_with]], ";")
         setup_str = something(sm[:setup], "")
         if isempty(sm[:exposures])
-            push!(rows, [sm[:name], "", sm[:call_state], call_str, "", "", "", "", "", label_str, setup_str, bridged_str])
+            push!(rows, [sm[:name], "", sm[:call_state], call_str, "", "", "", "", "", label_str, setup_str, bridged_str, false])
             continue
         end
         for ex in sm[:exposures]
@@ -80,8 +91,9 @@ function _export_csv(summary)
             lds    = join([string(ix[:lattice_d]) for ix in ex[:indices]], ";")
             r2s    = join([string(ix[:r_squared]) for ix in ex[:indices]], ";")
             scs    = join([string(ix[:score])     for ix in ex[:indices]], ";")
-            push!(rows, [sm[:name], ex[:filename], sm[:call_state], call_str, join(ex[:auto_phases], ";"),
-                         phases, lds, r2s, scs, label_str, setup_str, bridged_str])
+            name = is_combined_kind(ex[:kind]) ? "average:" * join(ex[:sources], "+") : ex[:filename]
+            push!(rows, [sm[:name], name, sm[:call_state], call_str, join(ex[:auto_phases], ";"),
+                         phases, lds, r2s, scs, label_str, setup_str, bridged_str, ex[:analyzed]])
         end
     end
     io = IOBuffer()

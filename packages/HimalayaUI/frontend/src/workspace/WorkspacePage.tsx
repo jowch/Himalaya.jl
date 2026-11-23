@@ -46,7 +46,7 @@ import { byRecent, recentRank, recordRecent } from "../lib/recents";
 import { helpKeyFromEmptyField, inDialog, isEditable, suppressGlobalKeys } from "../lib/keys";
 import { useUndoHistory, type UndoEntry, type UndoStep } from "./undo";
 import {
-  bridgeEntry, combinedEntry, settleCallEntry, customIndexEntry, dropEntry, excludeEntry, identify, labelEntry, noPhaseEntry, peakEntry,
+  bridgeEntry, combinedEntry, selectionEntry, settleCallEntry, customIndexEntry, dropEntry, excludeEntry, identify, labelEntry, noPhaseEntry, peakEntry,
   experimentEntry, setupEntry, labelColorEntry, tickEntry, unbridgeEntry, untickEntry, compareEntry, droppedByEdit, type PhaseIdentity,
 } from "./undoEntries";
 import { showToast } from "../lib/toast";
@@ -56,7 +56,8 @@ import { isIngestStage, stageLabel } from "../lib/ingestStages";
 import { bridgeCounts, bridgedWith } from "../lib/bridges";
 import { callStatesSplit, keepChoices, type KeepCall } from "../lib/bridgeCall";
 import { bufferRole, buffersFirst, displayLabel, firstUnusedColor, labelColor, labelColorIsDefault, labelsFor, sameLabel, sampleMatchesFilter, labelVocabulary, labelKey } from "../lib/labels";
-import { representativeExposure } from "../lib/exposure";
+import { analysisOf, imageFrames, keptExposures, MIN_COMBINED, newestKeptFrame } from "../lib/exposure";
+import { useMemberTraces } from "./useMemberTraces";
 import { useCorpusPalette } from "../hooks/useCorpusPalette";
 import { allFrames, frameGroups, frameOf } from "./frameGroups";
 import { phaseColor } from "../phases";
@@ -123,6 +124,8 @@ function helpSections(mod: string): HelpSection[] {
       rows: [
         { keys: ["←", "→"], what: "Previous or next image" },
         { keys: ["X"], what: "Drop the image and show the nearest kept one, or restore a dropped one" },
+        { keys: ["⇧ click"], what: "Select a range of images to analyze" },
+        { keys: ["⌘ click"], what: "Add an image to the selection, or take it out" },
         { keys: ["Space"], what: "Enlarge its detector image; ← → and X work inside it" },
       ],
     },
@@ -289,7 +292,10 @@ export function WorkspacePage(): JSX.Element {
   const mateExposures = useSamplesExposures(bridged);
   const [exposureId, setExposureId] = useState<number | undefined>(linkedExposure);
   useEffect(() => setExposureId(linkedExposure), [sampleId, linkedExposure]);
-  const ownFrames: Exposure[] = useMemo(() => exposures.data ?? [], [exposures.data]);
+  const ownFrames: Exposure[] = useMemo(() => imageFrames(exposures.data), [exposures.data]);
+  const analysis = useMemo(() => analysisOf(exposures.data), [exposures.data]);
+  const selectedIds = useMemo(() => new Set(analysis.selected.map((e) => e.id)), [analysis.selected]);
+  const selectableIds = useMemo(() => new Set(keptExposures(ownFrames).map((e) => e.id)), [ownFrames]);
   const frameSetupName = useCallback(
     (s: CorpusSample): string => {
       const st = setups.length > 1 && s.setup_id != null ? setups.find((x) => x.id === s.setup_id)?.name : undefined;
@@ -301,13 +307,18 @@ export function WorkspacePage(): JSX.Element {
     if (!sample) return [];
     const mates = bridged.flatMap((id, i) => {
       const s = inExperiment.find((x) => x.id === id);
-      return s ? [{ sample: s, frames: mateExposures[i] ?? [] }] : [];
+      return s ? [{ sample: s, frames: imageFrames(mateExposures[i]) }] : [];
     });
     return frameGroups({ sample, frames: ownFrames }, mates, (s) => setupOrder.get(s.setup_id ?? -1) ?? 0, frameSetupName);
   }, [sample, bridged, inExperiment, ownFrames, mateExposures, setupOrder, frameSetupName]);
   const exposureList: Exposure[] = useMemo(() => allFrames(groups), [groups]);
-  const exposure = exposureList.find((e) => e.id === exposureId) ?? representativeExposure(ownFrames);
+  const tile = exposureList.find((e) => e.id === exposureId) ?? analysis.selected[0] ?? newestKeptFrame(ownFrames);
+  const exposure = analysis.analyzed;
+  const averaging = analysis.selected.length >= MIN_COMBINED;
+  const memberIds = useMemo(() => (averaging ? analysis.selected.map((m) => m.id) : []), [averaging, analysis.selected]);
+  const members = useMemberTraces(memberIds);
   const shownFrame = frameOf(groups, exposure?.id);
+  const tileFrame = frameOf(groups, tile?.id);
 
   const trace = useTrace(exposure?.id);
   const noTrace = trace.error instanceof ApiError && trace.error.status === 404;
@@ -316,11 +327,22 @@ export function WorkspacePage(): JSX.Element {
     ? `Beam likely off: the detector recorded no counts, so the beam was off or the shutter closed.${i0Hint ? " I₀ also reads below zero." : ""}`
     : undefined;
   const tracePending = problemRows.some((p) => p.problem === "no_trace" && p.exposure_id === exposure?.id);
-  const noTraceMessage = !noTrace
+  const selectionMessage = !exposures.data || ownFrames.length === 0
+    ? undefined
+    : analysis.selected.length === 0
+      ? "Select an image to analyze."
+      : exposure === undefined
+        ? analysis.selected.some((e) => e.trace_hash === null)
+          ? "Waiting for the selected images' traces."
+          : "Averaging the selected images…"
+        : undefined;
+  const noTraceMessage = selectionMessage ?? (!noTrace
     ? undefined
     : tracePending
       ? "Waiting for this image's trace."
-      : `No integrated trace for this image.${i0Hint ? " I₀ reads below zero, so the beam was likely off." : ""}`;
+      : averaging
+        ? "Couldn't average the selected images. They may not share a q range."
+        : `No integrated trace for this image.${i0Hint ? " I₀ reads below zero, so the beam was likely off." : ""}`);
   const peaks = usePeaks(exposure?.id);
   const indices = useIndices(exposure?.id);
   const assignment = useAssignment(exposure?.id);
@@ -364,8 +386,7 @@ export function WorkspacePage(): JSX.Element {
   const isFormFactor = assignment.data?.state === "form_factor";
   const setStatus = useSetExposureStatus(sampleId ?? 0);
 
-  const exposureDropped = exposure?.status === "rejected";
-  const canEditPeaks = Boolean(username && exposure && !exposureDropped);
+  const canEditPeaks = Boolean(username && exposure);
   const addPeak = useAddPeak(exposure?.id ?? 0);
   const removePeak = useRemovePeak(exposure?.id ?? 0);
   const setExcluded = useSetPeakExcluded(exposure?.id ?? 0);
@@ -373,11 +394,12 @@ export function WorkspacePage(): JSX.Element {
   const history = useUndoHistory(`${experimentId}:${username ?? ""}`, ops.whenSaved);
   const frameName = useCallback(
     (eid: number) => {
+      if (averaging && eid === exposure?.id) return `the average of ${analysis.selected.length} images of ${sample?.name ?? "this sample"}`;
       const at = frameOf(groups, eid);
       const owner = at && at.group.sampleId !== sample?.id ? inExperiment.find((s) => s.id === at.group.sampleId)?.name : sample?.name;
       return `image ${(at?.index ?? -1) + 1} of ${owner ?? "this sample"}`;
     },
-    [groups, sample?.name, sample?.id, inExperiment],
+    [groups, sample?.name, sample?.id, inExperiment, averaging, exposure?.id, analysis.selected.length],
   );
 
   const [xDomain, setXDomain] = useState<[number, number] | null>(null);
@@ -569,16 +591,57 @@ export function WorkspacePage(): JSX.Element {
       const prev = e.status;
       const next = prev === "rejected" ? null : "rejected";
       if (next === null) setExposureId(e.id);
-      else if (e.id === exposure?.id) setExposureId(nearestKeptExposure(exposureList, e.id) ?? e.id);
+      else if (e.id === tile?.id) setExposureId(nearestKeptExposure(exposureList, e.id) ?? e.id);
       if (sampleId === undefined) return;
       const owner = e.sample_id;
       if (owner === sampleId) setStatus.mutate({ exposureId: e.id, status: next });
       else ops.setStatus(owner, e.id, next);
       history.record(dropEntry(ops, {
         label: `${next ? "dropped" : "restored"} ${frameName(e.id)}`, sampleId, exposureId: e.id, owner, prev, next,
+        ...(next === "rejected" ? { selected: e.selected !== false } : {}),
       }));
     },
-    [setStatus, sampleId, history, ops, frameName, exposureList, exposure],
+    [setStatus, sampleId, history, ops, frameName, exposureList, tile],
+  );
+  const anchor = useRef<number | undefined>(undefined);
+  useEffect(() => { anchor.current = undefined; }, [sampleId]);
+  const applySelection = useCallback(
+    (next: number[], label: string) => {
+      if (sampleId === undefined) return;
+      const prev = analysis.selected.map((e) => e.id);
+      ops.setSelection(sampleId, next);
+      history.record(selectionEntry(ops, { label, sampleId, exposureId: undefined, prev, next }));
+    },
+    [sampleId, analysis.selected, ops, history],
+  );
+  const toggleSelect = useCallback(
+    (eid: number) => {
+      anchor.current = eid;
+      const on = selectedIds.has(eid);
+      const next = on ? [...selectedIds].filter((id) => id !== eid) : [...selectedIds, eid];
+      applySelection(next, `${on ? "deselected" : "selected"} ${frameName(eid)}`);
+    },
+    [selectedIds, applySelection, frameName],
+  );
+  const selectRange = useCallback(
+    (eid: number) => {
+      const order = keptExposures(ownFrames).map((e) => e.id);
+      const from = order.indexOf(anchor.current ?? analysis.selected[0]?.id ?? eid);
+      const to = order.indexOf(eid);
+      if (to < 0) return;
+      const span = order.slice(Math.min(from < 0 ? to : from, to), Math.max(from, to) + 1);
+      anchor.current = eid;
+      applySelection([...new Set([...selectedIds, ...span])], `selected ${span.length} images of ${sample?.name ?? "this sample"}`);
+    },
+    [ownFrames, analysis.selected, selectedIds, applySelection, sample?.name],
+  );
+  const selectAll = useCallback(
+    () => applySelection([...selectableIds], `selected every image of ${sample?.name ?? "this sample"}`),
+    [selectableIds, applySelection, sample?.name],
+  );
+  const selectNone = useCallback(
+    () => applySelection([], `cleared the selection of ${sample?.name ?? "this sample"}`),
+    [applySelection, sample?.name],
   );
 
   const draftQs = useMemo(() => (draft ? draftPrediction(draft) : []), [draft]);
@@ -896,7 +959,7 @@ export function WorkspacePage(): JSX.Element {
   );
 
   const activePeakQs = useMemo(() => (peaks.data ?? []).filter((p) => !p.excluded).map((p) => p.q), [peaks.data]);
-  const canCall = Boolean(username && exposure && !exposureDropped);
+  const canCall = Boolean(username && exposure);
   const draftBounds = draft ? latticeBounds(draft.phase, xExtent) : null;
   const shortWindow = useMediaQuery(SHORT_WINDOW);
   const [openPanel, setOpenPanel] = useState<"call" | "exposure">("call");
@@ -1063,7 +1126,7 @@ export function WorkspacePage(): JSX.Element {
         } else if (ev.key === "?") {
           ev.preventDefault();
           setHelpOpen(true);
-        } else if (ev.key === " " && !ev.repeat && exposure && imageUrl(exposure, false)) {
+        } else if (ev.key === " " && !ev.repeat && tile && imageUrl(tile, false)) {
           if (ev.target instanceof HTMLElement && ev.target.closest("button,a")) return;
           ev.preventDefault();
           setBigOpen(true);
@@ -1104,7 +1167,7 @@ export function WorkspacePage(): JSX.Element {
           break;
         case "ArrowRight":
         case "ArrowLeft": {
-          const eid = stepExposure(exposureList, exposure?.id, ev.key === "ArrowRight" ? 1 : -1);
+          const eid = stepExposure(exposureList, tile?.id, ev.key === "ArrowRight" ? 1 : -1);
           if (eid !== undefined) setExposureId(eid);
           break;
         }
@@ -1136,13 +1199,13 @@ export function WorkspacePage(): JSX.Element {
         }
         case " ":
           if (ev.repeat) break;
-          if (exposure && imageUrl(exposure, false)) setBigOpen(true);
+          if (tile && imageUrl(tile, false)) setBigOpen(true);
           else handled = false;
           break;
         case "x":
         case "X":
           if (ev.repeat) break;
-          if (exposure && username) toggleDrop(exposure);
+          if (tile && username) toggleDrop(tile);
           break;
         case "0":
           if (username) {
@@ -1164,15 +1227,17 @@ export function WorkspacePage(): JSX.Element {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [visible, sampleId, goSample, exposureList, exposure, toggleDrop, keyed, toggleCandidate, toggleGroup, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor, view, setView, sample, openLabeling, applyHistory, callOpen]);
+  }, [visible, sampleId, goSample, exposureList, tile, toggleDrop, keyed, toggleCandidate, toggleGroup, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor, view, setView, sample, openLabeling, applyHistory, callOpen]);
 
   const droppedCount = ownFrames.filter((e) => e.status === "rejected").length;
   const keptHint = droppedCount > 0 ? `${ownFrames.length - droppedCount} of ${ownFrames.length} kept` : undefined;
   const reviewed = samples.filter((s) => sampleStatus(s).kind !== "unreviewed").length;
-  const ownerSample = shownFrame ? inExperiment.find((s) => s.id === shownFrame.group.sampleId) : undefined;
-  const frameOwner = ownerSample ? frameSetupName(ownerSample) : undefined;
-  const frameCount = shownFrame ? `Image ${shownFrame.index + 1} of ${shownFrame.group.exposures.length}` : undefined;
-  const frameLine = frameCount && shownFrame && shownFrame.group.sampleId !== sampleId ? `${frameCount}, ${frameOwner ?? ""}` : frameCount;
+  const countOf = (at: typeof shownFrame): string | undefined => (at ? `Image ${at.index + 1} of ${at.group.exposures.length}` : undefined);
+  const frameCount = averaging ? `Average of ${analysis.selected.length} images` : countOf(shownFrame);
+  const tileOwnerSample = tileFrame ? inExperiment.find((s) => s.id === tileFrame.group.sampleId) : undefined;
+  const tileOwner = tileOwnerSample ? frameSetupName(tileOwnerSample) : undefined;
+  const tileCount = countOf(tileFrame);
+  const frameLine = tileCount && tileFrame && tileFrame.group.sampleId !== sampleId ? `${tileCount}, ${tileOwner ?? ""}` : tileCount;
   const emptyMessage = !Number.isInteger(experimentId)
     ? "This workspace link is not valid."
     : corpus.isLoading || !setupsKnown
@@ -1339,16 +1404,16 @@ export function WorkspacePage(): JSX.Element {
               onClose={() => setProblemsOpen(false)}
             />
           )}
-          {bigOpen && exposure && (
+          {bigOpen && tile && (
             <DetectorOverlay
               exposures={exposureList}
-              currentId={exposure.id}
+              currentId={tile.id}
               caption={frameLine}
               onStep={(dir) => {
-                const eid = stepExposure(exposureList, exposure.id, dir);
+                const eid = stepExposure(exposureList, tile.id, dir);
                 if (eid !== undefined) setExposureId(eid);
               }}
-              onToggleDrop={username ? () => toggleDrop(exposure) : undefined}
+              onToggleDrop={username ? () => toggleDrop(tile) : undefined}
               onClose={() => setBigOpen(false)}
               ringsOf={ringsOf}
             />
@@ -1445,6 +1510,7 @@ export function WorkspacePage(): JSX.Element {
                   combs={combs}
                   highlight={highlight}
                   compares={compares}
+                  members={members}
                   {...(minusOn && difference ? { difference } : {})}
                   xDomain={shownDomain}
                   view={view}
@@ -1458,7 +1524,7 @@ export function WorkspacePage(): JSX.Element {
               </PlotCard>
             </div>
             <MainSection title="Images" hint={keptHint}>
-              <ExposureStrip groups={groups.map((g) => ({ key: g.sampleId, title: g.title, exposures: g.exposures }))} currentId={exposure?.id} onPick={setExposureId} onToggleDrop={toggleDrop} warningOf={beamOffWarning} ringsOf={ringsOf} />
+              <ExposureStrip groups={groups.map((g) => ({ key: g.sampleId, title: g.title, exposures: g.exposures }))} currentId={tile?.id} selection={username ? { selectedIds, selectableIds, onToggle: toggleSelect, onRange: selectRange, onAll: selectAll, onNone: selectNone } : undefined} onPick={setExposureId} onToggleDrop={toggleDrop} warningOf={beamOffWarning} ringsOf={ringsOf} />
             </MainSection>
           </>
         ) : (
@@ -1487,11 +1553,10 @@ export function WorkspacePage(): JSX.Element {
               </Section>
             ) : (
               <Section title="Assignment" aside={customIndexButton} pinAside collapsible={shortWindow ? { open: callOpen, onOpen: () => setOpenPanel("call") } : undefined}>
-                {exposureDropped && <Note>This image is dropped. Restore it to call a phase.</Note>}
                 <CandidateList
                   rows={rows}
                   assigned={assigned}
-                  disabled={exposureDropped || !username}
+                  disabled={!username}
                   formFactor={isFormFactor}
                   onToggle={toggleCandidate}
                   onToggleGroup={toggleGroup}
@@ -1505,11 +1570,11 @@ export function WorkspacePage(): JSX.Element {
           <Section
             title="Image"
             aside="← →"
-            folded={groups.length > 1 ? frameOwner : undefined}
+            folded={groups.length > 1 ? tileOwner : undefined}
             className={shortWindow && exposureOpen ? "min-h-0 flex-1 overflow-y-auto" : exposureOpen ? "min-h-0 shrink overflow-y-auto" : "shrink-0"}
             collapsible={shortWindow ? { open: exposureOpen, onOpen: draft === null ? () => setOpenPanel("exposure") : undefined } : undefined}
           >
-            <MetaList rows={exposureRows(exposure, frameOwner)} />
+            <MetaList rows={exposureRows(tile, tileOwner)} />
           </Section>
           {shortWindow && indexingSection}
         </>

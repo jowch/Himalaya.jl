@@ -97,7 +97,7 @@ Read `docs/experiment-config.md` before touching the funnel (`routes_fs.jl`), ex
 
 ## Exposure-state quirks
 
-- **The representative frame is the newest kept frame.** `representative_exposure_id` derives it; nothing stores it. The old `exposures.selected` column and `PATCH /api/exposures/:id/select` were removed, and `select_exposure` log rows replay as a retired kind.
+- **What a sample analyzes is its selection** (docs/image-selection.md). `exposures.deselected` stores it, and `analyzed_exposure_id` (`analyzed_exposure.jl`) resolves it to the one selected image or to the `kind = 'combined'` average of exactly the selected set (`combine.jl`, one row per distinct set, never deleted). Never average implicitly, never pick a "newest kept" image, and run `refresh_selection!` after any write that changes kept or selected images. `select_exposure` log rows replay as a retired kind.
 
 ## Phase-type serialization
 

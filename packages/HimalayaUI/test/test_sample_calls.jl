@@ -224,8 +224,6 @@ end
         _index!(fx.db, 10, e1, "Pn3m", 0.5)
         _index!(fx.db, 20, e2, "Im3m", 0.9)
         _legacy!(fx.db; members = Dict(e1 => [10], e2 => [20]))
-        @test HimalayaUI.representative_exposure_id(Tables.rowtable(DBInterface.execute(fx.db,
-            "SELECT id, status FROM exposures WHERE sample_id = ?", [fx.s_id]))) == e2
 
         HimalayaUI.migrate_sample_calls!(fx.db)
         @test _members(fx.db) == [(e2, 20)]

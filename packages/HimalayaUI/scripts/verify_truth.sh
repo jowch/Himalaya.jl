@@ -35,7 +35,7 @@ step 1-late-in-place log bash -c '
   plot() { bin/verify count --selector "$1" | node -e "let d=\"\";process.stdin.on(\"data\",c=>d+=c).on(\"end\",()=>{const r=JSON.parse(d);process.stdout.write(r.count+\"|\"+(r.texts[0]??\"\"))})"; }
   before=$(plot "[data-testid=workspace-trace-empty]")
   echo "before delivery: $before"
-  [[ $before == "1|Waiting for this image'"'"'s trace." ]] || { echo "the open plot does not say the image is waiting for its trace"; exit 1; }
+  [[ $before == "1|Waiting for this image'"'"'s trace." || $before == "1|Waiting for the selected images'"'"' traces." ]] || { echo "the open plot does not say the images are waiting for their traces"; exit 1; }
   bin/verify deliver-late
   bin/verify api POST /api/experiments/1/scan
   for _ in $(seq 1 60); do
@@ -57,8 +57,9 @@ step 6-reindex log env HIMALAYA_DB_PATH="$(cd "$DB_DIR" && pwd)/himalaya.db" \
     id = Int(HimalayaUI._resolve_experiment(db, "Demo (synthetic)").id)
     DBInterface.execute(db, "UPDATE exposures SET trace_hash = NULL, analysis_inputs_hash = NULL WHERE experiment_id = ?", [id])
     HimalayaUI.main(["analyze", "-e", string(id)])
-    stale = first(Tables.rowtable(DBInterface.execute(db,
-        "SELECT COUNT(*) AS n FROM exposures WHERE experiment_id = ? AND status IS NOT ? AND analysis_inputs_hash IS NULL", [id, "rejected"]))).n
+    rows = Tables.rowtable(DBInterface.execute(db,
+        "SELECT id, sample_id, kind FROM exposures WHERE experiment_id = ? AND status IS NOT ? AND analysis_inputs_hash IS NULL", [id, "rejected"]))
+    stale = count(r -> r.kind != "combined" || r.id == HimalayaUI.analyzed_exposure_id(db, Int(r.sample_id)), rows)
     stale == 0 || error("$stale kept exposures were not re-indexed")'
 step 7-after-reindex json bin/verify check-truth --ui --reload --expect triaged
 step 8-reindex-changed-nothing json node "$HELP" unchanged "$OUT/5-confirmed.json" "$OUT/7-after-reindex.json"
@@ -96,7 +97,6 @@ step 11-peak-clicks log bash -c '
   get() { node -e "process.stdout.write(String(JSON.parse(process.argv[1])[process.argv[2]]))" "$twin" "$1"; }
   sid=$(get sample_id) eid=$(get exposure_id) id=$(get id)
   bin/verify open "/experiments/1/workspace/$sid"
-  bin/verify click --role button --name "$(get frame)" --exact
   bin/verify click --role button --name "$(get auto)" --exact
   node "$help" twin-state "$eid" "$id" excluded
   bin/verify click --role button --name "$(get excluded)" --exact

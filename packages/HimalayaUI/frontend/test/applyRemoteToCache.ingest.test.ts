@@ -158,3 +158,69 @@ describe("ingest_progress stage gating", () => {
     expect(keys).not.toContain(JSON.stringify(queryKeys.samples(7)));
   });
 });
+
+describe("selection cache arms", () => {
+  const frame = (kind: string, entity_type: string, entity_id: number, payload: Record<string, unknown> = {}) =>
+    ({ id: 1, kind, entity_type, entity_id, payload }) as unknown as SseEvent;
+  const keysOf = (spy: { mock: { calls: unknown[][] } }) => spy.mock.calls.map((c) => JSON.stringify((c[0] as { queryKey?: unknown } | undefined)?.queryKey));
+
+  it("an analyze_run on an average refetches its sample's images, so a new average replaces the waiting notice", () => {
+    const qc = new QueryClient();
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    applyRemoteToCache(frame("analyze_run", "exposure", 41, { trace_hash_before: null, trace_hash_after: "h", average_of_sample: 6 }), qc);
+    expect(keysOf(spy)).toContain(JSON.stringify(["sample", 6, "exposures"]));
+  });
+
+  it("a burst of averages refetches the sample lists once, not once per average", () => {
+    vi.useFakeTimers();
+    try {
+      const qc = new QueryClient();
+      const spy = vi.spyOn(qc, "invalidateQueries");
+      for (const sid of [6, 7, 8]) {
+        applyRemoteToCache(frame("analyze_run", "exposure", 40 + sid, { trace_hash_before: null, trace_hash_after: "h", average_of_sample: sid }), qc);
+      }
+      for (const sid of [6, 7, 8]) expect(keysOf(spy)).toContain(JSON.stringify(["sample", sid, "exposures"]));
+      expect(keysOf(spy)).not.toContain(JSON.stringify(queryKeys.corpusSamples));
+      vi.advanceTimersByTime(1000);
+      expect(keysOf(spy).filter((k) => k === JSON.stringify(queryKeys.corpusSamples))).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("an analyze_run on a single image leaves the image lists alone", () => {
+    const qc = new QueryClient();
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    applyRemoteToCache(frame("analyze_run", "exposure", 13, { trace_hash_before: "a", trace_hash_after: "a", findpeaks_skipped: true }), qc);
+    expect(keysOf(spy)).not.toContain(JSON.stringify(["sample", 6, "exposures"]));
+  });
+
+  it("a set_exposure_status leaves other samples' image lists invalidated, so a sample whose average changed still refetches", () => {
+    const qc = new QueryClient();
+    qc.setQueryData(["sample", 1, "exposures"], [{ id: 3, status: null }]);
+    qc.setQueryData(["sample", 2, "exposures"], [{ id: 5, status: null }]);
+    void qc.invalidateQueries({ queryKey: ["sample", 1, "exposures"] });
+    applyRemoteToCache(frame("set_exposure_status", "exposure", 5, { status: "rejected" }), qc);
+    expect(qc.getQueryState(["sample", 1, "exposures"])?.isInvalidated).toBe(true);
+    expect(qc.getQueryData<{ status: string | null }[]>(["sample", 2, "exposures"])?.[0]?.status).toBe("rejected");
+  });
+
+  it("an update_sample leaves other experiments' sample lists untouched", () => {
+    const qc = new QueryClient();
+    qc.setQueryData(["experiment", 1, "samples"], [{ id: 1, name: "a" }]);
+    qc.setQueryData(["experiment", 2, "samples"], [{ id: 9, name: "b" }]);
+    void qc.invalidateQueries({ queryKey: ["experiment", 1, "samples"] });
+    applyRemoteToCache(frame("update_sample", "sample", 9, { name: "c" }), qc);
+    expect(qc.getQueryState(["experiment", 1, "samples"])?.isInvalidated).toBe(true);
+    expect(qc.getQueryData<{ name: string }[]>(["experiment", 2, "samples"])?.[0]?.name).toBe("c");
+  });
+
+  it("a set_selection from another client refetches that sample's images and the sample lists", () => {
+    const qc = new QueryClient();
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    applyRemoteToCache(frame("set_selection", "sample", 6), qc);
+    const keys = keysOf(spy);
+    expect(keys).toContain(JSON.stringify(["sample", 6, "exposures"]));
+    expect(keys).toContain(JSON.stringify(queryKeys.corpusSamples));
+  });
+});
