@@ -40,7 +40,9 @@ runs:
           echo "Chromium starts with the runner's own libraries; skipping apt."
           exit 0
         fi
-        echo "::warning::Chromium could not start; installing its system libraries with apt."
+        echo "::warning::Chromium could not start; reinstalling it in case the cached copy is broken."
+        timeout "${{ inputs.timeout }}" npx playwright install --force chromium && launch && exit 0
+        echo "::warning::Chromium still could not start; installing its system libraries with apt."
         for attempt in 1 2; do
           timeout "${{ inputs.timeout }}" npx playwright install-deps chromium && launch && exit 0
           echo "::warning::playwright install-deps chromium failed (attempt $attempt)"
