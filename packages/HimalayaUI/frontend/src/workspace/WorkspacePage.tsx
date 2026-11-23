@@ -125,7 +125,7 @@ function helpSections(mod: string): HelpSection[] {
       rows: [
         { keys: ["1–9"], what: "Tick or untick a phase candidate" },
         { keys: ["0"], what: "Mark no phase (form factor), or clear it" },
-        { keys: ["I"], what: "Custom index: pick a symmetry and drag the lattice. Press Enter to add it or Esc to cancel." },
+        { keys: ["I"], what: "Custom index: pick a symmetry, then drag the lattice, nudge it with ← →, or click a peak to snap to it. Press Enter to add it or Esc to cancel." },
         { keys: ["L"], what: "Label the sample, e.g. Buffer. Press Enter to add it or Esc to close." },
       ],
     },

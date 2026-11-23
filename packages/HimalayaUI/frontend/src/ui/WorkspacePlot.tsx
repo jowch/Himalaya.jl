@@ -319,6 +319,7 @@ export function WorkspacePlot({
                           tabIndex: 0,
                           "aria-label": `${p.source === "manual" ? "Manual" : "Auto"} peak at q = ${p.q.toFixed(4)} Å⁻¹${p.excluded ? ", off" : ""}`,
                           className: "cursor-pointer outline-none",
+                          onMouseDown: (ev: React.MouseEvent) => ev.preventDefault(),
                           onFocus: (ev: React.FocusEvent<SVGPolygonElement>) => {
                             if (keyboardFocus(ev.currentTarget)) setFocusedPeak(peakKey(p));
                           },
