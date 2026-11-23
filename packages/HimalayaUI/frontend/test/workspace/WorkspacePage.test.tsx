@@ -3236,6 +3236,26 @@ describe("WorkspacePage", () => {
     expect(inChoices()).toBe(false);
   });
 
+  it("leaves Tab in a text field to the field: a plain input keeps native Tab, and the label picker keeps it for its own list", () => {
+    renderAt("/experiments/1/workspace/10");
+    const inChoices = (): boolean => document.activeElement?.closest("[data-call-choices]") != null;
+    const plain = document.createElement("input");
+    plain.type = "text";
+    document.body.appendChild(plain);
+    try {
+      act(() => plain.focus());
+      expect(fireEvent.keyDown(plain, { key: "Tab" })).toBe(true);
+      expect(inChoices()).toBe(false);
+    } finally {
+      plain.remove();
+    }
+    fireEvent.keyDown(window, { key: "l" });
+    const input = within(screen.getByRole("dialog", { name: "Add a label" })).getByLabelText("Label name");
+    expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(false);
+    expect(input).toHaveFocus();
+    expect(inChoices()).toBe(false);
+  });
+
   it("does not trap Tab when no phase choice can be picked", () => {
     state.username = undefined;
     renderAt("/experiments/1/workspace/10");

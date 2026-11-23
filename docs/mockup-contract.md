@@ -28,9 +28,9 @@ When the mock-up changes, extract its behaviours again from the code and update 
 | list-filter | / focuses the filter; it matches names; Enter opens the first match; Esc leaves it | built | test/workspace/WorkspacePage.test.tsx › / puts the cursor in the filter, where letters type, and ? opens the shortcuts only while the filter is empty |
 | list-no-match | An empty filter result says "No samples match." | built | test/workspace/WorkspacePage.test.tsx › says no samples match only when a filter is typed |
 | list-status | Each row shows its call, or an unreviewed mark | built | test/workspace/WorkspacePage.test.tsx › updates the list and the count when the corpus status changes |
-| list-every-phase | A coexistence call lists every phase in the row | planned | PR 502 |
+| list-every-phase | A coexistence call lists every phase in the row | built | test/workspace/WorkspacePage.test.tsx › lists every phase of a coexistence call, as the mock-up does |
 | list-suspect-mark | A row with an undropped suspect image carries a warning mark | planned | thread "Show combined curve by default" |
-| list-follows-call | The row and the progress follow the call as it changes, without a reload | planned | PR 507 (a peak edit that drops the call left them stale) |
+| list-follows-call | The row and the progress follow the call as it changes, without a reload | built | test/queue/peakPostStateAssignment.test.ts › a frame whose assignment changed the call refetches the sample list and the sample calls |
 | list-cursor | The current row is highlighted and scrolled into view | untested | SampleList scrolls the current row into view on every sample change |
 | header-progress | The header shows a progress bar and "k of N reviewed" | built | test/workspace/WorkspacePage.test.tsx › updates the list and the count when the corpus status changes |
 | header-help | The header's ? button opens the shortcut list | built | test/workspace/WorkspacePage.test.tsx › ? opens the shortcut list, the header button opens it too, and Escape closes it |
@@ -52,7 +52,7 @@ When the mock-up changes, extract its behaviours again from the code and update 
 | img-show-only | O or "Show only" plots one image, with a banner; O again shows all | superseded | combine-select in docs/decisions.md, 2026-11-23: selecting one image analyzes and plots only that image |
 | img-suspect | A suspect image (low-q excess) is outlined, says why, and is drawn in the warning colour | planned | thread "Show combined curve by default" |
 | img-open-suspect | Opening a sample selects its first undropped suspect image | planned | thread "Show combined curve by default" |
-| img-rings | Hovering a candidate draws its predicted rings on every detector image | planned | thread "Audit app against the mock-up" |
+| img-rings | Hovering a candidate draws its predicted rings on every detector image | built | test/workspace/WorkspacePage.test.tsx › hovering a candidate or drafting a custom index draws its predicted rings on every image, from that image's setup geometry |
 | img-meta | The Image panel lists the shown image's file, time, exposure, I₀, I₂ and flight tube | built | test/workspace/WorkspacePage.test.tsx › lists the shown exposure's time, I₀ and I signal under the .prp names |
 | img-transmission | The Image panel shows I₂ / I₀ | planned | held small item from the 2026-11-23 mock-up audit, pending Jonathan's call (thread "Audit app against the mock-up") |
 | img-lowq | The Image panel shows "Low-q vs others" | planned | thread "Show combined curve by default" |
@@ -71,7 +71,7 @@ When the mock-up changes, extract its behaviours again from the code and update 
 | plot-comb-faded-call | The called phase's reflections stay drawn faded, and a hovered candidate's are drawn at full strength | built | test/workspace/WorkspacePage.test.tsx › the plot keeps the called phase's reflections faded, and draws a hovered candidate's at full strength instead |
 | plot-log-linear | L toggles log and linear intensity | superseded | views live in the palette and L opens labels (Jonathan 2026-11-21, PR 390) |
 | plot-peak-edit-call | A peak edit keeps each ticked phase on the new candidate of that phase | superseded | the call is re-attached by phase and lattice within 5%, and a drop is announced (docs/event-log.md, MEMBER_REATTACH_RELTOL) |
-| plot-peak-edit-undo | Undoing a peak edit also restores the call it dropped | planned | thread "Audit app against the mock-up" (follow-up to PR 507) |
+| plot-peak-edit-undo | Undoing a peak edit also restores the call it dropped | built | test/workspace/WorkspacePage.test.tsx › undoing a peak edit that dropped the call ticks the phase again on the re-fitted candidate |
 
 ## Comparisons
 
@@ -107,7 +107,7 @@ When the mock-up changes, extract its behaviours again from the code and update 
 | cix-landed | It says how many reflections land on a peak | built | test/workspace/WorkspacePage.test.tsx › the indexing plot follows the custom index while it is open |
 | cix-nudge | ← → nudge the lattice, Shift for a larger step | built | test/workspace/WorkspacePage.test.tsx › arrows nudge the lattice after a symmetry click, while focus is on that button |
 | cix-snap | Clicking near a peak puts the first order on it | built | test/workspace/WorkspacePage.test.tsx › while a custom index is open, a plot click puts the first order on the nearest peak and edits no peaks |
-| cix-enter-after-snap | Enter adds right after a click snapped the lattice, whatever had focus | planned | PR 505 |
+| cix-enter-after-snap | Enter adds right after a click snapped the lattice, whatever had focus | built | e2e/workspace-custom-index.spec.ts › picking a symmetry, clicking a peak to snap, then Enter, adds it |
 | cix-esc | Esc cancels without writing | built | test/workspace/WorkspacePage.test.tsx › Escape cancels a custom index without writing |
 | cix-ticks | Adding it ticks it into the call | built | test/workspace/WorkspacePage.test.tsx › an added custom index is listed as Custom and ticked, though it has no score |
 
