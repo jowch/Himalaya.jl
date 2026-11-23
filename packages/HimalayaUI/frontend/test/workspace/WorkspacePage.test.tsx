@@ -2613,7 +2613,7 @@ describe("WorkspacePage", () => {
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "?", shiftKey: true });
     const help = screen.getByRole("dialog", { name: "Keyboard shortcuts" });
-    const list = within(help).getByTestId("overlay-body");
+    const list = within(help).getByRole("region", { name: "Keyboard shortcuts" });
     expect(document.activeElement).toBe(list);
     fireEvent.keyDown(list, { key: "x" });
     fireEvent.keyDown(list, { key: "z" });

@@ -14,23 +14,36 @@ interface Props {
 
 function useBodyScroll(body: React.RefObject<HTMLDivElement | null>): { more: boolean; bare: boolean } {
   const [state, setState] = useState({ more: false, bare: false });
-  const measure = (): void => {
+  const measure = useRef((): void => {
     const el = body.current;
     if (!el) return;
     const more = el.scrollTop + el.clientHeight < el.scrollHeight - 1;
     const bare = el.querySelector(FOCUSABLE) === null;
     setState((s) => (s.more === more && s.bare === bare ? s : { more, bare }));
-  };
+  }).current;
   useLayoutEffect(measure);
   useEffect(() => {
     const el = body.current;
+    if (!el) return;
     window.addEventListener("resize", measure);
-    el?.addEventListener("scroll", measure, { passive: true });
+    el.addEventListener("scroll", measure, { passive: true });
+    const sizes = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    const watch = (): void => {
+      if (!sizes) return;
+      sizes.disconnect();
+      sizes.observe(el);
+      for (const child of Array.from(el.children)) sizes.observe(child);
+    };
+    watch();
+    const kids = typeof MutationObserver === "undefined" ? null : new MutationObserver(() => { watch(); measure(); });
+    kids?.observe(el, { childList: true, subtree: true });
     return () => {
       window.removeEventListener("resize", measure);
-      el?.removeEventListener("scroll", measure);
+      el.removeEventListener("scroll", measure);
+      sizes?.disconnect();
+      kids?.disconnect();
     };
-  });
+  }, [body, measure]);
   return state;
 }
 
@@ -80,7 +93,10 @@ export function Overlay({ label, onClose, children, testId, closeKeys = ["Escape
           data-testid="overlay-body"
           data-more={more || undefined}
           tabIndex={bare ? 0 : -1}
-          className="min-h-0 overflow-y-auto overscroll-contain outline-none"
+          role={bare ? "region" : undefined}
+          aria-labelledby={bare && heading ? headingId : undefined}
+          aria-label={bare && !heading ? label : undefined}
+          className="min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain outline-none"
         >
           {children}
           {more && <div aria-hidden="true" data-testid="overlay-more" className="pointer-events-none sticky bottom-0 -mt-8 h-8 bg-linear-to-t from-plate to-transparent" />}

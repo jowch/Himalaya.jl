@@ -791,7 +791,8 @@ test("the ? shortcut list's name is said once, and Tab moves between the list an
   const help = page.getByRole("dialog", { name: "Keyboard shortcuts" });
   await expect(help.getByText("Keyboard shortcuts", { exact: true })).toHaveCount(1);
   await expect(help.locator("[aria-label='Keyboard shortcuts']")).toHaveCount(0);
-  const body = help.getByTestId("overlay-body");
+  const body = help.getByRole("region", { name: "Keyboard shortcuts" });
+  await expect(body).toHaveAttribute("aria-labelledby", /.+/);
   const close = help.getByRole("button", { name: "Close" });
   await expect(body).toBeFocused();
   await page.keyboard.press("Tab");

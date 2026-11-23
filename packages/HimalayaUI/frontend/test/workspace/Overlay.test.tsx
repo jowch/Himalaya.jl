@@ -64,7 +64,7 @@ describe("Overlay", () => {
 
   it("focuses its body when it holds nothing focusable, so keys scroll it, and Tab keeps it there", () => {
     const opener = open({ empty: true });
-    const body = screen.getByTestId("overlay-body");
+    const body = screen.getByRole("region", { name: "Test" });
     expect(document.activeElement).toBe(body);
     expect(body.tabIndex).toBe(0);
     fireEvent.keyDown(body, { key: "Tab" });
@@ -76,6 +76,7 @@ describe("Overlay", () => {
   it("keeps its body out of the Tab order when it holds something focusable", () => {
     open();
     expect(screen.getByTestId("overlay-body").tabIndex).toBe(-1);
+    expect(screen.queryByRole("region")).toBeNull();
   });
 
   it("with a heading, names the dialog by its visible title once and offers a Close button", () => {
@@ -84,6 +85,7 @@ describe("Overlay", () => {
     const dialog = screen.getByRole("dialog", { name: "Things" });
     expect(dialog.getAttribute("aria-label")).toBeNull();
     expect(screen.getAllByText("Things")).toHaveLength(1);
+    expect(screen.getByRole("region", { name: "Things" })).toBe(document.activeElement);
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
