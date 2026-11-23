@@ -613,6 +613,43 @@ for (const width of [1024, 1280, 1440]) {
   }
 }
 
+test("Tab cycles only the phase choices, wrapping, and Esc lets Tab reach the rest of the page", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/experiments/17/workspace/41");
+  await openSample(page, 41);
+  const choices = page.locator("[data-call-choices] button");
+  await expect(choices).toHaveCount(7);
+  for (let i = 0; i < 7; i++) {
+    await page.keyboard.press("Tab");
+    await expect(choices.nth(i)).toBeFocused();
+  }
+  await page.keyboard.press("Tab");
+  await expect(choices.nth(0)).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(choices.nth(6)).toBeFocused();
+  await page.keyboard.press("Tab");
+  const writes: string[] = [];
+  await page.route(/\/api\//, (r) => {
+    if (r.request().method() === "GET") return r.fallback();
+    writes.push(`${r.request().method()} ${new URL(r.request().url()).pathname}`);
+    return r.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+  });
+  await page.keyboard.press("Enter");
+  await expect.poll(() => writes.length).toBeGreaterThan(0);
+  await expect(page.getByRole("dialog", { name: "Detector image" })).toHaveCount(0);
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Escape");
+  await expect(choices.nth(6)).not.toBeFocused();
+  await page.keyboard.press("Tab");
+  const outside = async () => page.evaluate(() => document.activeElement !== document.body && document.activeElement?.closest("[data-call-choices]") === null);
+  let reached = await outside();
+  for (let i = 0; i < 3 && !reached; i++) {
+    await page.keyboard.press("Tab");
+    reached = await outside();
+  }
+  expect(reached, "Tab reaches a control outside the phase choices after Esc").toBe(true);
+});
+
 for (const width of [1024, 1440]) {
   for (const subtracting of [false, true]) {
   test(`at ${width} px the plot view switcher sits above the ${subtracting ? "difference" : "trace"} and below the peak markers in every view`, async ({ page }) => {

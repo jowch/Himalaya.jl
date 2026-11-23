@@ -94,6 +94,7 @@ import { RemoveExperimentDialog } from "../ui/RemoveExperimentDialog";
 import { COMPARE_COLORS, WorkspacePlot, type CombLine, type CompareLine } from "../ui/WorkspacePlot";
 import { ExposureStrip } from "../ui/ExposureStrip";
 import { CandidateList } from "../ui/CandidateList";
+import { callChoices, cycleChoice, inCallChoices } from "./callTab";
 import { callRows, keyedRows } from "./bonnetGroups";
 import { MetaList } from "../ui/MetaList";
 import { MainSection, SampleHeading, Section } from "../ui/Section";
@@ -130,6 +131,8 @@ function helpSections(mod: string): HelpSection[] {
       rows: [
         { keys: ["1–9"], what: "Tick or untick a phase candidate" },
         { keys: ["0"], what: "Mark no phase (form factor), or clear it" },
+        { keys: ["Tab", "⇧ Tab"], what: "Step through the phase choices, wrapping at the ends. Press Enter to tick the one in focus." },
+        { keys: ["Esc"], what: "Leave the phase choices and let Tab reach every other control until you open another sample" },
         { keys: ["I"], what: "Custom index: pick a symmetry, then drag the lattice, nudge it with ← →, or click a peak to snap to it. Press Enter to add it or Esc to cancel." },
         { keys: ["L"], what: "Label the sample, e.g. Buffer. Press Enter to add it or Esc to close." },
       ],
@@ -924,6 +927,17 @@ export function WorkspacePage(): JSX.Element {
   const [openPanel, setOpenPanel] = useState<"call" | "exposure">("call");
   const callOpen = !shortWindow || openPanel === "call" || draft !== null;
   const exposureOpen = !shortWindow || (openPanel === "exposure" && draft === null);
+  const tabFree = useRef(false);
+  const [pendingTab, setPendingTab] = useState<"first" | "last" | null>(null);
+  useEffect(() => {
+    tabFree.current = false;
+  }, [sampleId]);
+  useEffect(() => {
+    if (!pendingTab || !callOpen) return;
+    const choices = callChoices();
+    (pendingTab === "last" ? choices[choices.length - 1] : choices[0])?.focus();
+    setPendingTab(null);
+  }, [pendingTab, callOpen]);
   const openCustom = useCallback(() => {
     if (!canCall) return;
     setDraft((d) => d ?? initialDraft(candidates[0]));
@@ -1081,6 +1095,25 @@ export function WorkspacePage(): JSX.Element {
       };
       let handled = true;
       switch (ev.key) {
+        case "Tab": {
+          if (tabFree.current) {
+            handled = false;
+            break;
+          }
+          const next = cycleChoice(callChoices(), ev.target, ev.shiftKey);
+          if (next) next.focus();
+          else if (!callOpen) {
+            setOpenPanel("call");
+            setPendingTab(ev.shiftKey ? "last" : "first");
+          } else handled = false;
+          break;
+        }
+        case "Escape":
+          if (inCallChoices(ev.target)) {
+            tabFree.current = true;
+            (ev.target as HTMLElement).blur();
+          } else handled = false;
+          break;
         case "ArrowDown":
           step(1);
           break;
@@ -1149,7 +1182,7 @@ export function WorkspacePage(): JSX.Element {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [visible, sampleId, goSample, exposureList, tile, toggleDrop, keyed, toggleCandidate, toggleGroup, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor, view, setView, sample, openLabeling, applyHistory]);
+  }, [visible, sampleId, goSample, exposureList, tile, toggleDrop, keyed, toggleCandidate, toggleGroup, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor, view, setView, sample, openLabeling, applyHistory, callOpen]);
 
   const droppedCount = ownFrames.filter((e) => e.status === "rejected").length;
   const keptHint = droppedCount > 0 ? `${ownFrames.length - droppedCount} of ${ownFrames.length} kept` : undefined;
