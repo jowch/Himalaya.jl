@@ -216,14 +216,14 @@ test("hovering a candidate does not move the candidate list, even when three pha
 });
 
 for (const width of [1024, 1440]) {
-  test(`a cubic fit's legend line shows its curvature without clipping at ${width} px`, async ({ page }) => {
+  test(`a cubic fit's legend shows its curvature on one unclipped line at ${width} px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     const peaksAt = (qs: readonly number[]) => qs.map((q_observed, i) => ({ peak_id: 1 + i, ratio_position: 1 + i, residual: 0, q_observed }));
     await page.route(/\/api\/exposures\/410\/indices/, (r) =>
       r.fulfill({
         status: 200, contentType: "application/json",
         body: JSON.stringify([{
-          id: 41000, exposure_id: 410, phase: "Im3m", basis: 0.1, score: 0.9, r_squared: 0.9983, lattice_d: 305.0,
+          id: 41000, exposure_id: 410, phase: "Ia3d", basis: 0.1, score: 0.9, r_squared: 0.9983, lattice_d: 1234.5,
           status: "candidate", kind: "auto", inputs_hash: null, peaks: peaksAt([0.029, 0.041, 0.071]), predicted_q: [0.029, 0.041],
         }]),
       }),
@@ -231,13 +231,9 @@ for (const width of [1024, 1440]) {
     await page.goto("/experiments/17/workspace/41");
     await page.locator("[data-testid=workspace-candidates] button").first().hover();
     const fit = page.locator("[data-testid=workspace-indexing-fit]");
-    await expect(fit).toContainText("κ −0.0115 nm⁻²");
-    await expect(fit).toContainText("on peaks");
-    const clipped = await fit.evaluate((p) => {
-      const box = p.getBoundingClientRect();
-      return [...p.children].filter((c) => c.getBoundingClientRect().right > box.right + 0.5).map((c) => c.textContent);
-    });
-    expect(clipped).toEqual([]);
+    await expect(fit).toContainText("a = 1234.5 Å κ −0.0011 nm⁻²");
+    await expect(fit).toContainText("R² 0.9983");
+    expect(await fit.evaluate((p) => p.scrollWidth <= p.clientWidth)).toBe(true);
   });
 }
 
