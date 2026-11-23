@@ -2356,7 +2356,7 @@ describe("WorkspacePage", () => {
     expect(rows()[0]).toBe("A4");
   });
 
-  it("drops a kept zoom that falls outside the next sample's q range, and Z resets the zoom", () => {
+  it("drops a kept zoom that falls outside the next sample's q range, and ⌘/Ctrl+0 resets the zoom", () => {
     state.trace = makeTrace(1);
     const { rerender } = renderAt("/experiments/1/workspace/10");
     const plot = screen.getByTestId("workspace-trace");
@@ -2595,23 +2595,23 @@ describe("WorkspacePage", () => {
 
   it("titles the phase list Call and the exposure details Exposure", () => {
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByRole("heading", { name: "Call" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Assignment" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Image" })).toBeInTheDocument();
   });
 
-  it("folds Call and Frame as an accordion on a short window, and opening a custom index shows it in place of Call", () => {
+  it("folds Assignment and Image as an accordion on a short window, and opening a custom index from the folded Assignment header shows it in place of the list", () => {
     vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(max-height: 860px)", media: query, addEventListener: () => {}, removeEventListener: () => {} }));
     try {
       renderAt("/experiments/1/workspace/10");
       const tools = screen.getByRole("complementary", { name: "Tools" });
-      const call = within(tools).getByRole("button", { name: /Call/ });
+      const call = within(tools).getByRole("button", { name: /Assignment/ });
       const exposure = within(tools).getByRole("button", { name: /^Image/ });
       expect(call).toHaveAttribute("aria-expanded", "true");
       expect(exposure).toHaveAttribute("aria-expanded", "false");
       expect(within(tools).queryByText("File")).toBeNull();
       fireEvent.click(exposure);
       expect(exposure).toHaveAttribute("aria-expanded", "true");
-      expect(within(tools).getByRole("button", { name: /Call/ })).toHaveAttribute("aria-expanded", "false");
+      expect(within(tools).getByRole("button", { name: /Assignment/ })).toHaveAttribute("aria-expanded", "false");
       expect(within(tools).getByText("File")).toBeInTheDocument();
       fireEvent.click(screen.getByRole("button", { name: /Custom index/ }));
       expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
@@ -2646,19 +2646,22 @@ describe("WorkspacePage", () => {
     }
   });
 
-  it("puts the Call list first in the tools column, then the indexing plot, then the exposure", () => {
+  it("puts the Assignment list first in the tools column, then the indexing plot, then the exposure", () => {
     renderAt("/experiments/1/workspace/10");
     const tools = screen.getByRole("complementary", { name: "Tools" });
     const headings = within(tools).getAllByRole("heading").map((h) => h.textContent);
-    expect(headings).toEqual(["Call", "Indexing", "Image"]);
+    expect(headings).toEqual(["Assignment", "Indexing", "Image"]);
   });
 
-  it("the Custom index button in the indexing section opens a custom index", () => {
+  it("the Custom index button sits in the Assignment header and stays there while the custom index it opens replaces the list", () => {
     renderAt("/experiments/1/workspace/10");
-    const button = screen.getByRole("button", { name: /Custom index/ });
+    const header = () => screen.getByRole("heading", { name: "Assignment" }).closest("header")!;
+    const button = within(header()).getByRole("button", { name: /Custom index/ });
+    expect(within(screen.getByRole("heading", { name: "Indexing" }).closest("header")!).queryByRole("button", { name: /Custom index/ })).toBeNull();
     expect(button).toHaveTextContent("Custom index I");
     fireEvent.click(button);
     expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
+    expect(within(header()).getByRole("button", { name: /Custom index/ })).toBe(button);
     expect(button).toHaveAttribute("aria-pressed", "true");
     expect(button).toHaveTextContent("Custom index Esc");
   });
