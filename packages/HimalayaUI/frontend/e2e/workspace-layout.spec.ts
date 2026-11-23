@@ -729,3 +729,22 @@ test("each image's checkbox sits inside a square plate in the tile's corner, and
   await page.mouse.click(p.x + 2, p.y + 2);
   await expect(box).not.toHaveAttribute("aria-checked", before!);
 });
+
+test("a subscripted phase name in the sample list leaves every row the same height", async ({ page }) => {
+  const calls: Record<number, string[]> = { 41: ["Pn3m"], 42: ["Lamellar"], 43: ["Hexagonal"], 44: ["Lamellar", "Hexagonal"] };
+  const called = SAMPLES.map((s) => {
+    const phases = calls[s.id];
+    return phases ? { ...s, assignment_state: "indexed", phase: phases[0], call_phases: phases } : s;
+  });
+  await page.route((url) => url.pathname === "/api/samples", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(called) }));
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/experiments/17/workspace/40");
+  await openSample(page, 40);
+  await expect(page.getByRole("img", { name: "Lamellar + Hexagonal" })).toBeVisible();
+  const heights = await page.locator("[data-testid=workspace-samples] button[data-sample-id]").evaluateAll((rows) =>
+    rows.map((row) => [row.getBoundingClientRect().height, row.querySelector("[data-testid=workspace-status]")!.getBoundingClientRect().height]),
+  );
+  expect(heights).toHaveLength(SAMPLES.length);
+  expect(new Set(heights.map(([row]) => row)).size, "row heights").toBe(1);
+  expect(new Set(heights.map(([, mark]) => mark)).size, "status mark heights").toBe(1);
+});
