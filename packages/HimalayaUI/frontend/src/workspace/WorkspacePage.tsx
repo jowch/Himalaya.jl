@@ -650,12 +650,10 @@ export function WorkspacePage(): JSX.Element {
     [candidates, hoverIds, assigned, draft, draftQs],
   );
 
-  const ringSets = useMemo(
-    () => (draft
-      ? [{ color: phaseColor(draft.phase), qs: draftQs }]
-      : candidates.filter((c) => hoverIds?.includes(c.id)).map((c) => ({ color: phaseColor(c.phase), qs: c.predicted_q }))),
-    [draft, draftQs, candidates, hoverIds],
-  );
+  const ringSets = useMemo(() => [
+    ...candidates.filter((c) => assigned.has(c.id)).map((c) => ({ color: phaseColor(c.phase), qs: c.predicted_q })),
+    ...(draft ? [{ color: phaseColor(draft.phase), qs: draftQs }] : []),
+  ], [draft, draftQs, candidates, assigned]);
   const setupOfSample = useMemo(
     () => new Map(inExperiment.map((s) => [s.id, setups.find((st) => st.id === s.setup_id)] as const)),
     [inExperiment, setups],
@@ -679,7 +677,7 @@ export function WorkspacePage(): JSX.Element {
       const centre = g ? ringCircles([], qUnits, g, size) : null;
       if (!g || !size || !centre) return null;
       const rings = ringSets.flatMap((set) => (ringCircles(set.qs, qUnits, g, size)?.radii ?? []).map((r) => ({ r, color: set.color })));
-      return { size, cx: centre.cx, cy: centre.cy, rings };
+      return { size, cx: centre.cx, cy: centre.cy, side: centre.side, rings };
     },
     [ringSets, geometryOf, detectorSizes, qUnits],
   );
@@ -1524,7 +1522,7 @@ export function WorkspacePage(): JSX.Element {
               </PlotCard>
             </div>
             <MainSection title="Images" hint={keptHint}>
-              <ExposureStrip groups={groups.map((g) => ({ key: g.sampleId, title: g.title, exposures: g.exposures }))} currentId={tile?.id} selection={username ? { selectedIds, selectableIds, onToggle: toggleSelect, onRange: selectRange, onAll: selectAll, onNone: selectNone } : undefined} onPick={setExposureId} onToggleDrop={toggleDrop} warningOf={beamOffWarning} ringsOf={ringsOf} />
+              <ExposureStrip groups={groups.map((g) => ({ key: g.sampleId, title: g.title, exposures: g.exposures }))} currentId={tile?.id} selection={username ? { selectedIds, selectableIds, onToggle: toggleSelect, onRange: selectRange, onAll: selectAll, onNone: selectNone } : undefined} onPick={setExposureId} onToggleDrop={toggleDrop} warningOf={beamOffWarning} />
             </MainSection>
           </>
         ) : (
