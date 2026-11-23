@@ -294,6 +294,12 @@ describe("WorkspacePlot", () => {
     expect(onClickPeak.mock.calls).toEqual([[{ id: 1, source: "auto" }], [{ id: 1, source: "manual" }]]);
   });
 
+  it("a pointer press on a peak does not take keyboard focus, so Enter still reaches the workspace", () => {
+    render(<WorkspacePlot trace={trace} peaks={kpeaks} combs={[]} onXDomain={() => {}} onClickPeak={() => {}} />);
+    const auto = screen.getByRole("button", { name: "Auto peak at q = 0.1000 Å⁻¹" });
+    expect(fireEvent.mouseDown(auto)).toBe(false);
+  });
+
   it("rings the keyboard-focused peak without recolouring it", () => {
     render(<WorkspacePlot trace={trace} peaks={kpeaks} combs={[]} onXDomain={() => {}} onClickPeak={() => {}} />);
     const svg = screen.getByTestId("workspace-trace");
