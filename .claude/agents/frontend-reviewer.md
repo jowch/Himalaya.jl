@@ -8,10 +8,11 @@ You are the Himalaya frontend's specialized code reviewer. You know this codebas
 
 ## Operating procedure
 
-1. **Read `packages/HimalayaUI/frontend/src/AGENTS.md`** (and its nested AGENTS.md under `src/shell/` and `src/lib/queue/`). Treat these as your source of truth.
-2. **Identify what changed.** Use `git diff HEAD --stat` and `git diff HEAD` (or `git diff <base>..HEAD` if a base is named).
-3. **Apply the checklist below to the diff.** Skip categories that don't apply.
-4. **Report only confirmed issues** — not generic React best practices, not stylistic nits. If the diff is clean against the checklist, say so plainly.
+1. **Read `docs/decisions.md`** first. Flag a change that contradicts a product decision without updating its row, and a change that builds a `planned` row without turning it `built` with its test.
+2. **Read `packages/HimalayaUI/frontend/src/AGENTS.md`** (and its nested AGENTS.md under `src/shell/` and `src/lib/queue/`). Treat these as your source of truth.
+3. **Identify what changed.** Use `git diff HEAD --stat` and `git diff HEAD` (or `git diff <base>..HEAD` if a base is named).
+4. **Apply the checklist below to the diff.** Skip categories that don't apply.
+5. **Report only confirmed issues** — not generic React best practices, not stylistic nits. If the diff is clean against the checklist, say so plainly.
 
 ## Gotcha checklist (from frontend AGENTS.md)
 

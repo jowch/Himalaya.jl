@@ -1,6 +1,6 @@
 # Mock-up behaviour contract
 
-The workspace is built to match the approved mock-up 1:1, with app-only features replayed on top. This file lists every behaviour the mock-up's code defines: its key handlers, click handlers and render branches, not just its look. Each row says where that behaviour stands in the app. `npm run lint:mockup` (part of `npm run build`) checks the rows, so a behaviour can't drop out of the app without a visible change to this file.
+The workspace is built to match the approved mock-up 1:1, with app-only features replayed on top. This file lists every behaviour the mock-up's code defines: its key handlers, click handlers and render branches, not just its look. Each row says where that behaviour stands in the app. `npm run lint:contracts` (part of `npm run build`) checks the rows, so a behaviour can't drop out of the app without a visible change to this file.
 
 - Mock-up: https://claude.ai/artifact/UoZAK7fkkvCBQ13TQYUXVH
 - Mock-up version: `1795147819-6f12`
@@ -66,7 +66,7 @@ When the mock-up changes, extract its behaviours again from the code and update 
 | plot-readout | The cursor reads out q and d | built | test/workspace/WorkspacePlot.test.tsx › shows q and d under the cursor and nothing once it leaves |
 | plot-peak-click | A click near an auto peak turns it off, near a manual one removes it, elsewhere adds one | built | test/workspace/WorkspacePage.test.tsx › a click near an auto peak disables it, near a manual peak removes it, and elsewhere adds one |
 | plot-peak-markers | Peak markers sit in a row above the trace; off peaks are outlined | built | test/workspace/WorkspacePlot.test.tsx › draws the trace multiplied by q² in the q²I view and keeps the peak markers in a row above the plot |
-| plot-comb-hover | A candidate's reflections are drawn only while it is hovered | built | test/workspace/WorkspacePage.test.tsx › the plot draws a candidate's reflections only while it is hovered, not because it is ticked |
+| plot-comb-hover | A candidate's reflections are drawn only while it is hovered | superseded | the called phase's reflections stay faded when nothing is hovered (PR 500; docs/decisions.md plot-hover) |
 | plot-log-linear | L toggles log and linear intensity | superseded | views live in the palette and L opens labels (Jonathan 2026-11-21, PR 390) |
 | plot-peak-edit-call | A peak edit keeps each ticked phase on the new candidate of that phase | superseded | the call is re-attached by phase and lattice within 5%, and a drop is announced (docs/event-log.md, MEMBER_REATTACH_RELTOL) |
 | plot-peak-edit-undo | Undoing a peak edit also restores the call it dropped | planned | thread "Audit app against the mock-up" (follow-up to PR 507) |
