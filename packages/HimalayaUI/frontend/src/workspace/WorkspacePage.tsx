@@ -1123,7 +1123,7 @@ export function WorkspacePage(): JSX.Element {
         } else if (ev.key === "?") {
           ev.preventDefault();
           setHelpOpen(true);
-        } else if (ev.key === " " && !ev.repeat && exposure && imageUrl(exposure, false)) {
+        } else if (ev.key === " " && !ev.repeat && tile && imageUrl(tile, false)) {
           if (ev.target instanceof HTMLElement && ev.target.closest("button,a")) return;
           ev.preventDefault();
           setBigOpen(true);
