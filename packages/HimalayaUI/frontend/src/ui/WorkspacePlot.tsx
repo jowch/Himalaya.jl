@@ -199,6 +199,7 @@ export function WorkspacePlot({
       height={height}
       margins={PLOT_MARGINS}
       data-testid="workspace-trace"
+      {...(hoverQ !== null ? { svgClassName: "cursor-crosshair" } : {})}
       svgRole={onClickPeak ? "group" : "img"}
       svgLabel="Integration trace: intensity against q"
       onPointerMovePx={onPointerMovePx}

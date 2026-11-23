@@ -21,6 +21,7 @@ export interface PlotFrameProps {
   width?: number;
   defaultWidth?: number;
   className?: string;
+  svgClassName?: string;
   "data-testid"?: string;
   svgRole?: string;
   svgLabel?: string;
@@ -37,6 +38,7 @@ export function PlotFrame({
   width,
   defaultWidth = 640,
   className,
+  svgClassName,
   "data-testid": testid,
   svgRole,
   svgLabel,
@@ -100,6 +102,7 @@ export function PlotFrame({
         height={height}
         viewBox={`0 0 ${w} ${height}`}
         data-testid={testid}
+        {...(svgClassName ? { className: svgClassName } : {})}
         {...(svgRole ? { role: svgRole } : {})}
         {...(svgLabel ? { "aria-label": svgLabel } : {})}
         onClick={handleClick}
