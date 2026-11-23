@@ -697,8 +697,8 @@ async function tileWidths(page: Page): Promise<number[]> {
   return page.locator("[data-testid=workspace-exposures] li").evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().width)));
 }
 
-for (const viewport of [{ width: 1024, height: 1300 }, { width: 1100, height: 1400 }, { width: 1440, height: 900 }]) {
-  test(`image tiles keep about their usual size and wrap at ${viewport.width}×${viewport.height}, with the sample list shown or hidden`, async ({ page }) => {
+for (const viewport of [{ width: 800, height: 1300 }, { width: 1024, height: 1300 }, { width: 1100, height: 1400 }, { width: 1440, height: 900 }]) {
+  test(`image tiles keep their usual size and wrap at ${viewport.width}×${viewport.height}, with the sample list shown or hidden`, async ({ page }) => {
     await page.setViewportSize(viewport);
     await page.goto("/experiments/17/workspace/44");
     await openSample(page, 44);
@@ -709,10 +709,7 @@ for (const viewport of [{ width: 1024, height: 1300 }, { width: 1100, height: 14
       }
       const widths = await tileWidths(page);
       expect(widths, `sample list ${hidden ? "hidden" : "shown"}`).toHaveLength(7);
-      for (const w of widths) {
-        expect(w).toBeGreaterThanOrEqual(128);
-        expect(w).toBeLessThanOrEqual(176);
-      }
+      expect(new Set(widths), `sample list ${hidden ? "hidden" : "shown"}`).toEqual(new Set([136]));
     }
   });
 }
