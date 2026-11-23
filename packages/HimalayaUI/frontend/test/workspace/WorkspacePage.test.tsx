@@ -710,7 +710,7 @@ describe("WorkspacePage", () => {
     state.corpus = state.corpus.map((s) => (s.id === 11 ? { ...s, assignment_state: "indexed", phase: "Im3m", call_phases: ["Im3m", "Pn3m"] } : s));
     rerender(page("/experiments/1/workspace/11"));
     const row = within(screen.getByTestId("workspace-samples")).getByRole("button", { current: true });
-    expect(within(row).getByTestId("workspace-status")).toHaveTextContent("Im3m + Pn3m");
+    expect(within(row).getByRole("img", { name: "Im3m + Pn3m" })).toHaveAttribute("data-testid", "workspace-status");
   });
 
   it("Z jumps to the next unreviewed sample, like Gradescope's next ungraded", () => {
