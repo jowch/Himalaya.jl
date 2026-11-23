@@ -17,12 +17,12 @@ runs:
     - id: version
       shell: bash
       working-directory: ${{ inputs.working-directory }}
-      run: echo "playwright=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      run: echo "key=playwright-chromium-${{ runner.os }}-${{ runner.arch }}-$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
     - id: cache
       uses: actions/cache@v4
       with:
         path: ~/.cache/ms-playwright
-        key: playwright-chromium-${{ runner.os }}-${{ runner.arch }}-${{ steps.version.outputs.playwright }}
+        key: ${{ steps.version.outputs.key }}
     - if: steps.cache.outputs.cache-hit != 'true'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
@@ -41,7 +41,12 @@ runs:
           exit 0
         fi
         echo "::warning::Chromium could not start; reinstalling it in case the cached copy is broken."
-        timeout "${{ inputs.timeout }}" npx playwright install --force chromium && launch && exit 0
+        if timeout "${{ inputs.timeout }}" npx playwright install --force chromium && launch; then
+          if [ "${{ steps.cache.outputs.cache-hit }}" = "true" ]; then
+            echo "::warning::The cached Chromium was broken and a fresh download fixed it. actions/cache never re-saves an exact key hit, so every run will download again until the cache entry '${{ steps.version.outputs.key }}' is deleted (Actions > Caches, or: gh cache delete ${{ steps.version.outputs.key }})."
+          fi
+          exit 0
+        fi
         echo "::warning::Chromium still could not start; installing its system libraries with apt."
         for attempt in 1 2; do
           timeout "${{ inputs.timeout }}" npx playwright install-deps chromium && launch && exit 0
