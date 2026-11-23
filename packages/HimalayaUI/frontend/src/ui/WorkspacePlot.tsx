@@ -12,6 +12,7 @@ export interface CombLine {
   id: number;
   qs: readonly number[];
   color: string;
+  faded?: boolean;
 }
 
 export interface CompareLine {
@@ -38,6 +39,8 @@ export const COMPARE_DASH = "5 4";
 export const COMPARE_COLORS = [1, 2, 3, 4, 5].map((n) => `var(--color-compare-${n})`);
 export const PLOT_HEIGHT = 330;
 const Q_LABEL_ROOM = 70;
+const FADED_COMB_OPACITY = 0.35;
+const MARKER_STRIP_PX = 12;
 
 interface Props {
   trace: Trace | undefined;
@@ -184,7 +187,7 @@ export function WorkspacePlot({
     const g = geometry.current;
     const p = plotX(px);
     const top = g ? g.dims.margins.top : 0;
-    if (!g || p === null || py < top - 12 || py > top + g.dims.plotHeight) return;
+    if (!g || p === null || py < top - MARKER_STRIP_PX || py > top + g.dims.plotHeight) return;
     const q = g.x.invert(p);
     if (!Number.isFinite(q) || q <= 0) return;
     const hit = hitTestPeaks([...shownPeaks], p, (qq) => g.x.to(qq), PEAK_HIT_PX);
@@ -199,7 +202,9 @@ export function WorkspacePlot({
       setHoverQ(null);
       return;
     }
-    const q = g.x.invert(p);
+    const top = g.dims.margins.top;
+    const onMarker = py >= top - MARKER_STRIP_PX && py < top ? hitTestPeaks([...shownPeaks], p, (qq) => g.x.to(qq), PEAK_HIT_PX) : null;
+    const q = onMarker ? onMarker.q : g.x.invert(p);
     setHoverQ(Number.isFinite(q) && q > 0 ? q : null);
   };
 
@@ -208,6 +213,7 @@ export function WorkspacePlot({
       height={height}
       margins={PLOT_MARGINS}
       data-testid="workspace-trace"
+      {...(hoverQ !== null ? { svgClassName: "cursor-crosshair" } : {})}
       svgRole={onClickPeak ? "group" : "img"}
       svgLabel="Integration trace: intensity against q"
       onPointerMovePx={onPointerMovePx}
@@ -288,6 +294,7 @@ export function WorkspacePlot({
                       y1={10}
                       y2={dims.plotHeight}
                       stroke={c.color}
+                      {...(c.faded ? { strokeOpacity: FADED_COMB_OPACITY } : {})}
                       strokeDasharray="2 3"
                     />
                   )),
@@ -317,6 +324,8 @@ export function WorkspacePlot({
             <g data-role="peak-glyph">
               {shownPeaks.map((p) => {
                 const lit = highlight?.get(peakKey(p));
+                const grown = !lit && !p.excluded && p.source === "manual";
+                const glyphClass = [onClickPeak ? "cursor-pointer outline-none" : "", grown ? "peak-manual" : ""].filter(Boolean).join(" ");
                 return (
                   <polygon
                     key={peakKey(p)}
@@ -324,15 +333,15 @@ export function WorkspacePlot({
                     data-excluded={p.excluded || undefined}
                     points={peakPoints(x.to(p.q))}
                     fill={lit && !p.excluded ? lit : peakFill(p)}
-                    stroke={lit ? lit : p.excluded ? "var(--color-ink-faint)" : "none"}
+                    stroke={lit ? lit : p.excluded ? "var(--color-ink-faint)" : grown ? "var(--color-accent)" : "none"}
                     {...(highlight && !lit ? { opacity: 0.3 } : {})}
                     pointerEvents="all"
+                    {...(glyphClass ? { className: glyphClass } : {})}
                     {...(onClickPeak
                       ? {
                           role: "button",
                           tabIndex: 0,
                           "aria-label": `${p.source === "manual" ? "Manual" : "Auto"} peak at q = ${p.q.toFixed(4)} Å⁻¹${p.excluded ? ", off" : ""}`,
-                          className: "cursor-pointer outline-none",
                           onFocus: (ev: React.FocusEvent<SVGPolygonElement>) => {
                             if (keyboardFocus(ev.currentTarget)) setFocusedPeak(peakKey(p));
                           },
