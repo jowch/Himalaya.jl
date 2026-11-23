@@ -25,6 +25,7 @@ packages/HimalayaUI/frontend/e2e/AGENTS.md           # Playwright patterns
 
 If this is your first session on this repo, skim these in order before touching code:
 
+0. [docs/decisions.md](docs/decisions.md) — Jonathan's product decisions and where each stands. Authors and reviewers check a change against it first.
 1. [docs/peak-finding.md](docs/peak-finding.md) — why `findpeaks` is the way it is. Load-bearing.
 2. [docs/experiment-config.md](docs/experiment-config.md) — required if touching the New-experiment funnel (`routes_fs.jl`), experiment create/scan (`routes_experiments.jl`, `ingest.jl`), or `config.jl`.
 3. [docs/scoring.md](docs/scoring.md) — required if touching `score`, `auto_group`, or `remove_subsets`.
@@ -185,7 +186,8 @@ Module-specific conventions and anti-patterns live in the AGENTS.md file nearest
 - [mutation-queue.md](docs/mutation-queue.md) — server-reconciliation queue architecture, `client_op_id` lifecycle, replay-as-rerun, `with_idempotency`.
 - [contract-testing.md](docs/contract-testing.md) — six-layer rule and canonical paired test files.
 - [future-feature-ideas.md](docs/future-feature-ideas.md) — intentionally-deferred features.
-- [mockup-contract.md](docs/mockup-contract.md) — every behaviour of the approved workspace mock-up and where it stands (built with a test, superseded, planned). `npm run lint:mockup` checks it; update a row in any PR that builds, changes or replaces a mock-up behaviour.
+- [decisions.md](docs/decisions.md) — every product decision Jonathan has made and where it stands (built with a test, untested, superseded, planned). Read it before building or reviewing a feature; `npm run lint:contracts` checks it, and a PR that makes, changes or builds a decision updates its row.
+- [mockup-contract.md](docs/mockup-contract.md) — every behaviour of the approved workspace mock-up and where it stands (built with a test, superseded, planned). `npm run lint:contracts` checks it; update a row in any PR that builds, changes or replaces a mock-up behaviour.
 
 **Package-specific:**
 

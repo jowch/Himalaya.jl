@@ -288,3 +288,21 @@ end
     @test only(averages)[:analyzed]
     @test length(only(averages)[:sources]) == 2
 end
+
+@testset "a bridged sample averages only its own images" begin
+    fx = _combine_fixture()
+    db = fx.db
+    data = joinpath(@__DIR__, "..", "..", "..", "test", "data")
+    mate = HimalayaUI.create_sample!(db; experiment_id = fx.exp_id, name = "S in another setup")
+    mate_ids = map(("m1_tot", "m2_tot")) do f
+        cp(joinpath(data, "cubic_tot.dat"), joinpath(fx.analysis_dir, f * ".dat"))
+        id = HimalayaUI.create_exposure!(db; experiment_id = fx.exp_id, sample_id = mate, filename = f,
+            exposure_time = 5.0, transmitted_counts = 500.0, counting_time = 5.0)
+        HimalayaUI.analyze_exposure!(db, id)
+        id
+    end
+    DBInterface.execute(db, "INSERT INTO sample_bridges (sample_id, group_id) VALUES (?, 1), (?, 1)", [fx.s_id, mate])
+    @test HimalayaUI.bridge_mates(db, fx.s_id) == [mate]
+    @test _sources(db, HimalayaUI.refresh_selection!(db, fx.s_id)) == fx.ids
+    @test _sources(db, HimalayaUI.refresh_selection!(db, mate)) == sort(collect(mate_ids))
+end

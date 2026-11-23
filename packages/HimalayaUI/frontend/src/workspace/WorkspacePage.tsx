@@ -283,7 +283,8 @@ export function WorkspacePage(): JSX.Element {
 
   const bridges = useBridges(experimentId);
   const bridgeList = useMemo(() => bridges.data ?? [], [bridges.data]);
-  const bridged = useMemo(() => (sampleId === undefined ? [] : bridgedWith(bridgeList, sampleId)), [bridgeList, sampleId]);
+  const shownBridges = useMemo(() => bridgeList.filter((b) => !hiddenSamples.has(b.sample_id)), [bridgeList, hiddenSamples]);
+  const bridged = useMemo(() => (sampleId === undefined ? [] : bridgedWith(shownBridges, sampleId)), [shownBridges, sampleId]);
   const exposures = useExposures(sampleId);
   const mateExposures = useSamplesExposures(bridged);
   const [exposureId, setExposureId] = useState<number | undefined>(linkedExposure);
@@ -436,7 +437,7 @@ export function WorkspacePage(): JSX.Element {
     }),
     [bridged, inExperiment, frameSetupName],
   );
-  const counts = useMemo(() => bridgeCounts(bridgeList), [bridgeList]);
+  const counts = useMemo(() => bridgeCounts(shownBridges), [shownBridges]);
   const bridgeSamples = useBridgeSamples(experimentId);
   const unbridgeSample = useUnbridgeSample(experimentId);
   const shownRefs = useMemo(() => refs.filter((r) => !hiddenSamples.has(r)), [refs, hiddenSamples]);
