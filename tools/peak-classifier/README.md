@@ -101,6 +101,11 @@ Biases to keep in mind:
   threshold's numbers as optimistic and compare detectors at a threshold fixed
   beforehand.
 - With few experiments the folds are large and per-phase counts are small.
+- Phase calls are scored on the detector's peaks with excludes applied and
+  adds not. A call the user built from peaks they added by hand (common for
+  custom indices on weak patterns) can only be matched if the detector finds
+  those peaks itself, so a phase can score 0 for every detector. That reflects
+  detection, not a matching error.
 
 The JSON holds the same numbers (`counts`, `detectors[].metrics`,
 `detectors[].per_phase`, `paired`), with no paths. The output is derived from
