@@ -30,7 +30,13 @@ describe("sampleStatus", () => {
 
   it("reports the dominant assigned phase", () => {
     expect(sampleStatus(sample(1, { assignment_state: "indexed", phase: "Pn3m" }))).toEqual({
-      kind: "phase", phase: "Pn3m",
+      kind: "phase", phases: ["Pn3m"],
+    });
+  });
+
+  it("reports every phase of a coexistence call, dominant first", () => {
+    expect(sampleStatus(sample(1, { assignment_state: "indexed", phase: "Im3m", call_phases: ["Pn3m", "Im3m"] }))).toEqual({
+      kind: "phase", phases: ["Im3m", "Pn3m"],
     });
   });
 
