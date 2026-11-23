@@ -13,9 +13,10 @@ mutable struct PeakTrainingState
     exit_hook::Bool
     stopped::Bool
     attempted_watermark::Int
+    attempted_stale::Bool
 end
 
-const PEAK_TRAINING = PeakTrainingState(ReentrantLock(), nothing, nothing, false, nothing, false, false, 0)
+const PEAK_TRAINING = PeakTrainingState(ReentrantLock(), nothing, nothing, false, nothing, false, false, 0, false)
 
 peak_training_threads() = max(1, min(Threads.nthreads(:default), Sys.CPU_THREADS ÷ 2))
 
@@ -100,9 +101,11 @@ function maybe_start_peak_training!(db::SQLite.DB; min_events::Integer = PEAK_TR
     lock(PEAK_TRAINING.lock) do
         PEAK_TRAINING.stopped && return :stopped
         due = with_background_db(bg -> peak_training_due(bg; min_events, quiet_seconds,
-                                                         after = PEAK_TRAINING.attempted_watermark), db)
+                                                         after = PEAK_TRAINING.attempted_watermark,
+                                                         stale_attempted = PEAK_TRAINING.attempted_stale), db)
         due || return :not_due
         peak_training_running() && return :busy
+        PEAK_TRAINING.attempted_stale = true
         watermark = with_background_db(label_watermark, db)
         PEAK_TRAINING.attempted_watermark = max(PEAK_TRAINING.attempted_watermark, watermark)
         PEAK_TRAINING.cancelled = false
@@ -135,6 +138,7 @@ function start_peak_training_timer!(db::SQLite.DB; interval::Real = PEAK_TRAININ
     lock(PEAK_TRAINING.lock) do
         PEAK_TRAINING.stopped = false
         PEAK_TRAINING.attempted_watermark = 0
+        PEAK_TRAINING.attempted_stale = false
     end
     if !PEAK_TRAINING.exit_hook
         PEAK_TRAINING.exit_hook = true

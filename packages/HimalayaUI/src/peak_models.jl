@@ -31,9 +31,20 @@ label_watermark(db::SQLite.DB) = Int(coalesce(only(sqlrows(DBInterface.execute(d
 last_training_watermark(db::SQLite.DB) = Int(coalesce(only(sqlrows(DBInterface.execute(db,
     "SELECT MAX(label_watermark) AS w FROM peak_models"))).w, 0))
 
+current_peak_feature_version() =
+    HimalayaPeakModel.feature_version(HimalayaPeakModel.default_recipe().features)
+
+function peak_training_stale(db::SQLite.DB)
+    rows = sqlrows(DBInterface.execute(db,
+        "SELECT feature_version FROM peak_models WHERE status != 'failed' ORDER BY id DESC LIMIT 1"))
+    !isempty(rows) && coalesce(rows[1].feature_version, "") != current_peak_feature_version() &&
+        label_watermark(db) > 0
+end
+
 function peak_training_due(db::SQLite.DB; min_events::Integer = PEAK_TRAINING_MIN_EVENTS,
                            quiet_seconds::Real = PEAK_TRAINING_QUIET_SECONDS,
-                           after::Integer = 0)
+                           after::Integer = 0, stale_attempted::Bool = false)
+    stale_attempted || !peak_training_stale(db) || return true
     r = only(sqlrows(DBInterface.execute(db, """
         SELECT COUNT(*) AS n,
                (julianday('now') - julianday(MAX(timestamp))) * 86400.0 AS idle
@@ -70,6 +81,76 @@ function insert_peak_model!(db::SQLite.DB, r::AbstractDict)
             feature_version = get(r, "feature_version", nothing), core_version = String(r["core_version"]),
             threshold = get(r, "threshold", nothing), nms = get(r, "nms", nothing),
             metrics = r["metrics"], fitted = status == "passed" ? get(r, "fitted", nothing) : nothing)
+    end
+end
+
+struct ProductionModel
+    id::Int
+    model::HimalayaPeakModel.TrainedModel
+end
+
+const PEAK_MODEL_CACHE = Dict{String, Tuple{Int, Union{Nothing, ProductionModel}}}()
+const PEAK_MODEL_CACHE_LOCK = ReentrantLock()
+
+invalidate_peak_model_cache!() = lock(() -> empty!(PEAK_MODEL_CACHE), PEAK_MODEL_CACHE_LOCK)
+
+function trained_model_from_row(row)::HimalayaPeakModel.TrainedModel
+    recipe = HimalayaPeakModel.from_dict(HimalayaPeakModel.Recipe, JSON3.read(String(row.recipe_json)))
+    row.feature_version == HimalayaPeakModel.feature_version(recipe.features) ||
+        error("the model was trained with feature version $(row.feature_version), not the current one")
+    fitted = HimalayaPeakModel.from_dict(HimalayaPeakModel.Fitted, JSON3.read(String(row.fitted_json)))
+    counts = ismissing(row.counts_json) ? nothing : JSON3.read(String(row.counts_json))
+    trained_on = (positive = counts === nothing ? 0 : Int(get(counts, :positive, 0)),
+                  negative = counts === nothing ? 0 : Int(get(counts, :negative, 0)))
+    HimalayaPeakModel.TrainedModel(recipe, fitted, recipe.threshold, recipe.nms,
+        HimalayaPeakModel.feature_names(recipe.features), trained_on, String(row.feature_version))
+end
+
+function _load_production_model(db::SQLite.DB, id::Int)::Union{Nothing, ProductionModel}
+    row = only(sqlrows(DBInterface.execute(db,
+        "SELECT recipe_json, feature_version, fitted_json, counts_json FROM peak_models WHERE id = ?", [id])))
+    (ismissing(row.fitted_json) || ismissing(row.recipe_json)) && return nothing
+    try
+        ProductionModel(id, trained_model_from_row(row))
+    catch err
+        @warn "peak model $id cannot be used; peaks come from the hybrid detector" exception = err
+        nothing
+    end
+end
+
+function production_detector(db::SQLite.DB)::Union{Nothing, ProductionModel}
+    rows = sqlrows(DBInterface.execute(db,
+        "SELECT id FROM peak_models WHERE status = 'active' ORDER BY id DESC LIMIT 1"))
+    isempty(rows) && return nothing
+    id = Int(rows[1].id)
+    _poolable(db.file) || return _load_production_model(db, id)
+    key = String(db.file)
+    lock(PEAK_MODEL_CACHE_LOCK) do
+        hit = get(PEAK_MODEL_CACHE, key, nothing)
+        hit !== nothing && hit[1] == id && return hit[2]
+        loaded = _load_production_model(db, id)
+        PEAK_MODEL_CACHE[key] = (id, loaded)
+        loaded
+    end
+end
+
+function retire_stale_peak_models!(db::SQLite.DB)
+    lock(_DB_WRITE_LOCK) do
+        retired = Int[]
+        for r in sqlrows(DBInterface.execute(db,
+                "SELECT id, recipe_json, feature_version FROM peak_models WHERE status = 'active' ORDER BY id"))
+            usable = try
+                !ismissing(r.recipe_json) && r.feature_version == HimalayaPeakModel.feature_version(
+                    HimalayaPeakModel.from_dict(HimalayaPeakModel.Recipe, JSON3.read(String(r.recipe_json))).features)
+            catch
+                false
+            end
+            usable && continue
+            DBInterface.execute(db, "UPDATE peak_models SET status = 'retired', fitted_json = NULL WHERE id = ?", [Int(r.id)])
+            push!(retired, Int(r.id))
+        end
+        isempty(retired) || invalidate_peak_model_cache!()
+        retired
     end
 end
 
