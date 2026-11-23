@@ -110,7 +110,7 @@ export function ExposureStrip({ groups, currentId, selection, onPick, onToggleDr
                       )}
                     </button>
                     {selectable && selection && (
-                      <span className="absolute left-0.5 top-0.5 rounded-full bg-paper">
+                      <span data-testid="exposure-select-plate" className="absolute left-1 top-1 flex h-6 w-6 items-center justify-center rounded-sm border border-hair bg-paper">
                         <Checkbox
                           checked={selected}
                           tabIndex={stop}

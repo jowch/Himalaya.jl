@@ -762,6 +762,13 @@ describe("WorkspacePage", () => {
     }
   });
 
+  it("puts each image's checkbox on a square plate in the tile's corner", () => {
+    renderAt("/experiments/1/workspace/10");
+    const boxes = screen.getAllByRole("checkbox", { name: /^Analyze image/ });
+    expect(boxes.length).toBeGreaterThan(0);
+    for (const box of boxes) expect(box.parentElement).toHaveAttribute("data-testid", "exposure-select-plate");
+  });
+
   it("J and R are no longer shortcuts", () => {
     state.trace = makeTrace(1);
     state.compareTraces = new Map([[11, makeTrace(2)]]);
