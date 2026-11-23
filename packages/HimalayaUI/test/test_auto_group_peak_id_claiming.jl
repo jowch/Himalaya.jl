@@ -1,7 +1,7 @@
 using Test
 using Himalaya
 using Himalaya: indexpeaks, Index, peaks, score
-using HimalayaUI: auto_group
+using HimalayaUI: auto_group, reassign_contested
 using SparseArrays
 
 @testset "auto_group claims by peak_id, not float equality" begin
@@ -37,7 +37,7 @@ end
     end
 end
 
-@testset "auto_group members never share a peak" begin
+@testset "auto_group members never share a peak when none is contested" begin
     qs        = [0.1, 0.1414, 0.1732, 0.2, 0.2449]
     sharpness = ones(length(qs))
     candidates = indexpeaks(qs, sharpness)
@@ -123,3 +123,64 @@ end
     @test first(auto_group(cands, coll)) isa Himalaya.Index{Himalaya.Hexagonal}
 end
 
+
+const IM3M_Q = 0.06445 .* Himalaya.phaseratios(Himalaya.Im3m; normalize = true)[1:7]
+const PN3M_Q = 0.08225 .* Himalaya.phaseratios(Himalaya.Pn3m; normalize = true)[1:7]
+
+@testset "auto_group: coexisting Im3m and Pn3m each keep the peaks their lattice fits best" begin
+    q  = sort(vcat(IM3M_Q, PN3M_Q))
+    sh = [x in IM3M_Q ? 2.0 * exp(-10x) : 3.0 * exp(-10x) for x in q]
+    cands = collect(indexpeaks(q, sh))
+    for group in _both(cands, _eff(q, sh))
+        @test _phases(group) == ["Im3m", "Pn3m"]
+        @test first(group) isa Himalaya.Index{Himalaya.Im3m}
+        @test all(g -> any(c -> c === g, cands), group)
+    end
+end
+
+@testset "auto_group: a pure Im3m whose first peak sits high stays one phase" begin
+    q  = copy(IM3M_Q); q[1] *= 1.009
+    sh = [4.0 * exp(-12x) for x in q]
+    cands = collect(indexpeaks(q, sh))
+    for group in _both(cands, _eff(q, sh))
+        @test _phases(group) == ["Im3m"]
+    end
+end
+
+function _index(P, basis, rpos, q)
+    n = length(Himalaya.phaseratios(P))
+    Index{P}(basis, sparsevec(UInt8.(rpos), q, n), sparsevec(UInt8.(rpos), ones(length(q)), n))
+end
+_claims(rpos, q, ids) = [(claim = id, q = x, rpos = r) for (r, x, id) in zip(rpos, q, ids)]
+
+@testset "reassign_contested gives a contested peak to the best fit, shares one inside the band, and drops a member left below minpeaks" begin
+    rim, rpn = Himalaya.phaseratios(Himalaya.Im3m; normalize = true), Himalaya.phaseratios(Himalaya.Pn3m; normalize = true)
+    a, b = 0.06445, 0.08225
+    function run(im_pos, im_q, pn_pos, pn_q)
+        cands = [_index(Himalaya.Im3m, a, im_pos, im_q), _index(Himalaya.Pn3m, b, pn_pos, pn_q)]
+        claims = [_claims(im_pos, im_q, vcat(1:length(im_pos)-1, 100)),
+                  _claims(pn_pos, pn_q, [p == pn_pos[end] ? 100 : 10 + p for p in pn_pos])]
+        owned = Dict(m => Set(c.claim for c in claims[m]) for m in eachindex(cands))
+        kept = reassign_contested([1, 2], cands, claims, owned)
+        kept, owned
+    end
+
+    pn_pos = [1, 2, 3, 5, 4]; pn_q = b .* rpn[pn_pos]
+    im_pos = [1, 2, 3, 5]; im_q = vcat(a .* rim[[1, 2, 3]], b * rpn[4])
+    kept, owned = run(im_pos, im_q, pn_pos, pn_q)
+    @test kept == [2]
+    @test 100 in owned[2]
+
+    pn_pos = [1, 2, 3, 5, 7]; pn_q = b .* rpn[pn_pos]
+    im_pos = [1, 2, 3, 4, 8]; im_q = vcat(a .* rim[1:4], b * rpn[7])
+    kept, owned = run(im_pos, im_q, pn_pos, pn_q)
+    @test kept == [1, 2]
+    @test !(100 in owned[1]) && 100 in owned[2]
+
+    shared = (a * rim[9] + b * rpn[8]) / 2
+    pn_pos = [1, 2, 3, 5, 8]; pn_q = vcat(b .* rpn[[1, 2, 3, 5]], shared)
+    im_pos = [1, 2, 3, 4, 9]; im_q = vcat(a .* rim[1:4], shared)
+    kept, owned = run(im_pos, im_q, pn_pos, pn_q)
+    @test kept == [1, 2]
+    @test 100 in owned[1] && 100 in owned[2]
+end

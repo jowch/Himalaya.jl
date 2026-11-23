@@ -18,7 +18,7 @@ end
 
 function _demo_call(dat)
     q, I, σ = HimalayaUI.load_dat(dat)
-    pr = Himalaya.findpeaks(q, I, σ)
+    pr = Himalaya.findpeaks(q, I, σ; method = :hybrid)
     g = _auto_group(pr)
     isempty(g) ? "none" : join(sort([string(nameof(Himalaya.phase(x))) for x in g]), "+")
 end
