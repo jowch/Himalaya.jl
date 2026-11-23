@@ -96,6 +96,15 @@ scratch/demo-experiment/
   re-run `himalaya analyze` so every kept frame is re-indexed from scratch. The
   last step checks that nothing a person sees changed, the confirmed call
   included. `analyze` exits non-zero if it skipped any exposure.
+- **`make upgrade-drill`** (also a CI job) checks that a DB written by older code
+  still reads right. It ingests the demo with the base commit's backend
+  (`UPGRADE_BASE`, default `origin/main`; CI uses the PR's base), reviews a few
+  samples through the base's routes (a call on one image and a peak edit on
+  another, a call on an image that is then dropped, calls on two images, no
+  phase), then opens that DB with this checkout. It fails if any sample's call
+  changed, or if any check-truth invariant broke or went unchecked. Auto calls
+  that differ from TRUTH are only reported, since the base wrote those analyses.
+  A fresh demo never runs a migration, so this is the check that does.
 - **Expected calls are not always the generated truth**, by design. TRUTH's `auto`
   column is what Himalaya's own pipeline calls. One sample differs:
   - `MO_AMP_weak`: too weak to index automatically.
