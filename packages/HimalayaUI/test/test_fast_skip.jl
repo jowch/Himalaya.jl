@@ -67,42 +67,26 @@ end
     end
 end
 
-@testset "fast-skip: latency target P99 < 500µs" begin
+@testset "fast-skip: a no-change call reads no file, writes no row and allocates a fraction of a file re-hash" begin
     mktempdir() do tmp
         ctx = setup_clean_analyzed_exposure(tmp)
-
-        # Warm up.
-        for _ in 1:5
-            analyze_exposure!(ctx.db, ctx.exposure_id, ctx.analysis_dir;
-                              trace_known_unchanged=true)
+        fast() = analyze_exposure!(ctx.db, ctx.exposure_id, ctx.analysis_dir;
+                                   trace_known_unchanged=true)
+        rehash() = analyze_exposure!(ctx.db, ctx.exposure_id, ctx.analysis_dir)
+        for _ in 1:3
+            fast()
+            rehash()
         end
 
-        ts = Float64[]
-        for _ in 1:100
-            t = @elapsed analyze_exposure!(ctx.db, ctx.exposure_id, ctx.analysis_dir;
-                                           trace_known_unchanged=true)
-            push!(ts, t)
-        end
-        sort!(ts)
-        p99 = ts[99]
-        @info "fast-skip P99 latency" p99
-        # The spec's load-bearing claim is "microseconds, not milliseconds" — preventing
-        # file I/O on the no-change path. Steady-state is ~150µs (a handful of SQLite
-        # SELECTs at ~30µs each, hardware-floored). The ceiling is widened to 2 ms on CI to
-        # absorb shared-runner GC noise (PR review suggestion #6); on a developer
-        # box the @info logs make a real regression easy to spot well below 2 ms.
-        # Under the parallel bucket runner (`make test-parallel`) the box runs 5 test
-        # processes at once, so CPU saturation inflates this absolute wall-clock
-        # latency by ~25x (a meaningless measurement under contention). Neutralize the
-        # ceiling there — the @info above still logs p99, and the serial GROUP=All / CI
-        # paths keep the real check — while leaving the @test in place so the per-bucket
-        # Pass count still sums to the serial total.
-        ceiling_s = haskey(ENV, "HIMALAYA_SUITE_PARALLEL") ? Inf :
-                    haskey(ENV, "CI") ? 2.0e-3 : 500e-6
-        # NB: ceiling_s == Inf under HIMALAYA_SUITE_PARALLEL → this is a tautology in
-        # parallel buckets (real latency check runs on serial GROUP=All / CI; the @test
-        # stays only so per-bucket Pass counts sum to the serial total).
-        @test p99 < ceiling_s
+        fast_bytes = @allocated fast()
+        rehash_bytes = @allocated rehash()
+        @info "fast-skip allocations" fast_bytes rehash_bytes
+        @test fast_bytes < rehash_bytes / 4
+
+        changes = SQLite.C.sqlite3_total_changes(ctx.db.handle)
+        mv(ctx.analysis_dir, ctx.analysis_dir * ".moved")
+        fast()
+        @test SQLite.C.sqlite3_total_changes(ctx.db.handle) == changes
     end
 end
 

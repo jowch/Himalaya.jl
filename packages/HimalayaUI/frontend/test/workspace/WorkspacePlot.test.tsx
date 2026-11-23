@@ -257,6 +257,80 @@ describe("WorkspacePlot", () => {
     expect(crosshair()).toBeNull();
   });
 
+  it("draws a faded comb lighter than a hovered one, at the same q", () => {
+    const combs = [
+      { id: 1, qs: [0.1], color: "red" },
+      { id: 2, qs: [0.1], color: "blue", faded: true },
+    ];
+    render(<WorkspacePlot trace={trace} peaks={[]} combs={combs} />);
+    const svg = screen.getByTestId("workspace-trace");
+    const full = svg.querySelector('[data-comb="1"]')!;
+    const faded = svg.querySelector('[data-comb="2"]')!;
+    expect(faded.getAttribute("x1")).toBe(full.getAttribute("x1"));
+    expect(full.getAttribute("stroke-opacity")).toBeNull();
+    expect(Number(faded.getAttribute("stroke-opacity"))).toBeGreaterThan(0);
+    expect(Number(faded.getAttribute("stroke-opacity"))).toBeLessThan(0.5);
+  });
+
+  it("outlines an unlit manual marker in its own colour so it reads as large as an auto marker on a dark plot", () => {
+    const peaks = [
+      { id: 1, exposure_id: 1, q: 0.1, intensity: 50, prominence: null, sharpness: null, source: "auto" as const, excluded: false },
+      { id: 2, exposure_id: 1, q: 0.15, intensity: 50, prominence: null, sharpness: null, source: "manual" as const, excluded: false },
+      { id: 3, exposure_id: 1, q: 0.2, intensity: 50, prominence: null, sharpness: null, source: "manual" as const, excluded: true },
+    ];
+    const { rerender } = render(<WorkspacePlot trace={trace} peaks={peaks} combs={[]} />);
+    const glyph = (key: string): Element => screen.getByTestId("workspace-trace").querySelector(`[data-peak-key="${key}"]`)!;
+    expect(glyph("manual:2").getAttribute("stroke")).toBe("var(--color-accent)");
+    expect(glyph("manual:2").classList.contains("peak-manual")).toBe(true);
+    expect(glyph("auto:1").classList.contains("peak-manual")).toBe(false);
+    expect(glyph("manual:3").classList.contains("peak-manual")).toBe(false);
+    rerender(<WorkspacePlot trace={trace} peaks={peaks} combs={[]} highlight={new Map([["manual:2", "red"]])} />);
+    expect(glyph("manual:2").classList.contains("peak-manual")).toBe(false);
+    expect(glyph("manual:2").getAttribute("stroke")).toBe("red");
+  });
+
+  it("snaps the crosshair and readout to a peak's q while the pointer is on its marker, and not in the plot below it", () => {
+    if (typeof window.PointerEvent === "undefined") vi.stubGlobal("PointerEvent", MouseEvent);
+    const peaks = [{ id: 1, exposure_id: 1, q: 0.1234, intensity: 50, prominence: null, sharpness: null, source: "auto" as const, excluded: false }];
+    render(<WorkspacePlot trace={trace} peaks={peaks} combs={[]} />);
+    const svg = screen.getByTestId("workspace-trace");
+    const frame = svg.parentElement!;
+    const tip = Number(svg.querySelector('[data-peak-key="auto:1"]')!.getAttribute("points")!.split(" ")[2]!.split(",")[0]);
+    const readout = (): string => svg.querySelector('[data-role="q-readout"]')!.textContent ?? "";
+    const line = (): number => Number(svg.querySelector('[data-role="crosshair"]')!.getAttribute("x1"));
+    fireEvent.pointerMove(frame, { clientX: PLOT_MARGINS.left + tip + 3, clientY: PLOT_MARGINS.top - 4 });
+    expect(readout()).toMatch(/^q 0\.1234 /);
+    expect(line()).toBeCloseTo(tip, 1);
+    fireEvent.pointerMove(frame, { clientX: PLOT_MARGINS.left + tip + 3, clientY: 100 });
+    expect(readout()).not.toMatch(/^q 0\.1234 /);
+    expect(line()).toBeCloseTo(tip + 3, 1);
+    fireEvent.pointerMove(frame, { clientX: PLOT_MARGINS.left + tip + 3, clientY: 2 });
+    expect(readout()).not.toMatch(/^q 0\.1234 /);
+    expect(line()).toBeCloseTo(tip + 3, 1);
+    fireEvent.pointerMove(frame, { clientX: PLOT_MARGINS.left + tip + 40, clientY: PLOT_MARGINS.top - 4 });
+    expect(line()).toBeCloseTo(tip + 40, 1);
+  });
+
+  it("shows a crosshair cursor exactly while the crosshair is drawn, and keeps the pointer on peak markers", () => {
+    if (typeof window.PointerEvent === "undefined") vi.stubGlobal("PointerEvent", MouseEvent);
+    const peaks = [{ id: 1, exposure_id: 1, q: 0.1, intensity: 50, prominence: null, sharpness: null, source: "auto" as const, excluded: false }];
+    render(<WorkspacePlot trace={trace} peaks={peaks} combs={[]} onClickPeak={() => {}} onAddPeak={() => {}} onXDomain={() => {}} />);
+    const svg = screen.getByTestId("workspace-trace");
+    const frame = svg.parentElement!;
+    const plotWidth = 640 - PLOT_MARGINS.left - PLOT_MARGINS.right;
+    expect(svg.classList.contains("cursor-crosshair")).toBe(false);
+    fireEvent.pointerMove(frame, { clientX: PLOT_MARGINS.left + plotWidth * 0.25, clientY: 100 });
+    expect(svg.querySelector('[data-role="crosshair"]')).not.toBeNull();
+    expect(svg.classList.contains("cursor-crosshair")).toBe(true);
+    expect(svg.querySelector("[data-peak-key]")!.classList.contains("cursor-pointer")).toBe(true);
+    fireEvent.pointerMove(frame, { clientX: 2, clientY: 100 });
+    expect(svg.querySelector('[data-role="crosshair"]')).toBeNull();
+    expect(svg.classList.contains("cursor-crosshair")).toBe(false);
+    fireEvent.pointerMove(frame, { clientX: PLOT_MARGINS.left + plotWidth * 0.5, clientY: 100 });
+    fireEvent.pointerLeave(frame);
+    expect(svg.classList.contains("cursor-crosshair")).toBe(false);
+  });
+
   it("colours the peaks a hovered call claims and dims the rest, without moving any marker", () => {
     const peaks = [
       { id: 1, exposure_id: 1, q: 0.1, intensity: 50, prominence: null, sharpness: null, source: "auto" as const, excluded: false },
