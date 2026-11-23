@@ -17,8 +17,17 @@ export async function leavePage(page) {
   if (page.url() !== "about:blank") await page.goto("about:blank");
 }
 
+export const APPLESS_PAGE = "/favicon.svg";
+
+const readState = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getItem(k) ?? "null"), key);
+
 export async function prepareUser(page, cfg, { username, onboarding }) {
-  if (!page.url().startsWith(cfg.uiBase)) await page.goto(cfg.uiBase, { waitUntil: "domcontentloaded" });
+  const appless = routeUrl(cfg, APPLESS_PAGE);
+  if (!onboarding && page.url().startsWith(cfg.uiBase)) {
+    const state = (await readState(page, STATE_KEY))?.state ?? {};
+    if (state.username && state.tutorialSeen) return "kept";
+  }
+  if (page.url() !== appless) await page.goto(appless, { waitUntil: "domcontentloaded" });
   return page.evaluate(
     ({ key, version, username, onboarding }) => {
       const raw = localStorage.getItem(key);

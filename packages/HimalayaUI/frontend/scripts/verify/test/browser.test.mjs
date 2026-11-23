@@ -25,7 +25,12 @@ const PAGE = `<!doctype html><html><head><title>Stub</title></head><body>
   <label>Path <input id="p"></label>
   <section id="out" aria-busy="false"></section>
 </main>
+<output id="who"></output>
 <script>
+  const STATE = "himalaya-ui:state";
+  const booted = localStorage.getItem(STATE);
+  addEventListener("pagehide", () => localStorage.setItem(STATE, booted ?? JSON.stringify({ state: { tutorialSeen: false }, version: 6 })));
+  document.getElementById("who").textContent = "user " + (JSON.parse(booted ?? "{}").state?.username ?? "none");
   function busy() {
     const out = document.getElementById("out");
     out.setAttribute("aria-busy", "true");
@@ -78,6 +83,11 @@ before(async () => {
       return;
     }
     if (req.url === "/hang") return;
+    if (req.url === "/favicon.svg") {
+      res.setHeader("Content-Type", "image/svg+xml");
+      res.end('<svg xmlns="http://www.w3.org/2000/svg"/>');
+      return;
+    }
     if (req.url === "/quick") {
       res.end("quick");
       return;
@@ -119,6 +129,8 @@ test("open, snapshot, click, fill, press, wait-settle, screenshot, close", { ski
   assert.equal(r.title, "Stub");
   assert.equal(r.browserStarted, true);
   assert.equal(r.user, "seeded");
+  ({ r } = await run("snapshot", "--selector", "#who"));
+  assert.match(r.snapshot, /user verify/, "the page booted without the user seed, as the app does when its first load overwrites it");
 
   ({ r } = await run("open", "/", "--onboarding"));
   assert.equal(r.user, "cleared");
