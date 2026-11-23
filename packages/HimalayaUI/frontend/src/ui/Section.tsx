@@ -52,10 +52,10 @@ export function MainSection({ title, hint, children }: { title: string; hint?: R
 
 export function SampleHeading({ name, badge, aside }: { name: string; badge?: ReactNode; aside?: ReactNode }): JSX.Element {
   return (
-    <div className="@container flex min-w-0 items-center gap-3 px-3.5 pb-1 pt-2.5">
+    <div data-sample-heading className="@container flex min-w-0 items-center gap-3 px-3.5 pb-1 pt-2.5">
       <div className="flex min-w-0 items-center gap-1.5">
         <Tooltip content={name} overflowOnly>
-          <h2 className="m-0 min-w-0 truncate text-xl font-normal leading-tight text-ink">{name}</h2>
+          <h2 tabIndex={-1} className="m-0 min-w-0 truncate text-xl font-normal leading-tight text-ink focus:outline-none">{name}</h2>
         </Tooltip>
         {badge}
       </div>

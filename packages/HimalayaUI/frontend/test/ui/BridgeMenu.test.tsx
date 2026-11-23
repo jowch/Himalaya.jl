@@ -41,4 +41,31 @@ describe("BridgeMenu", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(button).toHaveFocus();
   });
+
+  it("after × keeps focus in the list on the next same sample, so Esc still closes it", () => {
+    const { rerender } = render(<BridgeMenu mates={mates} editable onGo={vi.fn()} onRemove={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Same as / }));
+    const remove = screen.getByRole("button", { name: "Not the same sample as A3 in Long pipe" });
+    remove.focus();
+    fireEvent.click(remove);
+    rerender(<BridgeMenu mates={[mates[1]!]} editable onGo={vi.fn()} onRemove={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "Go to A4 in Long pipe" })).toHaveFocus();
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("closes when focus leaves it, as when Tab moves on", () => {
+    render(
+      <>
+        <BridgeMenu mates={mates} editable onGo={vi.fn()} onRemove={vi.fn()} />
+        <button type="button">elsewhere</button>
+      </>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^Same as / }));
+    const inside = screen.getByRole("button", { name: "Go to A3 in Long pipe" });
+    fireEvent.blur(inside, { relatedTarget: screen.getByRole("button", { name: "Not the same sample as A3 in Long pipe" }) });
+    expect(screen.getByRole("dialog", { name: "Same sample as" })).toBeInTheDocument();
+    fireEvent.blur(inside, { relatedTarget: screen.getByRole("button", { name: "elsewhere" }) });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
 });

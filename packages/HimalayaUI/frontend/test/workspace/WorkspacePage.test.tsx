@@ -964,6 +964,7 @@ describe("WorkspacePage", () => {
     renderAt("/experiments/1/workspace/10");
     expect(memberFetches.at(-1)).toEqual([100, 101]);
     expect([...screen.getByTestId("workspace-members").querySelectorAll("[data-member]")].map((p) => p.getAttribute("data-member"))).toEqual(["100", "101"]);
+    expect(screen.getAllByText("Average of 2 images")).toHaveLength(1);
     expect(screen.getByTestId("exposure-selection-caption")).toHaveTextContent("Average of 2 images");
     fireEvent.keyDown(window, { key: "2" });
     expect(calls).toEqual([{ hook: "add", boundTo: 900, arg: 1 }]);
@@ -3544,14 +3545,27 @@ describe("WorkspacePage", () => {
   });
 
   it("the bridge icon by the name lists the same samples: a pick goes there, and × takes that one out", () => {
-    state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }, { sample_id: 13, group_id: 4 }];
+    state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 11, group_id: 4 }, { sample_id: 13, group_id: 4 }];
     renderAt("/experiments/1/workspace/10");
-    fireEvent.click(screen.getByRole("button", { name: "Same as A3, A4" }));
+    fireEvent.click(screen.getByRole("button", { name: "Same as A2, A4" }));
     const list = screen.getByRole("dialog", { name: "Same sample as" });
     fireEvent.click(within(list).getByRole("button", { name: "Not the same sample as A4" }));
     expect(calls).toContainEqual({ hook: "unbridge", boundTo: 1, arg: { sampleId: 13 } });
-    fireEvent.click(within(list).getByRole("button", { name: "Go to A3" }));
-    expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/12");
+    fireEvent.click(within(list).getByRole("button", { name: "Go to A2" }));
+    expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/11");
+  });
+
+  it("the bridge list does not carry over to the next sample, and taking out the last same sample moves focus to the heading", () => {
+    state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 11, group_id: 4 }, { sample_id: 12, group_id: 5 }, { sample_id: 13, group_id: 5 }];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.click(screen.getByRole("button", { name: "Same as A2" }));
+    expect(screen.getByRole("dialog", { name: "Same sample as" })).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("workspace-samples").querySelector("[data-sample-id='12']")!);
+    expect(screen.getByRole("button", { name: "Same as A4" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Same sample as" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Same as A4" }));
+    fireEvent.click(screen.getByRole("button", { name: "Not the same sample as A4" }));
+    expect(screen.getByRole("heading", { level: 2, name: "A3" })).toHaveFocus();
   });
 
   it("the palette's same-sample page leaves out this sample and its group, and Enter links the pick", () => {

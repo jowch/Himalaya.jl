@@ -322,7 +322,6 @@ export function WorkspacePage(): JSX.Element {
   const averaging = analysis.selected.length >= MIN_COMBINED;
   const memberIds = useMemo(() => (averaging ? analysis.selected.map((m) => m.id) : []), [averaging, analysis.selected]);
   const members = useMemberTraces(memberIds);
-  const shownFrame = frameOf(groups, exposure?.id);
   const tileFrame = frameOf(groups, tile?.id);
 
   const trace = useTrace(exposure?.id);
@@ -1254,7 +1253,7 @@ export function WorkspacePage(): JSX.Element {
   const droppedCount = ownFrames.filter((e) => e.status === "rejected").length;
   const keptHint = droppedCount > 0 ? `${ownFrames.length - droppedCount} of ${ownFrames.length} kept` : undefined;
   const reviewed = samples.filter((s) => sampleStatus(s).kind !== "unreviewed").length;
-  const countOf = (at: typeof shownFrame): string | undefined => (at ? `Image ${at.index + 1} of ${at.group.exposures.length}` : undefined);
+  const countOf = (at: typeof tileFrame): string | undefined => (at ? `Image ${at.index + 1} of ${at.group.exposures.length}` : undefined);
   const tileOwnerSample = tileFrame ? inExperiment.find((s) => s.id === tileFrame.group.sampleId) : undefined;
   const tileOwner = tileOwnerSample ? frameSetupName(tileOwnerSample) : undefined;
   const tileCount = countOf(tileFrame);
@@ -1458,7 +1457,7 @@ export function WorkspacePage(): JSX.Element {
           <>
             <SampleHeading
               name={sample.name}
-              badge={bridgeMates.length > 0 ? <BridgeMenu mates={bridgeMates} editable={Boolean(username)} onGo={goSample} onRemove={unbridgeOne} /> : undefined}
+              badge={bridgeMates.length > 0 ? <BridgeMenu key={sampleId} mates={bridgeMates} editable={Boolean(username)} onGo={goSample} onRemove={unbridgeOne} /> : undefined}
               aside={
                 <LabelRow
                   labels={sampleLabels}
