@@ -34,7 +34,7 @@ function _workload_trace(path::AbstractString, centers = _workload_centers())
 end
 
 function _workload_frame(path::AbstractString)
-    n = 96
+    n = 160
     counts = Int32[round(Int32, 2.0e3 * exp(-hypot(i - n / 2, j - n / 2) / 8)) for i in 1:n, j in 1:n]
     counts[1:4, :] .= -1
     FileIO.save(path, Gray.(reinterpret.(Q0f31, counts)))
@@ -223,6 +223,8 @@ function run_route_workload(dir::AbstractString; record = nothing)
         inproc = _recording(_workload_inproc, record)
         _workload_call(inproc, "POST", "/api/users", Dict(:username => "precompile"))
         _workload_requests(inproc, experiment, sample, other, exposure, mixed)
+        _gc_sweep(db, 3600)
+        _boot_background_work(db, false)
         port = find_free_port()
         Oxygen.serve(; host = "127.0.0.1", port, async = true, show_banner = false,
                      docs = false, metrics = false, parallel = true,

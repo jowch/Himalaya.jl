@@ -109,12 +109,15 @@ const GC_TIMER = Ref{Union{Timer, Nothing}}(nothing)
 function start_gc_timer!(db::SQLite.DB; interval_seconds::Real = 30 * 60,
                                         ttl_seconds::Int = 3600)
     GC_TIMER[] !== nothing && (close(GC_TIMER[]); GC_TIMER[] = nothing)
-    GC_TIMER[] = Timer(0.0; interval = interval_seconds) do _
-        try
-            gc_idempotent_responses!(db; ttl_seconds = ttl_seconds)
-        catch err
-            @warn "idempotent_responses GC sweep failed" exception = err
-        end
+    GC_TIMER[] = Timer(_ -> _gc_sweep(db, ttl_seconds), 0.0; interval = interval_seconds)
+    nothing
+end
+
+function _gc_sweep(db::SQLite.DB, ttl_seconds::Int)
+    try
+        gc_idempotent_responses!(db; ttl_seconds = ttl_seconds)
+    catch err
+        @warn "idempotent_responses GC sweep failed" exception = err
     end
     nothing
 end
@@ -260,7 +263,11 @@ end
 
 function start_background!(db::SQLite.DB; resume::Bool = true)
     start_gc_timer!(db)
-    Threads.@spawn try
+    Threads.@spawn _boot_background_work(db, resume)
+end
+
+function _boot_background_work(db::SQLite.DB, resume::Bool)
+    try
         with_background_db(db) do bg
             backfill_all_monitors!(bg)
             resume && resume_ingests!(bg)
@@ -268,6 +275,7 @@ function start_background!(db::SQLite.DB; resume::Bool = true)
     catch err
         @warn "boot background work failed" exception = err
     end
+    nothing
 end
 
 function boot!(db::SQLite.DB; resume::Bool = true)

@@ -2,16 +2,27 @@ using HimalayaUI, HTTP, JSON3, Oxygen, SQLite
 
 const H = HimalayaUI
 
-const BUDGET_MS = Dict("experiment" => 200, "first sample" => 150)
+const BUDGET_MS = Dict("boot" => 200, "experiment" => 200, "first sample" => 150)
 budget(step) = get(BUDGET_MS, step, 100) * parse(Float64, get(ENV, "FIRST_USE_BUDGET_SCALE", "1"))
 
 const SERVER_COMPILE_NS = Ref(UInt64(0))
+const TRACE = Ref{Union{Nothing, String}}(nothing)
+const SERVER_TRACE = String[]
+
+trace_length() = (Base.Libc.flush_cstdio(); countlines(TRACE[]))
+
+function on_server(f)
+    from = TRACE[] === nothing ? 0 : trace_length()
+    t0 = Base.cumulative_compile_time_ns()[1]
+    out = f()
+    SERVER_COMPILE_NS[] += Base.cumulative_compile_time_ns()[1] - t0
+    TRACE[] === nothing || append!(SERVER_TRACE, readlines(TRACE[])[from+1:trace_length()])
+    out
+end
 
 function call(method, target, body = nothing)
     payload = body === nothing ? UInt8[] : Vector{UInt8}(JSON3.write(body))
-    t0 = Base.cumulative_compile_time_ns()[1]
-    res = H._workload_inproc(method, target, payload)
-    SERVER_COMPILE_NS[] += Base.cumulative_compile_time_ns()[1] - t0
+    res = on_server(() -> H._workload_inproc(method, target, payload))
     res.status < 300 || error("$method $target returned $(res.status): $(String(copy(res.body)))")
     isempty(res.body) || !occursin("json", HTTP.header(res, "Content-Type")) ? nothing : JSON3.read(res.body)
 end
@@ -35,11 +46,6 @@ function prepare(root, db_path)
     error("ingest did not finish within 10 minutes")
 end
 
-function trace_lines(path, from)
-    lines = readlines(path)
-    lines[from+1:end], length(lines)
-end
-
 function sample_open(sample)
     exposures = call("GET", "/api/samples/$(sample.id)/exposures")
     x = sample.representative_exposure_id
@@ -56,26 +62,21 @@ end
 function measure(db_path)
     trace = Base.JLOptions().trace_compile
     trace == C_NULL && error("run with --trace-compile=<file> --trace-compile-timing, so a failure can name what compiled")
-    trace = unsafe_string(trace)
-    Base.cumulative_compile_timing(true)
     db = H.open_db(db_path)
-    H.boot!(db; resume = false)
-    call("GET", "/api/health")
+    rm(dirname(H.thumb_cache_dir(db)); recursive = true, force = true)
+    TRACE[] = unsafe_string(trace)
+    on_server(() -> nothing)
     SERVER_COMPILE_NS[] = 0
-    seen = length(readlines(trace))
     failures = String[]
     results = Pair{String, Float64}[]
     function step(f, name)
-        Base.Libc.flush_cstdio()
-        seen = length(readlines(trace))
+        empty!(SERVER_TRACE)
         t0 = SERVER_COMPILE_NS[]
         out = f()
         ms = (SERVER_COMPILE_NS[] - t0) / 1e6
         push!(results, name => ms)
-        Base.Libc.flush_cstdio()
-        new, seen = trace_lines(trace, seen)
         if ms > budget(name)
-            timed = sort!([(parse(Float64, m.captures[1]), l) for l in new if !occursin("Main.", l)
+            timed = sort!([(parse(Float64, m.captures[1]), l) for l in SERVER_TRACE
                            for m in (match(r"^#=\s*([\d.]+) ms", l),) if m !== nothing]; rev = true)
             push!(failures, "$name compiled for $(round(Int, ms)) ms (budget $(round(Int, budget(name))) ms). Slowest:\n" *
                   join(("    " * first(l, 300) for (_, l) in first(timed, 8)), "\n"))
@@ -83,6 +84,12 @@ function measure(db_path)
         out
     end
 
+    step("boot") do
+        on_server() do
+            wait(H.boot!(db; resume = false))
+            H.stop_gc_timer!()
+        end
+    end
     experiment = step("experiment") do
         call("GET", "/api/users"); exps = call("GET", "/api/experiments"); e = only(exps).id
         call("GET", "/api/experiments/$e")
@@ -143,6 +150,7 @@ end
 if length(ARGS) == 3 && ARGS[1] == "prepare"
     prepare(abspath(ARGS[2]), ARGS[3])
 elseif length(ARGS) == 2 && ARGS[1] == "measure"
+    Base.cumulative_compile_timing(true)
     measure(ARGS[2])
 else
     println(stderr, "usage: check_first_use.jl prepare <demo root> <db>  |  check_first_use.jl measure <db>")
