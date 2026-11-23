@@ -3036,7 +3036,7 @@ describe("WorkspacePage", () => {
     }
     fireEvent.keyDown(window, { key: "l" });
     const input = within(screen.getByRole("dialog", { name: "Add a label" })).getByLabelText("Label name");
-    fireEvent.keyDown(input, { key: "Tab" });
+    expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(false);
     expect(input).toHaveFocus();
     expect(inChoices()).toBe(false);
   });
