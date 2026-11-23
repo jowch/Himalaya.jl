@@ -753,7 +753,7 @@ describe("WorkspacePage", () => {
       expect(document.activeElement).toBe(screen.getByRole("searchbox", { name: "Filter samples" }));
       expect(nav.dataset.peek).toBe("true");
       fireEvent.keyDown(document.activeElement!, { key: "Escape" });
-      fireEvent.blur(screen.getByRole("searchbox", { name: "Filter samples" }));
+      expect(document.activeElement).not.toBe(screen.getByRole("searchbox", { name: "Filter samples" }));
       expect(nav.dataset.peek).toBeUndefined();
       fireEvent.keyDown(window, { key: "?" });
       expect(screen.getByRole("dialog")).toHaveTextContent("Hide or show the sample list");

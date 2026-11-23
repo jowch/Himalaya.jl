@@ -7,8 +7,6 @@ import { Checkbox } from "./Checkbox";
 import { Tooltip } from "./Tooltip";
 import { DetectorRings, type DetectorRingsView } from "./DetectorRings";
 import { releaseMouseFocus, useRovingFocus } from "../hooks/useRovingFocus";
-import { useTileColumns } from "./useTileColumns";
-import { FULL_IMAGE_TILE } from "./tileColumns";
 
 const DETECTOR_COLOUR = { filter: detectorLutFilter("magma") };
 
@@ -37,13 +35,6 @@ interface Props {
   ringsOf?: ((e: Exposure) => DetectorRingsView | null) | undefined;
 }
 
-const GRID_COLUMNS: Record<number, string> = {
-  2: "grid-cols-2",
-  3: "grid-cols-3",
-  4: "grid-cols-4",
-  6: "grid-cols-6",
-};
-
 const ACTION = "flex-1 rounded-[4px] border border-hair bg-paper py-0.5 text-xs text-ink hover:border-hair-strong";
 
 function selectionCaption(selection: ExposureSelection): string {
@@ -55,8 +46,6 @@ function selectionCaption(selection: ExposureSelection): string {
 
 export function ExposureStrip({ groups, currentId, selection, onPick, onToggleDrop, warningOf, ringsOf }: Props): JSX.Element {
   const ref = useRovingFocus<HTMLDivElement>(currentId);
-  const fit = useTileColumns(ref);
-  const fullImages = fit.tile > FULL_IMAGE_TILE;
   const hasCurrent = groups.some((g) => g.exposures.some((e) => e.id === currentId));
   const click = (ev: MouseEvent<HTMLElement>, id: number): void => {
     releaseMouseFocus(ev);
@@ -82,14 +71,14 @@ export function ExposureStrip({ groups, currentId, selection, onPick, onToggleDr
               <h4 data-testid="frame-group-header" className="m-0 truncate text-xs font-semibold text-ink-soft">{g.title}</h4>
             </Tooltip>
           )}
-          <ul data-columns={fit.columns} className={"m-0 grid list-none gap-2 p-0 " + (GRID_COLUMNS[fit.columns] ?? "grid-cols-6")}>
+          <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(128px,1fr))] gap-2 p-0">
             {g.exposures.map((e, i) => {
               const cur = e.id === currentId;
               const stop = cur || (!hasCurrent && gi === 0 && i === 0) ? 0 : -1;
               const dropped = e.status === "rejected";
               const selectable = selection?.selectableIds.has(e.id) ?? false;
               const selected = selection?.selectedIds.has(e.id) ?? false;
-              const src = imageUrl(e, !fullImages);
+              const src = imageUrl(e, true);
               const warning = warningOf?.(e);
               const ringView = src ? ringsOf?.(e) ?? null : null;
               const name = gi === 0 || g.title === undefined ? `Image ${i + 1}` : `Image ${i + 1} of ${g.title}`;
