@@ -12,6 +12,7 @@ interface Props {
   onChange: (d: CustomDraft) => void;
   onAdd: () => void;
   onCancel: () => void;
+  panelRef?: React.Ref<HTMLDivElement>;
 }
 
 export const NUDGE_STEP = 0.5;
@@ -23,7 +24,7 @@ function parseLattice(text: string, min: number, max: number): number | null {
   return Number.isFinite(v) && v >= min && v <= max ? v : null;
 }
 
-export function CustomIndexPanel({ draft, min, max, landed, total, disabled, onChange, onAdd, onCancel }: Props): JSX.Element {
+export function CustomIndexPanel({ draft, min, max, landed, total, disabled, onChange, onAdd, onCancel, panelRef }: Props): JSX.Element {
   const param = draft.phase === "Lamellar" ? "d" : "a";
   const [text, setText] = useState(draft.lattice.toFixed(1));
   const editing = useRef(false);
@@ -44,7 +45,9 @@ export function CustomIndexPanel({ draft, min, max, landed, total, disabled, onC
 
   return (
     <div
-      className="flex flex-col gap-3"
+      ref={panelRef}
+      tabIndex={-1}
+      className="flex flex-col gap-3 outline-none"
       data-testid="workspace-custom-index"
       data-keys-trap
       onKeyDown={(e) => {

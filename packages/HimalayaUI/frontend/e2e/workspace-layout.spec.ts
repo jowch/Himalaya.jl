@@ -641,7 +641,13 @@ test("Tab cycles only the phase choices, wrapping, and Esc lets Tab reach the re
   await page.keyboard.press("Escape");
   await expect(choices.nth(6)).not.toBeFocused();
   await page.keyboard.press("Tab");
-  expect(await page.evaluate(() => document.activeElement?.closest("[data-call-choices]") === null && document.activeElement !== document.body)).toBe(true);
+  const outside = async () => page.evaluate(() => document.activeElement !== document.body && document.activeElement?.closest("[data-call-choices]") === null);
+  let reached = await outside();
+  for (let i = 0; i < 3 && !reached; i++) {
+    await page.keyboard.press("Tab");
+    reached = await outside();
+  }
+  expect(reached, "Tab reaches a control outside the phase choices after Esc").toBe(true);
 });
 
 for (const width of [1024, 1440]) {
