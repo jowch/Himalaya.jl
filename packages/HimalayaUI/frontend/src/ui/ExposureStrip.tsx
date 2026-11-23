@@ -18,10 +18,11 @@ interface Props {
   currentId: number | undefined;
   onPick: (id: number) => void;
   onToggleDrop: (e: Exposure) => void;
+  warningOf?: (e: Exposure) => string | undefined;
   ringsOf?: ((e: Exposure) => DetectorRingsView | null) | undefined;
 }
 
-export function ExposureStrip({ groups, currentId, onPick, onToggleDrop, ringsOf }: Props): JSX.Element {
+export function ExposureStrip({ groups, currentId, onPick, onToggleDrop, warningOf, ringsOf }: Props): JSX.Element {
   const ref = useRovingFocus<HTMLDivElement>(currentId);
   const hasCurrent = groups.some((g) => g.exposures.some((e) => e.id === currentId));
   return (
@@ -39,11 +40,13 @@ export function ExposureStrip({ groups, currentId, onPick, onToggleDrop, ringsOf
               const stop = cur || (!hasCurrent && gi === 0 && i === 0) ? 0 : -1;
               const dropped = e.status === "rejected";
               const src = imageUrl(e, true);
+              const warning = warningOf?.(e);
               const ringView = src ? ringsOf?.(e) ?? null : null;
               const name = gi === 0 || g.title === undefined ? `Image ${i + 1}` : `Image ${i + 1} of ${g.title}`;
               return (
                 <li
                   key={e.id}
+                  data-warned={warning !== undefined ? "" : undefined}
                   className={
                     "group flex min-w-0 flex-col gap-1 rounded-sm border p-1 " +
                     (cur ? "border-hair-strong " : "border-transparent ") +
@@ -53,14 +56,17 @@ export function ExposureStrip({ groups, currentId, onPick, onToggleDrop, ringsOf
                   <button
                     type="button"
                     aria-current={cur ? "true" : undefined}
-                    aria-label={`${name}${dropped ? ", dropped" : ""}`}
+                    aria-label={`${name}${dropped ? ", dropped" : ""}${warning !== undefined ? `, ${warning.toLowerCase()}` : ""}`}
                     tabIndex={stop}
                     data-roving="image"
                     onClick={(ev) => {
                       releaseMouseFocus(ev);
                       onPick(e.id);
                     }}
-                    className="relative grid aspect-square w-full place-items-center overflow-hidden rounded-[3px] bg-frame-edge"
+                    className={
+                      "relative grid aspect-square w-full place-items-center overflow-hidden rounded-[3px] bg-frame-edge" +
+                      (warning !== undefined ? " outline outline-2 -outline-offset-2 outline-warning" : "")
+                    }
                   >
                     {src ? (
                       <img src={src} alt="" loading="lazy" style={DETECTOR_COLOUR} className="h-full w-full object-cover" />
@@ -70,6 +76,7 @@ export function ExposureStrip({ groups, currentId, onPick, onToggleDrop, ringsOf
                     {ringView && <DetectorRings view={ringView} fit="cover" />}
                   </button>
                   {dropped && <span className="text-xs text-ink-soft line-through">dropped</span>}
+                  {warning !== undefined && <span aria-hidden="true" className="truncate text-xs text-warning">{warning}</span>}
                   <div className={(cur ? "visible" : "invisible group-hover:visible group-focus-within:visible") + " flex gap-1"}>
                     <button
                       type="button"

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { CorpusSample, Exposure, IndexEntry } from "../../src/api";
-import { i0BelowZero, traceIsDark, sampleStatus, nextUnreviewed, firstUnreviewed, rankCandidates, imageUrl, stepExposure, nearestKeptExposure, peakClick } from "../../src/workspace/model";
+import { i0BelowZero, sampleStatus, nextUnreviewed, firstUnreviewed, rankCandidates, imageUrl, stepExposure, nearestKeptExposure, peakClick } from "../../src/workspace/model";
 import { peakList } from "../fixtures/peaks";
 import { makeExposure } from "../helpers/exposure";
 
@@ -154,18 +154,6 @@ describe("peakClick", () => {
   });
   it("ignores an unknown peak", () => {
     expect(peakClick(peaks, { id: 3, source: "auto" })).toBeNull();
-  });
-});
-
-describe("traceIsDark", () => {
-  it("is true when the median count is under one", () => {
-    expect(traceIsDark({ I: [0, 0, 0.002, 0, 40] })).toBe(true);
-  });
-
-  it("is false for a dim but real frame, an empty trace and no trace", () => {
-    expect(traceIsDark({ I: [8, 12, 15, 0, 0] })).toBe(false);
-    expect(traceIsDark({ I: [] })).toBe(false);
-    expect(traceIsDark(undefined)).toBe(false);
   });
 });
 

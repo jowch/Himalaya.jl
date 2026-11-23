@@ -76,6 +76,7 @@ export interface CorpusSample extends Sample {
   assignment_state?: AssignmentState;
   call_phases?: string[];
   representative_exposure_id?: number | null;
+  beam_off_images?: number;
 }
 
 export class ApiError extends Error {
@@ -389,6 +390,7 @@ export interface Exposure {
   pipe_length_m: number | null;
   detector: string | null;
   setup_id: number | null;
+  beam_off: boolean;
 }
 
 export const listExposures = (sample_id: number, opts?: { signal?: AbortSignal }) =>

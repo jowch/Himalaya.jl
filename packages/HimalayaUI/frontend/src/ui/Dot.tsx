@@ -1,6 +1,6 @@
 import type { HTMLAttributes } from "react";
 
-export type DotTone = "accent" | "success" | "muted" | "neutral";
+export type DotTone = "accent" | "success" | "warning" | "muted" | "neutral";
 export type DotSize = "xs" | "sm" | "md";
 
 interface DotProps extends Omit<HTMLAttributes<HTMLSpanElement>, "color" | "title"> {
@@ -12,6 +12,7 @@ interface DotProps extends Omit<HTMLAttributes<HTMLSpanElement>, "color" | "titl
 const toneClass: Record<DotTone, string> = {
   accent: "bg-print-accent",
   success: "bg-success",
+  warning: "bg-warning",
   neutral: "bg-hair-strong",
   muted: "border-[1.5px] border-hair-strong",
 };
