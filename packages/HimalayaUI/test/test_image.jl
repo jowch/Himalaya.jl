@@ -119,7 +119,8 @@ end
             # Miss: renders + writes the cache file.
             b1 = HimalayaUI.ensure_thumb_cached(disk, 42, path; token=token)
             @test isfile(cpath)
-            @test length(b1) > 100
+            @test length(b1.bytes) > 100
+            @test b1.raw_h == 256 && b1.raw_w == 256
 
             # Hit: serve from disk even after the SOURCE TIFF is gone — proves the
             # second call read the cached file rather than re-rendering. The route
@@ -129,6 +130,32 @@ end
             rm(path; force=true)
             b2 = HimalayaUI.ensure_thumb_cached(disk, 42, path; token=token)
             @test b2 == b1
+        finally
+            rm(path; force=true)
+        end
+    end
+end
+
+@testset "ensure_thumb_cached: a thumbnail cached before the size was stored gets its size once, then never reparses" begin
+    mktempdir() do tmp
+        disk = SQLite.DB(joinpath(tmp, "himalaya.db"))
+        rows = Int32[50 for _ in 1:96, _ in 1:160]
+        path = tempname() * ".tiff"
+        save(path, Gray.(reinterpret.(Q0f31, rows)))
+        try
+            token = HimalayaUI.image_version_token(path)
+            cpath = HimalayaUI.thumb_cache_path(disk, 5, token)
+            old = HimalayaUI.ensure_thumb_cached(disk, 5, path; token=token)
+            rm(HimalayaUI._full_size_path(cpath))
+
+            healed = HimalayaUI.ensure_thumb_cached(disk, 5, path; token=token)
+            @test healed.bytes == old.bytes
+            @test healed.raw_h == 96 && healed.raw_w == 160
+            @test isfile(HimalayaUI._full_size_path(cpath))
+
+            rm(path; force=true)
+            again = HimalayaUI.ensure_thumb_cached(disk, 5, path; token=token)
+            @test again.raw_h == 96 && again.raw_w == 160
         finally
             rm(path; force=true)
         end
@@ -204,7 +231,7 @@ end
             HimalayaUI.ensure_full_cached(disk, 100, path; token=token)
             one = filesize(entry(100)) + filesize(HimalayaUI._full_size_path(entry(100)))
             cap = 3one
-            @test sum(length, thumbs) > cap
+            @test sum(t -> length(t.bytes), thumbs) > cap
 
             empty!(HimalayaUI._CACHE_BYTES)
             sleep(0.05)
@@ -276,7 +303,8 @@ end
     path = _make_detector_tiff(256)
     try
         b = HimalayaUI.ensure_thumb_cached(mem, 1, path)
-        @test length(b) > 100             # rendered fresh, no cache dir, no throw
+        @test length(b.bytes) > 100
+        @test b.raw_h == 256 && b.raw_w == 256
     finally
         rm(path; force=true)
     end
@@ -302,6 +330,7 @@ end
 
             token = HimalayaUI.image_version_token(present)
             @test isfile(HimalayaUI.thumb_cache_path(db, e1, token))
+            @test isfile(HimalayaUI._full_size_path(HimalayaUI.thumb_cache_path(db, e1, token)))
 
             # threads=true smoke run must not throw.
             res2 = HimalayaUI.prewarm_thumbnails!(db; threads=true)

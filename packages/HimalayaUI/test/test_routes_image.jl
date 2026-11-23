@@ -82,7 +82,7 @@ end
     rm(big_path; force=true); rm(small_path; force=true)
 end
 
-@testset "full image emits raw X-Image-Width/Height; thumb does not" begin
+@testset "full image and thumb both emit the raw X-Image-Width/Height" begin
     big_path = tempname() * ".tiff"
     save(big_path, Gray.(rand(Float32, 2048, 2048)))      # > 1536 → resized for display
     rect_path = tempname() * ".tiff"
@@ -107,7 +107,16 @@ end
         @test hr["X-Image-Height"] == "400"   # rows
 
         rt = call("GET", "/api/exposures/$big/image?thumb=1")
-        @test !haskey(Dict(rt.headers), "X-Image-Width")
+        ht = Dict(rt.headers)
+        @test ht["X-Image-Width"]  == "2048"
+        @test ht["X-Image-Height"] == "2048"
+
+        rt2 = call("GET", "/api/exposures/$rect/image?thumb=1")
+        ht2 = Dict(rt2.headers)
+        @test ht2["X-Image-Width"]  == "600"
+        @test ht2["X-Image-Height"] == "400"
+        rt3 = call("GET", "/api/exposures/$rect/image?thumb=1")
+        @test Dict(rt3.headers)["X-Image-Width"] == "600"
     end
     rm(big_path; force=true); rm(rect_path; force=true)
 end
