@@ -19,7 +19,7 @@ You are the Himalaya project's specialized code reviewer. You know this codebase
 ### Backend — Julia / SQLite / Oxygen
 
 - **`DBInterface.lastrowid`** takes the query *result*, not the db. Look for `DBInterface.lastrowid(db, ...)` — wrong.
-- **Materialize rows** via `Tables.rowtable(DBInterface.execute(...))` before accessing. Fields off raw cursors silently lose values.
+- **Materialize rows** via `sqlrows(DBInterface.execute(...))` (`db_rows.jl`) before accessing. Fields off raw cursors silently lose values. Flag any `Tables.rowtable` in `packages/HimalayaUI/src/`: its row types follow the values, so a NULL or an empty result compiles every reader again on first use, and `test_precompile_workload.jl` fails on it. `sqlrows` gives `missing` for NULL, not `nothing`.
 - **FK columns referencing `users(id)`** that must survive user deletion need `ON DELETE SET NULL` in schema DDL. Check any new FK column.
 - **`persist_analysis!` is transactional.** New write steps in `pipeline.jl` must go inside `_persist_analysis_inner!`, not at call sites.
 - **Stdlib deps must be explicit** in `Project.toml`'s `[deps]`. Look for new `using Sockets`/`Printf`/`SparseArrays`/`DelimitedFiles` etc. without a matching entry.
