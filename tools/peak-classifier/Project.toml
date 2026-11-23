@@ -7,8 +7,8 @@ DBInterface = "a10d1c49-ce27-4219-8d33-6db1a4562965"
 Himalaya = "c5c84187-0f9f-481b-afdc-282fe863df0d"
 HimalayaPeakModel = "b253d074-8f84-4666-b3c0-b1d18d46a6d1"
 HimalayaUI = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
 SQLite = "0aa819cd-b072-5ff4-a722-6bc24af294d9"
-Serialization = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
 
 [sources]
 Himalaya = {path = "../.."}
@@ -20,6 +20,7 @@ DBInterface = "2"
 Himalaya = "0.6"
 HimalayaPeakModel = "0.1"
 HimalayaUI = "0.1"
+JSON3 = "1.14.3"
 SQLite = "1"
 julia = "1.11"
 
