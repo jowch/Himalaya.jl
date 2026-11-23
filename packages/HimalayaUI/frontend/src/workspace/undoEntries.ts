@@ -351,6 +351,14 @@ function bridgeGains(members: readonly number[], labels: readonly SampleLabel[])
   }));
 }
 
+export function sharedAfterBridge(labels: readonly SampleLabel[], members: readonly number[]): SampleLabel[] {
+  const gains = bridgeGains(members, labels);
+  const out = labels.filter((l) => !(gains.get(l.sample_id)?.has(labelKey(l.label)) ?? false));
+  const named = new Map(labels.filter((l) => members.includes(l.sample_id) && l.state === "confirmed").map((l) => [labelKey(l.label), l.label] as const));
+  for (const [sid, keys] of gains) for (const key of keys.keys()) out.push({ id: -1, sample_id: sid, label: named.get(key) ?? key, state: "confirmed", source: "bridge" });
+  return out;
+}
+
 export function bridgeEntry(
   ops: EditOps,
   at: Where & {

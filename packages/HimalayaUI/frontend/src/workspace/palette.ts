@@ -46,6 +46,8 @@ export interface WorkspacePaletteInput extends AppActions {
     names: (id: number) => string;
     bridged: readonly string[];
     leave: () => void;
+    groupChoices: (ids: readonly number[]) => readonly KeepChoice[] | undefined;
+    pickMany: (ids: readonly number[], keep?: KeepCall) => void;
   };
   candidates: { list: readonly IndexEntry[]; ticked: ReadonlySet<number>; tick: (ix: IndexEntry) => void };
   labels: {
@@ -299,6 +301,18 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
         if (!choices) return { id: `bridge-${s.id}`, label: s.name, hint: setup, run: () => p.bridge.pick(s.id) };
         return { id: `bridge-${s.id}`, label: s.name, hint: joinHints(setup, "Different call"), form: () => keepCallForm(`Same sample as ${p.bridge.names(s.id)}`, choices, (keep) => p.bridge.pick(s.id, keep)) };
       }),
+      multi: {
+        verb: (n) => `mark ${n} as the same sample`,
+        commit: (keys) => {
+          const ids = keys.map((k) => Number(k.slice("bridge-".length)));
+          const choices = p.bridge.groupChoices(ids);
+          if (!choices) {
+            p.bridge.pickMany(ids);
+            return undefined;
+          }
+          return keepCallForm(`Same sample as ${ids.map((id) => p.bridge.names(id)).join(", ")}`, choices, (keep) => p.bridge.pickMany(ids, keep));
+        },
+      },
     };
     if (p.candidates.list.length > 0) {
       pages.tick = {
