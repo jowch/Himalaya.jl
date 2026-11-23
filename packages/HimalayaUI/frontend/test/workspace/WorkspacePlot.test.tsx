@@ -289,6 +289,25 @@ describe("WorkspacePlot", () => {
     expect(glyph("manual:2").getAttribute("stroke")).toBe("red");
   });
 
+  it("snaps the crosshair and readout to a peak's q while the pointer is on its marker, and not in the plot below it", () => {
+    if (typeof window.PointerEvent === "undefined") vi.stubGlobal("PointerEvent", MouseEvent);
+    const peaks = [{ id: 1, exposure_id: 1, q: 0.1234, intensity: 50, prominence: null, sharpness: null, source: "auto" as const, excluded: false }];
+    render(<WorkspacePlot trace={trace} peaks={peaks} combs={[]} />);
+    const svg = screen.getByTestId("workspace-trace");
+    const frame = svg.parentElement!;
+    const tip = Number(svg.querySelector('[data-peak-key="auto:1"]')!.getAttribute("points")!.split(" ")[2]!.split(",")[0]);
+    const readout = (): string => svg.querySelector('[data-role="q-readout"]')!.textContent ?? "";
+    const line = (): number => Number(svg.querySelector('[data-role="crosshair"]')!.getAttribute("x1"));
+    fireEvent.pointerMove(frame, { clientX: PLOT_MARGINS.left + tip + 3, clientY: PLOT_MARGINS.top - 4 });
+    expect(readout()).toMatch(/^q 0\.1234 /);
+    expect(line()).toBeCloseTo(tip, 6);
+    fireEvent.pointerMove(frame, { clientX: PLOT_MARGINS.left + tip + 3, clientY: 100 });
+    expect(readout()).not.toMatch(/^q 0\.1234 /);
+    expect(line()).toBeCloseTo(tip + 3, 6);
+    fireEvent.pointerMove(frame, { clientX: PLOT_MARGINS.left + tip + 40, clientY: PLOT_MARGINS.top - 4 });
+    expect(line()).toBeCloseTo(tip + 40, 6);
+  });
+
   it("shows a crosshair cursor exactly while the crosshair is drawn, and keeps the pointer on peak markers", () => {
     if (typeof window.PointerEvent === "undefined") vi.stubGlobal("PointerEvent", MouseEvent);
     const peaks = [{ id: 1, exposure_id: 1, q: 0.1, intensity: 50, prominence: null, sharpness: null, source: "auto" as const, excluded: false }];
