@@ -78,13 +78,15 @@ detector, as numerator/denominator and rate:
   have the first pick of `auto_group` (computed from the detector's peaks, minus
   peaks the user excluded) matching a confirmed call in phase and basis (2%).
   A second table gives this per phase, using each exposure's first confirmed call.
-  A call is reachable when `indexpeaks` over the oracle's peaks gives a candidate
-  of the called phase with a basis within 2% of the call. Calls with no such
-  candidate (for example custom indices anchored on fewer peaks than indexing
-  needs) cannot be matched by any detector, so they are left out, and an
-  exposure with none left is not scored. Calls whose phase exists but is
-  out-ranked stay in. `--phase-targets all` scores every call. The output gives
-  reachable and all counts, overall and per phase.
+  A call is reachable when `indexpeaks` gives a candidate of the called phase
+  with a basis within 2% of the call, over the oracle's peaks or over the peaks
+  of any detector in the run. So the targets depend on the detector set (the
+  oracle is always included) and are the same for every detector in a run.
+  Calls no peak set produces (for example custom indices anchored on fewer peaks
+  than indexing needs) only dilute the metric and are left out; an exposure with
+  no reachable call is not scored, and one with any keeps all its calls. Calls
+  whose phase exists but is out-ranked stay in. `--phase-targets all` scores
+  every call. The output gives reachable and all counts, overall and per phase.
 - **add recall**: your added peaks the detector finds. Adds in the top 7% of
   the q range are not scored (the hybrid trims it); their count is printed.
 - **excludes detected**: excluded peaks the detector still outputs (lower is better).

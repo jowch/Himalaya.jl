@@ -192,7 +192,7 @@ end
     end
 end
 
-@testset "oracle scores the user's own peaks as a ceiling" begin
+@testset "oracle scores the user's own peaks as a reference" begin
     mktempdir() do dir
         b = eval_fixture(dir)
         r = evaluate_database(b.path; detectors = [:oracle, :hybrid], phase_targets = :all, io = devnull)

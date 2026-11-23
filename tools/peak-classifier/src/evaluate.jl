@@ -34,6 +34,9 @@ exposure of the database, opened read-only, with the training gate's own
 scoring (`HimalayaUI.peak_eval`). `:recipe` is out of fold: one model per held
 out group, as in training. `thresholds` (`nothing` = the recipe's, a number, or
 `:sweep` over the gate's grid) gives one `:recipe` entry per threshold.
+`phase_targets = :reachable` scores a confirmed call only when the oracle's peaks or
+some detector in this run give a candidate of its phase, so the targets depend on
+the detector set (the oracle is always included); `:all` scores every call.
 `group_by` defaults to what training would pick for this database. Returns
 `counts`, `phase_auto`, `phase_targets`, `entries` and `paired` (every entry after the first
 against the first).
@@ -60,22 +63,20 @@ function evaluate_database(db_path::AbstractString; detectors = [:hybrid],
             group_by = something(HimalayaUI.cold_start_check(db).group_by, :sample)
         end
         exps = HimalayaUI.labeled_exposures(db; group_by, include_unlabelled = true, io)
-        ctx = HimalayaUI.eval_context(db, exps; phase_auto, phase_targets)
         println(io, "loaded $(length(exps)) exposures in $(round(time() - t0; digits = 1)) s")
         ds = nothing
         if :recipe in detectors
             ds = build_dataset(exps; features = recipe.features, float32 = true)
             println(io, "built dataset: $(length(ds.label)) candidates in $(round(time() - t0; digits = 1)) s")
         end
-        entries = Any[]
+        runs = Any[]
         for d in detectors
             if d === :hybrid
-                picks = ds === nothing ? _detector_picks(:hybrid, exps) : ds.hybrid
-                push!(entries, _entry("hybrid", d, nothing, exps, picks, ctx))
+                push!(runs, ("hybrid", d, nothing, ds === nothing ? _detector_picks(:hybrid, exps) : ds.hybrid))
             elseif d === :oracle
-                push!(entries, _entry("oracle", d, nothing, exps, _oracle_picks(exps), ctx))
+                push!(runs, ("oracle", d, nothing, _oracle_picks(exps)))
             elseif d === :persistence
-                push!(entries, _entry("persistence", d, nothing, exps, _detector_picks(:persistence, exps), ctx))
+                push!(runs, ("persistence", d, nothing, _detector_picks(:persistence, exps)))
             else
                 oof = oof_proba(recipe, ds)
                 println(io, "out-of-fold probabilities in $(round(time() - t0; digits = 1)) s")
@@ -84,10 +85,12 @@ function evaluate_database(db_path::AbstractString; detectors = [:hybrid],
                 for t in thrs
                     picks = [ds.cand[k][HPM.select_peaks(ds.cand[k], oof[rows_of[k]], t, recipe.nms)]
                              for k in eachindex(exps)]
-                    push!(entries, _entry("recipe@$t", d, t, exps, picks, ctx))
+                    push!(runs, ("recipe@$t", d, t, picks))
                 end
             end
         end
+        ctx = HimalayaUI.eval_context(db, exps; phase_auto, phase_targets, detector_picks = [r[4] for r in runs])
+        entries = Any[_entry(n, d, t, exps, picks, ctx) for (n, d, t, picks) in runs]
         counts = (exposures = length(exps), labelled = count(e -> e.labelled, exps),
                   form_factor = count(e -> e.form_factor, exps), group_by,
                   groups = length(unique(e.group for e in exps)),
@@ -146,7 +149,7 @@ function print_evaluation(io::IO, r)
     println(io, "exposures: $(c.exposures) loaded ($(c.labelled) labelled, $(c.form_factor) form factor); ",
             "folds by $(c.group_by) ($(c.groups) groups)")
     println(io, "phase calls ($(r.phase_auto), targets $(r.phase_targets)): $(c.phase_calls.reachable) of ",
-            "$(c.phase_calls.all) exposures with a confirmed call are reachable from the user's peaks; ",
+            "$(c.phase_calls.all) exposures with a confirmed call are reachable from the user's peaks or a scored detector; ",
             "scoring $(c.phase_targets), on $(c.label_exposures) labelled exposures shown without a model")
     println(io, "reachable/all by confirmed phase: ",
             join(("$p $(v.reachable)/$(v.all)" for (p, v) in sort(collect(c.phase_calls.per_phase); by = first)), ", "))

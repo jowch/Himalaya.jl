@@ -67,44 +67,55 @@ function top_call_matches(q::AbstractVector, sharpness::AbstractVector, confirme
     _call_hit(first(auto_group(candidates)), confirmed)
 end
 
-function oracle_picks(exps)
-    map(exps) do e
-        step = HimalayaPeakModel.grid_step(e.q)
-        want = vcat(e.adds, e.kept, e.kept_model)
-        idx = unique(argmin(abs.(e.q .- x)) for x in want)
-        sort!([i for i in idx if !any(x -> abs(e.q[i] - x) <= HimalayaPeakModel.peak_match_tol(x, step), e.excluded)])
-    end
+function oracle_pick(e)
+    step = HimalayaPeakModel.grid_step(e.q)
+    want = vcat(e.adds, e.kept, e.kept_model)
+    idx = unique(argmin(abs.(e.q .- x)) for x in want)
+    sort!([i for i in idx if !any(x -> abs(e.q[i] - x) <= HimalayaPeakModel.peak_match_tol(x, step), e.excluded)])
 end
 
-function reachable_calls(exps, calls)
+oracle_picks(exps) = map(oracle_pick, exps)
+
+function _scored_peaks(e, pk)
+    step = HimalayaPeakModel.grid_step(e.q)
+    [i for i in pk if !_near(e.q[i], e.excluded, step)]
+end
+
+function _reaches(e, keep, calls)
+    isempty(keep) && return false
+    candidates = Himalaya.indexpeaks(e.q[keep], _sharpness_at(Himalaya.sharpness(e.I), keep))
+    any(c -> _call_hit(c, calls), candidates)
+end
+
+function reachable_calls(exps, calls, detector_picks = ())
     out = typeof(calls)()
-    byid = Dict(e.id => e for e in exps)
-    for (id, cs) in calls
-        e = byid[id]
-        keep = first(oracle_picks([e]))
-        isempty(keep) && continue
-        candidates = Himalaya.indexpeaks(e.q[keep], _sharpness_at(Himalaya.sharpness(e.I), keep))
-        hit = [c for c in cs if any(k -> _call_hit(k, [c]), candidates)]
-        isempty(hit) || (out[id] = hit)
+    for (k, e) in enumerate(exps)
+        cs = get(calls, e.id, nothing)
+        cs === nothing && continue
+        if _reaches(e, oracle_pick(e), cs) || any(picks -> _reaches(e, _scored_peaks(e, picks[k]), cs), detector_picks)
+            out[e.id] = cs
+        end
     end
     out
 end
 
-function _target_counts(all, reachable)
+function _target_counts(confirmed, reachable)
     phases = Dict{String, NamedTuple{(:reachable, :all), Tuple{Int, Int}}}()
-    bump(p, f) = (c = get(phases, p, (reachable = 0, all = 0)); phases[p] = f(c))
-    for cs in values(all); bump(first(cs)[1], c -> (; c..., all = c.all + 1)); end
-    for cs in values(reachable); bump(first(cs)[1], c -> (; c..., reachable = c.reachable + 1)); end
-    (all = length(all), reachable = length(reachable), per_phase = phases)
+    for (id, cs) in confirmed
+        c = get(phases, first(cs)[1], (reachable = 0, all = 0))
+        phases[first(cs)[1]] = (reachable = c.reachable + haskey(reachable, id), all = c.all + 1)
+    end
+    (all = length(confirmed), reachable = length(reachable), per_phase = phases)
 end
 
-function eval_context(db::SQLite.DB, exps; phase_auto::Symbol = :user_events, phase_targets::Symbol = :reachable)
+function eval_context(db::SQLite.DB, exps; phase_auto::Symbol = :user_events, phase_targets::Symbol = :reachable,
+                      detector_picks = ())
     phase_targets in (:reachable, :all) || throw(ArgumentError("phase_targets must be :reachable or :all"))
     shown = no_model_shown_ids(db)
     label_ids = intersect(Set(e.id for e in exps if e.labelled), shown)
-    all = confirmed_calls(db, [e.id for e in exps if e.labelled && e.id in shown]; auto = phase_auto)
-    reachable = reachable_calls(exps, all)
-    (; label_ids, targets = phase_targets === :all ? all : reachable, counts = _target_counts(all, reachable))
+    confirmed = confirmed_calls(db, [e.id for e in exps if e.labelled && e.id in shown]; auto = phase_auto)
+    reachable = reachable_calls(exps, confirmed, detector_picks)
+    (; label_ids, targets = phase_targets === :all ? confirmed : reachable, counts = _target_counts(confirmed, reachable))
 end
 
 function confirmed_calls(db::SQLite.DB, exposure_ids; auto::Symbol = :user_events)
@@ -177,7 +188,7 @@ function peak_eval(exps, picks; targets = Dict{Int, Vector{Tuple{String, Float64
         end
         calls = get(targets, e.id, nothing)
         if calls !== nothing
-            keep = [i for i in pk if !_near(e.q[i], e.excluded, step)]
+            keep = _scored_peaks(e, pk)
             ok = top_call_matches(e.q[keep], _sharpness_at(Himalaya.sharpness(e.I), keep), calls)
             phase_n += 1; phase_ok += ok
             push!(phase_rows, (id = e.id, phase = first(calls)[1], ok = ok))
@@ -245,18 +256,20 @@ function run_peak_training(db::SQLite.DB; recipe::HimalayaPeakModel.Recipe = Him
     for (r, k) in enumerate(ds.exposure); push!(rows_of[k], r); end
     picks_at(thr) = [ds.cand[k][HimalayaPeakModel.select_peaks(ds.cand[k], oof[rows_of[k]], thr, recipe.nms)]
                      for k in eachindex(exps)]
-    ctx = eval_context(db, exps; phase_auto, phase_targets)
-    (; label_ids, targets) = ctx
-    target_counts = ctx.counts
-    hybrid = peak_summary(exps, ds.hybrid; targets, label_ids)
+    (; label_ids) = eval_context(db, exps; phase_auto, phase_targets)
+    hybrid_peaks = peak_summary(exps, ds.hybrid; label_ids)
 
     sweep = [(threshold = t, summary = peak_summary(exps, picks_at(t); label_ids)) for t in THRESHOLD_GRID]
-    within(s) = s.peaks <= hybrid.peaks + peaks_slack + 1e-9 &&
-                (isnan(s.ff_peaks) || isnan(hybrid.ff_peaks) || s.ff_peaks <= hybrid.ff_peaks + ff_slack + 1e-9)
+    within(s) = s.peaks <= hybrid_peaks.peaks + peaks_slack + 1e-9 &&
+                (isnan(s.ff_peaks) || isnan(hybrid_peaks.ff_peaks) || s.ff_peaks <= hybrid_peaks.ff_peaks + ff_slack + 1e-9)
     ok = [x for x in sweep if within(x.summary)]
     threshold = isempty(ok) ? last(THRESHOLD_GRID) :
         sort(ok; by = x -> (isnan(_rate(x.summary.adds)) ? 0.0 : _rate(x.summary.adds), x.threshold))[end].threshold
-    model = peak_summary(exps, picks_at(threshold); targets, label_ids)
+    model_picks = picks_at(threshold)
+    scored = eval_context(db, exps; phase_auto, phase_targets, detector_picks = [ds.hybrid, model_picks])
+    (; targets) = scored
+    hybrid = peak_summary(exps, ds.hybrid; targets, label_ids)
+    model = peak_summary(exps, model_picks; targets, label_ids)
     gate = evaluate_gate(model, hybrid; peaks_slack, ff_slack)
     isempty(ok) && pushfirst!(gate.reasons, "no threshold keeps peaks within the caps")
     gate = (; gate..., passed = gate.passed && !isempty(ok))
@@ -267,7 +280,7 @@ function run_peak_training(db::SQLite.DB; recipe::HimalayaPeakModel.Recipe = Him
               by_threshold = [(; threshold = t, s...) for (t, s) in cv.by_threshold],
               hybrid = cv.hybrid, candidates = cv.candidates),
         comparison = (threshold = threshold, phase_auto = phase_auto, model = model, hybrid = hybrid, phase_targets = length(targets), phase_targets_mode = phase_targets,
-                      phase_target_counts = target_counts,
+                      phase_target_counts = scored.counts,
                       label_exposures_no_model_shown = length(label_ids)),
         sweep = [(; threshold = x.threshold, peaks = x.summary.peaks, ff_peaks = x.summary.ff_peaks,
                   adds = x.summary.adds, within_caps = within(x.summary)) for x in sweep],
