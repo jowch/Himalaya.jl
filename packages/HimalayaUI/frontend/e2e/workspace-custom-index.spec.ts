@@ -42,7 +42,7 @@ test.beforeEach(async ({ page }) => {
   await page.route("**/api/events", (r) => r.fulfill({ status: 200, contentType: "text/event-stream", body: "" }));
 });
 
-test("clicking a peak to snap the custom index, then Enter, adds it", async ({ page }) => {
+async function recordCustomIndex(page: import("@playwright/test").Page): Promise<unknown[]> {
   const posted: unknown[] = [];
   await page.route("**/api/exposures/410/custom-index", (r) => {
     posted.push(r.request().postDataJSON());
@@ -51,13 +51,40 @@ test("clicking a peak to snap the custom index, then Enter, adds it", async ({ p
       status: "candidate", kind: "speculative", inputs_hash: null, peaks: [], predicted_q: [], event_id: 1, view_row_id: null,
     }) });
   });
+  return posted;
+}
+
+async function openCustomIndex(page: import("@playwright/test").Page): Promise<void> {
   await page.goto("/experiments/17/workspace/41");
   await expect(page.locator('[data-peak-key="auto:1"]')).toBeVisible();
   await page.keyboard.press("i");
   await expect(page.getByTestId("workspace-custom-index")).toBeVisible();
+}
+
+async function snapAndAdd(page: import("@playwright/test").Page, posted: unknown[]): Promise<void> {
   await page.locator('[data-peak-key="auto:1"]').click();
   await expect(page.locator('[data-peak-key="auto:1"]')).not.toBeFocused();
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("workspace-custom-index")).toBeHidden();
   expect(posted).toHaveLength(1);
+}
+
+test("clicking a peak to snap the custom index, then Enter, adds it", async ({ page }) => {
+  const posted = await recordCustomIndex(page);
+  await openCustomIndex(page);
+  await snapAndAdd(page, posted);
+});
+
+test("picking a symmetry, clicking a peak to snap, then Enter, adds it", async ({ page }) => {
+  const posted = await recordCustomIndex(page);
+  await openCustomIndex(page);
+  await page.getByRole("group", { name: "Symmetry" }).getByRole("button").nth(1).click();
+  await snapAndAdd(page, posted);
+});
+
+test("with the filter focused, clicking a peak to snap, then Enter, adds it", async ({ page }) => {
+  const posted = await recordCustomIndex(page);
+  await openCustomIndex(page);
+  await page.getByLabel("Filter samples").focus();
+  await snapAndAdd(page, posted);
 });
