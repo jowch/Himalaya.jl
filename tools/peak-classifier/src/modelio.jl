@@ -1,18 +1,23 @@
-function save_model(path::AbstractString, m::PeakModel)
+const MODEL_FILE_VERSION = 3
+
+function save_model(path::AbstractString, m::TrainedModel)
     mkpath(dirname(abspath(path)))
-    serialize(path, (version = 2, julia = string(VERSION), model = m))
+    open(path, "w") do io
+        JSON3.write(io, Dict{String, Any}("file_version" => MODEL_FILE_VERSION, "model" => to_dict(m)))
+    end
     path
 end
 
-# `deserialize` runs code from the file: load only models you trained yourself.
 function load_model(path::AbstractString)
     d = try
-        deserialize(path)
+        JSON3.read(read(path, String))
     catch err
         error("cannot read model file $path (made by an older version of the tool?); retrain it: $(sprint(showerror, err))")
     end
-    d.version == 2 || error("unsupported model file version $(d.version); retrain it")
-    d.model.feature_names in (FEATURE_NAMES, filter(!in(DETECTOR_FEATURES), FEATURE_NAMES)) ||
-        error("model was trained with a different feature set; retrain it")
-    d.model
+    (d isa AbstractDict && haskey(d, :file_version) && d[:file_version] == MODEL_FILE_VERSION) ||
+        error("unsupported model file version; retrain it")
+    m = from_dict(TrainedModel, d[:model])
+    m.feature_version == feature_version(m.recipe.features) ||
+        error("model was trained with features \"$(m.feature_version)\" but this build has \"$(feature_version(m.recipe.features))\"; retrain it")
+    m
 end

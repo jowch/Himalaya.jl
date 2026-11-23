@@ -1,4 +1,5 @@
-using Test, Random, Statistics
+using Test, Random, Statistics, JSON3
+import DecisionTree
 using HimalayaPeakModel, Himalaya
 const HPM = HimalayaPeakModel
 
@@ -105,7 +106,7 @@ end
     ff_rows = [r for r in eachindex(ds.label) if exps[ds.exposure[r]].form_factor]
     @test !isempty(ff_rows) && all(r -> ds.label[r] == 0, ff_rows)
 
-    r = cross_validate(exps, ds; verbose = false, n_trees = 60, thresholds = [0.5])
+    r = cross_validate(exps, default_recipe(n_trees = 60); ds, verbose = false, thresholds = [0.5])
     @test r.candidate_auc > 0.9
     c = r.by_threshold[1][2]
     @test c.add_recall > 0.8
@@ -128,6 +129,7 @@ end
     # ablation: no detector columns
     m3 = train(build_dataset(train_exps); n_trees = 30, detector_features = false)
     @test !any(in(HPM.DETECTOR_FEATURES), m3.feature_names)
+    @test size(HPM.proba(m3, build_dataset(train_exps)), 1) > 0
     @test !isempty(predict_peaks(m3, held[1].q, held[1].I, held[1].σ))
 end
 
@@ -171,4 +173,138 @@ end
     ds = build_dataset([e])
     near = argmin(abs.(tq[ds.cand[1]] .- 0.3))
     @test ds.label[near] == 0
+end
+
+function synth_set(; groups = 1:4, per = 8, seed = 7)
+    rng = MersenneTwister(seed)
+    exps = LabeledExposure[]
+    for g in groups, k in 1:per
+        push!(exps, synth_exposure(rng, 10g + k, g)[1])
+    end
+    exps
+end
+
+json_round(d) = JSON3.read(JSON3.write(d))
+
+@testset "forest model survives a JSON round trip exactly" begin
+    exps = synth_set()
+    ds = build_dataset(exps)
+    m = train(ds; n_trees = 40)
+    X = ds.X
+    p0 = predict_proba(m.fitted, X)
+    f2 = from_dict(Fitted, json_round(to_dict(m.fitted)))
+    @test f2 isa HPM.ForestFitted
+    @test predict_proba(f2, X) == p0
+    f3 = from_dict(Fitted, JSON3.read(JSON3.write(to_dict(m.fitted)), Dict{String, Any}))
+    @test predict_proba(f3, X) == p0
+    @test to_dict(m.fitted)["kind"] == "random_forest" && to_dict(m.fitted)["version"] == 2
+
+    # per-tree class fractions and the leaf training counts survive too
+    ens0 = m.fitted.forest.ensemble; ens2 = f2.forest.ensemble
+    classes = m.fitted.forest.classes
+    @test length(ens0.trees) == length(ens2.trees)
+    for t in 1:5, r in 1:20:size(X, 1)
+        @test DecisionTree.apply_tree_proba(ens0.trees[t], X[r, :], classes) ==
+              DecisionTree.apply_tree_proba(ens2.trees[t], X[r, :], classes)
+    end
+    leaves(n::DecisionTree.Node) = vcat(leaves(n.left), leaves(n.right))
+    leaves(l::DecisionTree.Leaf) = [l]
+    @test all(t -> sort([sort(l.values) for l in leaves(ens0.trees[t])]) ==
+                   sort([sort(l.values) for l in leaves(ens2.trees[t])]) &&
+                   [l.majority for l in leaves(ens0.trees[t])] == [l.majority for l in leaves(ens2.trees[t])], 1:5)
+end
+
+@testset "loading reads data only" begin
+    d = Dict{String, Any}("kind" => "no_such_learner", "version" => 1)
+    @test_throws ErrorException from_dict(Fitted, d)
+    @test_throws ErrorException from_dict(Learner, d)
+    @test_throws ErrorException from_dict(FeatureSet, d)
+    bad = to_dict(train(build_dataset(synth_set(groups = 1:2)); n_trees = 3).fitted)
+    bad["version"] = 99
+    @test_throws ErrorException from_dict(Fitted, bad)
+    bad["version"] = 1
+    @test_throws ErrorException from_dict(Fitted, bad)
+end
+
+@testset "recipe id is stable and sensitive" begin
+    r = default_recipe()
+    @test recipe_id(r) == recipe_id(from_dict(Recipe, json_round(to_dict(r))))
+    @test recipe_id(r) == recipe_id(default_recipe())
+    @test length(recipe_id(r)) == 16
+    @test recipe_id(r) != recipe_id(default_recipe(n_trees = 100))
+    @test recipe_id(r) != recipe_id(default_recipe(detector_features = false))
+    @test recipe_id(r) != recipe_id(Recipe(DefaultFeatures(), LogisticLearner()))
+    @test to_dict(from_dict(Recipe, json_round(to_dict(r)))) == to_dict(r)
+end
+
+@testset "trained model round trip" begin
+    exps = synth_set()
+    m = train(default_recipe(n_trees = 30, detector_features = false), build_dataset(exps))
+    m2 = from_dict(TrainedModel, json_round(to_dict(m)))
+    @test m2.feature_names == m.feature_names && m2.trained_on == m.trained_on
+    @test m2.threshold == m.threshold && m2.nms == m.nms
+    e = exps[1]
+    @test predict_peaks(m2, e.q, e.I, e.σ) == predict_peaks(m, e.q, e.I, e.σ)
+    @test to_dict(m)["recipe_id"] == recipe_id(m.recipe)
+    d = to_dict(m); d["feature_names"] = reverse(d["feature_names"])
+    @test_throws ErrorException from_dict(TrainedModel, d)
+    @test m2.feature_version == feature_version(m.recipe.features) == m.feature_version
+    d = to_dict(m); d["feature_version"] = "default-1;himalaya=0.0.0"
+    @test from_dict(TrainedModel, d).feature_version == "default-1;himalaya=0.0.0"
+end
+
+@testset "a precomputed hybrid result gives the same features and predictions" begin
+    exps = synth_set(groups = 1:2)
+    e = exps[1]
+    fs = DefaultFeatures()
+    idx, X, hyb = candidates_and_features(fs, e.q, e.I, e.σ)
+    hres = Himalaya.findpeaks(e.q, e.I, e.σ; method = :hybrid)
+    idx2, X2, hyb2 = candidates_and_features(fs, e.q, e.I, e.σ; hybrid = hres)
+    @test idx2 == idx && X2 == X && hyb2 === hres && hyb.indices == hres.indices
+    m = train(build_dataset(exps); n_trees = 20)
+    @test predict_peaks(m, e.q, e.I, e.σ; hybrid = hres) == predict_peaks(m, e.q, e.I, e.σ)
+    @test feature_names(DefaultFeatures(false)) == filter(!in(HPM.DETECTOR_FEATURES), FEATURE_NAMES)
+    @test occursin(string(pkgversion(Himalaya)), feature_version(fs))
+    @test feature_version(fs) != feature_version(DefaultFeatures(false))
+    @test to_dict(from_dict(FeatureSet, json_round(to_dict(DefaultFeatures(false))))) == to_dict(DefaultFeatures(false))
+end
+
+@testset "a second learner plugs in" begin
+    exps = synth_set()
+    recipe = Recipe(DefaultFeatures(), LogisticLearner())
+    r = cross_validate(exps, recipe; verbose = false, thresholds = [0.5])
+    @test r.candidate_auc > 0.8
+    held = filter(e -> e.group == 4, exps)
+    m = train(recipe, build_dataset(filter(e -> e.group != 4, exps)))
+    @test m.fitted isa HPM.LogisticFitted
+    ds = build_dataset(held)
+    p = predict_proba(m.fitted, ds.X)
+    @test all(0 .<= p .<= 1)
+    @test HPM.auc(p[ds.label .>= 0], ds.label[ds.label .>= 0] .== 1) > 0.8
+    m2 = from_dict(TrainedModel, json_round(to_dict(m)))
+    @test predict_proba(m2.fitted, ds.X) == p
+    @test all(e -> predict_peaks(m2, e.q, e.I, e.σ) == predict_peaks(m, e.q, e.I, e.σ), held)
+    @test any(e -> !isempty(predict_peaks(m, e.q, e.I, e.σ)), held)
+end
+
+@testset "a learner registered from outside is used end to end" begin
+    struct ConstLearner <: Learner; seed::Int; end
+    struct ConstFitted <: Fitted; p::Float64; end
+    HPM.fit(l::ConstLearner, X, y; rng) = ConstFitted(mean(y))
+    HPM.predict_proba(f::ConstFitted, X) = fill(f.p, size(X, 1))
+    HPM.to_dict(l::ConstLearner) = Dict{String, Any}("kind" => "const", "version" => 1, "seed" => l.seed)
+    HPM.to_dict(f::ConstFitted) = Dict{String, Any}("kind" => "const", "version" => 1, "p" => f.p)
+    register_learner!("const", d -> ConstLearner(d["seed"]), d -> ConstFitted(d["p"]))
+    @test_throws ErrorException register_learner!("const", d -> nothing, d -> nothing)
+    @test_throws ErrorException register_learner!("random_forest", d -> nothing, d -> nothing)
+    @test_throws ErrorException register_features!("default", d -> nothing)
+    register_learner!("const", d -> ConstLearner(d["seed"]), d -> ConstFitted(d["p"]); replace = true)
+    m = train(Recipe(DefaultFeatures(), ConstLearner(1); threshold = 0.0), build_dataset(synth_set(groups = 1:2)))
+    m2 = from_dict(TrainedModel, to_dict(m))
+    @test m2.fitted isa ConstFitted && m2.fitted.p == m.fitted.p
+end
+
+@testset "logistic fit fails loudly on divergence" begin
+    ds = build_dataset(synth_set(groups = 1:2))
+    @test_throws ErrorException train(Recipe(DefaultFeatures(), LogisticLearner(lr = 1e300, steps = 50)), ds)
 end

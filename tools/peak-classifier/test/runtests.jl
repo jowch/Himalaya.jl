@@ -1,4 +1,4 @@
-using Test, Random, DBInterface, Serialization, SQLite
+using Test, Random, DBInterface, SQLite, JSON3
 using PeakClassifier
 import HimalayaUI
 
@@ -22,25 +22,40 @@ end
     rng = MersenneTwister(7)
     exps = [synth_exposure(rng, 10g + k, g) for g in 1:2 for k in 1:6]
     m = train(build_dataset(exps); n_trees = 30)
-    path = joinpath(mktempdir(), "sub", "m.jls")
+    path = joinpath(mktempdir(), "sub", "m.json")
     save_model(path, m)
+    @test JSON3.read(read(path, String))[:file_version] == 3
     m2 = load_model(path)
     e = exps[1]
     @test predict_peaks(m2, e.q, e.I, e.σ) == predict_peaks(m, e.q, e.I, e.σ)
 
     m3 = train(build_dataset(exps); n_trees = 30, detector_features = false)
-    p3 = joinpath(mktempdir(), "m3.jls"); save_model(p3, m3)
+    p3 = joinpath(mktempdir(), "m3.json"); save_model(p3, m3)
     @test predict_peaks(load_model(p3), e.q, e.I, e.σ) == predict_peaks(m3, e.q, e.I, e.σ)
 
-    bad = joinpath(mktempdir(), "bad.jls")
-    open(bad, "w") do io
-        Serialization.serialize(io, (version = 1, julia = "x", model = m))
-    end
-    @test_throws ErrorException load_model(bad)
+    lr = train(Recipe(DefaultFeatures(), LogisticLearner()), build_dataset(exps))
+    pl = joinpath(mktempdir(), "lr.json"); save_model(pl, lr)
+    @test predict_peaks(load_model(pl), e.q, e.I, e.σ) == predict_peaks(lr, e.q, e.I, e.σ)
 
-    unreadable = joinpath(mktempdir(), "unreadable.jls")
+    stale = JSON3.read(read(path, String), Dict{String, Any})
+    stale["model"]["feature_version"] = "default-1;detector_features=true;himalaya=0.0.0"
+    ps = joinpath(mktempdir(), "stale.json")
+    write(ps, JSON3.write(stale))
+    @test_throws "retrain" load_model(ps)
+
+    old = joinpath(mktempdir(), "old.json")
+    write(old, JSON3.write(Dict("file_version" => 2, "model" => Dict())))
+    @test_throws "retrain" load_model(old)
+
+    serialized = joinpath(mktempdir(), "old.jls")
+    open(serialized, "w") do io
+        write(io, UInt8[0x37, 0x4a, 0x4c, 0x07, 0x00, 0x01, 0x02])
+    end
+    @test_throws "retrain" load_model(serialized)
+
+    unreadable = joinpath(mktempdir(), "unreadable.json")
     write(unreadable, "not a model")
-    @test_throws ErrorException load_model(unreadable)
+    @test_throws "retrain" load_model(unreadable)
 end
 
 function write_dat(path, q, I, σ)

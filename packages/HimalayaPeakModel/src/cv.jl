@@ -47,7 +47,8 @@ function tiedrank_(x)
 end
 
 """
-    cross_validate(exps, ds; thresholds = [0.3, 0.5, 0.7, 0.85, 0.9], kwargs...) -> NamedTuple
+    cross_validate(exps, recipe; ds = build_dataset(exps; features = recipe.features),
+                   thresholds = [0.3, 0.5, 0.7, 0.85, 0.9], verbose = true) -> NamedTuple
 
 Leave-one-group-out cross-validation (groups are `LabeledExposure.group`,
 an experiment by default). Each held-out group is scored by a model that
@@ -57,19 +58,21 @@ the same exposures: recall of adds, kept peaks and excluded peaks (an
 excluded peak that is still detected is a miss), and predicted peaks per
 labelled exposure that match neither an add nor a kept peak (`extra`;
 unlabelled real peaks count here, so this overstates false positives).
-`kwargs` go to `train`; its `nms` is applied.
+The recipe's `nms` is applied; its `threshold` is not used. Pass `ds` to reuse a
+dataset built from `exps`.
 """
-function cross_validate(exps::AbstractVector{LabeledExposure}, ds::Dataset;
-                        thresholds = [0.3, 0.5, 0.7, 0.85, 0.9], verbose::Bool = true, kwargs...)
-    nms = get(Dict(kwargs), :nms, 8)
+function cross_validate(exps::AbstractVector{LabeledExposure}, recipe::Recipe;
+                        ds::Dataset = build_dataset(exps; features = recipe.features),
+                        thresholds = [0.3, 0.5, 0.7, 0.85, 0.9], verbose::Bool = true)
+    nms = recipe.nms
     groups = sort(unique(ds.group))
     length(groups) >= 2 || error("cross-validation needs at least two groups, found $(length(groups))")
     oof = fill(NaN, length(ds.label))
     for g in groups
         tr = findall(!=(g), ds.group)
-        m = train(ds; rows = tr, kwargs...)
+        m = train(recipe, ds; rows = tr)
         te = findall(==(g), ds.group)
-        oof[te] = proba(m, ds.X[te, :])
+        oof[te] = proba(m, ds, te)
         verbose && @printf("  held out group %d: %d exposures\n", g, length(unique(ds.exposure[te])))
     end
     rows_of = [Int[] for _ in exps]
