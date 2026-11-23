@@ -107,7 +107,7 @@ When the mock-up changes, extract its behaviours again from the code and update 
 | cix-landed | It says how many reflections land on a peak | built | test/workspace/WorkspacePage.test.tsx › the indexing plot follows the custom index while it is open |
 | cix-nudge | ← → nudge the lattice, Shift for a larger step | built | test/workspace/WorkspacePage.test.tsx › arrows nudge the lattice after a symmetry click, while focus is on that button |
 | cix-snap | Clicking near a peak puts the first order on it | built | test/workspace/WorkspacePage.test.tsx › while a custom index is open, a plot click puts the first order on the nearest peak and edits no peaks |
-| cix-enter-after-snap | Enter adds right after a click snapped the lattice, whatever had focus | built | test/workspace/WorkspacePlot.test.tsx › a pointer press on a peak does not take keyboard focus, so Enter still reaches the workspace |
+| cix-enter-after-snap | Enter adds right after a click snapped the lattice, whatever had focus | built | e2e/workspace-custom-index.spec.ts › picking a symmetry, clicking a peak to snap, then Enter, adds it |
 | cix-esc | Esc cancels without writing | built | test/workspace/WorkspacePage.test.tsx › Escape cancels a custom index without writing |
 | cix-ticks | Adding it ticks it into the call | built | test/workspace/WorkspacePage.test.tsx › an added custom index is listed as Custom and ticked, though it has no score |
 
