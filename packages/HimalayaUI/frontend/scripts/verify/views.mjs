@@ -12,6 +12,12 @@ export function statusFromText(text) {
   return "phase";
 }
 
+export function callFromText(text) {
+  if (statusFromText(text) !== "phase") return null;
+  const phases = String(text).split("+").map((p) => p.trim()).filter(Boolean);
+  return [...new Set(phases)].sort().join("+");
+}
+
 export function heldTrace404(e, heldIds) {
   const m = /^\/api\/exposures\/(\d+)\/trace$/.exec(new URL(e.url).pathname);
   return e.method === "GET" && e.status === 404 && m !== null && heldIds.has(Number(m[1]));

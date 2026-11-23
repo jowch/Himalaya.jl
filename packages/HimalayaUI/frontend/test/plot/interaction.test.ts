@@ -74,6 +74,17 @@ describe("zoomXDomain — log", () => {
   });
 });
 
+describe("zoomXDomain — anchor", () => {
+  it("keeps the q under the cursor at the same place on the axis", () => {
+    const at = (d: [number, number], q: number, log: boolean) =>
+      log ? (Math.log(q) - Math.log(d[0])) / (Math.log(d[1]) - Math.log(d[0])) : (q - d[0]) / (d[1] - d[0]);
+    const log = zoomXDomain({ cursorQ: 0.03, deltaY: -300, current: [0.01, 1], extent: [0.01, 1], type: "log" })!;
+    expect(at(log, 0.03, true)).toBeCloseTo(at([0.01, 1], 0.03, true), 9);
+    const lin = zoomXDomain({ cursorQ: 2, deltaY: -300, current: [0, 10], extent: [0, 10], type: "linear" })!;
+    expect(at(lin, 2, false)).toBeCloseTo(0.2, 9);
+  });
+});
+
 describe("zoomXDomain — linear", () => {
   it("narrows about the cursor in linear space", () => {
     const next = zoomXDomain({
