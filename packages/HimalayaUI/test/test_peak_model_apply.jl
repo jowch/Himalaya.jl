@@ -240,6 +240,7 @@ end
         id = _pma_add_model!(db; curations = 100)
         @test HimalayaUI.promote_peak_model!(db, id)
         @test _pma_status(db, id) == (status = "active", has_fitted = 1)
+        @test HimalayaUI.PEAK_MODEL_CACHE[String(db.file)][1] == id
         @test HimalayaUI.production_detector(db).id == id
         @test !HimalayaUI.promote_peak_model!(db, id)
         DBInterface.close!(db)

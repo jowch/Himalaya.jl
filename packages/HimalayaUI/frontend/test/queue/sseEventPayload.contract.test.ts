@@ -206,6 +206,7 @@ describe("SSE event-payload contract (applyRemoteToCache for each emitted kind)"
     expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: queryKeys.peaks(5) });
     applyRemoteToCache(frame(false), qc);
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: queryKeys.peaks(5) });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: queryKeys.trace(5) });
   });
 
   // -------------------------------------------------------------------------

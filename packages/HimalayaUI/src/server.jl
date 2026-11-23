@@ -265,7 +265,7 @@ function start_background!(db::SQLite.DB; resume::Bool = true, train::Bool = res
     start_gc_timer!(db)
     train && start_peak_training_timer!(db)
     if resume
-        PEAK_MODEL_PASS.stopped = false
+        set_peak_model_pass_stopped!(false)
         boot_peak_model!(db)
     end
     Threads.@spawn _boot_background_work(db, resume)
@@ -299,8 +299,13 @@ end
 function serve(db::SQLite.DB; host::String = "127.0.0.1", port::Int = 8080)
     warn_if_single_threaded()
     boot!(db)
-    Oxygen.serve(; host, port, show_banner = false, docs = false, metrics = false,
-                 parallel = true, middleware = [db_connection_middleware])
+    try
+        Oxygen.serve(; host, port, show_banner = false, docs = false, metrics = false,
+                     parallel = true, middleware = [db_connection_middleware])
+    finally
+        stop_peak_model_pass!()
+        stop_peak_training!()
+    end
 end
 
 function start_test_server!(db::SQLite.DB, port::Int)

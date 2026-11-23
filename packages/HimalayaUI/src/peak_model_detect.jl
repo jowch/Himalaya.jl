@@ -24,14 +24,18 @@ active_peak_model_id(db::SQLite.DB) = begin
     isempty(rows) ? nothing : Int(rows[1].id)
 end
 
-function predict_model_peaks(db::SQLite.DB, exposure_id::Integer, q, I, σ, hybrid, q_step)
+function predict_model_peaks(db::SQLite.DB, exposure_id::Integer, q, I, σ, hybrid, q_step; warn::Bool = true)
     pm = production_detector(db)
     pm === nothing && return (nothing, nothing)
     peak_reviewed(db, exposure_id) && return (pm, nothing)
     try
         (pm, model_peaks_result(pm, q, I, σ, hybrid, q_step))
     catch err
-        @warn "peak model $(pm.id) failed on exposure $exposure_id; using the hybrid detector's peaks" exception = err
+        warn && @warn "peak model $(pm.id) failed on exposure $exposure_id; using the hybrid detector's peaks" exception = err
         (pm, nothing)
     end
 end
+
+auto_peak_qs(db::SQLite.DB, exposure_id::Integer) =
+    Float64[Float64(r.q) for r in sqlrows(DBInterface.execute(db,
+        "SELECT q FROM auto_peaks WHERE exposure_id = ? ORDER BY q", [Int(exposure_id)]))]

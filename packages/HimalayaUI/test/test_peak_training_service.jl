@@ -248,7 +248,7 @@ end
                           Tables.rowtable(DBInterface.execute(db, "SELECT id, analysis_version, reviewed_at FROM exposures ORDER BY id")))
             before = snapshot()
             HimalayaUI.PEAK_TRAINING.stopped = false
-            HimalayaUI.PEAK_MODEL_PASS.stopped = false
+            HimalayaUI.set_peak_model_pass_stopped!(false)
             HimalayaUI.PEAK_TRAINING_COMMAND[] = path -> HimalayaUI.default_peak_training_command(path; extra = ["--trees", "20"])
             @test HimalayaUI.maybe_start_peak_training!(db; min_events = 1, quiet_seconds = 0.0) === :started
             HimalayaUI.wait_peak_training()

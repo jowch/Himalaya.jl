@@ -176,12 +176,12 @@ function _workload_peak_model!(db::SQLite.DB, experiment::Int, sample::Int, imag
         "metrics" => Dict{String, Any}(), "fitted" => HimalayaPeakModel.to_dict(fitted)))
     promote_peak_model!(db, id) || error("precompile workload: the synthetic peak model was not promoted")
     isempty(retire_stale_peak_models!(db)) || error("precompile workload: the synthetic peak model was retired")
-    stopped = PEAK_MODEL_PASS.stopped
-    PEAK_MODEL_PASS.stopped = false
+    stopped = peak_model_pass_stopped()
+    set_peak_model_pass_stopped!(false)
     try
         run_peak_model_pass!(db)
     finally
-        PEAK_MODEL_PASS.stopped = stopped
+        set_peak_model_pass_stopped!(stopped)
     end
     only(sqlrows(DBInterface.execute(db, "SELECT peak_model_version AS v FROM exposures WHERE id = ?", [exposure]))).v == id ||
         error("precompile workload: the peak model did not write the synthetic exposure's peaks")

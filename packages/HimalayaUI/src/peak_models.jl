@@ -161,15 +161,26 @@ function _curation_count(counts_json)
     Int(get(JSON3.read(String(counts_json)::String), :curations, 0))
 end
 
+function _seed_peak_model_cache!(db::SQLite.DB, model::ProductionModel)
+    _poolable(db.file) || return nothing
+    lock(PEAK_MODEL_CACHE_LOCK) do
+        PEAK_MODEL_CACHE[String(db.file)] = (model.id, model)
+    end
+    nothing
+end
+
 function promote_peak_model!(db::SQLite.DB, id::Integer)
+    row = only(sqlrows(DBInterface.execute(db,
+        "SELECT status, counts_json FROM peak_models WHERE id = ?", [Int(id)])))
+    row.status == "passed" || return false
+    candidate = _load_production_model(db, Int(id))
+    candidate === nothing && return false
+    current = production_detector(db)
     lock(_DB_WRITE_LOCK) do
-        row = only(sqlrows(DBInterface.execute(db,
-            "SELECT status, counts_json FROM peak_models WHERE id = ?", [Int(id)])))
-        row.status == "passed" || return false
-        _load_production_model(db, Int(id)) === nothing && return false
         active = sqlrows(DBInterface.execute(db,
             "SELECT id, counts_json FROM peak_models WHERE status = 'active' ORDER BY id DESC LIMIT 1"))
-        if !isempty(active) && _load_production_model(db, Int(active[1].id)) !== nothing
+        if !isempty(active) && current !== nothing
+            current.id == Int(active[1].id) || return false
             old = _curation_count(active[1].counts_json)
             grown = _curation_count(row.counts_json)
             (old == 0 ? grown > 0 : (grown - old) >= PEAK_MODEL_GROWTH * old) || return false
@@ -179,7 +190,7 @@ function promote_peak_model!(db::SQLite.DB, id::Integer)
                 "UPDATE peak_models SET status = 'retired', fitted_json = NULL WHERE status = 'active'")
             DBInterface.execute(db, "UPDATE peak_models SET status = 'active' WHERE id = ?", [Int(id)])
         end
-        invalidate_peak_model_cache!()
+        _seed_peak_model_cache!(db, candidate)
         true
     end
 end

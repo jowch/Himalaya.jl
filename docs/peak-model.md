@@ -1,6 +1,6 @@
 # Per-database peak model
 
-Status: design. Steps 1 (packaging), 2 (provenance and pinning), 3 (training service) and 4 (model-written auto peaks) are implemented: the features, labels,
+Status: implemented (all four delivery steps). Packaging, provenance and pinning, the training service and model-written auto peaks are built: the features, labels,
 model and cross-validation live in `packages/HimalayaPeakModel`, the database
 loader is `HimalayaUI.labeled_exposures` (reading review snapshots), `tools/peak-classifier/` (#486)
 is the command-line tool on top of both, and the server trains and records runs in the background
@@ -55,7 +55,7 @@ less manual peak work.
 
 An exposure is **pinned** (also called reviewed) once one of these events
 touches it: a peak add, remove, exclude or un-exclude; an assignment add,
-remove or state change; a sample call (which pins every exposure of that
+remove or state change; a speculative index creation; a sample call (which pins every exposure of that
 sample, including calls made by a bridge); or an exposure accept or reject. The
 retired index confirm and un-confirm kinds are never emitted and are not in the
 list. The event sets
@@ -440,7 +440,7 @@ checked again inside the write transaction: an exposure that was pinned meanwhil
 **Snapshots.** `record_review!` writes `shown_model_id` from the exposure's `peak_model_version` at event time.
 
 **Promotion.** The server records a `passed` run and promotes it in the same `_DB_WRITE_LOCK` section
-(`promote_peak_model!`): when nothing usable is active, or when the run's `counts.curations` (add and exclude
+(`promote_peak_model!`, which parses the new model before taking the lock and seeds the resolver cache with it): when nothing usable is active, or when the run's `counts.curations` (add and exclude
 rows, counted by the cold-start check at the run's own watermark) is at least 25% above the active run's
 (`PEAK_MODEL_GROWTH`; an active run with no count is replaced by any run with one). The previous active row
 becomes `retired` and loses its fitted JSON. A run whose model fails to load is left `passed`. Newest `passed` and
@@ -456,8 +456,7 @@ and handles them one at a time on its own connection, yielding between exposures
 matching hashes. `only_unreviewed` re-checks `reviewed_at` and the active id inside the transaction and skips the
 exposure otherwise (so a curation that lands during the prediction is never overwritten, and a prediction failure leaves the
 exposure for the next sweep rather than writing hybrid peaks). `log_event = false` writes no `user_actions` row. The pass sends no ingest frames. It does send the
-`analyze_run` frame, with `id` 0 (no event row), so open clients replace stale peak ids. An error on
-one exposure is logged and does not stop the sweep, and the pass does not write `analysis_error`. `stop_peak_model_pass!` sets `stopped` (cleared by
+`analyze_run` frame, with `id` 0 (no event row), so open clients replace stale peak ids. A sweep repeats (at most 5 rounds) until no stale exposure remains, which also catches an exposure an ingest wrote with the hybrid while a promotion landed. An exposure the model could not write (missing trace, a trace too short, a prediction that always throws) is remembered in memory per model id and not retried until the next promotion or restart; each run logs one summary warning for them instead of one per exposure. An error on one exposure does not stop the sweep, and the pass does not write `analysis_error`. An exposure whose peak set and index inputs come out unchanged sends no `analyze_run` frame, so a second promotion that changes nothing is silent. `stop_peak_model_pass!` sets `stopped` (cleared by
 `start_background!` when it resumes work) and waits for the task. The frame needed a client change: `applyRemoteToCache` invalidated the
 peaks cache of an `analyze_run` frame only when the trace hash changed, and now also when `findpeaks_skipped` is false (detection ran).
 

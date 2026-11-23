@@ -23,7 +23,7 @@ end
 
 function _pmp_with_pass(f)
     _pma_trained()
-    HimalayaUI.PEAK_MODEL_PASS.stopped = false
+    HimalayaUI.set_peak_model_pass_stopped!(false)
     sub = _pmp_subscribe()
     try
         f(sub)
@@ -36,10 +36,11 @@ function _pmp_with_pass(f)
     @test !HimalayaUI.PEAK_MODEL_PASS.running
 end
 
-function _pmp_analyzed(dir; kw...)
+function _pmp_analyzed(dir; shifted = true, kw...)
     b = _pma_db(dir; kw...)
     for e in b.eids
         HimalayaUI.analyze_exposure!(b.db, e, b.adirs[e])
+        shifted && DBInterface.execute(b.db, "UPDATE auto_peaks SET q = q + 0.0001 WHERE exposure_id = ?", [e])
     end
     b
 end
@@ -102,7 +103,6 @@ end
             end
             HimalayaUI.start_peak_model_pass!(b.db)
             HimalayaUI.wait_peak_model_pass()
-            first_exposure = b.eids[1] == target
             @test isequal(_pma_peaks(b.db, target), before)
             @test ismissing(_pma_version(b.db, target).v)
             @test _pma_version(b.db, b.eids[2]).v == id
@@ -242,6 +242,89 @@ end
                 HimalayaUI.PEAK_TRAINING_COMMAND[] = old
                 HimalayaUI.stop_peak_training!()
             end
+        end
+        DBInterface.close!(b.db)
+    end
+end
+
+function _pmp_restart!(b, id)
+    DBInterface.execute(b.db, "UPDATE exposures SET peak_model_version = 999 WHERE reviewed_at IS NULL")
+    HimalayaUI.start_peak_model_pass!(b.db)
+    HimalayaUI.wait_peak_model_pass()
+end
+
+@testset "a second promotion that changes nothing sends no frames" begin
+    mktempdir() do dir
+        b = _pmp_analyzed(dir; n = 2)
+        _pmp_with_pass() do sub
+            id = _pma_add_model!(b.db)
+            HimalayaUI.promote_peak_model!(b.db, id)
+            HimalayaUI.start_peak_model_pass!(b.db)
+            HimalayaUI.wait_peak_model_pass()
+            @test length(_pmp_frames(sub)) == 2
+            _pmp_restart!(b, id)
+            @test isempty(_pmp_frames(sub))
+            @test all(e -> _pma_version(b.db, e).v == id, b.eids)
+        end
+        DBInterface.close!(b.db)
+    end
+end
+
+@testset "exposures the model cannot write are tried once, with one summary warning per sweep" begin
+    mktempdir() do dir
+        b = _pmp_analyzed(dir; n = 3)
+        broken = b.eids[1]
+        _pmp_with_pass() do sub
+            id = _pma_add_model!(b.db)
+            HimalayaUI.promote_peak_model!(b.db, id)
+            rm(joinpath(b.adirs[broken], "x1k1_tot.dat"))
+            @test_logs (:warn, r"model pass") begin
+                HimalayaUI.start_peak_model_pass!(b.db)
+                HimalayaUI.wait_peak_model_pass()
+            end
+            @test_logs begin
+                _pmp_restart!(b, id)
+            end
+            @test all(e -> _pma_version(b.db, e).v == id, b.eids[2:3])
+        end
+        DBInterface.close!(b.db)
+    end
+    mktempdir() do dir
+        b = _pmp_analyzed(dir; n = 3)
+        _pmp_with_pass() do sub
+            id = _pma_add_model!(b.db)
+            HimalayaUI.promote_peak_model!(b.db, id)
+            calls = Ref(0)
+            HimalayaUI.PEAK_MODEL_PREDICT[] = (args...; kw...) -> (calls[] += 1; error("boom"))
+            @test_logs (:warn, r"model pass") begin
+                HimalayaUI.start_peak_model_pass!(b.db)
+                HimalayaUI.wait_peak_model_pass()
+            end
+            @test calls[] == 3
+            @test_logs begin
+                _pmp_restart!(b, id)
+            end
+            @test calls[] == 3
+        end
+        DBInterface.close!(b.db)
+    end
+end
+
+@testset "an exposure made stale during a sweep is picked up by the next round" begin
+    mktempdir() do dir
+        b = _pmp_analyzed(dir; n = 3)
+        _pmp_with_pass() do sub
+            id = _pma_add_model!(b.db)
+            HimalayaUI.promote_peak_model!(b.db, id)
+            n = Ref(0)
+            HimalayaUI.PEAK_MODEL_PREDICT[] = function (model, q, I, σ; kw...)
+                n[] += 1
+                n[] == 2 && DBInterface.execute(b.db, "UPDATE exposures SET peak_model_version = NULL WHERE id = ?", [b.eids[1]])
+                HPM.predict_peaks(model, q, I, σ; kw...)
+            end
+            HimalayaUI.start_peak_model_pass!(b.db)
+            HimalayaUI.wait_peak_model_pass()
+            @test all(e -> _pma_version(b.db, e).v == id, b.eids)
         end
         DBInterface.close!(b.db)
     end

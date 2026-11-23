@@ -1017,7 +1017,8 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
                             req::Union{HTTP.Request, Nothing}=nothing,
                             force_detect::Bool=false,
                             only_unreviewed::Bool=false,
-                            log_event::Bool=true)
+                            log_event::Bool=true,
+                            warn_prediction::Bool=true)
     t0 = time()
 
     rows = sqlrows(DBInterface.execute(db,
@@ -1073,7 +1074,7 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     q_step = grid_step(q)
     fresh_peaks_result = findpeaks_skipped ? nothing : Himalaya.findpeaks(q, I, σ; method = :hybrid)
     production, model_peaks = fresh_peaks_result === nothing ? (nothing, nothing) :
-        predict_model_peaks(db, exposure_id, q, I, σ, fresh_peaks_result, q_step)
+        predict_model_peaks(db, exposure_id, q, I, σ, fresh_peaks_result, q_step; warn = warn_prediction)
 
     # Issue #42: bracket the entire write sequence — diff_update + trace_hash
     # UPDATE + persist_analysis! + the durable analyze_run row — in one tx.
@@ -1101,6 +1102,7 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     # stay closure-local because they're only read inside the same closure.
     local event_result, payload, post_state
     skipped_for_review = false
+    unchanged_by_pass = false
     # F-WIPE W1: persist_analysis! returns the assignment members it had to
     # drop; stays empty on the indexpeaks-skipped path (no rebuild, no wipe).
     dropped_assignment_phases = String[]
@@ -1121,6 +1123,7 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
         q_step === nothing || DBInterface.execute(db,
             "UPDATE exposures SET q_step = ? WHERE id = ?", [q_step, exposure_id])
         detected_peaks = use_model ? model_peaks.result : fresh_peaks_result
+        peaks_before = force_detect ? auto_peak_qs(db, exposure_id) : nothing
         if !findpeaks_skipped
             diff_update_auto_peaks!(db, exposure_id, detected_peaks, I;
                 found_by = use_model ? model_peaks.found_by : "hybrid",
@@ -1140,6 +1143,7 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
         new_inputs_hash    = hash_peak_set(eff)
         # Same predicate as the fast path above (#297/#268): hash match alone.
         indexpeaks_skipped = stored_inputs_hash == new_inputs_hash
+        unchanged_by_pass = force_detect && indexpeaks_skipped && peaks_before == auto_peak_qs(db, exposure_id)
 
         if !indexpeaks_skipped
             peaks_result_for_persist = detected_peaks === nothing ?
@@ -1215,7 +1219,7 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
     # to defer (route handlers wrapped in `with_idempotency` always defer; they
     # own their own enrichment + post-commit enqueue path).
     # `_maybe_broadcast_event!` honors the M0.4 no-op suppression rule.
-    if !defer_broadcast
+    if !defer_broadcast && !unchanged_by_pass
         _maybe_broadcast_event!(db, event_result, "analyze_run",
                                 "exposure", exposure_id, payload, post_state)
     end

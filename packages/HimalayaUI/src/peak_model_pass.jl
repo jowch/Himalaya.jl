@@ -4,17 +4,32 @@ mutable struct PeakModelPassState
     running::Bool
     pending::Bool
     stopped::Bool
+    failed::Set{Tuple{Int, Int}}
 end
 
-const PEAK_MODEL_PASS = PeakModelPassState(ReentrantLock(), nothing, false, false, false)
+const PEAK_MODEL_PASS = PeakModelPassState(ReentrantLock(), nothing, false, false, false, Set{Tuple{Int, Int}}())
+
+const PEAK_MODEL_PASS_ROUNDS = 5
+
+function set_peak_model_pass_stopped!(stopped::Bool)
+    lock(PEAK_MODEL_PASS.lock) do
+        PEAK_MODEL_PASS.stopped = stopped
+        stopped || empty!(PEAK_MODEL_PASS.failed)
+    end
+    nothing
+end
+
+peak_model_pass_stopped() = lock(() -> PEAK_MODEL_PASS.stopped, PEAK_MODEL_PASS.lock)
 
 function peak_model_pass_ids(db::SQLite.DB, model_id::Integer)
+    failed = lock(() -> copy(PEAK_MODEL_PASS.failed), PEAK_MODEL_PASS.lock)
     Int[Int(r.id) for r in sqlrows(DBInterface.execute(db, """
         SELECT id FROM exposures
          WHERE reviewed_at IS NULL AND trace_hash IS NOT NULL AND filename IS NOT NULL
            AND analysis_error IS NULL AND analysis_version = ?
            AND peak_model_version IS NOT ?
-         ORDER BY experiment_id DESC, id""", [ANALYSIS_VERSION, Int(model_id)]))]
+         ORDER BY experiment_id DESC, id""", [ANALYSIS_VERSION, Int(model_id)]))
+        if !((Int(model_id), Int(r.id)) in failed)]
 end
 
 function run_peak_model_pass!(db::SQLite.DB)
@@ -22,18 +37,34 @@ function run_peak_model_pass!(db::SQLite.DB)
         pm = production_detector(bg)
         pm === nothing && return 0
         done = 0
-        for id in peak_model_pass_ids(bg, pm.id)
-            PEAK_MODEL_PASS.stopped && break
-            current = production_detector(bg)
-            (current === nothing || current.id != pm.id) && break
-            try
-                analyze_exposure!(bg, id; force_detect = true, only_unreviewed = true, log_event = false)
-                done += 1
-            catch err
-                @warn "model pass could not re-detect exposure $id" exception = err
+        failures = Int[]
+        errors = String[]
+        for _ in 1:PEAK_MODEL_PASS_ROUNDS
+            ids = peak_model_pass_ids(bg, pm.id)
+            isempty(ids) && break
+            for id in ids
+                peak_model_pass_stopped() && break
+                current = production_detector(bg)
+                (current === nothing || current.id != pm.id) && break
+                wrote = try
+                    analyze_exposure!(bg, id; force_detect = true, only_unreviewed = true, log_event = false,
+                                      warn_prediction = false)
+                    true
+                catch err
+                    length(errors) < 3 && push!(errors, first(sprint(showerror, err), 120))
+                    false
+                end
+                wrote && (done += 1)
+                if !peak_reviewed(bg, id) && only(sqlrows(DBInterface.execute(bg,
+                        "SELECT peak_model_version IS NOT ? AS stale FROM exposures WHERE id = ?", [pm.id, id]))).stale == 1
+                    lock(() -> push!(PEAK_MODEL_PASS.failed, (pm.id, id)), PEAK_MODEL_PASS.lock)
+                    push!(failures, id)
+                end
+                yield()
             end
-            yield()
+            peak_model_pass_stopped() && break
         end
+        isempty(failures) || @warn "model pass could not write the model's peaks for $(length(failures)) exposures; they keep the hybrid's peaks until the next promotion or restart" first_ids = first(failures, 5) errors
         done
     end
 end
