@@ -1175,6 +1175,21 @@ describe("WorkspacePage", () => {
       expect(ops()).toEqual([["addPeak", 101, 0.2], ["setPeakExcluded", 101, 1, false]]);
     });
 
+    it("undoing a peak edit that dropped the call ticks the phase again on the re-fitted candidate", async () => {
+      state.trace = makeTrace(1);
+      state.peaks = peakList(101, { auto: [0.1, 0.12] });
+      state.indices = [index(2, "Pn3m", 0.9), index(3, "Im3m", 0.5)];
+      state.assignment = { exposure_id: 101, state: "indexed", members: [2] };
+      renderAt("/experiments/1/workspace/10");
+      clickPlotAt(0.1);
+      state.peaks = peakList(101, { auto: [{ q: 0.1, excluded: true }, 0.12] });
+      server.indices.set(101, [{ ...index(33, "Pn3m", 0.9), basis: 0.102 }, { ...index(34, "Im3m", 0.5), basis: 0.3 }]);
+      onServer(101, { state: "null", members: [] });
+      await undo();
+      expect(ops()).toEqual([["setPeakExcluded", 101, 1, false], ["addPhase", 101, 33]]);
+      expect(toasts.at(-1)).toBe("Undone: turned off a peak on image 2");
+    });
+
     it("does not record removing a peak that is still saving", async () => {
       state.trace = makeTrace(1);
       state.peaks = [peak(-5, 0.2, "manual")];

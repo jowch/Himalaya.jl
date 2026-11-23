@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import type { Assignment, CompareState, IndexEntry, Peak, SampleBridge, SampleCall, SampleLabel } from "../../src/api";
 import { queryKeys, useAddPeak, useEditOps } from "../../src/queries";
 import { useUndoHistory, type UndoEntry } from "../../src/workspace/undo";
-import { bridgeEntry, compareEntry, combinedEntry, customIndexEntry, labelEntry, peakEntry, tickEntry, unbridgeEntry } from "../../src/workspace/undoEntries";
+import { bridgeEntry, compareEntry, combinedEntry, customIndexEntry, excludeEntry, labelEntry, peakEntry, tickEntry, unbridgeEntry } from "../../src/workspace/undoEntries";
 import { pendingDeferreds } from "../../src/lib/queue/deferred";
 
 const server = {
@@ -65,6 +65,10 @@ function index(id: number, phase: string, basis: number, kind: IndexEntry["kind"
     id, exposure_id: 101, phase, basis, score: 0.9, r_squared: 0.99, lattice_d: 100, 
     status: "candidate", kind, inputs_hash: null, peaks: [], predicted_q: [],
   } as IndexEntry;
+}
+
+function auto(id: number, q: number, excluded: boolean): Peak {
+  return { id, exposure_id: 101, q, intensity: null, prominence: null, sharpness: null, source: "auto", excluded };
 }
 
 function manual(id: number, q: number): Peak {
@@ -191,6 +195,69 @@ describe("undo against the server", () => {
     await act(async () => { sent = await done!; });
     expect(sent).toBe(1);
     expect(firstArgs(api.removeManualPeak)).toEqual([[6, expect.anything()]]);
+  });
+
+  it("undoing a peak edit that dropped the call ticks the phase again once the re-fit has landed", async () => {
+    let land: (p: unknown) => void = () => {};
+    mocked(api.setAutoPeakExcluded).mockImplementation(() => new Promise((resolve) => { land = resolve; }));
+    const { result } = setup();
+    server.peaks = [auto(3, 0.0644, true)];
+    server.assignments.set(101, { exposure_id: 101, state: "null", members: [] });
+    act(() => result.current.history.record(excludeEntry(result.current.ops, {
+      label: "turned off a peak", sampleId: 10, exposureId: 101, q: 0.0644, excluded: true,
+      call: [{ exposureId: 101, phase: "Im3m", basis: 0.0455, kind: "auto" }],
+    })));
+    let done: Promise<number> | undefined;
+    act(() => { done = result.current.history.undo()!.done; });
+    await waitFor(() => expect(api.setAutoPeakExcluded).toHaveBeenCalled());
+    expect(firstArgs(api.setAutoPeakExcluded)).toEqual([[3, false]]);
+    await act(async () => { await Promise.resolve(); });
+    expect(api.addAssignmentPhase).not.toHaveBeenCalled();
+
+    server.indices.set(101, [index(70, "Im3m", 0.0456), index(71, "Pn3m", 0.07)]);
+    await act(async () => { land({ event_id: 1, view_row_id: null }); });
+    let sent = 0;
+    await act(async () => { sent = await done!; });
+    expect(sent).toBe(2);
+    expect(firstArgs(api.addAssignmentPhase)).toEqual([[101, 70]]);
+  });
+
+  it("undoing a peak edit leaves the call alone when the phase is still ticked or no longer fits", async () => {
+    const { result } = setup();
+    server.peaks = [auto(3, 0.0644, true), manual(6, 0.2)];
+    server.indices.set(101, [index(70, "Im3m", 0.0456), index(71, "Pn3m", 0.09)]);
+    server.assignments.set(101, { exposure_id: 101, state: "indexed", members: [70] });
+    act(() => result.current.history.record(excludeEntry(result.current.ops, {
+      label: "turned off a peak", sampleId: 10, exposureId: 101, q: 0.0644, excluded: true,
+      call: [{ exposureId: 101, phase: "Im3m", basis: 0.0455, kind: "auto" }, { exposureId: 101, phase: "Pn3m", basis: 0.07, kind: "auto" }],
+    })));
+    let sent = 0;
+    await act(async () => { sent = await result.current.history.undo()!.done; });
+    expect(sent).toBe(1);
+    expect(api.addAssignmentPhase).not.toHaveBeenCalled();
+  });
+
+  it("undoing a removed peak brings back the call it dropped, and an undo the server already made touches no call", async () => {
+    const { result } = setup();
+    mocked(api.addPeak).mockImplementation(async () => ({ event_id: 1, view_row_id: null, ...manual(6, 0.2) }));
+    server.indices.set(101, [index(80, "Ia3d", 0.05)]);
+    act(() => result.current.history.record(peakEntry(result.current.ops, {
+      label: "removed a peak", sampleId: 10, exposureId: 101, q: 0.2, added: false,
+      call: [{ exposureId: 101, phase: "Ia3d", basis: 0.05, kind: "auto" }],
+    })));
+    await act(async () => { await result.current.history.undo()!.done; });
+    expect(firstArgs(api.addAssignmentPhase)).toEqual([[101, 80]]);
+
+    mocked(api.addAssignmentPhase).mockClear();
+    server.peaks = [manual(6, 0.2)];
+    act(() => result.current.history.record(peakEntry(result.current.ops, {
+      label: "removed a peak", sampleId: 10, exposureId: 101, q: 0.2, added: false,
+      call: [{ exposureId: 101, phase: "Ia3d", basis: 0.05, kind: "auto" }],
+    })));
+    let sent = -1;
+    await act(async () => { sent = await result.current.history.undo()!.done; });
+    expect(sent).toBe(0);
+    expect(api.addAssignmentPhase).not.toHaveBeenCalled();
   });
 
   it("reports nothing sent when the edit is already undone on the server", async () => {
