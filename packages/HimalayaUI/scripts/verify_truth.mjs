@@ -147,6 +147,12 @@ async function bridgeCall() {
 }
 
 const [cmd, ...args] = process.argv.slice(2);
-const commands = { confirm, confirmed, unchanged, target, custom, twin, "twin-state": twinState, "bridge-call": bridgeCall };
+function broken(file) {
+  const r = read(file);
+  const invariants = Object.entries(r.invariants ?? {}).filter(([, v]) => v.ok === false).map(([name, v]) => ({ invariant: name, violations: v.violations }));
+  report({ ok: false, gate: r.gate, invariants, ...(r.traces?.ok === false ? { traces: r.traces } : {}), ...((r.strays ?? []).length ? { strays: r.strays } : {}) });
+}
+
+const commands = { broken, confirm, confirmed, unchanged, target, custom, twin, "twin-state": twinState, "bridge-call": bridgeCall };
 if (!commands[cmd]) report({ ok: false, error: `usage: verify_truth.mjs ${Object.keys(commands).join("|")} ...` });
 await commands[cmd](...args);

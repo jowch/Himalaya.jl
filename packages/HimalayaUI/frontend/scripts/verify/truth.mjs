@@ -284,7 +284,7 @@ export function compareTraces(held, problems, notice) {
   };
 }
 
-export function compareTruth(truthRows, appSamples, { strict = false, expect = null, held = new Set() } = {}) {
+export function compareTruth(truthRows, appSamples, { strict = false, expect = null, held = new Set(), gate = null } = {}) {
   const ownerOf = new Map();
   for (const row of truthRows) for (const base of words(row.bases)) ownerOf.set(base, row.sample);
   const appByTruth = new Map();
@@ -391,8 +391,8 @@ export function compareTruth(truthRows, appSamples, { strict = false, expect = n
   const invariants = rollupInvariants(samples, ui);
   const brokenInvariants = Object.entries(invariants).filter(([, v]) => v.ok === false).map(([k]) => k);
   return {
-    ok: failed.length === 0 && strays.length === 0 && brokenInvariants.length === 0,
-    gate: strict ? "truth" : "auto",
+    ok: (gate === "invariants" || failed.length === 0) && strays.length === 0 && brokenInvariants.length === 0,
+    gate: gate === "invariants" ? "invariants" : strict ? "truth" : "auto",
     expect: expect ? { [expect]: EXPECTATIONS[expect] } : null,
     summary: {
       samples: samples.length,
@@ -491,6 +491,9 @@ function loadTruth(cfg, flags) {
 }
 
 export async function checkTruth(cfg, flags, { views = readViews } = {}) {
+  const gate = flags.gate ?? null;
+  if (gate !== null && gate !== "invariants") throw new UsageError(`unknown --gate ${gate}`, "use --gate invariants, or leave it out to gate on TRUTH too");
+  if (gate !== null && flags.strict) throw new UsageError("--gate invariants and --strict disagree", "--strict gates on TRUTH's generated phases; --gate invariants ignores TRUTH");
   const truth = loadTruth(cfg, flags);
   const experimentId = await resolveExperiment(cfg, flags);
   const expect = flags.expect ?? null;
@@ -519,7 +522,7 @@ export async function checkTruth(cfg, flags, { views = readViews } = {}) {
   const problems = await getJson(cfg.apiBase, `/api/experiments/${experimentId}/problems`);
   const notices = flags.ui ? [...(opened?.values() ?? [])].map((v) => v.workspace_notice).filter((v) => v !== undefined) : [];
   const traces = compareTraces(held, problems.exposures ?? [], notices.length ? notices[notices.length - 1] : undefined);
-  const compared = compareTruth(truth, app, { strict: Boolean(flags.strict), expect, held: heldSet });
+  const compared = compareTruth(truth, app, { strict: Boolean(flags.strict), expect, held: heldSet, gate });
   const result = { experiment_id: experimentId, ...compared, ok: compared.ok && traces.ok, traces };
   if (flags.ui) result.workspace_read = workspaceRead;
   return result;

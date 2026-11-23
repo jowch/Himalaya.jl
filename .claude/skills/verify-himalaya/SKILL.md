@@ -41,7 +41,7 @@ Read [references/features/README.md](references/features/README.md) first. It is
 | `api <METHOD> </api/path> [--data json] [--dry-run]` | Read or change backend state directly. Writes are real; use `--dry-run` to check the request first. |
 | `deliver-late` | Move the traces `seed --reset --late-trace` held back in `<demo>/late/` into `tot_files`, as the integration pipeline would; then open the experiment and run `check-truth`. |
 | `count --selector <css>` | How many elements on the open page match a selector, with the text of the first 20. Reads the page as it is: no navigation, no reload. |
-| `check-truth [--strict] [--ui]` | Compare what the app shows with the demo's `TRUTH.csv`, and report the invariants. `--ui` reads the status, the opening frame and the kept count the workspace shows, in the browser. |
+| `check-truth [--strict \| --gate invariants] [--ui]` | Compare what the app shows with the demo's `TRUTH.csv`, and report the invariants. `--ui` reads the status, the opening frame and the kept count the workspace shows, in the browser. `--gate invariants` still reports TRUTH problems but fails only on a broken invariant, a stray or a trace problem. Use it after a deliberate edit that moves the app away from TRUTH, and never swallow check-truth's exit code with `\|\| true` (`scripts/verify/test/exit-codes.test.mjs` fails the build on it). |
 | `triage [--undo] [--dry-run]` | Drop the frames in TRUTH's `drop` column through the same endpoint the workspace's Drop (X) uses; `--undo` keeps them again, including any a person dropped by hand. |
 
 ## check-truth
