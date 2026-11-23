@@ -60,6 +60,7 @@ Every row also needs the date it was decided, as `YYYY-MM-DD`.
 | word-frame | The UI calls one detector image a "frame". | 2026-11-21 | superseded | word-image, 2026-11-22 (PR 480) |
 | word-label | "Tag" is renamed "Label". | 2026-11-21 | built | packages/HimalayaUI/frontend/test/eslint-ui-copy.test.ts › enforces the house vocabulary in user-facing copy only |
 | word-assignment | The tools column's Call section is titled "Assignment", with Custom index in its header. Other uses of "call" stay. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › the Custom index button sits in the Assignment header and stays there while the custom index it opens replaces the list |
+| word-page-title | The browser tab is titled "Himalaya". | 2026-11-23 | built | packages/HimalayaUI/frontend/test/pageTitle.test.ts › the browser tab is titled Himalaya |
 
 ## Look and layout
 
@@ -133,6 +134,9 @@ Every row also needs the date it was decided, as `YYYY-MM-DD`.
 | combine-restore-unselected | A dropped image that is restored comes back unselected, unless nothing else is selected. Undo of a drop puts back the selection it had. | 2026-11-23 | built | packages/HimalayaUI/test/test_combine.jl › selection, drop and restore routes |
 | combine-beam-off-deselected | Beam-off images start deselected, so they are averaged in only when ticked. | 2026-11-23 | built | packages/HimalayaUI/test/test_ingest_reconcile.jl › a beam-off image starts left out of the selection, at ingest and when its trace lands late |
 | combine-no-cross-setup | Images never combine across setups. | 2026-11-22 | built | packages/HimalayaUI/test/test_combine.jl › a bridged sample averages only its own images |
+| img-half-rings | Predicted rings are dashed half-circles. The cut runs through the beam centre along the image's long axis (top/bottom on a wide image, left/right on a tall one), and the rings take the narrower half, so the bare half shows the image out to the highest q. When the beam lies off the image along the cut, the rings take the half that faces the image. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/lib/detectorRings.test.ts › cuts a wide image across its height, so the rings and the bare image both span its full width |
+| img-rings-enlarged | Predicted rings show only on the enlarged image, never on the image cards, which are too small to judge them. They are drawn for the selected phases, including a committed custom index, plus the custom index draft while it is open. Hovering a candidate does not draw rings. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › the enlarged image draws half-rings for the ticked phases only, never for a hovered candidate, and the image cards draw none |
+| img-rings-hold | Pressing and holding the enlarged image hides the rings until the button comes up, to compare against the bare image. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/workspace/detectorRings.test.tsx › pressing and holding the image hides the rings until the button comes up or the pointer leaves |
 
 ## Bridges and beamtimes
 

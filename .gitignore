@@ -91,3 +91,4 @@ tools/peak-classifier/models/
 tools/peak-classifier/features/
 tools/peak-classifier/evaluations/
 *.pcmodel
+*.setup-bak
