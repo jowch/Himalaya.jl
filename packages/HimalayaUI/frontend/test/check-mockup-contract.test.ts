@@ -9,7 +9,12 @@ const HEAD = [
   "|---|---|---|---|",
 ];
 
-const files: Record<string, string> = { "test/x.test.ts": 'it("does the thing", () => {});' };
+const files: Record<string, string> = {
+  "test/x.test.ts": 'it("does the thing", () => {});',
+  "test/skip.test.ts": 'it.skip("is skipped", () => {});\nit.todo("is todo");\nit.only("is only", () => {});\ntest.fixme("is fixme", () => {});',
+  "test/long.test.ts": 'it("does the thing and more", () => {});',
+  "e2e/x.spec.ts": "test('the user sees it', async () => {});\ntest.describe(\"group\", () => {});",
+};
 const read = (p: string): string | undefined => files[p];
 
 function problems(rows: string[], head = HEAD): string[] {
@@ -39,6 +44,17 @@ describe("checkContract", () => {
     expect(problems(["| a-b | Does it | built | test/x.test.ts › does another thing |"])[0]).toMatch(/a-b.*does not contain the test "does another thing"/);
     expect(problems(["| a-b | Does it | built | test/gone.test.ts › does the thing |"])[0]).toMatch(/a-b.*test\/gone\.test\.ts does not exist/);
     expect(problems(["| a-b | Does it | built | some prose |"])[0]).toMatch(/a-b.*path › test title/);
+  });
+
+  it("matches the whole test title, not a longer title that contains it", () => {
+    expect(problems(["| a-b | Does it | built | test/long.test.ts › does the thing |"])[0]).toMatch(/a-b.*does not contain the test "does the thing"/);
+    expect(problems(["| a-b | Does it | built | e2e/x.spec.ts › the user sees it |"])).toEqual([]);
+  });
+
+  it("rejects a test that is skipped, todo, focused or marked fixme", () => {
+    for (const [title, mod] of [["is skipped", "skip"], ["is todo", "todo"], ["is only", "only"], ["is fixme", "fixme"]]) {
+      expect(problems([`| a-b | Does it | built | test/skip.test.ts › ${title} |`])[0]).toMatch(new RegExp(`a-b.*"${title}" is marked \\.${mod}`));
+    }
   });
 
   it("needs a decision for superseded and an owner for planned", () => {
