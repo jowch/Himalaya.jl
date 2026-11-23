@@ -151,7 +151,7 @@ export function countTsComments(content) {
 
 const CONTINUES = new Set(["(", ",", "=", "[", "{", "+", "-", "*", "/", "|", "&", "<", ">", "~", ":", "?", "$"]);
 const DEFINITION =
-  /^[ \t]*(?:function\b|macro\b|struct\b|mutable\s+struct\b|abstract\s+type\b|primitive\s+type\b|const\b|module\b|baremodule\b|global\b|@\w|[\w.!]+(?:\{[^}\n]*\})?\([^\n]*\)[^\n=]*=(?!=)|(?!(?:end|else|elseif|catch|finally|return|nothing|true|false|break|continue)\b)[A-Za-z_][\w!]*[ \t]*(?:\n|$))/;
+  /^[ \t]*(?:function\b|macro\b|struct\b|mutable\s+struct\b|abstract\s+type\b|primitive\s+type\b|const\b|module\b|baremodule\b|global\b|@\w|[^\s=#][^\n=]*\([^\n]*\)[^\n=]*=(?!=)|[A-Za-z_][\w!]*\s*::|(?!(?:end|else|elseif|catch|finally|return|nothing|true|false|break|continue)\b)[A-Za-z_][\w!]*[ \t]*(?:\n|$))/;
 const IDENT_START = /[A-Za-z_]/;
 const IDENT = /[\w!]/;
 

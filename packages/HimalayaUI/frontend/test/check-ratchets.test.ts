@@ -143,6 +143,18 @@ describe("countJuliaComments", () => {
     expect(countJuliaComments(['raw"""', "Doc \\alpha.", '"""', "f(x) = 1"].join("\n"))).toBe(3);
   });
 
+  it("counts one-line docstrings on fields, operator methods and callable structs", () => {
+    expect(countJuliaComments(["struct S", '    "doc"', "    x::Int", "end"].join("\n"))).toBe(1);
+    expect(countJuliaComments(["Base.@kwdef struct C", '    "doc"', "    x::Float64 = 1.0", "end"].join("\n"))).toBe(1);
+    expect(countJuliaComments(['"doc"', "Base.:+(a::S, b::S) = a"].join("\n"))).toBe(1);
+    expect(countJuliaComments(['"doc"', "(s::S)(x) = 1"].join("\n"))).toBe(1);
+  });
+
+  it("does not count a string before a call or a comparison", () => {
+    expect(countJuliaComments(["begin", '    "x"', "    push!(v, k = 1)", "end"].join("\n"))).toBe(0);
+    expect(countJuliaComments(["begin", '    "x"', "    f(a) == b", "end"].join("\n"))).toBe(0);
+  });
+
   it("does not count a string returned at the end of a block", () => {
     expect(countJuliaComments(["function f()", '    "done"', "end"].join("\n"))).toBe(0);
     expect(countJuliaComments(['x = f(', '    "arg"', ")"].join("\n"))).toBe(0);
