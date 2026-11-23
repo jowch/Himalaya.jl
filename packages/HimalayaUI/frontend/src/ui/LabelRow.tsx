@@ -21,7 +21,6 @@ interface Props {
   onOpenColor: (label: string) => void;
   onCloseColor: () => void;
   onSetColor: (label: string, color: LabelColor | null) => void;
-  note?: string | undefined;
 }
 
 const GAP = 6;
@@ -110,7 +109,6 @@ export function LabelRow({
   onOpenColor,
   onCloseColor,
   onSetColor,
-  note,
 }: Props): JSX.Element {
   const last = labels.filter((t) => t.state === "confirmed").at(-1);
   const box = useRef<HTMLDivElement | null>(null);
@@ -197,13 +195,6 @@ export function LabelRow({
 
   return (
     <div className="relative flex h-6 w-full min-w-0 flex-nowrap items-center justify-end gap-1.5" data-testid="workspace-labels">
-      {note && (
-        <span className="relative min-w-0 flex-1 self-stretch @max-[34rem]:hidden">
-          <Tooltip content={note} overflowOnly>
-            <span className="absolute inset-0 truncate whitespace-nowrap text-base leading-6 text-ink-faint">{note}</span>
-          </Tooltip>
-        </span>
-      )}
       <div ref={box} style={{ flexBasis: natural }} className={"flex shrink grow-0 flex-nowrap items-center justify-end gap-1.5 overflow-hidden " + (labels.length > 0 ? "min-w-11" : "min-w-0")} data-testid="workspace-label-chips">
         {labels.slice(0, shown).map((t) => (
           <Chip key={t.id} {...chipProps(t)} />
