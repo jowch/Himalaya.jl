@@ -9,6 +9,7 @@ const SETUP_CONFIG_COLUMNS = (
 )
 
 const MIGRATION_SETUP_IDS = "setup_ids_v1"
+const MIGRATION_SETUP_MODE = "setup_mode_v1"
 
 const RETIRED_EXPERIMENT_COLUMNS = (
     SETUP_CONFIG_COLUMNS...,
@@ -38,6 +39,8 @@ function create_setup!(db::SQLite.DB;
         display_name = nothing,
         position::Integer = 0,
         included::Bool = true,
+        mode::Union{AbstractString,Nothing} = nothing,
+        mode_source::Union{AbstractString,Nothing} = nothing,
         image_pattern = nothing, metadata_pattern = nothing, integration_pattern = nothing,
         energy_kev = nothing, energy_kev_source = "default",
         flight_path_m = nothing, flight_path_m_source = "default",
@@ -45,19 +48,25 @@ function create_setup!(db::SQLite.DB;
         beam_center_y = nothing, beam_center_y_source = "default",
         pixel_size_um = nothing, pixel_size_um_source = "default",
         q_units = nothing, q_units_source = "default")
+    mode === nothing || mode in SETUP_MODES ||
+        throw(ArgumentError("mode must be one of $(join(SETUP_MODES, ", "))"))
+    source = mode === nothing ? "default" : something(mode_source, "user")
+    source in MODE_SOURCES ||
+        throw(ArgumentError("mode_source must be one of $(join(MODE_SOURCES, ", "))"))
     for (label, v) in (("image", image_pattern), ("metadata", metadata_pattern), ("integration", integration_pattern))
         bad = pattern_problem(label, v)
         bad === nothing || throw(ArgumentError(bad))
     end
     res = DBInterface.execute(db, """
         INSERT INTO setups
-            (experiment_id, folder, display_name, position, included, root_dir, data_dir, analysis_dir,
+            (experiment_id, folder, display_name, position, included, mode, mode_source, root_dir, data_dir, analysis_dir,
              image_pattern, metadata_pattern, integration_pattern,
              energy_kev, energy_kev_source, flight_path_m, flight_path_m_source,
              beam_center_x, beam_center_x_source, beam_center_y, beam_center_y_source,
              pixel_size_um, pixel_size_um_source, q_units, q_units_source)
-        VALUES (?,?,?,?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?)
-    """, [experiment_id, folder, display_name, position, Int(included), String(root_dir),
+        VALUES (?,?,?,?,?,?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?)
+    """, [experiment_id, folder, display_name, position, Int(included),
+          mode === nothing ? missing : String(mode), source, String(root_dir),
           String(data_dir), String(analysis_dir),
           image_pattern, metadata_pattern, integration_pattern,
           energy_kev, energy_kev_source, flight_path_m, flight_path_m_source,
@@ -161,6 +170,20 @@ function _setup_keyed_indexes!(db::SQLite.DB)
     nothing
 end
 
+function _add_setup_mode!(db::SQLite.DB)
+    _table_exists(db, "setups") || return nothing
+    _migrated(db, MIGRATION_SETUP_MODE) && return nothing
+    existing = cols_of(db, "setups")
+    "mode" in existing || DBInterface.execute(db, "ALTER TABLE setups ADD COLUMN mode TEXT")
+    "mode_source" in existing ||
+        DBInterface.execute(db, "ALTER TABLE setups ADD COLUMN mode_source TEXT DEFAULT 'default'")
+    DBInterface.execute(db, """
+        UPDATE setups SET mode = 'capillary', mode_source = 'migration'
+         WHERE mode IS NULL AND EXISTS (SELECT 1 FROM exposures e WHERE e.setup_id = setups.id)""")
+    _record_migration!(db, MIGRATION_SETUP_MODE)
+    nothing
+end
+
 function _drop_retired_experiment_columns!(db::SQLite.DB)
     existing = cols_of(db, "experiments")
     for c in RETIRED_EXPERIMENT_COLUMNS
@@ -179,6 +202,7 @@ function migrate_setups!(db::SQLite.DB; finish::Bool = true)
                 _backfill_setup_ids!(db)
                 _record_migration!(db, MIGRATION_SETUP_IDS)
             end
+            _add_setup_mode!(db)
             _setup_keyed_indexes!(db)
             _drop_retired_experiment_columns!(db)
         end

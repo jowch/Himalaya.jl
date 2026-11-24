@@ -127,6 +127,13 @@ Every row also needs the date it was decided, as `YYYY-MM-DD`.
 | palette-settings | Settings sit behind one palette entry, each edited in its own form. | 2026-11-21 | built | packages/HimalayaUI/frontend/test/workspace/workspacePalette.test.ts › lists each setup on the Settings page and saves a rename or a hide from its form |
 | palette-custom-index | The custom index modal moves into the palette as a widget. | 2026-11-21 | planned | thread "Design palette with inline widgets" |
 
+## Autosampler setups
+
+| id | Decision | Decided | Status | Evidence |
+|---|---|---|---|---|
+| autosampler-mode | Autosampler setups are a dedicated mode per setup: one sample per acquisition, read from its averaged `_tot.dat`. | 2026-11-23 | built | packages/HimalayaUI/test/test_setup_mode.jl › an undecided setup with the wrong patterns is put right on its first scan |
+| autosampler-no-analysis | Automatic analysis is off for autosampler setups. | 2026-11-23 | built | packages/HimalayaUI/test/test_setup_mode.jl › nothing is analyzed and nothing is reported as a problem |
+
 ## Images and combining them
 
 | id | Decision | Decided | Status | Evidence |

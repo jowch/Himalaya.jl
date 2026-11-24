@@ -188,6 +188,7 @@ function combined_due(db::SQLite.DB, cid::Int)::Bool
 end
 
 function refresh_selection!(db::SQLite.DB, sample_id::Int)::Union{Int,Nothing}
+    is_autosampler_sample(db, sample_id) && return analyzed_exposure_id(db, sample_id)
     sel = selected_image_ids(db, sample_id)
     length(sel) < MIN_COMBINED_SOURCES && return isempty(sel) ? nothing : sel[1]
     _all_traced(db, sel) || return nothing

@@ -19,6 +19,8 @@
     @test sts[1].integration_pattern == "{name}_tot.dat"
     @test sts[1].trace_normalisation == "i2"
     @test sts[1].normalisation_base == 2.5e7
+    @test sts[1].mode == "capillary"
+    @test sts[1].mode_source == "user"
     @test length(setups(db)) == 1
     @test isempty(setups(db; experiment=999999))
 

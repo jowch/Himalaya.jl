@@ -52,7 +52,13 @@ _body_get(body, k) = get(body, k, get(body, string(k), nothing))
 
 _json_error(status, d) = HTTP.Response(status, ["Content-Type" => "application/json"], JSON3.write(d))
 
-function _setup_spec(spec; default_analysis_dir)
+function _mode_problem(v)
+    v === nothing && return nothing
+    v isa AbstractString && v in SETUP_MODES && return nothing
+    "mode must be one of $(join(SETUP_MODES, ", "))"
+end
+
+function _setup_spec(spec; default_analysis_dir, data_dir)
     pats = something(_body_get(spec, :patterns), Dict())
     ppat(k) = (v = _body_get(pats, k); v === nothing ? nothing : String(v))
     geo = something(_body_get(spec, :geometry), Dict())
@@ -66,6 +72,19 @@ function _setup_spec(spec; default_analysis_dir)
         :image_pattern => ppat(:image), :metadata_pattern => ppat(:metadata),
         :integration_pattern => ppat(:integration),
         :included => included === nothing ? true : included === true)
+    raw_root = _body_get(spec, :root)
+    given_mode = _body_get(spec, :mode)
+    mode = given_mode === nothing ? detect_setup_mode(data_dir) : String(given_mode)
+    out[:mode] = mode
+    out[:mode_source] = given_mode !== nothing ? "user" : (mode === nothing ? "default" : "detected")
+    if mode == "autosampler"
+        layout = autosampler_layout(raw_root isa AbstractString ? String(raw_root) : setup_root_dir(data_dir))
+        ad === nothing && (out[:analysis_dir] = layout.dir)
+        for (k, v) in ((:image_pattern, layout.image_pattern), (:metadata_pattern, layout.metadata_pattern),
+                       (:integration_pattern, layout.integration_pattern))
+            out[k] === nothing && (out[k] = v)
+        end
+    end
     for k in (:beam_center_x, :beam_center_y, :flight_path_m, :pixel_size_um, :energy_kev)
         v = gnum(k)
         out[k] = v
@@ -87,6 +106,8 @@ function _malformed_setup(s)
     end
     inc = _body_get(s, :included)
     inc === nothing || inc isa Bool || return "included must be true or false"
+    bad_mode = _mode_problem(_body_get(s, :mode))
+    bad_mode === nothing || return bad_mode
     for k in (:patterns, :geometry)
         v = _body_get(s, k)
         v === nothing || _is_obj(v) || return "$k must be an object"
@@ -120,13 +141,13 @@ function _checked_data_dir(db, raw)
 end
 
 function _create_one_setup_experiment(db, body)
-    bad = _patterns_problem(_body_get(body, :patterns))
+    bad = something(_patterns_problem(_body_get(body, :patterns)), _mode_problem(_body_get(body, :mode)), Some(nothing))
     bad === nothing || return _json_error(400, Dict(:error => bad))
     data_dir = _checked_data_dir(db, something(_body_get(body, :data_dir), _body_get(body, :path), Some(nothing)))
     data_dir isa HTTP.Response && return data_dir
     name_val = _body_get(body, :name)
     exp_name = name_val !== nothing ? String(name_val) : basename(rstrip(data_dir, '/'))
-    spec = _setup_spec(body; default_analysis_dir = _default_analysis_dir(data_dir))
+    spec = _setup_spec(body; default_analysis_dir = _default_analysis_dir(data_dir), data_dir)
     delete!(spec, :included)
     exp_id = lock(_DB_WRITE_LOCK) do
         SQLite.transaction(db) do
@@ -148,7 +169,7 @@ function _beamtime_setup_specs(db, path, raw_setups)
         data_dir isa HTTP.Response && return data_dir
         any(p -> _same_dir(p[:data_dir], data_dir), specs) && return _json_error(400,
             Dict(:error => "two setups use the same data folder", :path => data_dir))
-        spec = _setup_spec(s; default_analysis_dir = _default_analysis_dir(data_dir))
+        spec = _setup_spec(s; default_analysis_dir = _default_analysis_dir(data_dir), data_dir)
         spec[:data_dir] = data_dir
         root = _body_get(s, :root)
         root_dir = root === nothing ? setup_root_dir(data_dir) : _canonical_dir(String(root))

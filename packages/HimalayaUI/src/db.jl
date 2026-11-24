@@ -106,7 +106,9 @@ CREATE TABLE IF NOT EXISTS setups (
     q_units_source       TEXT DEFAULT 'default',
     created_at           DATETIME DEFAULT CURRENT_TIMESTAMP,
     trace_normalisation  TEXT,
-    normalisation_base   REAL
+    normalisation_base   REAL,
+    mode                 TEXT,
+    mode_source          TEXT DEFAULT 'default'
 );
 
 CREATE TABLE IF NOT EXISTS loads (
