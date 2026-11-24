@@ -26,6 +26,7 @@ function input(over: Partial<WorkspacePaletteInput> = {}): WorkspacePaletteInput
     customIndex: noop,
     formFactor: { on: false, toggle: noop },
     views: { options: PLOT_VIEWS, current: "log", set: noop },
+    sort: { current: "measured", set: noop },
     resetZoom: noop,
     comparisons: { shown: true, toggle: noop },
     rescan: undefined,
@@ -97,7 +98,7 @@ describe("workspacePalette", () => {
     const { pages, groups } = workspacePalette(
       input({ canEdit: false, candidates: { list: [candidate(1, 100)], ticked: new Set(), tick: vi.fn() }, labels: { known: [known("x")], colorFor: () => "plum", toggle: vi.fn(), create: vi.fn(), recolour: vi.fn() } }),
     );
-    expect(Object.keys(pages).sort()).toEqual(["compare", "theme", "view"]);
+    expect(Object.keys(pages).sort()).toEqual(["compare", "sort", "theme", "view"]);
     expect(groups.flatMap((g) => g.items.map((i) => i.id))).not.toContain("colours");
     const ids = groups.flatMap((g) => g.items.map((i) => i.id));
     for (const id of ["label", "bridge", "tick", "form-factor"]) expect(ids).not.toContain(id);
@@ -110,6 +111,17 @@ describe("workspacePalette", () => {
     expect(all.find((i) => i.id === "theme")?.hint).toBe("Dark");
     expect(pages.view!.items.filter((i) => i.hint === "Current").map((i) => i.label)).toEqual(["q²I (Kratky)"]);
     expect(pages.theme!.items.filter((i) => i.hint === "Current").map((i) => i.label)).toEqual(["Dark"]);
+  });
+
+  it("sorts the sample list from a page that names the current order and is found by typing order or alphabetical", () => {
+    const set = vi.fn();
+    const { pages, groups } = workspacePalette(input({ sort: { current: "name", set } }));
+    const row = groups.find((g) => g.title === "Experiment")!.items.find((i) => i.id === "sort")!;
+    expect(row).toMatchObject({ label: "Sort samples by…", hint: "Name", page: "sort" });
+    expect(row.keywords).toEqual(expect.arrayContaining(["order", "alphabetical"]));
+    expect(pages.sort!.items.map((i) => [i.label, i.hint])).toEqual([["Measured", "Order the images were taken"], ["Name", "Current"]]);
+    pages.sort!.items[0]!.run!();
+    expect(set).toHaveBeenCalledWith("measured");
   });
 
   it("keeps removing the experiment type-only and marked as danger", () => {

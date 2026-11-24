@@ -58,3 +58,17 @@ test("Enter in the sample filter opens the first match", async ({ page }) => {
   await expect(page).toHaveURL(/\/experiments\/17\/workspace\/42$/);
   await expect(page.locator("[data-testid='workspace-samples'] [aria-current='true']")).toHaveText(/JC003/);
 });
+
+test("switching the sample sort reorders the list without moving or resizing the filter or the sort button", async ({ page }) => {
+  await page.goto("/experiments/17/workspace/40");
+  const names = page.locator("[data-testid='workspace-samples'] [data-sample-id]");
+  await expect(names).toHaveCount(4);
+  const filter = page.getByRole("searchbox", { name: "Filter samples" });
+  const before = { filter: await filter.boundingBox(), sort: await page.getByTestId("sample-sort").boundingBox() };
+  await page.getByRole("button", { name: "Sort samples by Measured" }).click();
+  await page.getByRole("menuitemradio", { name: /^Name/ }).click();
+  await expect(page.getByRole("button", { name: "Sort samples by Name" })).toBeVisible();
+  await expect(names.first()).toHaveText(/BUF001/);
+  expect(await filter.boundingBox()).toEqual(before.filter);
+  expect(await page.getByTestId("sample-sort").boundingBox()).toEqual(before.sort);
+});

@@ -101,6 +101,9 @@ import { sampleEyebrow } from "./sampleEyebrow";
 import { Note } from "../ui/Note";
 import { WorkspaceLayout } from "../ui/WorkspaceLayout";
 import { SampleList } from "../ui/SampleList";
+import { SortMenu } from "../ui/SortMenu";
+import { SAMPLE_SORTS, sortSamples } from "./sampleSort";
+import { useSampleSort } from "./sampleSortChoice";
 import { ExperimentNotice } from "../ui/ExperimentNotice";
 import { ProblemList } from "../ui/ProblemList";
 import { RemoveExperimentDialog } from "../ui/RemoveExperimentDialog";
@@ -248,14 +251,11 @@ export function WorkspacePage(): JSX.Element {
     () => (setupsKnown ? (corpus.data ?? []).filter((s) => s.experiment_id === experimentId) : []),
     [setupsKnown, corpus.data, experimentId],
   );
+  const [sampleSort, setSampleSort] = useSampleSort(experimentId);
   const samples = useMemo(() => {
     const rank = (s: CorpusSample): number => setupOrder.get(s.setup_id ?? -1) ?? 0;
-    return inExperiment
-      .filter((s) => s.setup_id == null || !hiddenSetups.has(s.setup_id))
-      .map((s, i) => ({ s, i }))
-      .sort((a, b) => rank(a.s) - rank(b.s) || a.i - b.i)
-      .map(({ s }) => s);
-  }, [inExperiment, setupOrder, hiddenSetups]);
+    return sortSamples(inExperiment.filter((s) => s.setup_id == null || !hiddenSetups.has(s.setup_id)), sampleSort, rank);
+  }, [inExperiment, setupOrder, hiddenSetups, sampleSort]);
   const hiddenSamples = useMemo(
     () => new Set(inExperiment.filter((s) => s.setup_id != null && hiddenSetups.has(s.setup_id)).map((s) => s.id)),
     [inExperiment, hiddenSetups],
@@ -1558,6 +1558,7 @@ export function WorkspacePage(): JSX.Element {
       },
     },
     views: { options: PLOT_VIEWS, current: view, set: setView },
+    sort: { current: sampleSort, set: setSampleSort },
     resetZoom: () => setXDomain(null),
     comparisons: { shown: refsOn, toggle: () => setRefsOn((v) => !v) },
     ...(canChooseBackground && bgEntry
@@ -1712,7 +1713,7 @@ export function WorkspacePage(): JSX.Element {
           onHelp={() => setHelpOpen(true)}
         />
       }
-      nav={<SampleList samples={visible} setupHeaders={setupHeaders} currentId={sampleId} filter={filter} onFilter={setFilter} onPick={goSample} onToggleCompare={toggleCompare} compareColors={compareColors} hiddenCompares={shownCompareSet} bridgeCounts={counts} reviewable={reviewable} progress={<SampleProgress marks={reviewMarks} />} listHidden={sampleListHidden} onToggleList={() => setSampleListHidden(!sampleListHidden)} notice={<ExperimentNotice progress={ingestProgress} ingestFailed={ingestFailed} waiting={waitingForTrace} failed={failedAnalyses} unrecognized={unrecognizedSetups} onDetails={() => setProblemsOpen(true)} />} />}
+      nav={<SampleList samples={visible} setupHeaders={setupHeaders} currentId={sampleId} filter={filter} onFilter={setFilter} onPick={goSample} onToggleCompare={toggleCompare} compareColors={compareColors} hiddenCompares={shownCompareSet} bridgeCounts={counts} reviewable={reviewable} progress={<SampleProgress marks={reviewMarks} />} sortMenu={<SortMenu what="samples" current={sampleSort} choices={SAMPLE_SORTS} onSort={setSampleSort} />} listHidden={sampleListHidden} onToggleList={() => setSampleListHidden(!sampleListHidden)} notice={<ExperimentNotice progress={ingestProgress} ingestFailed={ingestFailed} waiting={waitingForTrace} failed={failedAnalyses} unrecognized={unrecognizedSetups} onDetails={() => setProblemsOpen(true)} />} />}
       main={
         sample ? (
           <>

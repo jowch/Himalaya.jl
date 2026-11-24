@@ -17,6 +17,7 @@ interface TooltipProps {
   shortcut?: string;
   side?: Side;
   overflowOnly?: boolean;
+  describes?: boolean;
 }
 
 type TriggerProps = {
@@ -86,7 +87,7 @@ export function placeTooltip(
   return { top: Math.max(MARGIN, top), left, side };
 }
 
-export function Tooltip({ content, children, shortcut, side = "top", overflowOnly = false }: TooltipProps): JSX.Element {
+export function Tooltip({ content, children, shortcut, side = "top", overflowOnly = false, describes = true }: TooltipProps): JSX.Element {
   const id = useId();
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number; side: Side } | null>(null);
@@ -193,7 +194,7 @@ export function Tooltip({ content, children, shortcut, side = "top", overflowOnl
   const childRef = (children as unknown as { ref?: Ref<HTMLElement> }).ref;
   const namesTrigger = overflowOnly || (typeof content === "string" && own["aria-label"] === content);
   const repeatsText = typeof content === "string" && (triggerRef.current?.textContent ?? "").includes(content);
-  const describes = open && !empty && !namesTrigger && !repeatsText;
+  const describesTrigger = describes && open && !empty && !namesTrigger && !repeatsText;
   const trigger = cloneElement(children, {
     ref: (node: HTMLElement | null) => {
       triggerRef.current = node;
@@ -226,7 +227,7 @@ export function Tooltip({ content, children, shortcut, side = "top", overflowOnl
       suppressed.current = null;
       close();
     },
-    ...(describes ? { "aria-describedby": [own["aria-describedby"], id].filter(Boolean).join(" ") } : {}),
+    ...(describesTrigger ? { "aria-describedby": [own["aria-describedby"], id].filter(Boolean).join(" ") } : {}),
   } as TriggerProps);
 
   return (

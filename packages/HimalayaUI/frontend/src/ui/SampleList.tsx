@@ -26,6 +26,7 @@ interface Props {
   listHidden?: boolean;
   onToggleList?: () => void;
   progress?: ReactNode;
+  sortMenu?: ReactNode;
 }
 
 const ANALYSIS_GAP = {
@@ -72,7 +73,7 @@ function runLength(samples: readonly CorpusSample[], start: number): number {
   return n;
 }
 
-export function SampleList({ samples, setupHeaders, currentId, filter, onFilter, onPick, onToggleCompare, compareColors, hiddenCompares, bridgeCounts, reviewable, notice, progress, listHidden = false, onToggleList }: Props): JSX.Element {
+export function SampleList({ samples, setupHeaders, currentId, filter, onFilter, onPick, onToggleCompare, compareColors, hiddenCompares, bridgeCounts, reviewable, notice, progress, sortMenu, listHidden = false, onToggleList }: Props): JSX.Element {
   const currentRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     currentRef.current?.scrollIntoView({ block: "nearest" });
@@ -119,6 +120,7 @@ export function SampleList({ samples, setupHeaders, currentId, filter, onFilter,
           aria-label="Filter samples"
           className="min-w-0 flex-1 rounded-sm border border-hair bg-plate px-2 py-[5px] text-base text-ink placeholder:text-ink-faint focus:outline-2 focus:-outline-offset-1 focus:outline-accent"
         />
+        {sortMenu}
         {onToggleList && (
           <IconButton label={listHidden ? "Keep the sample list open" : "Hide the sample list"} data-testid="sample-list-toggle" onClick={onToggleList}>
             <span aria-hidden="true" className="text-base">{listHidden ? "›" : "‹"}</span>
