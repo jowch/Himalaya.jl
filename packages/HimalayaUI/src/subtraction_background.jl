@@ -2,7 +2,7 @@ using DBInterface, SQLite
 
 const BUFFER_FILENAME = r"_B\d+$"
 
-function default_backgrounds(db::SQLite.DB, experiment_id::Integer)
+function autosampler_runs(db::SQLite.DB, experiment_id::Integer)
     rows = sqlrows(DBInterface.execute(db, """
         SELECT s.id AS id, s.load_id AS load_id, s.slot_index AS slot, e.filename AS filename
           FROM samples s
@@ -19,14 +19,20 @@ function default_backgrounds(db::SQLite.DB, experiment_id::Integer)
         slot_of[id] = ismissing(r.slot) ? typemax(Int) : Int(r.slot)
         !ismissing(r.filename) && occursin(BUFFER_FILENAME, String(r.filename)) && push!(buffers, id)
     end
-    first_buffer = Dict{Int,Int}()
+    run_buffers = Dict{Int,Vector{Int}}()
     for id in sort(collect(buffers); by = id -> (slot_of[id], id))
         load = load_of[id]
-        ismissing(load) || haskey(first_buffer, load) || (first_buffer[load] = id)
+        ismissing(load) || push!(get!(run_buffers, load, Int[]), id)
     end
+    Dict(id => (; is_buffer = id in buffers,
+                  run_buffers = ismissing(load) ? Int[] : get(run_buffers, load, Int[]))
+         for (id, load) in load_of)
+end
+
+function default_backgrounds(db::SQLite.DB, experiment_id::Integer)
     Dict{Int,Union{Int,Nothing}}(
-        id => (id in buffers || ismissing(load) ? nothing : get(first_buffer, load, nothing))
-        for (id, load) in load_of)
+        id => (run.is_buffer || isempty(run.run_buffers) ? nothing : first(run.run_buffers))
+        for (id, run) in autosampler_runs(db, experiment_id))
 end
 
 function default_background(db::SQLite.DB, sample_id::Integer)
