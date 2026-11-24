@@ -3086,6 +3086,14 @@ describe("WorkspacePage", () => {
     expect(text).toContain("I₂—");
   });
 
+  it("shows an autosampler exposure as the beamline's average of the images it kept", () => {
+    state.exposures = [exposure(100), exposure(101, { exposure_time: 1, frames_total: 10, frames_rejected: 1 })];
+    renderAt("/experiments/1/workspace/10");
+    const text = screen.getByRole("heading", { name: "Image" }).closest("section")!.textContent ?? "";
+    expect(text).toContain("KindBeamline average of 9 of 10 images");
+    expect(text).toContain("Exposure9 × 1.0 s");
+  });
+
   it("lists the shown exposure's time, I₀ and transmitted beam I₂ under the .prp names", () => {
     state.exposures = [exposure(100), exposure(101, { exposure_time: 10, incident_monitor: 1.4326, transmitted_counts: 7654.3 })];
     renderAt("/experiments/1/workspace/10");
