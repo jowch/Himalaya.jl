@@ -109,7 +109,7 @@ import { CandidateList } from "../ui/CandidateList";
 import { callChoices, cycleChoice, inCallChoices } from "./callTab";
 import { callRows, keyedRows } from "./bonnetGroups";
 import { MetaList } from "../ui/MetaList";
-import { MainSection, SampleHeading, Section } from "../ui/Section";
+import { SampleHeading, Section } from "../ui/Section";
 import { claimedPeaks } from "./claimedPeaks";
 import { callCombs } from "./callCombs";
 import { exposureKindLabel, exposureTimeLabel } from "./exposureLabels";
@@ -1748,9 +1748,9 @@ export function WorkspacePage(): JSX.Element {
                 />
               </PlotCard>
             </div>
-            <MainSection title="Images" hint={keptHint}>
-              <ExposureStrip groups={groups.map((g) => ({ key: g.sampleId, title: g.title, exposures: g.exposures, selection: username ? groupSelections.get(g.sampleId) : undefined }))} currentId={tile?.id} onPick={setExposureId} onToggleDrop={toggleDrop} warningOf={beamOffWarning} />
-            </MainSection>
+            <section className="flex flex-col px-3.5 pb-4 pt-3">
+              <ExposureStrip title="Images" hint={keptHint} groups={groups.map((g) => ({ key: g.sampleId, title: g.title, exposures: g.exposures, selection: username ? groupSelections.get(g.sampleId) : undefined }))} currentId={tile?.id} onPick={setExposureId} onToggleDrop={toggleDrop} warningOf={beamOffWarning} />
+            </section>
           </>
         ) : (
           <div className="px-3.5 py-3">

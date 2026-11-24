@@ -38,18 +38,6 @@ export function Section({ title, aside, pinAside, folded, className, collapsible
   );
 }
 
-export function MainSection({ title, hint, children }: { title: string; hint?: ReactNode; children: ReactNode }): JSX.Element {
-  return (
-    <section className="flex flex-col">
-      <header className="flex items-baseline gap-2.5 px-3.5 pb-1.5 pt-3">
-        <h2 className="text-sm font-semibold text-ink-soft">{title}</h2>
-        {hint && <span className="text-xs text-ink-faint">{hint}</span>}
-      </header>
-      <div className="px-3.5 pb-4">{children}</div>
-    </section>
-  );
-}
-
 export function SampleHeading({ name, eyebrow, badge, aside }: { name: string; eyebrow?: string | undefined; badge?: ReactNode; aside?: ReactNode }): JSX.Element {
   return (
     <div data-sample-heading className="@container flex min-w-0 items-end gap-3 px-3.5 pb-1 pt-2">
