@@ -67,6 +67,17 @@ export function workspaceStart(currentUrl, uiBase, experimentId, firstSampleId, 
   return { reuse: false, route: WORKSPACE_ROUTE(experimentId, firstSampleId) };
 }
 
+const SAMPLE_ROWS = "[data-testid='workspace-samples'] [data-sample-id]";
+
+export async function waitForSampleRows(page, expected, { timeoutMs = 20000, pollMs = 100 } = {}) {
+  const until = Date.now() + timeoutMs;
+  for (;;) {
+    const count = await page.locator(SAMPLE_ROWS).count();
+    if (count >= expected || Date.now() > until) return count;
+    await page.waitForTimeout(pollMs);
+  }
+}
+
 async function readWorkspaceRows(page) {
   return page.locator("[data-testid='workspace-samples'] [data-sample-id]").evaluateAll((els) =>
     els.map((el) => {
@@ -161,6 +172,7 @@ export async function readWorkspace(page, cfg, experimentId, samples, { reload =
   if ((await filter.count()) && (await filter.inputValue())) {
     await filter.fill("");
   }
+  await waitForSampleRows(page, samples.length);
   const rows = await readWorkspaceRows(page);
   const texts = new Map(rows.map((r) => [r.id, r.text]));
   for (const s of samples) {
