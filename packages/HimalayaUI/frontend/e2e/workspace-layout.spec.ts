@@ -324,13 +324,20 @@ test("on tall windows Indexing stops moving down once Assignment holds nine choi
   expect(await indexingTop(2000)).toBe(at1400);
 });
 
-test("the + Label chip is as tall as the + Compare chip", async ({ page }) => {
+test("+ Label and + Compare match a label pill in height and in where their text sits", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/experiments/17/workspace/41");
-  await openSample(page, 41);
-  const height = (loc: ReturnType<Page["locator"]>) => loc.evaluate((el) => el.getBoundingClientRect().height);
-  const add = await height(page.getByRole("button", { name: "+ Label L" }));
-  expect(add).toBe(await height(page.getByRole("button", { name: /^\+ Compare/ })));
+  await page.goto("/experiments/17/workspace/42");
+  await openSample(page, 42);
+  const fit = (loc: ReturnType<Page["locator"]>) => loc.evaluate((el) => {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.textContent!.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP) });
+    const range = document.createRange();
+    range.selectNodeContents(walker.nextNode()!);
+    const box = el.getBoundingClientRect();
+    return { height: box.height, textInset: range.getBoundingClientRect().top - box.top };
+  });
+  const pill = await fit(page.locator("[data-label]").first());
+  expect(await fit(page.getByRole("button", { name: "+ Label L" }))).toEqual(pill);
+  expect(await fit(page.getByRole("button", { name: /^\+ Compare/ }))).toEqual(pill);
 });
 
 test("a long Call list (ten candidates, more than the number keys reach) keeps Indexing and Frame in place, and the column never scrolls", async ({ page }) => {
