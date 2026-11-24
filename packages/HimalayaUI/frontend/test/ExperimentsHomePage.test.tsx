@@ -22,7 +22,7 @@ function renderPage() {
 }
 
 const EXP = (over: Partial<api.Experiment>): api.Experiment => ({
-  id: 7, name: "SSRL · 1p7m", description: null, path: "/d",
+  id: 7, name: "Beamtime 1 · setup1", description: null, path: "/d",
   created_at: "2026-04-12T00:00:00",
   last_scanned_at: null, ingest_status: "complete",
   stats: { loads: 13, samples: 170, exposures: 682, sessions: 3, span_hours: 6.5, started_at: "2026-04-01T10:00:00" },
@@ -36,7 +36,7 @@ describe("ExperimentsHomePage (Phase E1)", () => {
   it("lists experiment cards", async () => {
     vi.spyOn(api, "listExperiments").mockResolvedValue([EXP({}), EXP({ id: 8, name: "JC plate" })]);
     renderPage();
-    expect(await screen.findByText("SSRL · 1p7m")).toBeInTheDocument();
+    expect(await screen.findByText("Beamtime 1 · setup1")).toBeInTheDocument();
     expect(screen.getByText("JC plate")).toBeInTheDocument();
   });
 

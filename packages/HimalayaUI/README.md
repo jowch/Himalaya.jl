@@ -117,7 +117,7 @@ The CLI does not create experiments; use the New-experiment funnel in the UI.
 `analyze` and `show` take an `-e`/`--experiment` flag whose value can be:
 
 - an **id** (`-e 1`)
-- a **name** (`-e "SSRL April 2026"`, must match `experiments.name`)
+- a **name** (`-e "Beamtime 1"`, must match `experiments.name`)
 - a **path** (`-e ~/beamtime/2026-04-exp42`, looked up against `experiments.path`)
 
 Without `-e`, `analyze` and `show` use the only registered experiment and fail with a list if there are several.

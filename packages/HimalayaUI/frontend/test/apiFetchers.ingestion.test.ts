@@ -30,9 +30,9 @@ describe("ingestion fetchers (Phase E1)", () => {
   });
 
   it("suggestFolders GETs /api/fs/suggest?prefix=…", async () => {
-    const spy = mockFetchSpy({ folders: [{ path: "/Volumes/data/ssrl/2026_04/1p7m", kind: "setup", setups: null, added: null }], more: false });
-    const out = await api.suggestFolders("/Volumes/data/ssrl/2026_04/1");
-    expect(out.folders[0]!.path).toContain("1p7m");
+    const spy = mockFetchSpy({ folders: [{ path: "/data/beamtime-01/setup1", kind: "setup", setups: null, added: null }], more: false });
+    const out = await api.suggestFolders("/data/beamtime-01/s");
+    expect(out.folders[0]!.path).toContain("setup1");
     expect(spy.mock.calls[0]![0]).toContain("/api/fs/suggest?");
     expect(spy.mock.calls[0]![0]).toContain("prefix=");
   });
