@@ -34,6 +34,7 @@ const MIGRATION_EXPOSURES_Q_STEP = "exposures_q_step_v1"
 const MIGRATION_TRANSMITTED_FROM_I2 = "exposures_transmitted_from_i2_v1"
 const MIGRATION_SETUP_NORMALISATION = "setups_trace_normalisation_v1"
 const MIGRATION_EXPOSURES_DESELECTED = "exposures_deselected_v1"
+const MIGRATION_EXPOSURES_FRAME_COUNTS = "exposures_frame_counts_v1"
 const MIGRATION_EXPOSURES_TRACE_MEDIAN = "exposures_trace_median_v1"
 const MIGRATION_BEAM_OFF_DESELECTED = "beam_off_deselected_v1"
 
@@ -167,7 +168,9 @@ CREATE TABLE IF NOT EXISTS exposures (
     setup_id             INTEGER REFERENCES setups(id),
     reviewed_at          TEXT,
     peak_model_version   INTEGER,
-    deselected           INTEGER NOT NULL DEFAULT 0
+    deselected           INTEGER NOT NULL DEFAULT 0,
+    frames_total         INTEGER,
+    frames_rejected      INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS exposure_sources (
@@ -560,6 +563,19 @@ function migrate_schema!(db::SQLite.DB)
     migrate_peak_provenance!(db)
     migrate_peak_models!(db)
     migrate_exposures_deselected!(db)
+    migrate_exposures_frame_counts!(db)
+end
+
+function migrate_exposures_frame_counts!(db::SQLite.DB)
+    _migrated(db, MIGRATION_EXPOSURES_FRAME_COUNTS) && return nothing
+    SQLite.transaction(db) do
+        existing = cols_of(db, "exposures")
+        for name in ("frames_total", "frames_rejected")
+            name in existing || DBInterface.execute(db, "ALTER TABLE exposures ADD COLUMN $name INTEGER")
+        end
+        _record_migration!(db, MIGRATION_EXPOSURES_FRAME_COUNTS)
+    end
+    nothing
 end
 
 function migrate_exposures_deselected!(db::SQLite.DB)
