@@ -411,6 +411,8 @@ export interface Exposure {
   detector: string | null;
   setup_id: number | null;
   beam_off: boolean;
+  frames_total: number | null;
+  frames_rejected: number | null;
 }
 
 export const listExposures = (sample_id: number, opts?: { signal?: AbortSignal }) =>

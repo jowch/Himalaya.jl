@@ -107,6 +107,7 @@ import { MetaList } from "../ui/MetaList";
 import { MainSection, SampleHeading, Section } from "../ui/Section";
 import { claimedPeaks } from "./claimedPeaks";
 import { callCombs } from "./callCombs";
+import { exposureKindLabel, exposureTimeLabel } from "./exposureLabels";
 import { CustomIndexButton } from "../ui/CustomIndexButton";
 import { LabelRow } from "../ui/LabelRow";
 import { setupNames } from "../lib/sample/setupNames";
@@ -181,11 +182,11 @@ const EXPOSURE_LABELS = ["Sample", "File", "Kind", "Acquired", "Exposure", "Flig
 function exposureRows(e: Exposure | undefined, owner: string | undefined): [string, string][] {
   if (!e) return EXPOSURE_LABELS.map((label) => [label, "—"]);
   const rows: [string, string][] = [["Sample", owner ?? "—"], ["File", e.filename ?? "—"]];
-  rows.push(["Kind", e.kind === "averaged" ? "Averaged" : e.kind === "background_subtracted" ? "Subtracted" : "Single"]);
+  rows.push(["Kind", exposureKindLabel(e)]);
   const i0 = e.incident_monitor;
   const i2 = e.transmitted_counts;
   rows.push(["Acquired", e.timestamp ? e.timestamp.replace("T", " ").slice(0, 19) : "—"]);
-  rows.push(["Exposure", e.exposure_time != null ? `${e.exposure_time.toFixed(1)} s` : "—"]);
+  rows.push(["Exposure", exposureTimeLabel(e)]);
   rows.push(["Flight tube", e.pipe_length_m != null ? `${Math.round(e.pipe_length_m * 1000)} mm` : "—"]);
   rows.push(["Energy", e.beam_energy_ev != null ? `${(e.beam_energy_ev / 1000).toFixed(3)} keV` : "—"]);
   rows.push(["Detector", e.detector || "—"]);
