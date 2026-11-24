@@ -3124,7 +3124,7 @@ describe("WorkspacePage", () => {
     state.exposures = [exposure(100), exposure(101, { exposure_time: 1, frames_total: 10, frames_rejected: 1 })];
     renderAt("/experiments/1/workspace/10");
     const text = screen.getByRole("heading", { name: "Image" }).closest("section")!.textContent ?? "";
-    expect(text).toContain("Kind9 of 10 images");
+    expect(text).toContain("Kind9 of 10 averaged");
     expect(text).toContain("Exposure9 × 1.0 s");
   });
 
@@ -4344,7 +4344,7 @@ describe("WorkspacePage autosampler background", () => {
     expect(plot().querySelector("[data-role='difference-line']")).not.toBeNull();
     expect(plot().querySelector("[data-role='trace-line']")).toBeNull();
     expect(within(module()).getByText("lipidA 01A (B0100)")).toBeInTheDocument();
-    expect(within(module()).getByText("run buffer")).toBeInTheDocument();
+    expect(within(module()).getByText("run's buffer")).toBeInTheDocument();
     expect(document.querySelector("[data-compare-chip]")).toBeNull();
   });
 
@@ -4379,14 +4379,14 @@ describe("WorkspacePage autosampler background", () => {
     expect(within(module()).queryByRole("button", { name: "None" })).toBeNull();
   });
 
-  it("Use the run's buffer goes back to the default and to Minus", () => {
+  it("the Run's buffer button goes back to the default and to Minus", () => {
     seed();
     open(FIRST);
     fireEvent.click(within(module()).getByRole("button", { name: "None" }));
-    fireEvent.click(within(module()).getByRole("button", { name: "Run buffer" }));
+    fireEvent.click(within(module()).getByRole("button", { name: "Run's buffer" }));
     expect(patches()).toEqual([{ subtraction: null }, { subtraction: "default" }]);
     expect(screen.getByRole("button", { name: "Minus lipidA 01A (B0100)" })).toHaveAttribute("aria-pressed", "true");
-    expect(within(module()).getByText("run buffer")).toBeInTheDocument();
+    expect(within(module()).getByText("run's buffer")).toBeInTheDocument();
   });
 
   it("B opens a picker with the run's other buffers first, then the setup's buffers, then everything else, and picking one sends it", () => {
@@ -4426,10 +4426,10 @@ describe("WorkspacePage autosampler background", () => {
     expect(calls.filter((c) => c.hook === "op:patchCompares").map((c) => c.arg)).toEqual([[FIRST, { subtraction: "default" }]]);
   });
 
-  it("shows only a plain sentence for a buffer, and Raw with no toggle", () => {
+  it("tags a buffer as a buffer with no controls, and shows Raw with no toggle", () => {
     seed();
     open(BUFFER);
-    expect(within(module()).getByTestId("background-name")).toHaveTextContent("Buffer");
+    expect(within(module()).getByTestId("background-name")).toHaveTextContent("This is a buffer");
     expect(within(module()).queryByRole("button")).toBeNull();
     expect(screen.queryByTestId("workspace-subtraction-toggle")).toBeNull();
     expect(plot().querySelector("[data-role='trace-line']")).not.toBeNull();
@@ -4452,7 +4452,7 @@ describe("WorkspacePage autosampler background", () => {
     fireEvent.click(within(module()).getByRole("button", { name: /Change/ }));
     fireEvent.click(within(screen.getByRole("dialog", { name: "Choose the background" })).getByRole("button", { name: /lipidA 01A \(B0100\)/ }));
     expect(within(module()).getByText("chosen")).toBeInTheDocument();
-    fireEvent.click(within(module()).getByRole("button", { name: "Run buffer" }));
+    fireEvent.click(within(module()).getByRole("button", { name: "Run's buffer" }));
     expect(patches().at(-1)).toEqual({ subtraction: "default" });
   });
 
@@ -4493,9 +4493,9 @@ describe("WorkspacePage autosampler background", () => {
     open(FIRST);
     expect(slotOrder()).toEqual(["Background", "Image"]);
     const image = tools().querySelector("[data-section='Image']")!.textContent ?? "";
-    expect(image).toContain("9 of 10 images");
+    expect(image).toContain("9 of 10 averaged");
     expect(image).not.toContain("lipidA 01A (B0100)");
-    expect(module().textContent).not.toContain("9 of 10 images");
+    expect(module().textContent).not.toContain("9 of 10 averaged");
     expect(module().nextElementSibling).toBe(tools().querySelector("[data-section='Image']"));
   });
 

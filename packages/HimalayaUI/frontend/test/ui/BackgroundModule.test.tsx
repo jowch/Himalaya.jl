@@ -1,7 +1,8 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BackgroundModule, type BackgroundView } from "../../src/ui/BackgroundModule";
 import { SCALE_NOTES } from "../../src/ui/CompareBar";
+import { resetTooltipWarmth, TOOLTIP_OPEN_DELAY_MS } from "../../src/ui/Tooltip";
 import type { CompareScale } from "../../src/workspace/compare";
 
 const set = (over: Partial<Extract<BackgroundView, { kind: "set" }>> = {}): BackgroundView => ({
@@ -15,18 +16,18 @@ function show(view: BackgroundView, over: { editable?: boolean; picker?: JSX.Ele
 }
 
 describe("BackgroundModule", () => {
-  it("names the background and tags it as the run buffer", () => {
+  it("names the background and tags it as the run's buffer", () => {
     show(set());
     expect(screen.getByRole("heading", { name: "Background" })).toBeInTheDocument();
     expect(screen.getByText("lipidA 01A (B0100)")).toBeInTheDocument();
-    expect(screen.getByText("run buffer")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Run buffer" })).toBeNull();
+    expect(screen.getByText("run's buffer")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Run's buffer" })).toBeNull();
   });
 
-  it("tags the background as chosen and offers the run buffer back", () => {
+  it("tags the background as chosen and offers the run's buffer back", () => {
     const on = show(set({ source: "user", canUseRunBuffer: true }));
     expect(screen.getByText("chosen")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Run buffer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Run's buffer" }));
     expect(on.onDefault).toHaveBeenCalledTimes(1);
   });
 
@@ -50,7 +51,7 @@ describe("BackgroundModule", () => {
 
   it("shows a collapsed transmitted beam", () => {
     show(set({ scale: { scale: 2, source: "i2_collapsed" } }));
-    expect(screen.getByTestId("background-note")).toHaveTextContent("I₂ dropped, matched ×2.00");
+    expect(screen.getByTestId("background-note")).toHaveTextContent("I₂ low, matched ×2.00");
   });
 
   it("says when the background has no trace", () => {
@@ -73,7 +74,7 @@ describe("BackgroundModule", () => {
     expect(screen.getByTestId("background-name")).toHaveTextContent("None");
     expect(screen.getByTestId("background-note")).toBeEmptyDOMElement();
     expect(screen.queryByRole("button", { name: "None" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Run buffer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Run's buffer" }));
     expect(on.onDefault).toHaveBeenCalled();
   });
 
@@ -89,31 +90,56 @@ describe("BackgroundModule", () => {
     normalised: "",
     monitor: "scaled ×1.50",
     matched: "matched at high q ×1.50",
-    unknown_normalisation: "matched at high q ×1.50",
+    unknown_normalisation: "no integ settings, matched ×1.50",
     unknown_mode: "matched at high q ×1.50",
     other_setup: "other setup, matched ×1.50",
     beam_off: "beam off, matched ×1.50",
-    i2_collapsed: "I₂ dropped, matched ×1.50",
+    i2_collapsed: "I₂ low, matched ×1.50",
     capillary: "matched at high q ×1.50",
   };
+
+  describe("note tooltip", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      resetTooltipWarmth();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it.each(Object.keys(SCALE_NOTES).filter((k) => k !== "normalised") as CompareScale["source"][])("explains %s in the chip's words on hover", (source) => {
+      show(set({ scale: { scale: 1.5, source } }));
+      fireEvent.mouseEnter(screen.getByTestId("background-note"));
+      act(() => {
+        vi.advanceTimersByTime(TOOLTIP_OPEN_DELAY_MS);
+      });
+      expect(screen.getByRole("tooltip")).toHaveTextContent(SCALE_NOTES[source]);
+    });
+
+    it("has no tooltip when the note is empty", () => {
+      show(set());
+      fireEvent.mouseEnter(screen.getByTestId("background-note"));
+      act(() => {
+        vi.advanceTimersByTime(TOOLTIP_OPEN_DELAY_MS);
+      });
+      expect(screen.queryByRole("tooltip")).toBeNull();
+    });
+  });
 
   it.each(Object.keys(SCALE_NOTES) as CompareScale["source"][])("shows %s as a short label and gives the whole sentence as its description", (source) => {
     show(set({ scale: { scale: source === "normalised" ? 1 : 1.5, source } }));
     const note = screen.getByTestId("background-note");
     if (source === "normalised") {
       expect(note).toBeEmptyDOMElement();
-      expect(note).not.toHaveAttribute("aria-description");
-    } else {
-      expect(note).toHaveTextContent(SHORT[source]);
-      expect(note).toHaveAttribute("aria-description", SCALE_NOTES[source]);
+      return;
     }
+    expect(note).toHaveTextContent(SHORT[source]);
     expect(screen.queryByText(SCALE_NOTES[source])).toBeNull();
-    expect(screen.queryByRole("tooltip")).toBeNull();
   });
 
   it("tags a buffer and offers no controls", () => {
     show({ kind: "buffer" });
-    expect(screen.getByTestId("background-name")).toHaveTextContent("Buffer");
+    expect(screen.getByTestId("background-name")).toHaveTextContent("This is a buffer");
     expect(screen.getByTestId("background-note")).toBeEmptyDOMElement();
     expect(screen.queryByRole("button")).toBeNull();
   });
