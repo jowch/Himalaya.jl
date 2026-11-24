@@ -827,3 +827,18 @@ test("the enlarged detector image fits a window shrunk under it, and scrolls", a
   await page.keyboard.press("ArrowRight");
   await expect(big).toContainText("Image 2 of");
 });
+
+for (const width of [1024, 1440]) {
+  test(`the review ribbon gives every sample its own segment, with a gap a pixel wide, at ${width} px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/experiments/17/workspace/40");
+    await openSample(page, 40);
+    const segments = await page.getByTestId("sample-ribbon").locator("[data-mark]").evaluateAll((ns) => ns.map((n) => n.getBoundingClientRect()).map((r) => ({ left: r.left, right: r.right, width: r.width })));
+    expect(segments).toHaveLength(SAMPLES.length);
+    for (const [i, s] of segments.entries()) {
+      expect(s.width, `segment ${i + 1} width`).toBeGreaterThanOrEqual(2);
+      const next = segments[i + 1];
+      if (next) expect(next.left - s.right, `gap after segment ${i + 1}`).toBeGreaterThanOrEqual(1);
+    }
+  });
+}

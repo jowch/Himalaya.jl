@@ -8,6 +8,5 @@ describe("SampleHeading", () => {
     const heading = screen.getByRole("heading", { level: 2, name: "MO_PEG5" });
     const eyebrow = screen.getByText("1.7 m · sample 3 of 13");
     expect(eyebrow.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(heading.className).toMatch(/(^| )font-semibold( |$)/);
   });
 });

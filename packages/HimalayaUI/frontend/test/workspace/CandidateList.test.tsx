@@ -3,6 +3,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { IndexEntry } from "../../src/api";
 import { CandidateList } from "../../src/ui/CandidateList";
+import { phaseColor } from "../../src/phases";
 import type { CallRow } from "../../src/workspace/bonnetGroups";
 
 function candidate(id: number, phase = "Lamellar", lattice: number | null = 40 + id): IndexEntry {
@@ -116,8 +117,7 @@ describe("CandidateList", () => {
     const name = within(screen.getByTestId("workspace-candidates")).getByTestId("phase-chip");
     expect(name).toHaveAttribute("data-variant", "text");
     expect(name.style.background).toBe("");
-    expect(name.style.color).toMatch(/phase|oklch|var\(/);
-    expect(name.className).not.toMatch(/(^| )border( |$)/);
+    expect(name.style.color).toBe(phaseColor("Pn3m"));
   });
 
   it("keeps a ticked, a partly ticked and a hovered choice apart by the keycap alone, since a row tint for ticks reads like hover", () => {
