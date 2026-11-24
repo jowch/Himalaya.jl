@@ -201,3 +201,48 @@ test("compareTraces checks the workspace notice when it was read", () => {
   assert.equal(compareTraces(["A_S1"], [waiting("A_S1")], null).ok, false);
   assert.equal(compareTraces(["A_S1"], [waiting("A_S1")], undefined).ok, true);
 });
+
+test("an image whose trace file is not on disk is untraced, so a 404 on its trace is the server's right answer", async () => {
+  const { untracedIds } = await import("../truth.mjs");
+  const setups = [{ id: 2, analysis_dir: "/demo/autosampler/tot", integration_pattern: "{name}_tot.dat" }, { id: 3 }];
+  const onDisk = new Set(["/demo/autosampler/tot/lysA_01A_B0101_tot.dat"]);
+  const exposures = [
+    { id: 41, kind: "file", setup_id: 2, filename: "lysA_01A_B0101" },
+    { id: 57, kind: "file", setup_id: 2, filename: "agbe_S0100" },
+    { id: 58, kind: "combined", setup_id: 2, filename: "agbe_S0100" },
+    { id: 59, kind: "file", setup_id: 3, filename: "unknown_layout" },
+  ];
+  assert.deepEqual(untracedIds(exposures, setups, (f) => onDisk.has(f)), [57]);
+});
+
+test("check-truth --ui also tells the reader an untraced image of a sample TRUTH does not list, such as the calibrant", async () => {
+  const { checkTruth } = await import("../truth.mjs");
+  const demoDir = fs.mkdtempSync(path.join(os.tmpdir(), "verify-untraced-"));
+  const tot = path.join(demoDir, "tot");
+  fs.mkdirSync(tot);
+  fs.writeFileSync(path.join(tot, "A_S1_tot.dat"), "");
+  fs.writeFileSync(path.join(demoDir, "TRUTH.csv"),
+    "sample,bases,phases,lattice_A,auto,expected_peaks_q,images,drop,flare,note\nA,A_S1,none,,none,,true,,,\n");
+  const stub = await stubBackend({
+    "/api/experiments": [{ id: 4, setups: [{ id: 1, data_dir: path.join(demoDir, "capillary", "data"), analysis_dir: tot, integration_pattern: "{name}_tot.dat" }, { id: 2, mode: "autosampler", analysis_dir: tot, integration_pattern: "{name}_tot.dat" }], ingest_status: "complete" }],
+    "/api/samples?experiment_id=4": [
+      { id: 10, name: "A_S1 (S01P01)", setup_id: 1, assignment_state: "indexed", phase: null, analyzed_exposure_id: 1 },
+      { id: 30, name: "agbe_S0100", setup_id: 2, assignment_state: "indexed", phase: null, analyzed_exposure_id: 57 },
+    ],
+    "/api/experiments/4/export": [{ name: "A_S1 (S01P01)", exposures: [{ filename: "A_S1", auto_phases: [] }] }],
+    "/api/experiments/4/labels": [],
+    "/api/experiments/4/bridges": [],
+    "/api/experiments/4/problems": { ingest_error: null, exposures: [] },
+    "/api/samples/10/exposures": [{ id: 1, kind: "file", setup_id: 1, filename: "A_S1", status: null, sample_id: 10 }],
+    "/api/samples/30/exposures": [{ id: 57, kind: "file", setup_id: 2, filename: "agbe_S0100", status: null, sample_id: 30 }],
+    "/api/exposures/1/assignment": { exposure_id: 1, state: "indexed", members: [] },
+  });
+  const cfg = loadConfig({ ...stub.env, DEMO_DIR: demoDir });
+  const asked = [];
+  try {
+    await checkTruth(cfg, { ui: true }, { views: async (_c, _e, samples) => { asked.push(...samples); return new Map(); } });
+    assert.deepEqual(asked.map((s) => [s.id, s.heldIds]), [[10, [57]]]);
+  } finally {
+    await stub.close();
+  }
+});
