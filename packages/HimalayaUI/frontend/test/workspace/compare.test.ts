@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { SetupMode, TraceNormalisation } from "../../src/api";
-import { compareScale, transmittedFlux, clampDomain, stripRange, interpolateAt, matchScale, robustRange, scaledTrace, subtractTrace } from "../../src/workspace/compare";
+import { compareScale, transmittedFlux, clampDomain, interpolateAt, matchScale, scaledTrace, subtractTrace } from "../../src/workspace/compare";
 
 const q = Array.from({ length: 101 }, (_, i) => 0.01 + i * 0.002);
 const background = (x: number): number => 5 + 1 / x;
@@ -52,46 +52,6 @@ describe("compare", () => {
     const buffer = { q, I: q.map(() => 1) };
     const sample = { q, I: q.map((_x, i) => (i === q.length - 1 ? 1000 : 2)) };
     expect(matchScale(sample, buffer)).toBe(2);
-  });
-
-  it("sets the strip's range from the bulk of the difference, not one huge residual, and keeps zero in view", () => {
-    const d = [...Array.from({ length: 200 }, (_, i) => (i % 20 === 0 ? 50 : 1)), -5000];
-    const [lo, hi] = robustRange(d);
-    expect(lo).toBe(0);
-    expect(hi).toBe(50);
-    expect(robustRange([3, 3, 3])).toEqual([0, 3]);
-    expect(robustRange([])).toEqual([-1, 1]);
-  });
-
-  describe("stripRange with a realistic low-q residual", () => {
-    const qs = Array.from({ length: 919 }, (_, i) => 0.0058 + i * ((0.4045 - 0.0058) / 918));
-    const peakQ = [0.127, 0.18, 0.22];
-    const d = qs.map(
-      (x) => -4000 * Math.exp(-(x - 0.0058) / 0.008) + peakQ.reduce((a, p) => a + 20 * Math.exp(-((x - p) ** 2) / 4e-6), 0),
-    );
-    const residualShare = d.filter((v) => v < -20).length / d.length;
-
-    it("the residual is more than the outlier cut can drop", () => {
-      expect(residualShare).toBeGreaterThan(0.03);
-      expect(robustRange(d)[0]).toBeLessThan(-100);
-    });
-
-    it("starts the range just below the first peak in view", () => {
-      const [lo, hi] = stripRange(qs, d, [qs[0]!, qs[qs.length - 1]!], peakQ);
-      expect(hi).toBeGreaterThan(15);
-      expect(lo).toBeGreaterThan(-1);
-    });
-
-    it("keeps the tallest peak's top inside the range, since a sharp peak is under 1% of the points", () => {
-      const tallest = Math.max(...d.filter((_, i) => qs[i]! > 0.1));
-      const [, hi] = stripRange(qs, d, [qs[0]!, qs[qs.length - 1]!], peakQ);
-      expect(hi).toBeGreaterThanOrEqual(tallest);
-    });
-
-    it("skips the low-q end when no peak is in view", () => {
-      const [lo] = stripRange(qs, d, [qs[0]!, 0.12], []);
-      expect(lo).toBeGreaterThan(-20);
-    });
   });
 
   it("clamps a kept zoom to the trace's q range and drops it when they do not overlap", () => {

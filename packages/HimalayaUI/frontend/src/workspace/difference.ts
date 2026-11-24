@@ -1,4 +1,3 @@
-import { stripRange } from "./compare";
 import { fitYDomain, linearTicks, type AxisTick } from "./plotScale";
 import { viewAxes, viewIntensity, type PlotView } from "./plotView";
 import type { ScaleType } from "../plot/projection";
@@ -33,7 +32,14 @@ export function noiseScale(q: readonly number[], d: readonly number[], domain: [
   return span > 0 ? span / 100 : 1;
 }
 
-function padded(lo0: number, hi0: number): [number, number] {
+function extentInView(q: readonly number[], d: readonly number[], shownX: [number, number]): [number, number] {
+  const lowX = Math.min(...shownX);
+  const highX = Math.max(...shownX);
+  const inView = d.filter((v, i) => q[i]! >= lowX && q[i]! <= highX && Number.isFinite(v));
+  return inView.length === 0 ? [0, 0] : [Math.min(...inView), Math.max(...inView)];
+}
+
+function padded([lo0, hi0]: [number, number]): [number, number] {
   const lo = Math.min(lo0, 0);
   const hi = Math.max(hi0, 0);
   const pad = (hi - lo) * 0.1 || 1;
@@ -61,15 +67,14 @@ export function differenceAxis(
   q: readonly number[],
   d: readonly number[],
   shownX: [number, number],
-  peakQs: readonly number[],
 ): DifferenceAxis {
   if (viewAxes(view).yType !== "log") {
-    const domain = padded(...stripRange(q, d, shownX, peakQs));
+    const domain = padded(extentInView(q, d, shownX));
     return { kind: "linear", to: (v) => v, domain, ticks: linearTicks(domain, 5) };
   }
   const c = noiseScale(q, d, shownX);
   const to = (v: number): number => Math.asinh(v / c);
-  const domain = padded(...stripRange(q, d.map(to), shownX, peakQs));
+  const domain = padded(extentInView(q, d.map(to), shownX));
   return { kind: "pseudolog", to, domain, ticks: pseudologTicks(domain, c, to) };
 }
 
