@@ -17,17 +17,17 @@ end
 _as_add_acquisition!(root, (label, well, kind, scan); kw...) =
     _as_add_stem!(root, _as_stem(label, well, kind, scan); kw...)
 
-function _as_add_stem!(root, stem; frames = 2, minute = 0)
+function _as_add_stem!(root, stem; frames = 2, minute = 0, width = 3, trace = true)
     data = mkpath(joinpath(root, "data"))
-    tot = mkpath(joinpath(root, "analysis", "automatic_analysis", "tot_files"))
+    tot = joinpath(root, "analysis", "automatic_analysis", "tot_files")
     t = DateTime(2026, 4, 26, 12, 0, 0) + Minute(minute)
     for f in 1:frames
-        frame = lpad(f, 3, '0')
+        frame = lpad(f, width, '0')
         write_prp(joinpath(data, "$(stem)_0_$(frame).prp");
             timestamp = Dates.format(t + Second(f), "dd u yyyy HH:MM:SS"), horizontal_position_mm = 58.9)
         write(joinpath(data, "$(stem)_0_$(frame).tif"), "fake tif")
     end
-    _as_write_dat(joinpath(tot, "$(stem)_tot.dat"))
+    trace && _as_write_dat(joinpath(mkpath(tot), "$(stem)_tot.dat"))
     stem
 end
 
@@ -106,13 +106,16 @@ const _AS_RUN_B = [("pep", "01A", "B", 103), ("pep", "01B", "S", 104)]
                                                position = 1, included = false, image_pattern = "{name}_0_009.tif")
         sid = HimalayaUI.create_sample!(db; experiment_id = eid, name = "S", setup_id = used)
         HimalayaUI.create_exposure!(db; experiment_id = eid, setup_id = used, sample_id = sid, filename = "A_S1_0_001")
+        DBInterface.execute(db, "ALTER TABLE setups DROP COLUMN mode_source")
         DBInterface.execute(db, "ALTER TABLE setups DROP COLUMN mode")
         DBInterface.execute(db, "DELETE FROM schema_migrations WHERE name = ?", [HimalayaUI.MIGRATION_SETUP_MODE])
         SQLite.close(db)
 
         db2 = HimalayaUI.open_db(path)
         @test HimalayaUI.setup_row(db2, used).mode == "capillary"
+        @test HimalayaUI.setup_row(db2, used).mode_source == "migration"
         @test ismissing(HimalayaUI.setup_row(db2, empty_setup).mode)
+        @test HimalayaUI.setup_row(db2, empty_setup).mode_source == "default"
         DBInterface.execute(db2, "UPDATE setups SET mode = 'autosampler' WHERE id = ?", [used])
         SQLite.close(db2)
 
@@ -478,6 +481,7 @@ end
         write(joinpath(empty_dir, "MO_S0001_0_001.tif"), "fake tif")
         HimalayaUI.scan_and_group!(db, eid)
         @test HimalayaUI.setup_row(db, sid).mode == "capillary"
+        @test HimalayaUI.setup_row(db, sid).mode_source == "detected"
     end
 
     @testset "a calibration shot taken first does not lock the setup to capillary" begin
@@ -523,6 +527,230 @@ end
 
     db = HimalayaUI.open_db(path)
     @test only(HimalayaUI.setups_of(db, 7)).mode == "capillary"
+    @test only(HimalayaUI.setups_of(db, 7)).mode_source == "migration"
     @test ismissing(only(HimalayaUI.setups_of(db, 8)).mode)
     SQLite.close(db)
+end
+
+function _as_setup_mode(db, sid)
+    st = HimalayaUI.setup_row(db, sid)
+    (ismissing(st.mode) ? missing : st.mode, st.mode_source)
+end
+
+@testset "a scan never overrides a mode the user or the migration chose" begin
+    @testset "an explicit capillary mode survives scans of a folder with a run file" begin
+        root = _as_write_folder!(mktempdir(), _AS_RUN_A; at = [("wat", 100)])
+        db = fresh_db()
+        with_inproc_routes(db) do call
+            r = _as_json(call, "POST", "/api/experiments", Dict(:data_dir => joinpath(root, "data"), :mode => "capillary"))
+            eid = Int(JSON3.read(String(r.body)).id)
+            _as_wait_ingest(db, eid)
+            HimalayaUI.scan_and_group!(db, eid)
+            st = only(HimalayaUI.setups_of(db, eid))
+            @test (st.mode, st.mode_source) == ("capillary", "user")
+            @test ismissing(st.image_pattern)
+            @test ismissing(st.integration_pattern)
+            shown = JSON3.read(String(call("GET", "/api/experiments/$eid").body))
+            @test only(shown.setups).mode_source == "user"
+        end
+    end
+
+    @testset "a migrated capillary setup keeps analyzing when a run file appears" begin
+        root = mktempdir()
+        data = mkpath(joinpath(root, "data")); analysis = mkpath(joinpath(root, "analysis"))
+        for (i, stem) in enumerate(["MO_S0001", "MO_S0002"])
+            write_prp(joinpath(data, "$stem.prp"); timestamp = "26 Apr 2026 12:0$(i):00")
+            write(joinpath(data, "$stem.tif"), "fake tif")
+            _as_write_dat(joinpath(analysis, "$stem.dat"))
+        end
+        db = fresh_db()
+        eid = HimalayaUI.create_experiment!(db; name = "x", path = root)
+        sid = HimalayaUI.create_setup!(db; experiment_id = eid, data_dir = data, analysis_dir = analysis,
+            root_dir = root, mode = "capillary", mode_source = "migration")
+        HimalayaUI.scan_and_group!(db, eid)
+        _as_add_at!(root, "wat", 100)
+        write_prp(joinpath(data, "MO_S0003.prp"); timestamp = "26 Apr 2026 12:09:00")
+        write(joinpath(data, "MO_S0003.tif"), "fake tif")
+        _as_write_dat(joinpath(analysis, "MO_S0003.dat"))
+        HimalayaUI.scan_and_group!(db, eid)
+        st = HimalayaUI.setup_row(db, sid)
+        @test (st.mode, st.mode_source) == ("capillary", "migration")
+        @test st.analysis_dir == analysis
+        @test ismissing(st.image_pattern)
+        @test _as_count(db, "SELECT COUNT(*) AS c FROM exposures WHERE setup_id = ? AND analysis_version IS NOT NULL", sid) == 3
+    end
+
+    @testset "a detected capillary setup with a reviewed exposure is not promoted" begin
+        root = mktempdir()
+        data = mkpath(joinpath(root, "data")); analysis = mkpath(joinpath(root, "analysis"))
+        write_prp(joinpath(data, "MO_S0001.prp"))
+        write(joinpath(data, "MO_S0001.tif"), "fake tif")
+        _as_write_dat(joinpath(analysis, "MO_S0001.dat"))
+        db = fresh_db()
+        eid = HimalayaUI.create_experiment!(db; name = "x", path = root)
+        sid = HimalayaUI.create_setup!(db; experiment_id = eid, data_dir = data, analysis_dir = analysis, root_dir = root)
+        HimalayaUI.scan_and_group!(db, eid)
+        @test _as_setup_mode(db, sid) == ("capillary", "detected")
+        DBInterface.execute(db, "UPDATE exposures SET reviewed_at = '2026-04-26T12:00:00' WHERE setup_id = ?", [sid])
+        _as_add_at!(root, "wat", 100)
+        HimalayaUI.scan_and_group!(db, eid)
+        @test _as_setup_mode(db, sid) == ("capillary", "detected")
+        @test ismissing(HimalayaUI.setup_row(db, sid).image_pattern)
+    end
+
+    @testset "a promotion is recorded as detected" begin
+        db, eid, sid = _as_live_row_db(_as_write_folder!(mktempdir(), _AS_RUN_A; at = [("wat", 100)]))
+        HimalayaUI.scan_and_group!(db, eid)
+        @test _as_setup_mode(db, sid) == ("autosampler", "detected")
+    end
+end
+
+@testset "an autosampler setup can be created before its trace folder exists" begin
+    root = _as_write_folder!(mktempdir(), _AS_RUN_A; at = [("wat", 100)])
+    tot = joinpath(root, "analysis", "automatic_analysis", "tot_files")
+    rm(joinpath(root, "analysis"); recursive = true)
+    db = fresh_db()
+    eid = HimalayaUI.create_experiment!(db; name = "bt", path = root)
+    sid = HimalayaUI.add_setup_from_folder!(db, eid, root)
+    @test HimalayaUI.setup_row(db, sid).analysis_dir == tot
+    with_inproc_routes(db) do call
+        pv = JSON3.read(String(call("GET", "/api/fs/preview?path=$(HimalayaUI.HTTP.escapeuri(root))").body))
+        @test only(pv.setups).analysis_dir == tot
+        HimalayaUI.scan_and_group!(db, eid)
+        exposure = Int(only(Tables.rowtable(DBInterface.execute(db,
+            "SELECT id FROM exposures WHERE setup_id = ? AND filename = 'wat_01A_B100'", [sid]))).id)
+        @test call("GET", "/api/exposures/$exposure/trace").status != 200
+        for a in _AS_RUN_A
+            _as_write_dat(joinpath(mkpath(tot), "$(_as_stem(a...))_tot.dat"))
+        end
+        @test call("GET", "/api/exposures/$exposure/trace").status == 200
+    end
+end
+
+@testset "the frame suffix comes from the data folder" begin
+    @testset "the lowest frame number decides" begin
+        dir = mkpath(joinpath(mktempdir(), "data"))
+        @test HimalayaUI.first_frame_suffix(dir) == "_0_001"
+        for f in ("a_S1_0_02.tif", "a_S1_0_01.tif", "b_S2_0_03.tif", "a_S1_0_01.prp")
+            write(joinpath(dir, f), "x")
+        end
+        @test HimalayaUI.first_frame_suffix(dir) == "_0_01"
+    end
+
+    @testset "a two-digit folder is grouped, scanned and traced" begin
+        root = mktempdir()
+        for a in _AS_RUN_A
+            _as_add_acquisition!(root, a; width = 2)
+        end
+        _as_add_at!(root, "wat", 100)
+        db = fresh_db()
+        eid = HimalayaUI.create_experiment!(db; name = "bt", path = root)
+        sid = HimalayaUI.add_setup_from_folder!(db, eid, root)
+        @test HimalayaUI.setup_row(db, sid).image_pattern == "{name}_0_01.tif"
+        HimalayaUI.scan_and_group!(db, eid)
+        @test _as_count(db, "SELECT COUNT(*) AS c FROM exposures WHERE setup_id = ?", sid) == 3
+        with_inproc_routes(db) do call
+            id = Int(only(Tables.rowtable(DBInterface.execute(db,
+                "SELECT id FROM exposures WHERE filename = 'wat_01B_S101'"))).id)
+            @test call("GET", "/api/exposures/$id/trace").status == 200
+        end
+    end
+
+    @testset "a setup made before any frame exists is laid out again once frames arrive" begin
+        root = mktempdir()
+        _as_add_at!(root, "wat", 100)
+        db = fresh_db()
+        eid = HimalayaUI.create_experiment!(db; name = "bt", path = root)
+        sid = HimalayaUI.add_setup_from_folder!(db, eid, root)
+        @test HimalayaUI.setup_row(db, sid).mode == "autosampler"
+        HimalayaUI.scan_and_group!(db, eid)
+        for a in _AS_RUN_A
+            _as_add_acquisition!(root, a; width = 2)
+        end
+        HimalayaUI.scan_and_group!(db, eid)
+        @test HimalayaUI.setup_row(db, sid).image_pattern == "{name}_0_01.tif"
+        @test _as_count(db, "SELECT COUNT(*) AS c FROM exposures WHERE setup_id = ?", sid) == 3
+    end
+end
+
+@testset "scan numbers that repeat never merge two acquisitions" begin
+    @testset "two stems with one scan number in a single scan" begin
+        root = _as_write_folder!(mktempdir(), [("wat", "01A", "B", 300), ("pep", "01B", "S", 300), ("wat", "01C", "S", 300)];
+                                 at = [("wat", 300)])
+        db, eid, sid = _as_live_row_db(root)
+        HimalayaUI.scan_and_group!(db, eid)
+        @test _as_count(db, "SELECT COUNT(*) AS c FROM samples WHERE setup_id = ?", sid) == 3
+        @test _as_most_per_sample(db, sid) == 1
+    end
+
+    @testset "a later stem with a scan number already used" begin
+        root = _as_write_folder!(mktempdir(), [("wat", "01A", "B", 300)]; at = [("wat", 300)])
+        db, eid, sid = _as_live_row_db(root)
+        HimalayaUI.scan_and_group!(db, eid)
+        before = _as_snapshot(db, sid)
+        _as_add_acquisition!(root, ("wat", "01B", "S", 300))
+        _as_add_acquisition!(root, ("pep", "01A", "B", 300))
+        HimalayaUI.scan_and_group!(db, eid)
+        @test length(_as_snapshot(db, sid)) == 3
+        @test issubset(before, _as_snapshot(db, sid))
+        @test _as_most_per_sample(db, sid) == 1
+    end
+
+    @testset "a stem without a well token stays out of the runs' loads" begin
+        root = _as_write_folder!(mktempdir(), _AS_RUN_A; at = [("wat", 100)])
+        _as_add_stem!(root, "calib_S100")
+        _as_add_stem!(root, "empty_S0050")
+        res = _as_grouping(root)
+        @test sort([l.load_index for l in res.loads]) == [0, 100]
+        zero = only(l for l in res.loads if l.load_index == 0)
+        @test sort([s.name for s in zero.samples]) == ["calib_S100", "empty_S0050"]
+        db, eid, sid = _as_live_row_db(root)
+        HimalayaUI.scan_and_group!(db, eid)
+        @test _as_count(db, """SELECT COUNT(*) AS c FROM samples s JOIN loads l ON l.id = s.load_id
+                                WHERE s.setup_id = ? AND l.load_index = 100""", sid) == 3
+        @test _as_most_per_sample(db, sid) == 1
+    end
+end
+
+@testset "the stored calibration shot is renamed rather than ingested twice" begin
+    root = mktempdir()
+    _as_add_stem!(root, "agbe_S0090"; frames = 1, trace = false)
+    db = fresh_db()
+    eid = HimalayaUI.create_experiment!(db; name = "bt", path = root)
+    sid = HimalayaUI.add_setup_from_folder!(db, eid, root)
+    HimalayaUI.scan_and_group!(db, eid)
+    @test only(Tables.rowtable(DBInterface.execute(db,
+        "SELECT filename FROM exposures WHERE setup_id = ?", [sid]))).filename == "agbe_S0090_0_001"
+    for a in _AS_RUN_A
+        _as_add_acquisition!(root, a)
+    end
+    _as_add_at!(root, "wat", 100)
+    HimalayaUI.scan_and_group!(db, eid)
+    @test _as_setup_mode(db, sid) == ("autosampler", "detected")
+    names = [x.filename for x in Tables.rowtable(DBInterface.execute(db,
+        "SELECT filename FROM exposures WHERE setup_id = ? ORDER BY filename", [sid]))]
+    @test names == ["agbe_S0090", "wat_01A_B100", "wat_01B_S101", "wat_01C_S102"]
+    @test _as_most_per_sample(db, sid) == 1
+end
+
+@testset "a migrated database and a fresh one list setup columns in the same order" begin
+    fresh = HimalayaUI.open_db(joinpath(mktempdir(), "f.db"))
+    path = joinpath(mktempdir(), "m.db")
+    db = HimalayaUI.open_db(path)
+    DBInterface.execute(db, "ALTER TABLE setups DROP COLUMN mode_source")
+    DBInterface.execute(db, "ALTER TABLE setups DROP COLUMN mode")
+    DBInterface.execute(db, "DELETE FROM schema_migrations WHERE name = ?", [HimalayaUI.MIGRATION_SETUP_MODE])
+    SQLite.close(db)
+    migrated = HimalayaUI.open_db(path)
+    @test HimalayaUI.cols_of(migrated, "setups") == HimalayaUI.cols_of(fresh, "setups")
+    @test HimalayaUI.cols_of(fresh, "setups")[end-1:end] == ["mode", "mode_source"]
+end
+
+@testset "a setup request with a root that is not a string is refused cleanly" begin
+    root = _as_write_folder!(mktempdir(), _AS_RUN_A; at = [("wat", 100)])
+    db = fresh_db()
+    with_inproc_routes(db) do call
+        r = _as_json(call, "POST", "/api/experiments", Dict(:data_dir => joinpath(root, "data"), :root => 5))
+        @test r.status < 500
+    end
 end
