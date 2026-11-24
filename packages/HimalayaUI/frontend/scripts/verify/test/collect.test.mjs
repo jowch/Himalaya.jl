@@ -263,9 +263,27 @@ test("check-truth reports autosampler samples apart from the capillary ones and 
   }
 });
 
-test("check-truth without TRUTH_autosampler.csv leaves the autosampler block out", async () => {
+test("check-truth without TRUTH_autosampler.csv fails with a hint when the app has autosampler samples", async () => {
   const demoDir = demoWithTruth(false);
   const stub = await stubBackend(routes(demoDir));
+  const cfg = loadConfig({ ...stub.env, DEMO_DIR: demoDir });
+  const out = sink();
+  try {
+    assert.equal(await main(["check-truth"], { cfg, out }), 1);
+    const r = out.json();
+    assert.equal(r.autosampler.ok, false);
+    assert.match(r.autosampler.error, /TRUTH_autosampler\.csv is missing/);
+    assert.match(r.autosampler.hint, /seed --reset/);
+  } finally {
+    await stub.close();
+  }
+});
+
+test("check-truth without TRUTH_autosampler.csv leaves the autosampler block out when the app has none", async () => {
+  const demoDir = demoWithTruth(false);
+  const r0 = routes(demoDir);
+  r0["/api/samples?experiment_id=4"] = r0["/api/samples?experiment_id=4"].filter((s) => s.setup_id !== 2);
+  const stub = await stubBackend(r0);
   const cfg = loadConfig({ ...stub.env, DEMO_DIR: demoDir });
   const out = sink();
   try {
