@@ -61,8 +61,7 @@ function as_prepare(root)
     dirs
 end
 
-"Sphere form factor P(q), averaged over a narrow radius distribution so its minima stay finite."
-function sphere_form_factor(q, radius)
+function polydisperse_sphere_form_factor(q, radius)
     zs = (-1.5, -0.75, 0.0, 0.75, 1.5)
     ws = exp.(-0.5 .* zs .^ 2)
     sum(w * begin
@@ -77,7 +76,7 @@ end
 
 function as_model(buffer, shot::AsShot)
     shot.kind == 'B' && return copy(buffer)
-    buffer .+ shot.amplitude * SOLVENT_FLOOR .* sphere_form_factor.(Q, shot.radius)
+    buffer .+ shot.amplitude * SOLVENT_FLOOR .* polydisperse_sphere_form_factor.(Q, shot.radius)
 end
 
 function as_rejected_frames(total, rejected)
