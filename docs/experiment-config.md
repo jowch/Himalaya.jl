@@ -21,10 +21,23 @@ live in `routes_fs.jl` and never write to the DB; the create and scan live in
 
 | Step | Route | What it does |
 |------|-------|--------------|
-| Pick a folder | `GET /api/fs/suggest?prefix=` | Folder autocomplete: up to 20 folders whose names start with the last path segment (case-insensitive, natural order, `~` expanded, hidden folders only when the segment starts with `.`), `more` when others match. Each is marked `beamtime` (with its setup count) or `setup` and with the experiment it was added as, within a 0.5 s budget. Relative paths get nothing; `/api/fs/preview` refuses them. |
+| Browse | `GET /api/fs/list?path=` | One folder's subfolders, natural order, hidden ones left out, `~` expanded, plus its `parent` (`null` at `/`). With no path it opens beside the most recently added beamtime, or in the home folder. One directory read, typed from the directory entries, so a big or slow folder never costs a stat per entry. `400` for a relative path or a missing folder. |
+| Label a folder | `GET /api/fs/describe?path=` | Marks one folder `beamtime` (with its setup count) or `setup`, and names the experiment it was added as. The browser asks for each listed folder in turn, after the list is shown, and stops when you leave the folder. Finding a setup stops at the first `.tif` in its data folder. |
 | Preview | `GET /api/fs/preview?path=` | Lists the setups under the folder, each with its layout, counts and geometry (see [Preview](#preview)). `400` when the path is not a directory. |
 | Correct a setup | `GET /api/fs/manifest?path=&analysis_dir=&setup_file=&{image,metadata,integration}_pattern=` | Recounts one setup after the user edits its layout in Details (see [File manifest](#file-manifest)). |
 | Add | `POST /api/experiments` | One call for the folder. Creates the experiment and its setups, returns `202`, and starts the first scan in the background. |
+
+The folder browser (`components/FolderPicker.tsx`, drawn by `ui/FolderBrowser.tsx`)
+follows the list keys: ↑↓ or Tab move, Enter adds a beamtime or setup (or opens a
+plain folder), → opens, ← or Esc go up, typing filters by name and `/` opens a
+field for pasting a path. The Data and Integration folder fields under Details
+open the same browser, where Enter uses the highlighted folder.
+
+Every folder read in these routes and in the scan goes through `dir_entries.jl`
+(`list_names`, `folder_names`, `any_name`). Julia's own `readdir` doesn't let
+garbage collection run while the directory is read, so on a slow network share
+one listing stalled every thread that allocated, ingest and every request
+included. The `dir_entries.jl` readers make the libuv call `gc_safe`.
 
 `NewExperimentPage` (`/experiments/new`) shows a name field (default: the
 picked folder's name) and one row per setup: a checkbox, the setup's folder
