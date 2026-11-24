@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { WorkspaceHeader } from "../../src/ui/WorkspaceHeader";
 
 const header = (reviewed: number, total: number) => (

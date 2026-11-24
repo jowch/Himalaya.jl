@@ -344,11 +344,6 @@ acquisition never wrote down.
 
 ## Frontend infrastructure
 
-### Code splitting
-
-Vite warns the bundle is >500 kB. Probably split: the palette +
-OnboardingFlow as lazy chunks.
-
 ### Semantic spacing / density scale
 
 There's no `@theme` spacing-token system; layouts use literal Tailwind class

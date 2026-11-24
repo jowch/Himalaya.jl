@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { Routes, Route, Navigate, Outlet, useLocation, useParams } from "react-router-dom";
+import { Routes, Route, Navigate, Outlet, useLocation, useParams } from "react-router";
 import { TopNav } from "./TopNav";
 import { ExperimentsHomePage } from "../pages/ExperimentsHomePage";
 import { NewExperimentPage } from "../pages/NewExperimentPage";

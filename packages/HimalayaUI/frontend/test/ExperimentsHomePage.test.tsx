@@ -1,14 +1,14 @@
 // test/ExperimentsHomePage.test.tsx
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ExperimentsHomePage } from "../src/pages/ExperimentsHomePage";
 import * as api from "../src/api";
 
 const navigate = vi.fn();
-vi.mock("react-router-dom", async (orig) => {
-  const m = await orig<typeof import("react-router-dom")>();
+vi.mock("react-router", async (orig) => {
+  const m = await orig<typeof import("react-router")>();
   return { ...m, useNavigate: () => navigate };
 });
 

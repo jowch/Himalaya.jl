@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, render, screen, fireEvent, waitFor, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { NewExperimentPage } from "../src/pages/NewExperimentPage";
 import * as api from "../src/api";
 
 const navigate = vi.fn();
-vi.mock("react-router-dom", async (orig) => {
-  const m = await orig<typeof import("react-router-dom")>();
+vi.mock("react-router", async (orig) => {
+  const m = await orig<typeof import("react-router")>();
   return { ...m, useNavigate: () => navigate };
 });
 
