@@ -16,11 +16,12 @@ interface Props {
   caption?: string | undefined;
   onStep: (dir: 1 | -1) => void;
   onToggleDrop: (() => void) | undefined;
+  selection?: { selected: boolean; toggle: () => void } | undefined;
   onClose: () => void;
   ringsOf?: ((e: Exposure) => DetectorRingsView | null) | undefined;
 }
 
-export function DetectorOverlay({ exposures, currentId, caption, onStep, onToggleDrop, onClose, ringsOf }: Props): JSX.Element {
+export function DetectorOverlay({ exposures, currentId, caption, onStep, onToggleDrop, selection, onClose, ringsOf }: Props): JSX.Element {
   const index = exposures.findIndex((e) => e.id === currentId);
   const current = exposures[index];
   const dropped = current?.status === "rejected";
@@ -34,6 +35,10 @@ export function DetectorOverlay({ exposures, currentId, caption, onStep, onToggl
     }
     if ((key === "x" || key === "X") && onToggleDrop) {
       if (!repeat) onToggleDrop();
+      return true;
+    }
+    if (key === "Enter" && selection) {
+      if (!repeat) selection.toggle();
       return true;
     }
     return false;
@@ -80,6 +85,15 @@ export function DetectorOverlay({ exposures, currentId, caption, onStep, onToggl
         <p className="m-0 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-faint">
           <span><Kbd>←</Kbd> <Kbd>→</Kbd> images</span>
           {onToggleDrop && <span><Kbd>X</Kbd> {dropped ? "restore" : "drop"}</span>}
+          {selection && (
+            <span>
+              <Kbd>Enter</Kbd>{" "}
+              <span className="inline-grid">
+                <span aria-hidden="true" className="invisible col-start-1 row-start-1">deselect</span>
+                <span data-testid="detector-select-hint" className="col-start-1 row-start-1">{selection.selected ? "deselect" : "select"}</span>
+              </span>
+            </span>
+          )}
           <span><Kbd>Esc</Kbd> close</span>
           <span className={ringView && ringView.rings.length > 0 ? undefined : "invisible"}>Press and hold the image to hide the rings.</span>
         </p>

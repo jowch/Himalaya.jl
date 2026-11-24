@@ -129,9 +129,10 @@ function helpSections(mod: string): HelpSection[] {
       rows: [
         { keys: ["←", "→"], what: "Previous or next image" },
         { keys: ["X"], what: "Drop the image and show the nearest kept one, or restore a dropped one" },
+        { keys: ["Enter"], what: "Select the image to analyze, or take it out of the selection" },
         { keys: ["⇧ click"], what: "Select a range of images to analyze" },
         { keys: ["⌘ click"], what: "Add an image to the selection, or take it out" },
-        { keys: ["Space"], what: "Enlarge its detector image; ← → and X work inside it" },
+        { keys: ["Space"], what: "Enlarge its detector image; ← →, X and Enter work inside it" },
       ],
     },
     {
@@ -659,6 +660,13 @@ export function WorkspacePage(): JSX.Element {
       return [owner, selection] as const;
     }));
   }, [groups, sampleId, sample?.name, inExperiment, ops, history, frameName]);
+
+  const tileSelection = tile && username ? groupSelections.get(tile.sample_id) : undefined;
+  const tileSelectable = tile !== undefined && (tileSelection?.selectableIds.has(tile.id) ?? false);
+  const tileSelected = tile !== undefined && (tileSelection?.selectedIds.has(tile.id) ?? false);
+  const toggleTileSelection = useCallback(() => {
+    if (tile && tileSelectable) tileSelection?.onToggle(tile.id);
+  }, [tile, tileSelectable, tileSelection]);
 
   const draftQs = useMemo(() => (draft ? draftPrediction(draft) : []), [draft]);
   const combs: CombLine[] = useMemo(
@@ -1255,6 +1263,14 @@ export function WorkspacePage(): JSX.Element {
           if (ev.repeat) break;
           if (tile && username) toggleDrop(tile);
           break;
+        case "Enter": {
+          const onControl = ev.target instanceof HTMLElement
+            && ev.target.closest("button,a,[role=checkbox]") !== null
+            && ev.target.closest('[data-roving="image"]') === null;
+          if (onControl || !tileSelectable) handled = false;
+          else if (!ev.repeat) toggleTileSelection();
+          break;
+        }
         case "0":
           if (username) {
             setOpenPanel("call");
@@ -1275,7 +1291,7 @@ export function WorkspacePage(): JSX.Element {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [visible, sampleId, goSample, exposureList, tile, toggleDrop, keyed, toggleCandidate, toggleGroup, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor, view, setView, sample, openLabeling, applyHistory, callOpen, sampleListHidden, setSampleListHidden]);
+  }, [visible, sampleId, goSample, exposureList, tile, toggleDrop, tileSelectable, toggleTileSelection, keyed, toggleCandidate, toggleGroup, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor, view, setView, sample, openLabeling, applyHistory, callOpen, sampleListHidden, setSampleListHidden]);
 
   const droppedCount = ownFrames.filter((e) => e.status === "rejected").length;
   const keptHint = droppedCount > 0 ? `${ownFrames.length - droppedCount} of ${ownFrames.length} kept` : undefined;
@@ -1375,6 +1391,7 @@ export function WorkspacePage(): JSX.Element {
       recolour: recolorLabel,
     },
     customIndex: openCustom,
+    ...(tileSelectable ? { image: { selected: tileSelected, toggle: toggleTileSelection } } : {}),
     formFactor: {
       on: isFormFactor,
       toggle: () => {
@@ -1465,6 +1482,7 @@ export function WorkspacePage(): JSX.Element {
                 if (eid !== undefined) setExposureId(eid);
               }}
               onToggleDrop={username ? () => toggleDrop(tile) : undefined}
+              selection={tileSelectable ? { selected: tileSelected, toggle: toggleTileSelection } : undefined}
               onClose={() => setBigOpen(false)}
               ringsOf={ringsOf}
             />
