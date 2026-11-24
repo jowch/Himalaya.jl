@@ -19,7 +19,7 @@ function input(over: Partial<WorkspacePaletteInput> = {}): WorkspacePaletteInput
     canEdit: true,
     nextUnreviewed: noop,
     compare: { samples: [], notes: new Map(), pick: noop, compared: [], remove: noop, subtractable: [], subtracted: undefined, subtract: noop },
-    bridge: { samples: [], pick: noop, choices: () => undefined, names: (id) => `Sample ${id}`, bridged: [], leave: noop },
+    bridge: { samples: [], pick: noop, choices: () => undefined, names: (id) => `Sample ${id}`, bridged: [], leave: noop, groupChoices: () => undefined, pickMany: noop },
     candidates: { list: [], ticked: new Set(), tick: noop },
     labels: { known: [], colorFor: () => "plum", toggle: noop, create: noop, recolour: noop },
     customIndex: noop,
@@ -52,7 +52,7 @@ describe("workspacePalette", () => {
     const { pages, groups } = workspacePalette(input({
       setupOf,
       compare: { samples: [a, b], notes: new Map([[3, "Buffer"]]), pick: noop, compared: [a], remove: noop, subtractable: [a], subtracted: 2, subtract: noop },
-      bridge: { samples: [a, b], pick: noop, choices: () => undefined, names: (id) => `Sample ${id}`, bridged: [], leave: noop },
+      bridge: { samples: [a, b], pick: noop, choices: () => undefined, names: (id) => `Sample ${id}`, bridged: [], leave: noop, groupChoices: () => undefined, pickMany: noop },
       samples: [a, b],
     }));
     expect(pages.compare!.items.map((i) => i.hint)).toEqual(["setup1", "setup2 · Buffer"]);
@@ -201,7 +201,7 @@ describe("workspacePalette", () => {
     const setups = new Map([[2, "Short pipe"], [3, "Long pipe"]]);
     const { pages } = workspacePalette(input({ setupOf: (id) => setups.get(id), bridge: {
       samples: [a, b], pick, choices: (id) => (id === 3 ? choices : undefined),
-      names: (id) => `${id === 2 ? "A" : "B"} in ${setups.get(id)}`, bridged: [], leave: vi.fn(),
+      names: (id) => `${id === 2 ? "A" : "B"} in ${setups.get(id)}`, bridged: [], leave: vi.fn(), groupChoices: () => undefined, pickMany: vi.fn(),
     } }));
     const [plain, differs] = pages.bridge!.items;
     expect(plain!.form).toBeUndefined();
@@ -218,8 +218,42 @@ describe("workspacePalette", () => {
     expect(pick).toHaveBeenLastCalledWith(3, 3);
   });
 
+  it("bridges several ticked samples at once, asking once which call to keep when their calls differ", () => {
+    const pickMany = vi.fn();
+    const a = { id: 2, name: "A" } as WorkspacePaletteInput["bridge"]["samples"][number];
+    const b = { id: 3, name: "B" } as WorkspacePaletteInput["bridge"]["samples"][number];
+    const choices = [{ value: "1", label: "Here: Pn3m", keep: 1 }, { value: "3", label: "B: Im3m", keep: 3 }];
+    const groupChoices = vi.fn((ids: readonly number[]) => (ids.includes(3) ? choices : undefined));
+    const { pages } = workspacePalette(input({ bridge: {
+      samples: [a, b], pick: vi.fn(), choices: () => undefined, names: (id) => (id === 2 ? "A" : "B"), bridged: [], leave: vi.fn(), groupChoices, pickMany,
+    } }));
+    const multi = pages.bridge!.multi!;
+    expect(multi.verb(2)).toBe("mark 2 as the same sample");
+    expect(multi.commit(["bridge-2"])).toBeUndefined();
+    expect(pickMany).toHaveBeenLastCalledWith([2]);
+    const form = multi.commit(["bridge-2", "bridge-3"])!;
+    expect(form.title).toBe("Same sample as A, B");
+    form.submit({ keep: "3" });
+    expect(pickMany).toHaveBeenLastCalledWith([2, 3], 3);
+  });
+
+  it("hints Same setup as on a row whose setup already has a tick, without refusing it", () => {
+    const a = { id: 2, name: "A" } as WorkspacePaletteInput["bridge"]["samples"][number];
+    const b = { id: 3, name: "B" } as WorkspacePaletteInput["bridge"]["samples"][number];
+    const c = { id: 4, name: "C" } as WorkspacePaletteInput["bridge"]["samples"][number];
+    const setups = new Map([[2, "Long pipe"], [3, "Long pipe"], [4, "Hot stage"]]);
+    const { pages } = workspacePalette(input({ setupOf: (id) => setups.get(id), bridge: {
+      samples: [a, b, c], pick: vi.fn(), choices: () => undefined, names: (id) => `${["", "", "A", "B", "C"][id]} in ${setups.get(id)}`, bridged: [], leave: vi.fn(), groupChoices: () => undefined, pickMany: vi.fn(),
+    } }));
+    const hint = pages.bridge!.multi!.hint!;
+    expect(hint("bridge-3", [])).toBeUndefined();
+    expect(hint("bridge-3", ["bridge-2"])).toBe("Same setup as A in Long pipe");
+    expect(hint("bridge-2", ["bridge-2"])).toBeUndefined();
+    expect(hint("bridge-4", ["bridge-2"])).toBeUndefined();
+  });
+
   it("finds the same-sample commands when typing merge, bridge, link or same", () => {
-    const bridge = { samples: [], pick: vi.fn(), choices: () => undefined, names: (id: number) => `Sample ${id}`, bridged: ["B"], leave: vi.fn() };
+    const bridge = { samples: [], pick: vi.fn(), choices: () => undefined, names: (id: number) => `Sample ${id}`, bridged: ["B"], leave: vi.fn(), groupChoices: () => undefined, pickMany: vi.fn() };
     const { groups, pages } = workspacePalette(input({ bridge }));
     for (const q of ["merge", "bridge", "link", "same"]) {
       const ids = rootRows(groups, pages, q).flatMap((r) => (r.kind === "item" ? [r.item.id] : []));

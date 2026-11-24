@@ -46,6 +46,8 @@ export interface WorkspacePaletteInput extends AppActions {
     names: (id: number) => string;
     bridged: readonly string[];
     leave: () => void;
+    groupChoices: (ids: readonly number[]) => readonly KeepChoice[] | undefined;
+    pickMany: (ids: readonly number[], keep?: KeepCall) => void;
   };
   candidates: { list: readonly IndexEntry[]; ticked: ReadonlySet<number>; tick: (ix: IndexEntry) => void };
   labels: {
@@ -85,6 +87,8 @@ export interface WorkspacePaletteInput extends AppActions {
     go: (path: string) => void;
   };
 }
+
+const bridgeId = (key: string): number => Number(key.slice("bridge-".length));
 
 const SAME_SAMPLE_WORDS: readonly string[] = ["merge", "bridge", "link"];
 
@@ -300,6 +304,23 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
         if (!choices) return { id: `bridge-${s.id}`, label: s.name, hint: setup, run: () => p.bridge.pick(s.id) };
         return { id: `bridge-${s.id}`, label: s.name, hint: joinHints(setup, "Different call"), form: () => keepCallForm(`Same sample as ${p.bridge.names(s.id)}`, choices, (keep) => p.bridge.pick(s.id, keep)) };
       }),
+      multi: {
+        verb: (n) => `mark ${n} as the same sample`,
+        hint: (key, keys) => {
+          const setup = p.setupOf(bridgeId(key));
+          const same = keys.filter((k) => k !== key && setup !== undefined && p.setupOf(bridgeId(k)) === setup);
+          return same.length > 0 ? `Same setup as ${same.map((k) => p.bridge.names(bridgeId(k))).join(", ")}` : undefined;
+        },
+        commit: (keys) => {
+          const ids = keys.map(bridgeId);
+          const choices = p.bridge.groupChoices(ids);
+          if (!choices) {
+            p.bridge.pickMany(ids);
+            return undefined;
+          }
+          return keepCallForm(`Same sample as ${ids.map((id) => p.bridge.names(id)).join(", ")}`, choices, (keep) => p.bridge.pickMany(ids, keep));
+        },
+      },
     };
     if (p.candidates.list.length > 0) {
       pages.tick = {

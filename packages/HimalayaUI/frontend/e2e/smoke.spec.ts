@@ -108,6 +108,26 @@ test("the experiments home follows a dark pick from the workspace, and its statu
   expect((await read()).spacing).toBe("normal");
 });
 
+test("the collection ribbon takes the same height whether or not a beamtime has image times", async ({ page }) => {
+  await mockCore(page);
+  const stats = { loads: 1, samples: 2, exposures: 4, sessions: 1, span_hours: 1, started_at: "2026-05-01T10:00:00", review: { reviewed: 1, total: 2 } };
+  const timeline = { start: "2026-05-01T10:00:00", samples: [[0, 300, 1], [360, 700, 0]], beam_off: [700] };
+  await page.route("**/api/experiments", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([
+      { ...EXPERIMENT, id: 1, name: "Timed", ingest_status: "complete", stats: { ...stats, timeline } },
+      { ...EXPERIMENT, id: 2, name: "Untimed", ingest_status: "complete", stats: { ...stats, timeline: null } },
+    ]) }));
+  await seedState(page, {});
+  await page.goto("/experiments");
+  const timed = page.getByTestId("experiment-card-1").getByTestId("collection-ribbon");
+  const untimed = page.getByTestId("experiment-card-2").getByTestId("collection-ribbon");
+  await expect(timed.getByText("1 to review")).toBeVisible();
+  await expect(untimed.getByText("No image times yet")).toBeVisible();
+  const [a, b] = await Promise.all([timed.boundingBox(), untimed.boundingBox()]);
+  expect(a!.height).toBeGreaterThan(0);
+  expect(b!.height).toBe(a!.height);
+});
+
 test("a dark pick is on the page before the app script runs, so a dark user never sees light paper first", async ({ page }) => {
   await page.route(/\/assets\/.*\.js$/, (r) => r.abort());
   await page.addInitScript(() => { localStorage.setItem("himalaya-ui:theme", "dark"); });

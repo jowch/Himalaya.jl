@@ -49,6 +49,7 @@ include("peak_training_service.jl")
 include("peak_model_pass.jl")
 include("ingest.jl")
 include("beam_off.jl")
+include("collection_timeline.jl")
 include("precompile.jl")
 
 export main

@@ -54,3 +54,8 @@ export function invalidateAssignmentsExcept(qc: QueryClient, keep: readonly numb
     predicate: (q) => q.queryKey[0] === "exposure" && q.queryKey[2] === "assignment" && !keep.includes(q.queryKey[1] as number),
   });
 }
+
+export function invalidateReviewProgress(qc: QueryClient, origin: "own" | "remote"): void {
+  qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
+  qc.invalidateQueries({ queryKey: queryKeys.experiments, refetchType: origin === "remote" ? "active" : "none" });
+}

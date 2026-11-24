@@ -14,13 +14,13 @@ function frame(kind: string, entity_id: number, payload: Record<string, unknown>
 const scope = { username: "jc", clientId: "c", clientOpId: "op", kind: "bridge_samples", experimentId: 7 } as const;
 
 describe("bridge mutations", () => {
-  it("a remote bridge event refetches that experiment's bridges and the shared calls, and nothing exposure-scoped", () => {
+  it("a remote bridge event refetches that experiment's bridges, the shared calls and the review counts, and nothing exposure-scoped", () => {
     for (const kind of ["sample_bridged", "sample_unbridged"]) {
       const qc = new QueryClient();
       const spy = vi.spyOn(qc, "invalidateQueries");
       applyRemoteToCache(frame(kind, 42, { group_id: 3, experiment_id: 7 }), qc);
       const keys = spy.mock.calls.flatMap((c) => (c[0]?.queryKey ? [JSON.stringify(c[0].queryKey)] : []));
-      expect(keys).toEqual([JSON.stringify(queryKeys.bridges(7)), JSON.stringify(queryKeys.corpusSamples)]);
+      expect(keys).toEqual([JSON.stringify(queryKeys.bridges(7)), JSON.stringify(queryKeys.corpusSamples), JSON.stringify(queryKeys.experiments)]);
       const hits = (key: readonly unknown[]) => spy.mock.calls.some((c) => c[0]?.predicate?.({ queryKey: key } as never));
       expect(hits(queryKeys.sampleCall(42))).toBe(true);
       expect(hits(queryKeys.assignment(101))).toBe(false);
