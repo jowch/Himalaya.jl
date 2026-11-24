@@ -191,6 +191,8 @@ folder under `dist.releases/` and the sysimage into `build/next/`, and runs
 `make check-sysimage` on the new sysimage. Only when all of that passes does it
 swap both in, and it stops at the first step that fails. It takes about 5–10
 min. The frontend goes next to `HIMALAYA_FRONTEND_DIST` when `.env` sets it.
+If it stops at `npm ci` with `EBADENGINE`, the server's Node is too old: install
+Node 24 LTS (24.15+) and run `make deploy` again.
 
 `make deploy` never uses sudo and never restarts the server. When it finishes it
 prints the command to run yourself:
