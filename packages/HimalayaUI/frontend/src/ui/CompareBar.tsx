@@ -26,7 +26,7 @@ interface Props {
   trailing?: ReactNode;
 }
 
-const SCALE_NOTES: Record<CompareScale["source"], string> = {
+export const SCALE_NOTES: Record<CompareScale["source"], string> = {
   normalised: "Both already divided by the transmitted beam, so not rescaled",
   monitor: "Scaled by the transmitted beam",
   matched: "No transmitted-beam reading, so matched at high q",

@@ -9,6 +9,9 @@ interface Props {
   notes?: ReadonlyMap<number, string>;
   setups?: ReadonlyMap<number, string>;
   full?: string | undefined;
+  title?: string;
+  findLabel?: string;
+  fill?: boolean;
 }
 
 export function ComparePicker({
@@ -18,6 +21,9 @@ export function ComparePicker({
   notes,
   setups,
   full,
+  title = "Compare with a sample",
+  findLabel = "Find a sample to compare",
+  fill = false,
 }: Props): JSX.Element {
   const [q, setQ] = useState("");
   const input = useRef<HTMLInputElement | null>(null);
@@ -47,10 +53,10 @@ export function ComparePicker({
     <div
       ref={root}
       role="dialog"
-      aria-label="Compare with a sample"
+      aria-label={title}
       data-keys-trap
       data-testid="workspace-compare-picker"
-      className="absolute left-0 top-full z-20 mt-1 w-72 rounded-sm border border-hair bg-plate shadow-lg"
+      className={"absolute top-full z-20 mt-1 rounded-sm border border-hair bg-plate shadow-lg " + (fill ? "inset-x-3.5" : "left-0 w-72")}
       onKeyDown={highlight.onKeyDown}
     >
       <input
@@ -59,7 +65,7 @@ export function ComparePicker({
         value={q}
         onChange={(e) => setQ(e.target.value)}
         placeholder="Find a sample"
-        aria-label="Find a sample to compare"
+        aria-label={findLabel}
         className="w-full border-b border-hair bg-plate px-2 py-1 text-body placeholder:text-ink-faint focus:outline-none"
       />
       <ul className="max-h-64 overflow-y-auto py-1">
