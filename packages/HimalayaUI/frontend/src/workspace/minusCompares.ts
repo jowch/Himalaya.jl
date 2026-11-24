@@ -2,7 +2,7 @@ import type { SampleBackground, Trace } from "../api";
 import { compareScale, subtractTrace, type CompareScale } from "./compare";
 import type { TraceStatus } from "./useCompareTraces";
 
-export type SkipReason = "buffer" | "none" | "no-default" | "no-module" | "hidden" | "loading" | "missing" | "no-trace";
+export type SkipReason = "buffer" | "none" | "no-default" | "no-module" | "hidden" | "loading" | "loading-own" | "missing" | "no-trace";
 
 export const SKIP_NOTES: Record<SkipReason, string> = {
   buffer: "Not subtracted: this is a buffer",
@@ -11,6 +11,7 @@ export const SKIP_NOTES: Record<SkipReason, string> = {
   "no-module": "Not subtracted: only autosampler samples have a background",
   hidden: "Not subtracted: the setup of its background is hidden",
   loading: "Loading the background trace",
+  "loading-own": "Loading this sample's trace",
   missing: "Not subtracted: no trace for its background",
   "no-trace": "Not subtracted: no trace for this sample",
 };
@@ -54,7 +55,7 @@ export function planMinusCompares({ chips, backgrounds, traces, statuses, hidden
     const background = backgroundOf(byId.get(id), hidden);
     if (!background.ok) return { kind: "skipped", id, reason: background.reason };
     const own = traces.get(id);
-    if (!own) return { kind: "skipped", id, reason: statuses.get(id) === "loading" ? "loading" : "no-trace" };
+    if (!own) return { kind: "skipped", id, reason: statuses.get(id) === "loading" ? "loading-own" : "no-trace" };
     const ref = traces.get(background.ref);
     if (!ref) return { kind: "skipped", id, reason: statuses.get(background.ref) === "loading" ? "loading" : "missing" };
     const ownSetup = setupOf(id);

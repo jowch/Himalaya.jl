@@ -505,24 +505,13 @@ export function WorkspacePage(): JSX.Element {
     [sampleId],
   );
   const [minusChoice, setMinusChoice] = useState<ReadonlyMap<number, boolean>>(() => new Map());
-  const minusWanted = managed && subRef !== undefined && sampleId !== undefined && (minusChoice.get(sampleId) ?? true);
   const backgrounds = useMemo(() => comparesQuery.data?.backgrounds ?? [], [comparesQuery.data]);
-  const minusChips = useMemo(
-    () => (minusWanted && refsOn ? shownRefs.filter((r) => r !== sampleId && !hiddenRefs.has(r)) : []),
-    [minusWanted, refsOn, shownRefs, sampleId, hiddenRefs],
-  );
-  const minusBackgrounds = useMemo(() => backgroundsToFetch(minusChips, backgrounds, hiddenSamples), [minusChips, backgrounds, hiddenSamples]);
   const fetchRefs = useMemo(() => {
     const base = shownRefs.filter((r) => !hiddenRefs.has(r) || r === subRef);
-    const extra = [...(subRef !== undefined ? [subRef] : []), ...minusBackgrounds];
-    return [...base, ...[...new Set(extra)].filter((r) => !base.includes(r))];
-  }, [shownRefs, hiddenRefs, subRef, minusBackgrounds]);
+    return subRef !== undefined && !base.includes(subRef) ? [...base, subRef] : base;
+  }, [shownRefs, hiddenRefs, subRef]);
   const compareTraces = useCompareTraces(fetchRefs);
-  const statusIds = useMemo(
-    () => [...new Set([...(bgRef !== undefined && !bgHidden ? [bgRef] : []), ...minusChips, ...minusBackgrounds])],
-    [bgRef, bgHidden, minusChips, minusBackgrounds],
-  );
-  const traceStatuses = useTraceStatuses(statusIds);
+  const traceStatuses = useTraceStatuses(useMemo(() => (bgRef !== undefined && !bgHidden ? [bgRef] : []), [bgRef, bgHidden]));
   const backgroundLoading = managed && subRef !== undefined && trace.data !== undefined && !compareTraces.has(subRef) && traceStatuses.get(subRef) === "loading";
 
   const callOnFrame = useCallback(
@@ -815,12 +804,23 @@ export function WorkspacePage(): JSX.Element {
   const subName = subRef !== undefined ? (sampleNames.get(subRef) ?? `Sample ${subRef}`) : "";
   const managedMinus = minusOn && managed;
   const setupIdOf = useMemo(() => new Map(inExperiment.map((s) => [s.id, s.setup_id ?? null] as const)), [inExperiment]);
+  const minusChips = useMemo(
+    () => (managedMinus && refsOn ? shownRefs.filter((r) => r !== sampleId && r !== subRef && !hiddenRefs.has(r)) : []),
+    [managedMinus, refsOn, shownRefs, sampleId, subRef, hiddenRefs],
+  );
+  const minusBackgrounds = useMemo(
+    () => backgroundsToFetch(minusChips, backgrounds, hiddenSamples).filter((r) => !fetchRefs.includes(r)),
+    [minusChips, backgrounds, hiddenSamples, fetchRefs],
+  );
+  const backgroundTraces = useCompareTraces(minusBackgrounds);
+  const minusStatuses = useTraceStatuses(useMemo(() => [...new Set([...minusChips, ...minusBackgrounds])], [minusChips, minusBackgrounds]));
+  const minusTraces = useMemo(() => new Map([...compareTraces, ...backgroundTraces]), [compareTraces, backgroundTraces]);
   const minusPlan = useMemo(
     () => new Map(planMinusCompares({
-      chips: minusChips, backgrounds, traces: compareTraces, statuses: traceStatuses, hidden: hiddenSamples,
-      setupOf: (id) => setupIdOf.get(id) ?? null, peakQs,
+      chips: minusChips, backgrounds, traces: minusTraces, statuses: minusStatuses, hidden: hiddenSamples,
+      setupOf: (id) => setupIdOf.get(id) ?? null, peakQs: [],
     }).map((p) => [p.id, p] as const)),
-    [minusChips, backgrounds, compareTraces, traceStatuses, hiddenSamples, setupIdOf, peakQs],
+    [minusChips, backgrounds, minusTraces, minusStatuses, hiddenSamples, setupIdOf],
   );
   const minusLines: CompareLine[] = useMemo(
     () => (managedMinus
@@ -840,7 +840,7 @@ export function WorkspacePage(): JSX.Element {
     return p.kind === "drawn" ? { kind: "drawn", background: sampleNames.get(p.background) ?? `Sample ${p.background}` } : { kind: "skipped", reason: p.reason };
   };
   const chipScale = (rid: number): CompareScale | undefined => {
-    if (!managedMinus) return scales.get(rid);
+    if (!managedMinus || rid === subRef) return scales.get(rid);
     const p = minusPlan.get(rid);
     return p?.kind === "drawn" ? p.scale : undefined;
   };

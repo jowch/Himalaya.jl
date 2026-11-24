@@ -60,6 +60,7 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
           const sub = c.id === subtractId;
           const off = hidden || c.hidden === true;
           const dim = off ? " opacity-45" : "";
+          const description = describe(c, sub);
           return (
             <span
               key={c.id}
@@ -88,7 +89,7 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
                   type="button"
                   aria-pressed={!off}
                   {...(off || c.setup ? { "aria-label": [c.name, c.setup, off ? "hidden" : undefined].filter(Boolean).join(", ") } : {})}
-                  {...(describe(c, sub) ? { "aria-description": describe(c, sub) } : {})}
+                  {...(description ? { "aria-description": description } : {})}
                   data-subtracted={sub ? "" : undefined}
                   onClick={(e) => {
                     if (e.metaKey || e.ctrlKey) onSubtract(c.id);
@@ -108,7 +109,7 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
               {c.minus?.kind === "skipped" && (
                 <Tooltip content={SKIP_NOTES[c.minus.reason]}>
                   <span className={"shrink-0 whitespace-nowrap text-ink-faint" + dim} data-minus-note={c.minus.reason}>
-                    {c.minus.reason === "loading" ? "loading" : "not subtracted"}
+                    {c.minus.reason === "loading" || c.minus.reason === "loading-own" ? "loading" : "not subtracted"}
                   </span>
                 </Tooltip>
               )}

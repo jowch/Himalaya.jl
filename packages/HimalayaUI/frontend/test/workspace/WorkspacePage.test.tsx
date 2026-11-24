@@ -2739,9 +2739,9 @@ describe("WorkspacePage", () => {
     state.compareTraces = new Map([[11, makeTrace(2)]]);
     renderAt("/experiments/1/workspace/10");
     act(() => setCompares({ compares: [{ sample_id: 10, ref_sample_id: 11, added_by: "ana" }], subtractions: [] }));
-    expect(compareFetches.at(-1)).toEqual([]);
+    expect(compareFetches.slice(-2).flat()).toEqual([]);
     fireEvent.click(screen.getByRole("button", { name: "A2, hidden" }));
-    expect(compareFetches.at(-1)).toEqual([11]);
+    expect(compareFetches.slice(-2).flat()).toEqual([11]);
   });
 
   it("the compare picker lists samples you compared recently first, without adding them anywhere", () => {
@@ -4645,11 +4645,11 @@ describe("WorkspacePage autosampler background", () => {
       open(FIRST);
       compareWith("lipidA 01C");
       compareWith("lipidB 01B");
-      const shown = compareFetches.at(-1)!;
+      const shown = compareFetches.slice(-2).flat();
       expect(shown.filter((id) => id === BUFFER)).toHaveLength(1);
       expect(shown.filter((id) => id === OTHER_BUFFER)).toHaveLength(1);
       fireEvent.click(chipOf(/^lipidB 01B/));
-      const after = compareFetches.at(-1)!;
+      const after = compareFetches.slice(-2).flat();
       expect(after).not.toContain(OTHER_BUFFER);
       expect(after).not.toContain(OTHER_RUN);
       expect(after).toContain(SECOND);
