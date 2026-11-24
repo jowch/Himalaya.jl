@@ -176,7 +176,7 @@ export function WorkspacePlot({
   const viewed = (difference ? difference.d : trace.I).map((v, i) => viewIntensity(view, lineQ[i]!, v));
   const diffAxis = residual && difference ? differenceAxis(view, lineQ, viewed, shownX, peaks.filter((p) => !p.excluded).map((p) => p.q)) : null;
   const I = diffAxis ? viewed.map(diffAxis.to) : viewed;
-  const shownCompares = difference ? [] : compares.map((c) => ({ ...c, I: c.I.map((v, i) => viewIntensity(view, c.q[i]!, v)) }));
+  const shownCompares = residual ? [] : compares.map((c) => ({ ...c, I: c.I.map((v, i) => viewIntensity(view, c.q[i]!, v)) }));
   const shownMembers = difference ? [] : members.map((m) => ({ ...m, I: m.I.map((v, i) => viewIntensity(view, m.q[i]!, v)) }));
   const yDomain = diffAxis ? diffAxis.domain : fitYDomain({ q: lineQ, I }, [...shownCompares, ...shownMembers], shownX, yType, difference !== undefined);
   const yLabel = viewLabel(view);
