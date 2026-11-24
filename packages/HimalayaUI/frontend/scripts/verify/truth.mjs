@@ -1,5 +1,7 @@
+import path from "node:path";
 import { getJson, request } from "./http.mjs";
-import { findDemoExperiment, readTruth } from "./demo.mjs";
+import { STALE_LAYOUT_HINT, autosamplerDir, findDemoExperiment, readAutosamplerTruth, readTruth, staleDemoLayout } from "./demo.mjs";
+import { AUTOSAMPLER_MODE, collectAutosampler, compareAutosampler, setupMode } from "./autosampler.mjs";
 import { UsageError, intFlag } from "./args.mjs";
 import { callFromText, readViews, statusFromText } from "./views.mjs";
 import { heldTraces } from "./late.mjs";
@@ -437,14 +439,20 @@ async function readAssignment(api, exposureId) {
   return { state: a.state, phases: a.members.map((m) => byId.get(m)).filter(Boolean) };
 }
 
-export async function collectApp(cfg, experimentId) {
+async function experimentSetups(api, experimentId) {
+  const experiments = await getJson(api, "/api/experiments");
+  return experiments.find((e) => e.id === experimentId)?.setups ?? [];
+}
+
+export async function collectApp(cfg, experimentId, setups = []) {
   const api = cfg.apiBase;
-  const [samples, exported, labels, bridges] = await Promise.all([
+  const [allSamples, exported, labels, bridges] = await Promise.all([
     getJson(api, `/api/samples?experiment_id=${experimentId}`),
     getJson(api, `/api/experiments/${experimentId}/export`),
     getJson(api, `/api/experiments/${experimentId}/labels`),
     getJson(api, `/api/experiments/${experimentId}/bridges`),
   ]);
+  const samples = allSamples.filter((s) => setupMode(setups, s) !== AUTOSAMPLER_MODE);
   const drift = bridgeLabelDrift(samples, labels, bridges);
   const callDrift = bridgeCallDrift(samples, bridges);
   const groupSize = new Map();
@@ -497,6 +505,7 @@ async function resolveExperiment(cfg, flags) {
   const exp = await findDemoExperiment(cfg).catch(() => {
     throw new UsageError(`backend not answering at ${cfg.apiBase}`, "run `bin/verify seed`");
   });
+  if (!exp && staleDemoLayout(cfg)) throw new UsageError(`${cfg.demoDir} has the layout from before the demo had two setups, so no experiment can match it`, STALE_LAYOUT_HINT);
   if (!exp) throw new UsageError("the demo experiment is not ingested", "run `bin/verify seed`");
   if (exp.ingest_status !== "complete") throw new UsageError(`demo experiment ${exp.id} is ${exp.ingest_status}`, "wait for the scan to finish; `bin/verify doctor` shows progress");
   return exp.id;
@@ -508,6 +517,21 @@ function loadTruth(cfg, flags) {
   return truth;
 }
 
+async function checkAutosampler(cfg, flags, experimentId, setups) {
+  const rows = readAutosamplerTruth(cfg, flags.truth);
+  const samples = await getJson(cfg.apiBase, `/api/samples?experiment_id=${experimentId}`);
+  if (!rows) {
+    const present = samples.filter((s) => setupMode(setups, s) === AUTOSAMPLER_MODE).length;
+    return present === 0 ? null : {
+      ok: false,
+      error: `TRUTH_autosampler.csv is missing but the app has ${present} autosampler samples, so nothing checks them`,
+      hint: "regenerate the demo with `bin/verify seed --reset`, or pass --truth <TRUTH.csv> from a folder that holds TRUTH_autosampler.csv",
+    };
+  }
+  const found = await collectAutosampler(cfg.apiBase, samples, setups, rows);
+  return compareAutosampler(rows, found, { dataDir: path.join(autosamplerDir(cfg), "data") });
+}
+
 export async function checkTruth(cfg, flags, { views = readViews } = {}) {
   const gate = flags.gate ?? null;
   if (gate !== null && gate !== "invariants") throw new UsageError(`unknown --gate ${gate}`, "use --gate invariants, or leave it out to gate on TRUTH too");
@@ -517,7 +541,9 @@ export async function checkTruth(cfg, flags, { views = readViews } = {}) {
   const experimentId = await resolveExperiment(cfg, flags);
   const expect = flags.expect ?? null;
   if (expect !== null && !(expect in EXPECTATIONS)) throw new UsageError(`unknown --expect ${expect}`, `use one of ${Object.keys(EXPECTATIONS).join(", ")}`);
-  const app = await collectApp(cfg, experimentId);
+  const setups = await experimentSetups(cfg.apiBase, experimentId);
+  const app = await collectApp(cfg, experimentId, setups);
+  const autosampler = await checkAutosampler(cfg, flags, experimentId, setups);
   const held = heldTraces(cfg);
   const heldSet = new Set(held);
   let workspaceRead = null;
@@ -542,7 +568,7 @@ export async function checkTruth(cfg, flags, { views = readViews } = {}) {
   const notices = flags.ui ? [...(opened?.values() ?? [])].map((v) => v.workspace_notice).filter((v) => v !== undefined) : [];
   const traces = compareTraces(held, problems.exposures ?? [], notices.length ? notices[notices.length - 1] : undefined);
   const compared = compareTruth(truth, app, { strict: Boolean(flags.strict), expect, held: heldSet, gate });
-  const result = { experiment_id: experimentId, ...compared, ok: compared.ok && traces.ok, traces };
+  const result = { experiment_id: experimentId, ...compared, ok: compared.ok && traces.ok && (autosampler?.ok ?? true), traces, autosampler };
   if (flags.ui) result.workspace_read = workspaceRead;
   return result;
 }
@@ -550,7 +576,7 @@ export async function checkTruth(cfg, flags, { views = readViews } = {}) {
 export async function triage(cfg, flags) {
   const truth = loadTruth(cfg, flags);
   const experimentId = await resolveExperiment(cfg, flags);
-  const app = await collectApp(cfg, experimentId);
+  const app = await collectApp(cfg, experimentId, await experimentSetups(cfg.apiBase, experimentId));
   const bad = new Set(truth.flatMap((r) => words(r.drop)));
   const status = flags.undo ? null : "rejected";
   const changed = [];

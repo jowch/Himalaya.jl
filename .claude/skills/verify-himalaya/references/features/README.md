@@ -29,7 +29,7 @@ Keys are global unless noted; `?` opens the shortcut overlay on any page.
 - **Needs a DB without the folder.** Start a second instance so the main demo is untouched. To see several setups, link the demo into a date-like folder:
   ```bash
   export DEMO_API_PORT=8081 DEMO_UI_PORT=5174 VERIFY_CDP_PORT=9334 VERIFY_STATE_DIR=scratch/verify-empty
-  mkdir -p scratch/funnel-day && cp -r scratch/demo-experiment scratch/funnel-day/setup1 && cp -r scratch/demo-experiment scratch/funnel-day/setup2
+  mkdir -p scratch/funnel-day && cp -r scratch/demo-experiment/capillary scratch/funnel-day/setup1 && cp -r scratch/demo-experiment/capillary scratch/funnel-day/setup2
   bin/verify seed --empty
   bin/verify open /experiments/new
   bin/verify press /                                                 # opens the path field
@@ -93,7 +93,7 @@ Keys are global unless noted; `?` opens the shortcut overlay on any page.
 
 ## Autosampler background (Background module)
 
-- **Needs an autosampler setup, and `make demo` has none yet.** The demo's setup is a capillary one, so none of this shows there: a capillary sample has no Background section, `B` does nothing and the Raw/Minus toggle appears only after a comparison is subtracted. To drive it, point a second instance at a folder of autosampler files (`AT_SolSAXS_<label>_<scan>.txt` in `data/`, stems `<label>_<well>_S<scan>` and `_B<scan>`, `_tot.dat` traces under `analysis/automatic_analysis/tot_files/`). Until the demo grows one, say in the PR that this was not driven in the browser.
+- **Needs an autosampler sample.** `make demo` has one: the `autosampler` setup, 17 samples named like `lysA 01B (S0102)`, with buffers `lysA 01A (B0101)`, `micB 02A (B0108)` and `lysA 01A (B0113)`; `docs/demo.md` ("The autosampler setup") lists them and the cases built in, and `TRUTH_autosampler.csv` has each one's expected background and frame counts. A capillary sample (`MO_H2O`, …) has no Background section, `B` does nothing and the Raw/Minus toggle appears only after a comparison is subtracted. Find a sample's id with `bin/verify api GET "/api/samples?experiment_id=1"`; the capillary samples keep ids 1–13.
 - **Route:** `/experiments/<id>/workspace/<sampleId>` on a sample of an autosampler setup. The tools column holds `region "Tools"` with a `Background` section above `Image`.
 - **Shows:** three fixed rows. The background's name with a tag, `run's buffer` or `chosen`; one note row that is empty when both traces are already normalised and otherwise reads `scaled ×0.970`, `matched at high q ×0.970`, `no integ settings, matched ×0.970`, `other setup, matched ×0.970`, `beam off, matched ×0.970` or `I₂ low, matched ×0.970`, or `loading`, `no trace` or `setup hidden` (hovering the note shows the full sentence); and the buttons "Change B", "None" and "Run's buffer". A buffer sample reads "This is a buffer" with no buttons. A run with no buffer reads "No buffer in this run" with no None. A background turned off reads "None".
 - **Opens in Minus:** a sample with a background opens as the difference (`[data-role="difference-line"]`), with `group "Subtraction"` switching to Raw. While the background's trace loads the plot says "Loading the background's trace" and the toggle's place is held. The subtracted curve follows the selected view (V steps the views), over the whole curve.

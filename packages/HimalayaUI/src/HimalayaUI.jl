@@ -58,6 +58,7 @@ include("ingest.jl")
 include("beam_off.jl")
 include("i2_collapse.jl")
 include("collection_timeline.jl")
+include("autosampler_precompile.jl")
 include("precompile.jl")
 
 export main

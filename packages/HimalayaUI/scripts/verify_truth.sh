@@ -58,7 +58,7 @@ step 6-reindex log env HIMALAYA_DB_PATH="$(cd "$DB_DIR" && pwd)/himalaya.db" \
     DBInterface.execute(db, "UPDATE exposures SET trace_hash = NULL, analysis_inputs_hash = NULL WHERE experiment_id = ?", [id])
     HimalayaUI.main(["analyze", "-e", string(id)])
     rows = Tables.rowtable(DBInterface.execute(db,
-        "SELECT id, sample_id, kind FROM exposures WHERE experiment_id = ? AND status IS NOT ? AND analysis_inputs_hash IS NULL", [id, "rejected"]))
+        "SELECT id, sample_id, kind FROM exposures WHERE experiment_id = ? AND status IS NOT ? AND analysis_inputs_hash IS NULL AND setup_id IN (SELECT id FROM setups WHERE mode IS NOT ?)", [id, "rejected", "autosampler"]))
     stale = count(r -> r.kind != "combined" || r.id == HimalayaUI.analyzed_exposure_id(db, Int(r.sample_id)), rows)
     stale == 0 || error("$stale kept exposures were not re-indexed")'
 step 7-after-reindex json bin/verify check-truth --ui --reload --expect triaged

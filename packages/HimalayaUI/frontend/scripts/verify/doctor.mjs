@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import { FRONTEND } from "./config.mjs";
 import { findChromium, browserStatus } from "./browser.mjs";
 import { reachable } from "./http.mjs";
-import { readTruth, findDemoExperiment } from "./demo.mjs";
+import { readTruth, findDemoExperiment, staleDemoLayout, STALE_LAYOUT_HINT } from "./demo.mjs";
 
 const SEED = "run `bin/verify seed` (starts backend + Vite on the demo data and waits for ingest)";
 
@@ -34,12 +34,14 @@ export async function doctor(cfg) {
 
   const truth = readTruth(cfg);
   const images = truth?.every((r) => r.images === "true");
+  const stale = staleDemoLayout(cfg);
   checks.push(
     check(
       "demo-data",
-      Boolean(truth && images),
-      truth ? `${truth.length} samples in ${cfg.demoDir}${images ? "" : " (generated with --no-images)"}` : `no TRUTH.csv in ${cfg.demoDir}`,
-      "run `make demo-data`",
+      Boolean(truth && images) && !stale,
+      stale ? `${cfg.demoDir} has the layout from before the demo had two setups (data/ at the top, no capillary/)` :
+        truth ? `${truth.length} samples in ${cfg.demoDir}${images ? "" : " (generated with --no-images)"}` : `no TRUTH.csv in ${cfg.demoDir}`,
+      stale ? STALE_LAYOUT_HINT : "run `make demo-data`",
     ),
   );
 

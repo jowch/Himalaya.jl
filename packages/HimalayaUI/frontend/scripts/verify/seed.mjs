@@ -6,6 +6,7 @@ import { REPO } from "./config.mjs";
 import { UsageError, intFlag } from "./args.mjs";
 import { doctor } from "./doctor.mjs";
 import { reachable } from "./http.mjs";
+import { STALE_LAYOUT_HINT, staleDemoLayout } from "./demo.mjs";
 import { profileDir, resetBrowserProfile } from "./browser.mjs";
 
 const DEMO_SCRIPT = "packages/HimalayaUI/scripts/demo.sh";
@@ -77,6 +78,9 @@ export async function seed(cfg, flags) {
     throw new UsageError("--late-trace needs --reset (and no --empty), since it only applies when the demo data is generated", "run `bin/verify seed --reset --late-trace`");
   }
   if (flags["dry-run"]) return { dryRun: true, steps: seedPlan(cfg, flags) };
+  if (!flags.reset && !empty && staleDemoLayout(cfg)) {
+    throw new UsageError(`${cfg.demoDir} has the layout from before the demo had two setups`, STALE_LAYOUT_HINT);
+  }
   if (flags.reset) {
     const stopped = await stop(cfg);
     if (stopped.ok === false) return stopped;
