@@ -4396,7 +4396,8 @@ describe("WorkspacePage autosampler background", () => {
     const dialog = screen.getByRole("dialog", { name: "Choose the background" });
     const order = Array.from(dialog.querySelectorAll("[data-sample-id]")).map((n) => Number(n.getAttribute("data-sample-id")));
     expect(order.slice(0, 2)).toEqual([END_BUFFER, OTHER_BUFFER]);
-    expect(order).toEqual(expect.arrayContaining([SECOND, OTHER_RUN, 40, 50]));
+    expect(order).toEqual(expect.arrayContaining([SECOND, OTHER_RUN, 50]));
+    expect(order).not.toContain(40);
     expect(order).not.toContain(FIRST);
     expect(order).not.toContain(BUFFER);
     fireEvent.click(within(dialog).getByRole("button", { name: /lipidA 01D \(B0103\)/ }));
@@ -4421,8 +4422,8 @@ describe("WorkspacePage autosampler background", () => {
     seed();
     open(FIRST);
     fireEvent.click(within(module()).getByRole("button", { name: "None" }));
-    fireEvent.keyDown(window, { key: "z", ctrlKey: true });
-    await waitFor(() => expect(patches().at(-1)).toEqual({ subtraction: "default" }));
+    await act(async () => { fireEvent.keyDown(window, { key: "z", ctrlKey: true }); for (let i = 0; i < 10; i++) await Promise.resolve(); });
+    expect(calls.filter((c) => c.hook === "op:patchCompares").map((c) => c.arg)).toEqual([[FIRST, { subtraction: "default" }]]);
   });
 
   it("shows only a plain sentence for a buffer, and Raw with no toggle", () => {
@@ -4448,7 +4449,7 @@ describe("WorkspacePage autosampler background", () => {
     seed();
     open(FIRST);
     runFromPalette("compare with a sample", "lipidA 01D");
-    const chip = (): HTMLElement => screen.getByRole("button", { name: /lipidA 01D \(B0103\)/ });
+    const chip = (): HTMLElement => within(screen.getByTestId("workspace-compare-bar")).getByRole("button", { name: /^lipidA 01D \(B0103\)/ });
     fireEvent.click(chip(), { ctrlKey: true });
     expect(patches().at(-1)).toEqual({ subtraction: END_BUFFER });
     expect(within(module()).getByText("Your choice")).toBeInTheDocument();
