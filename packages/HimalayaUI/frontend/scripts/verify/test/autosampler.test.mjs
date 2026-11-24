@@ -120,9 +120,9 @@ test("no automatic analysis ran: no peaks, no indices, no call, no analysis erro
   }
 });
 
-const UI_SAMPLE = { background: `${BUFFER}run's buffer`, difference_line: 1, minus_pressed: true, candidates: 0, peak_glyphs: 0, custom_index: 0 };
-const UI_BUFFER = { background: "This is a buffer", difference_line: 0, minus_pressed: false, candidates: 0, peak_glyphs: 0, custom_index: 0 };
-const UI_CALIBRATION = { background: "No buffer in this run", difference_line: 0, minus_pressed: false, candidates: 0, peak_glyphs: 0, custom_index: 0 };
+const UI_SAMPLE = { plot_drawn: true, background: `${BUFFER}run's buffer`, difference_line: 1, minus_pressed: true, candidates: 0, peak_glyphs: 0, custom_index: 0 };
+const UI_BUFFER = { plot_drawn: true, background: "This is a buffer", difference_line: 0, minus_pressed: false, candidates: 0, peak_glyphs: 0, custom_index: 0 };
+const UI_CALIBRATION = { plot_drawn: true, background: "No buffer in this run", difference_line: 0, minus_pressed: false, candidates: 0, peak_glyphs: 0, custom_index: 0 };
 
 function withUi() {
   const list = good();
@@ -159,4 +159,30 @@ test("with the workspace read, the peak, call and indexing modules are absent", 
     list[1].ui = { ...UI_SAMPLE, [field]: 1 };
     assert.match(problemsOf(compareAutosampler(ROWS, list, options), SAMPLE)[0], pattern, field);
   }
+});
+
+test("a plot that never drew is a problem, whatever the absence checks read", () => {
+  const list = withUi();
+  list[1].ui = { ...UI_SAMPLE, plot_drawn: false, difference_line: 0, minus_pressed: false };
+  const problems = problemsOf(compareAutosampler(ROWS, list, options), SAMPLE);
+  assert.match(problems[0], /plot was not drawn/);
+  assert.equal(problems.some((p) => /Minus/.test(p)), false);
+});
+
+test("a truth file without the frame count or background columns fails instead of matching a null", () => {
+  const stripped = ROWS.map(({ frames_total: _t, frames_rejected: _r, ...row }) => row);
+  const r = compareAutosampler(stripped, good(), options);
+  assert.equal(r.ok, false);
+  const columns = r.problems.find((p) => p.sample === "TRUTH_autosampler.csv");
+  assert.match(columns.problems[0], /missing the columns frames_total, frames_rejected/);
+
+  const noBackground = ROWS.map(({ default_background: _b, ...row }) => row);
+  assert.match(compareAutosampler(noBackground, good(), options).problems.find((p) => p.sample === "TRUTH_autosampler.csv").problems[0], /default_background/);
+});
+
+test("an empty frame count is legal only for the calibration shot", () => {
+  const rows = ROWS.map((r) => (r.sample === SAMPLE ? { ...r, frames_total: "", frames_rejected: "" } : r));
+  const list = rows.map((r) => sample(r));
+  assert.match(problemsOf(compareAutosampler(rows, list, options), SAMPLE)[0], /no frame counts for this sample/);
+  assert.equal(compareAutosampler(ROWS, good(), options).ok, true);
 });

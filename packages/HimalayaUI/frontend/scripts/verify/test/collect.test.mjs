@@ -329,19 +329,21 @@ test("check-truth --ui reads each autosampler sample's workspace and compares it
   const cfg = loadConfig({ ...stub.env, DEMO_DIR: demoDir });
   const none = { candidates: 0, peak_glyphs: 0, custom_index: 0 };
   const read = (bad) => async () => new Map([
-    [20, { background: "This is a buffer", difference_line: 0, minus_pressed: false, ...none }],
-    [21, { background: bad ? "lysA 01A (B0101)chosen" : "lysA 01A (B0101)run's buffer", difference_line: 1, minus_pressed: true, ...none }],
-    [22, { background: "No buffer in this run", difference_line: 0, minus_pressed: false, ...none }],
+    [20, { plot_drawn: true, background: "This is a buffer", difference_line: 0, minus_pressed: false, ...none }],
+    [21, { plot_drawn: true, background: bad ? "lysA 01A (B0101)chosen" : "lysA 01A (B0101)run's buffer", difference_line: 1, minus_pressed: true, ...none }],
+    [22, { plot_drawn: true, background: "No buffer in this run", difference_line: 0, minus_pressed: false, ...none }],
   ]);
   try {
     const asked = [];
     const tracelessAsked = [];
+    const minusAsked = [];
     const ok = await checkTruth(cfg, { ui: true }, {
       views: async () => new Map(),
-      autosamplerViews: async (_cfg, id, samples) => { asked.push(samples.map((s) => s.id)); tracelessAsked.push(...samples.map((s) => s.traceless)); return read(false)(); },
+      autosamplerViews: async (_cfg, id, samples) => { asked.push(samples.map((s) => s.id)); tracelessAsked.push(...samples.map((s) => s.traceless)); minusAsked.push(...samples.map((s) => s.minus)); return read(false)(); },
     });
     assert.deepEqual(asked, [[20, 21, 22]]);
     assert.deepEqual(tracelessAsked, [[], [], [32]]);
+    assert.deepEqual(minusAsked, [false, true, false]);
     assert.equal(ok.autosampler.ok, true, JSON.stringify(ok.autosampler.problems));
     const bad = await checkTruth(cfg, { ui: true }, { views: async () => new Map(), autosamplerViews: read(true) });
     assert.equal(bad.autosampler.ok, false);
