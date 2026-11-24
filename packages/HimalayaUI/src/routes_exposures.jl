@@ -1,4 +1,4 @@
-using HTTP, JSON3, DBInterface, Tables, Oxygen
+using HTTP, DBInterface, Tables, Oxygen
 
 const PRP_DETAILS = Dict{String,Dict{Symbol,Any}}()
 const PRP_DETAILS_LOCK = ReentrantLock()
@@ -47,7 +47,7 @@ function register_exposures_routes!()
             d
         end
         HTTP.Response(200, ["Content-Type" => "application/json"],
-            JSON3.write(out))
+            to_json(out))
     end
 
     @get "/api/exposures/{id}/image" function(req::HTTP.Request, id::Int)
@@ -56,12 +56,12 @@ function register_exposures_routes!()
             "SELECT image_path FROM exposures WHERE id = ?", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "image not found")))
+            to_json(Dict(:error => "image not found")))
 
         ip = rows[1].image_path
         (ip === nothing || ip isa Missing) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "no TIFF for this image")))
+            to_json(Dict(:error => "no TIFF for this image")))
 
         # The DB stores image_path at ingest, but the source TIFF may have been
         # moved or deleted since. Guard before load_and_lognormalize, which
@@ -71,7 +71,7 @@ function register_exposures_routes!()
         path = String(ip)
         isfile(path) || return HTTP.Response(404,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "image source file not found: $path")))
+            to_json(Dict(:error => "image source file not found: $path")))
 
         params   = HTTP.queryparams(req)
         is_thumb = get(params, "thumb", "0") == "1"
@@ -104,21 +104,21 @@ function register_exposures_routes!()
         if status !== nothing && status ∉ ("accepted", "rejected")
             return HTTP.Response(422,
                 ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => "status must be 'accepted', 'rejected', or null")))
+                to_json(Dict(:error => "status must be 'accepted', 'rejected', or null")))
         end
         selected = get(body, :selected, nothing)
         selected === nothing || selected isa Bool || return HTTP.Response(422,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "selected must be true, false or absent")))
+            to_json(Dict(:error => "selected must be true, false or absent")))
 
         rows = sqlrows(DBInterface.execute(db,
             "SELECT id, sample_id, kind FROM exposures WHERE id = ?", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "image not found")))
+            to_json(Dict(:error => "image not found")))
         is_combined_kind(rows[1].kind) && return HTTP.Response(422,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "An averaged curve can't be dropped. Change the selection instead.")))
+            to_json(Dict(:error => "An averaged curve can't be dropped. Change the selection instead.")))
 
         resp = with_idempotency(db, req) do
             was = sqlrows(DBInterface.execute(db, "SELECT status FROM exposures WHERE id = ?", [id]))[1].status
@@ -137,7 +137,7 @@ function register_exposures_routes!()
             _enqueue_broadcast_from_result!(result, "set_exposure_status", "exposure", id)
 
             HTTP.Response(200, ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:id => id, :status => status)))
+                to_json(Dict(:id => id, :status => status)))
         end
         _refresh_combined_after!(db, resp, rows[1].sample_id)
         resp
@@ -149,11 +149,11 @@ function register_exposures_routes!()
         raw  = get(body, :exposure_ids, nothing)
         (raw isa AbstractVector && all(x -> x isa Integer, raw)) || return HTTP.Response(422,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "exposure_ids must be a list of image ids")))
+            to_json(Dict(:error => "exposure_ids must be a list of image ids")))
         wanted = sort(unique(Int.(raw)))
         isempty(sqlrows(DBInterface.execute(db, "SELECT 1 AS x FROM samples WHERE id = ?", [id]))) &&
             return HTTP.Response(404, ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => "sample not found")))
+                to_json(Dict(:error => "sample not found")))
         refusal = refuse_autosampler_sample(db, id, AUTOSAMPLER_NOT_SELECTABLE)
         refusal === nothing || return refusal
         kept = Set(Int[Int(r.id) for r in sqlrows(DBInterface.execute(db, """
@@ -161,7 +161,7 @@ function register_exposures_routes!()
                AND (status IS NULL OR status != 'rejected')""", [id]))])
         stray = filter(x -> x ∉ kept, wanted)
         isempty(stray) || return HTTP.Response(422, ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "Only this sample's kept images can be selected.", :exposure_ids => stray)))
+            to_json(Dict(:error => "Only this sample's kept images can be selected.", :exposure_ids => stray)))
 
         resp = with_idempotency(db, req) do
             for eid in kept
@@ -174,12 +174,12 @@ function register_exposures_routes!()
                 payload = Dict(:exposure_ids => wanted))
             _enqueue_broadcast_from_result!(result, "set_selection", "sample", id)
             HTTP.Response(200, ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:sample_id => id, :exposure_ids => wanted)))
+                to_json(Dict(:sample_id => id, :exposure_ids => wanted)))
         end
         resp.status == 200 || return resp
         analyzed = refresh_selection!(db, id)
         HTTP.Response(200, ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:sample_id => id, :exposure_ids => wanted, :analyzed_exposure_id => analyzed)))
+            to_json(Dict(:sample_id => id, :exposure_ids => wanted, :analyzed_exposure_id => analyzed)))
     end
 
     @post "/api/exposures/{id}/analyze" function(req::HTTP.Request, id::Int)
@@ -193,7 +193,7 @@ function register_exposures_routes!()
              WHERE e.id = ?", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "image not found")))
+            to_json(Dict(:error => "image not found")))
         analysis_dir = String(rows[1].analysis_dir)
 
         # Issue #9: route is now queue-shaped — `with_idempotency` honors the
@@ -239,7 +239,7 @@ function register_exposures_routes!()
             if !isempty(evt)
                 row = evt[1]
                 payload_obj = ismissing(row.payload) ? nothing :
-                              JSON3.read(String(row.payload)::String)
+                              JSON.parse(String(row.payload)::String)
                 # M0.4 mirror (see `_maybe_broadcast_event!`): a no-op reanalyze
                 # (both skip flags true) must emit NO frame from this manual
                 # route either — foreign tabs have nothing to converge on. This
@@ -272,7 +272,7 @@ function register_exposures_routes!()
             end
 
             HTTP.Response(200, ["Content-Type" => "application/json"],
-                JSON3.write(Dict(
+                to_json(Dict(
                     :id                   => id,
                     :analyzed             => true,
                     :analysis_inputs_hash => new_hash,

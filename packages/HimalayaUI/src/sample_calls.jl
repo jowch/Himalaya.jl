@@ -156,7 +156,7 @@ function _rebuild_exposure_with_call!(db::SQLite.DB, exposure_id::Int)
     sort!(rows; by = r -> r.id)
     for r in rows
         kind = String(r.action)
-        payload = JSON3.read(String(r.payload))
+        payload = payload_as_replayed(String(r.payload))
         if r.entity_type == "sample"
             _set_sample_call_state!(db, sid, String(payload.state); only_exposure = exposure_id)
         elseif Int(r.entity_id) != exposure_id
@@ -178,7 +178,7 @@ function _rebuild_sample_with_call!(db::SQLite.DB, sample_id::Int)
     sort!(rows; by = r -> r.id)
     for r in rows
         update_view_for_event!(db, String(r.action), Int(r.entity_id),
-                               JSON3.read(String(r.payload)), Int(r.id))
+                               payload_as_replayed(String(r.payload)), Int(r.id))
     end
     nothing
 end

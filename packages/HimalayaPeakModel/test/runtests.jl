@@ -1,4 +1,5 @@
-using Test, Random, Statistics, JSON3
+using Test, Random, Statistics
+import JSON
 import DecisionTree
 using HimalayaPeakModel, Himalaya
 const HPM = HimalayaPeakModel
@@ -184,7 +185,7 @@ function synth_set(; groups = 1:4, per = 8, seed = 7)
     exps
 end
 
-json_round(d) = JSON3.read(JSON3.write(d))
+json_round(d) = JSON.parse(JSON.json(d))
 
 @testset "forest model survives a JSON round trip exactly" begin
     exps = synth_set()
@@ -195,7 +196,7 @@ json_round(d) = JSON3.read(JSON3.write(d))
     f2 = from_dict(Fitted, json_round(to_dict(m.fitted)))
     @test f2 isa HPM.ForestFitted
     @test predict_proba(f2, X) == p0
-    f3 = from_dict(Fitted, JSON3.read(JSON3.write(to_dict(m.fitted)), Dict{String, Any}))
+    f3 = from_dict(Fitted, JSON.parse(JSON.json(to_dict(m.fitted)), Dict{String, Any}))
     @test predict_proba(f3, X) == p0
     @test to_dict(m.fitted)["kind"] == "random_forest" && to_dict(m.fitted)["version"] == 2
 

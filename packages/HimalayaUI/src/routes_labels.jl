@@ -1,4 +1,4 @@
-using HTTP, JSON3, DBInterface, Tables, Oxygen
+using HTTP, DBInterface, Tables, Oxygen
 
 const MAX_LABEL_LENGTH = 64
 

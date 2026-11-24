@@ -1,7 +1,8 @@
 using Test
 using HimalayaUI
 using SQLite, DBInterface, Tables
-using JSON3, HTTP
+using HTTP
+import JSON
 
 function _call_fixture(dir; frames = 2)
     db = open_prepared_clone(dir)
@@ -15,10 +16,10 @@ _index!(db, id, eid, phase, score) = DBInterface.execute(db,
     "INSERT INTO indices (id, exposure_id, phase, basis, score) VALUES (?, ?, ?, 0.1, ?)",
     [id, eid, phase, score])
 
-_json(r) = JSON3.read(String(r.body))
+_json(r) = JSON.parse(String(r.body))
 _post(call, path, body) = call("POST", path;
     headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
-    body = Vector{UInt8}(JSON3.write(body)))
+    body = Vector{UInt8}(JSON.json(body)))
 _listed(call, exp_id, s_id) = only(filter(s -> s.id == s_id,
     collect(_json(call("GET", "/api/samples?experiment_id=$exp_id")))))
 _members(db) = sort([(Int(r.exposure_id), Int(r.index_id)) for r in Tables.rowtable(
@@ -35,7 +36,7 @@ if isdefined(@__MODULE__, :with_test_server)
                 @test _listed(call, fx.exp_id, fx.s_id).phase == "Pn3m"
                 r = call("PATCH", "/api/exposures/$e1/status";
                     headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
-                    body = Vector{UInt8}(JSON3.write(Dict(:status => "rejected"))))
+                    body = Vector{UInt8}(JSON.json(Dict(:status => "rejected"))))
                 @test r.status == 200
                 s = _listed(call, fx.exp_id, fx.s_id)
                 @test s.assignment_state == "indexed"
@@ -119,7 +120,7 @@ end
 function _legacy_event!(db, kind, eid, payload)
     DBInterface.execute(db,
         "INSERT INTO user_actions (action, entity_type, entity_id, payload) VALUES (?, 'exposure', ?, ?)",
-        [kind, eid, JSON3.write(payload)])
+        [kind, eid, JSON.json(payload)])
 end
 
 function _legacy!(db; states = Dict(), members = Dict())
@@ -304,7 +305,7 @@ if isdefined(@__MODULE__, :with_test_server)
                 lock(() -> filter!(x -> x !== sub, HimalayaUI.SSE_SUBSCRIBERS[]), HimalayaUI.SSE_LOCK)
                 close(pending)
             end
-            call_frames = [JSON3.read(strip(last(split(f, "data: "; limit = 2)))) for f in pending
+            call_frames = [JSON.parse(strip(last(split(f, "data: "; limit = 2)))) for f in pending
                            if occursin("\"kind\":\"sample_call_set_state\"", f)]
             @test length(call_frames) == 1
             ps = only(call_frames).post_state

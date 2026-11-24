@@ -24,7 +24,7 @@ end
 function _latest_snapshot(db::SQLite.DB, exposure_id)
     rows = sqlrows(DBInterface.execute(db,
         "SELECT peaks_json FROM peak_reviews WHERE exposure_id = ? AND direct = 1 ORDER BY id DESC LIMIT 1", [exposure_id]))
-    isempty(rows) ? nothing : JSON3.read(String(rows[1].peaks_json))
+    isempty(rows) ? nothing : JSON.parse(String(rows[1].peaks_json))
 end
 
 function labeled_exposures(db::SQLite.DB; group_by::Symbol = :experiment,

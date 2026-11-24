@@ -1,4 +1,5 @@
-using Test, HTTP, JSON3, SQLite, DBInterface, Tables
+using Test, HTTP, SQLite, DBInterface, Tables
+import JSON
 using Himalaya
 
 # Synthetic grid: step H, peaks near q = 0.1..0.3. Base tolerance at q=0.1 is
@@ -153,7 +154,7 @@ end
     with_inproc_routes(fx.db) do call
         r = call("GET", "/api/exposures/$(fx.e_id)/peaks")
         @test r.status == 200
-        list = JSON3.read(String(r.body))
+        list = JSON.parse(String(r.body))
         @test sort([Float64(p.q) for p in list if !p.excluded]) == eff.q
     end
 
@@ -187,7 +188,7 @@ end
         "SELECT id FROM auto_peaks ORDER BY q"))]
     hdr = ["Content-Type" => "application/json", "X-Username" => "alice"]
     patch(call, id, ex) = call("PATCH", "/api/peaks/auto/$id"; headers = hdr,
-                               body = Vector{UInt8}(JSON3.write(Dict(:excluded => ex))))
+                               body = Vector{UInt8}(JSON.json(Dict(:excluded => ex))))
     with_inproc_routes(db) do call
         for id in ids
             @test patch(call, id, true).status == 200
@@ -196,7 +197,7 @@ end
             "SELECT COUNT(*) AS c FROM peak_curations WHERE kind='exclude'"))[1].c
         @test n == 2
         @test patch(call, ids[1], false).status == 200
-        list = JSON3.read(String(call("GET", "/api/exposures/$e_id/peaks").body))
+        list = JSON.parse(String(call("GET", "/api/exposures/$e_id/peaks").body))
         @test [p.excluded for p in list] == [false, true]
     end
 end
@@ -310,13 +311,13 @@ end
         "SELECT COUNT(*) AS c FROM user_actions WHERE action = 'peak_unexcluded'"))[1].c
     with_inproc_routes(db) do call
         r = call("PATCH", "/api/peaks/auto/$(ids[2])"; headers = hdr,
-                 body = Vector{UInt8}(JSON3.write(Dict(:excluded => false))))
+                 body = Vector{UInt8}(JSON.json(Dict(:excluded => false))))
         @test r.status == 200
         @test n_events() == 0
         n = Tables.rowtable(DBInterface.execute(db,
             "SELECT COUNT(*) AS c FROM peak_curations WHERE kind='exclude'"))[1].c
         @test n == 1
-        list = JSON3.read(String(call("GET", "/api/exposures/$e_id/peaks").body))
+        list = JSON.parse(String(call("GET", "/api/exposures/$e_id/peaks").body))
         @test [p.excluded for p in list] == [true, false]
     end
 end
@@ -397,11 +398,11 @@ end
     hdr = ["Content-Type" => "application/json", "X-Username" => "alice"]
     with_inproc_routes(db) do call
         r = call("PATCH", "/api/peaks/auto/$aid"; headers = hdr,
-                 body = Vector{UInt8}(JSON3.write(Dict(:excluded => false))))
+                 body = Vector{UInt8}(JSON.json(Dict(:excluded => false))))
         @test r.status == 200
     end
     row = Tables.rowtable(DBInterface.execute(db,
         "SELECT payload FROM user_actions WHERE action = 'peak_unexcluded'"))[1]
-    @test sort(Float64.(JSON3.read(String(row.payload)).curation_qs)) == [0.2, 0.2 + 2step]
+    @test sort(Float64.(JSON.parse(String(row.payload)).curation_qs)) == [0.2, 0.2 + 2step]
     @test isempty(Tables.rowtable(DBInterface.execute(db, "SELECT id FROM peak_curations")))
 end

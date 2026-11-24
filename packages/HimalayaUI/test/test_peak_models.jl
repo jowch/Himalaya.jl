@@ -1,4 +1,5 @@
-using Test, JSON3, SQLite, DBInterface, Tables
+using Test, SQLite, DBInterface, Tables
+import JSON
 using HimalayaUI
 
 _pm_rows(db) = Tables.rowtable(DBInterface.execute(db, "SELECT * FROM peak_models ORDER BY id"))
@@ -93,10 +94,10 @@ end
         row = only(_pm_rows(db))
         @test row.status == "passed" && row.label_watermark == 5 && row.recipe_id == "abc123"
         @test row.threshold == 0.55 && row.nms == 8 && row.core_version == "0.5.3"
-        @test JSON3.read(row.fitted_json).kind == "rf"
-        @test JSON3.read(row.counts_json).curations == 120
-        @test JSON3.read(row.metrics_json).gate.passed
-        @test JSON3.read(row.recipe_json).version == 1
+        @test JSON.parse(row.fitted_json).kind == "rf"
+        @test JSON.parse(row.counts_json).curations == 120
+        @test JSON.parse(row.metrics_json).gate.passed
+        @test JSON.parse(row.recipe_json).version == 1
 
         b = HimalayaUI.insert_peak_model!(db, _pm_result(watermark = 9))
         @test ismissing(fitted(a)) && !ismissing(fitted(b))
@@ -108,12 +109,12 @@ end
         r = HimalayaUI.insert_peak_model!(db, _pm_result(status = "rejected", watermark = 14,
             reasons = ["peaks per exposure too high"]))
         @test ismissing(fitted(r)) && !ismissing(fitted(c))
-        @test JSON3.read(only(filter(x -> x.id == r, _pm_rows(db))).metrics_json).gate.reasons == ["peaks per exposure too high"]
+        @test JSON.parse(only(filter(x -> x.id == r, _pm_rows(db))).metrics_json).gate.reasons == ["peaks per exposure too high"]
 
         f = HimalayaUI.insert_failed_peak_model!(db; watermark = 20, error = "x" ^ 5000)
         row = only(filter(x -> x.id == f, _pm_rows(db)))
         @test row.status == "failed" && row.label_watermark == 20 && ismissing(row.fitted_json)
-        @test length(JSON3.read(row.metrics_json).error) == 2000
+        @test length(JSON.parse(row.metrics_json).error) == 2000
         @test !ismissing(fitted(c))
         @test_throws ArgumentError HimalayaUI.insert_peak_model!(db, _pm_result(status = "active"))
         DBInterface.close!(db)

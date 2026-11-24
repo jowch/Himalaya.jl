@@ -1,4 +1,5 @@
-using Test, HTTP, JSON3, SQLite, DBInterface, Tables
+using Test, HTTP, SQLite, DBInterface, Tables
+import JSON
 
 @testset "PATCH /api/exposures/:id/status" begin
     db      = SQLite.DB()
@@ -11,7 +12,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
     with_test_server(db) do port, base
         # accept
         r = HTTP.patch("$base/api/exposures/$eid/status";
-            body    = JSON3.write(Dict(:status => "accepted")),
+            body    = JSON.json(Dict(:status => "accepted")),
             headers = ["Content-Type" => "application/json"])
         @test r.status == 200
         row = Tables.rowtable(DBInterface.execute(db,
@@ -20,7 +21,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
 
         # reject
         HTTP.patch("$base/api/exposures/$eid/status";
-            body    = JSON3.write(Dict(:status => "rejected")),
+            body    = JSON.json(Dict(:status => "rejected")),
             headers = ["Content-Type" => "application/json"])
         row2 = Tables.rowtable(DBInterface.execute(db,
             "SELECT status FROM exposures WHERE id = ?", [eid]))[1]
@@ -28,7 +29,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
 
         # null (clear)
         HTTP.patch("$base/api/exposures/$eid/status";
-            body    = JSON3.write(Dict(:status => nothing)),
+            body    = JSON.json(Dict(:status => nothing)),
             headers = ["Content-Type" => "application/json"])
         row3 = Tables.rowtable(DBInterface.execute(db,
             "SELECT status FROM exposures WHERE id = ?", [eid]))[1]
@@ -36,14 +37,14 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
 
         # invalid value → 422
         r422 = HTTP.patch("$base/api/exposures/$eid/status";
-            body    = JSON3.write(Dict(:status => "garbage")),
+            body    = JSON.json(Dict(:status => "garbage")),
             headers = ["Content-Type" => "application/json"],
             status_exception = false)
         @test r422.status == 422
 
         # nonexistent exposure → 404
         r404 = HTTP.patch("$base/api/exposures/9999/status";
-            body    = JSON3.write(Dict(:status => "accepted")),
+            body    = JSON.json(Dict(:status => "accepted")),
             headers = ["Content-Type" => "application/json"],
             status_exception = false)
         @test r404.status == 404

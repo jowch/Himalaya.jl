@@ -1,4 +1,5 @@
-using Test, Dates, SQLite, DBInterface, Tables, JSON3, HimalayaUI
+using Test, Dates, SQLite, DBInterface, Tables, HimalayaUI
+import JSON
 isdefined(@__MODULE__, :_write_setup!) || include("test_setups.jl")
 
 _bt_rows(db, sql, args...) = Tables.rowtable(DBInterface.execute(db, sql, collect(args)))
@@ -14,7 +15,7 @@ function _wait_ingest(db, eid; timeout = 60)
 end
 
 _post(call, body) = call("POST", "/api/experiments";
-    headers = ["Content-Type" => "application/json"], body = Vector{UInt8}(JSON3.write(body)))
+    headers = ["Content-Type" => "application/json"], body = Vector{UInt8}(JSON.json(body)))
 
 @testset "beamtime workspaces" begin
     @testset "a rescan adds a new setup folder to the beamtime" begin
@@ -101,7 +102,7 @@ _post(call, body) = call("POST", "/api/experiments";
                 Dict(:root => joinpath(bt, "setup2"), :data_dir => d2, :analysis_dir => a2,
                      :included => false)]))
             @test r.status == 202
-            eid = Int(JSON3.read(String(r.body)).id)
+            eid = Int(JSON.parse(String(r.body)).id)
             @test _wait_ingest(db, eid) == "complete"
             x = only(_bt_rows(db, "SELECT name, path FROM experiments WHERE id = ?", eid))
             @test x.name == "Nov beamtime"
@@ -114,7 +115,7 @@ _post(call, body) = call("POST", "/api/experiments";
             @test _count(db, "SELECT COUNT(*) AS c FROM exposures WHERE setup_id = ?", sts[2].id) == 0
             @test _count(db, "SELECT COUNT(*) AS c FROM exposures WHERE setup_id = ?", sts[1].id) == 1
 
-            body = JSON3.read(String(call("GET", "/api/experiments/$eid").body))
+            body = JSON.parse(String(call("GET", "/api/experiments/$eid").body))
             @test [s.included for s in body.setups] == [true, false]
 
             dup = _post(call, Dict(:path => bt, :setups => [Dict(:data_dir => d2)]))
@@ -122,12 +123,12 @@ _post(call, body) = call("POST", "/api/experiments";
             d3, _ = _write_setup!(joinpath(bt, "setup3"); stems = ["C_S0001_0_001"])
             again = _post(call, Dict(:path => bt * "/", :setups => [Dict(:data_dir => d3)]))
             @test again.status == 409
-            refusal = JSON3.read(String(again.body))
+            refusal = JSON.parse(String(again.body))
             @test refusal.experiment_id == eid
             @test refusal.name == "Nov beamtime"
-            preview = JSON3.read(String(call("GET", "/api/fs/preview?path=$(HimalayaUI.HTTP.escapeuri(bt))").body))
+            preview = JSON.parse(String(call("GET", "/api/fs/preview?path=$(HimalayaUI.HTTP.escapeuri(bt))").body))
             @test preview.existing.id == eid
-            fresh = JSON3.read(String(call("GET", "/api/fs/preview?path=$(HimalayaUI.HTTP.escapeuri(d3))").body))
+            fresh = JSON.parse(String(call("GET", "/api/fs/preview?path=$(HimalayaUI.HTTP.escapeuri(d3))").body))
             @test fresh.existing === nothing
             @test _count(db, "SELECT COUNT(*) AS c FROM experiments") == 1
 
@@ -219,27 +220,27 @@ _post(call, body) = call("POST", "/api/experiments";
         db = fresh_db()
         with_inproc_routes(db) do call
             r = _post(call, Dict(:path => bt, :setups => [Dict(:root => joinpath(bt, "setup1"), :data_dir => d1)]))
-            eid = Int(JSON3.read(String(r.body)).id)
+            eid = Int(JSON.parse(String(r.body)).id)
             _wait_ingest(db, eid)
             @test isempty(HimalayaUI.new_setup_roots(db, eid))
-            problems = JSON3.read(String(call("GET", "/api/experiments/$eid/problems").body))
+            problems = JSON.parse(String(call("GET", "/api/experiments/$eid/problems").body))
             @test [p.folder for p in problems.setups] == ["setup2"]
             @test problems.setups[1].root == realpath(joinpath(bt, "setup2"))
 
             add(body) = call("POST", "/api/experiments/$eid/setups";
-                headers = ["Content-Type" => "application/json"], body = Vector{UInt8}(JSON3.write(body)))
+                headers = ["Content-Type" => "application/json"], body = Vector{UInt8}(JSON.json(body)))
             spec = Dict(:root => joinpath(bt, "setup2"), :data_dir => d2, :analysis_dir => a2,
                         :patterns => Dict(:image => "{name}.tif", :metadata => "{name}.prp",
                                           :integration => "{name}_avg.dat"))
             @test add(Dict(:setups => [Dict(:data_dir => d2, :root => mktempdir())])).status == 400
             @test call("POST", "/api/experiments/99999/setups";
                 headers = ["Content-Type" => "application/json"],
-                body = Vector{UInt8}(JSON3.write(Dict(:setups => [spec])))).status == 404
+                body = Vector{UInt8}(JSON.json(Dict(:setups => [spec])))).status == 404
             for typo in ("{nam}_avg.dat", "avg.dat", "{name}_{name}.dat")
                 bad = merge(spec, Dict(:patterns => Dict(:image => "{name}.tif", :integration => typo)))
                 r = add(Dict(:setups => [bad]))
                 @test r.status == 400
-                @test occursin("{name}", JSON3.read(String(r.body)).error)
+                @test occursin("{name}", JSON.parse(String(r.body)).error)
                 @test _post(call, Dict(:path => mktempdir(), :setups => [bad])).status == 400
                 @test _post(call, Dict(:data_dir => d2, :patterns => Dict(:integration => typo))).status == 400
                 q = "path=$(HimalayaUI.HTTP.escapeuri(d2))&integration_pattern=$(HimalayaUI.HTTP.escapeuri(typo))"
@@ -250,12 +251,12 @@ _post(call, body) = call("POST", "/api/experiments";
                 data_dir = d2, analysis_dir = a2, integration_pattern = "{nam}_avg.dat")
             a = add(Dict(:setups => [spec]))
             @test a.status == 202
-            sid = only(JSON3.read(String(a.body)).setup_ids)
+            sid = only(JSON.parse(String(a.body)).setup_ids)
             _wait_ingest(db, eid)
             st = HimalayaUI.setup_row(db, sid)
             @test (st.folder, st.position, st.included, st.integration_pattern) == ("setup2", 1, 1, "{name}_avg.dat")
             @test _count(db, "SELECT COUNT(*) AS c FROM exposures WHERE setup_id = ?", sid) == 1
-            @test isempty(JSON3.read(String(call("GET", "/api/experiments/$eid/problems").body)).setups)
+            @test isempty(JSON.parse(String(call("GET", "/api/experiments/$eid/problems").body)).setups)
             @test add(Dict(:setups => [spec])).status == 409
         end
 
@@ -266,7 +267,7 @@ _post(call, body) = call("POST", "/api/experiments";
             data_dir = realpath(od), analysis_dir = realpath(oa))
         with_inproc_routes(db2) do call
             r = call("POST", "/api/experiments/$sid1/setups"; headers = ["Content-Type" => "application/json"],
-                body = Vector{UInt8}(JSON3.write(Dict(:setups => [Dict(:data_dir => mktempdir())]))))
+                body = Vector{UInt8}(JSON.json(Dict(:setups => [Dict(:data_dir => mktempdir())]))))
             @test r.status == 400
         end
     end

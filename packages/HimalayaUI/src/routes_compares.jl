@@ -1,4 +1,4 @@
-using HTTP, JSON3, DBInterface, Tables, Oxygen
+using HTTP, DBInterface, Tables, Oxygen
 
 function compares_for_experiment(db, exp_id::Int)
     compares = sqlrows(DBInterface.execute(db,

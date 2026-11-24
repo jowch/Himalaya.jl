@@ -1,6 +1,7 @@
 # packages/HimalayaUI/test/test_ingestion_scan_api.jl
 using Test
-using HTTP, JSON3, SQLite, DBInterface, Tables
+using HTTP, SQLite, DBInterface, Tables
+import JSON
 using HimalayaUI
 
 include("test_http.jl")   # provides with_test_server
@@ -53,7 +54,7 @@ end
             @test occursin("event: curation", frame)
 
             data_line = first(filter(l -> startswith(l, "data: "), split(frame, '\n')))
-            obj = JSON3.read(replace(data_line, r"^data: " => ""))
+            obj = JSON.parse(replace(data_line, r"^data: " => ""))
             # Frame is payload-wrapped (mirrors broadcast_event!): `kind` top-level,
             # experiment/count fields under `payload` so it parses like every other
             # "curation" frame and the frontend reads `payload.experiment_id`.
@@ -92,7 +93,7 @@ end
             @test isready(pending)
             frame = take!(pending)
             data_line = first(filter(l -> startswith(l, "data: "), split(frame, '\n')))
-            obj = JSON3.read(replace(data_line, r"^data: " => ""))
+            obj = JSON.parse(replace(data_line, r"^data: " => ""))
             @test obj.kind == "ingest_progress"
             @test obj.payload.phase == "rescan"
             @test obj.payload.processed == 12
@@ -152,7 +153,7 @@ end
         with_test_server(db) do port, base
             r = HTTP.get("$base/api/experiments/$exp_id")
             @test r.status == 200
-            body = JSON3.read(String(r.body))
+            body = JSON.parse(String(r.body))
 
             # Typed geometry
             st = only(body.setups)
@@ -262,7 +263,7 @@ end
             while isready(pending)
                 push!(frames, take!(pending))
             end
-            objs = [JSON3.read(replace(first(filter(l -> startswith(l, "data: "), split(f, '\n'))), r"^data: " => "")) for f in frames]
+            objs = [JSON.parse(replace(first(filter(l -> startswith(l, "data: "), split(f, '\n'))), r"^data: " => "")) for f in frames]
             deleted = filter(o -> o.kind == "experiment_deleted", objs)
             @test length(deleted) == 1
             @test only(deleted).entity_type == "experiment"
@@ -295,7 +296,7 @@ end
                 while isready(pending)
                     frame = take!(pending)
                     data_line = first(filter(l -> startswith(l, "data: "), split(frame, '\n')))
-                    obj = JSON3.read(replace(data_line, r"^data: " => ""))
+                    obj = JSON.parse(replace(data_line, r"^data: " => ""))
                     push!(kinds, String(obj.kind))
                     haskey(obj.payload, :phase) && push!(phases, String(obj.payload.phase))
                 end
@@ -326,7 +327,7 @@ end
                 frame = take!(pending)
                 lines = filter(l -> startswith(l, "data: "), split(frame, '\n'))
                 isempty(lines) && continue
-                obj = JSON3.read(replace(first(lines), r"^data: " => ""))
+                obj = JSON.parse(replace(first(lines), r"^data: " => ""))
                 haskey(obj, :kind) && push!(out, String(obj.kind))
             end
             out
@@ -339,7 +340,7 @@ end
             f()
         end
         post(body = nothing) = HTTP.post(base_url[] * "/api/experiments/$exp_id/scan";
-            body = body === nothing ? UInt8[] : JSON3.write(body),
+            body = body === nothing ? UInt8[] : JSON.json(body),
             headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
             status_exception = false)
         status_of() = first(Tables.rowtable(DBInterface.execute(db,
@@ -353,7 +354,7 @@ end
 
                 r = post()
                 @test r.status == 200
-                body = JSON3.read(String(r.body))
+                body = JSON.parse(String(r.body))
                 @test body.status == "complete"
                 @test body.changed == false
                 sleep(0.5)
@@ -362,14 +363,14 @@ end
                 DBInterface.execute(db, "UPDATE experiments SET ingest_status = 'failed' WHERE id = ?", [exp_id])
                 r = post()
                 @test r.status == 200
-                @test JSON3.read(String(r.body)).status == "failed"
+                @test JSON.parse(String(r.body)).status == "failed"
                 sleep(0.5)
                 @test !("ingest_started" in kinds())
 
                 write(joinpath(dir, "NEW_S0001_0_001.tif"), "fake tif")
                 r = post()
                 @test r.status == 202
-                @test JSON3.read(String(r.body)).status == "scanning"
+                @test JSON.parse(String(r.body)).status == "scanning"
                 @test wait_until(() -> status_of() == "complete" && !HimalayaUI.ingest_running(exp_id))
                 HimalayaUI.wait_prewarm(exp_id)
                 seen = kinds()
@@ -383,7 +384,7 @@ end
 
                 r = post(Dict(:force => true))
                 @test r.status == 202
-                @test JSON3.read(String(r.body)).status == "scanning"
+                @test JSON.parse(String(r.body)).status == "scanning"
                 @test wait_until(() -> status_of() == "complete" && !HimalayaUI.ingest_running(exp_id))
                 HimalayaUI.wait_prewarm(exp_id)
                 @test "ingest_started" in kinds()
@@ -423,7 +424,7 @@ end
         try
             with_test_server(db) do port, base
                 r = HTTP.post("$base/api/experiments/$exp_id/scan";
-                    body = JSON3.write(Dict(:force => false)),
+                    body = JSON.json(Dict(:force => false)),
                     headers = ["Content-Type" => "application/json"],
                     status_exception = false)
                 @test r.status in (200, 202)
@@ -460,12 +461,12 @@ end
 
             with_test_server(db) do port, base
                 r = HTTP.post("$base/api/experiments";
-                    body    = JSON3.write(Dict(:path => dir, :name => "MyExp")),
+                    body    = JSON.json(Dict(:path => dir, :name => "MyExp")),
                     headers = ["Content-Type" => "application/json",
                                "X-Username"   => "alice"],
                     status_exception = false)
                 @test r.status in (200, 201, 202)
-                body = JSON3.read(String(r.body))
+                body = JSON.parse(String(r.body))
                 @test haskey(body, :id)
                 @test body.id isa Integer
                 @test body.id > 0
@@ -483,14 +484,14 @@ end
 
                 # Missing path → 400
                 r2 = HTTP.post("$base/api/experiments";
-                    body    = JSON3.write(Dict(:name => "NoPath")),
+                    body    = JSON.json(Dict(:name => "NoPath")),
                     headers = ["Content-Type" => "application/json"],
                     status_exception = false)
                 @test r2.status == 400
 
                 # Non-existent path → 400
                 r3 = HTTP.post("$base/api/experiments";
-                    body    = JSON3.write(Dict(:path => "/does/not/exist/xyz123")),
+                    body    = JSON.json(Dict(:path => "/does/not/exist/xyz123")),
                     headers = ["Content-Type" => "application/json"],
                     status_exception = false)
                 @test r3.status == 400
@@ -503,13 +504,13 @@ end
         db = HimalayaUI.open_db(joinpath(mktempdir(), "h.db"))
         with_inproc_routes(db) do call
             dir = mktempdir(); touch(joinpath(dir, "s.tif"))
-            body = Vector{UInt8}(JSON3.write(Dict(
+            body = Vector{UInt8}(JSON.json(Dict(
                 "path"     => dir,
                 "patterns" => Dict("image" => "{name}.tiff"))))
             resp = call("POST", "/api/experiments";
                 headers = ["Content-Type" => "application/json"], body = body)
             @test resp.status == 202
-            id  = JSON3.read(resp.body).id
+            id  = JSON.parse(resp.body).id
             row = only(Tables.rowtable(DBInterface.execute(db,
                 "SELECT image_pattern FROM setups WHERE experiment_id = ?", [id])))
             @test row.image_pattern == "{name}.tiff"
@@ -546,7 +547,7 @@ end
         @test isready(pending)
         frame = take!(pending)
         data_line = first(filter(l -> startswith(l, "data: "), split(frame, '\n')))
-        obj = JSON3.read(replace(data_line, r"^data: " => ""))
+        obj = JSON.parse(replace(data_line, r"^data: " => ""))
         # BOTH discriminators ride the payload independently: `phase` selects the
         # frontend surface, `stage` selects the progress-bar segment.
         @test obj.payload.stage == "discovery"
@@ -559,7 +560,7 @@ end
         HimalayaUI.broadcast_progress!(9; kind = "ingest_started", processed = 0, total = 0)
         frame2 = take!(pending)
         line2 = first(filter(l -> startswith(l, "data: "), split(frame2, '\n')))
-        obj2 = JSON3.read(replace(line2, r"^data: " => ""))
+        obj2 = JSON.parse(replace(line2, r"^data: " => ""))
         @test !haskey(obj2.payload, :stage)
     finally
         lock(HimalayaUI.SSE_LOCK) do

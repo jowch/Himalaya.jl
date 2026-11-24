@@ -266,7 +266,7 @@ function cli_train_peak_model(args; io::IO = stdout, log::IO = stderr)
     try
         result = run_peak_training(db; recipe = HimalayaPeakModel.default_recipe(n_trees = p[:trees]),
             cache_dir = p[:no_cache] ? nothing : peak_feature_cache_dir(path), io = log)
-        JSON3.write(io, result)
+        write(io, to_json(result))
         println(io)
     finally
         close(db)

@@ -1,4 +1,5 @@
-using Test, HTTP, JSON3, SQLite, DBInterface, Tables
+using Test, HTTP, SQLite, DBInterface, Tables
+import JSON
 using Himalaya
 
 @testset "speculative.jl unit tests" begin
@@ -308,9 +309,9 @@ end
                     :additional => [Dict(:ratio_position => 2, :peak_id => p2)])
         r = call("POST", "/api/exposures/$e_id/speculative";
             headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
-            body = Vector{UInt8}(JSON3.write(body)))
+            body = Vector{UInt8}(JSON.json(body)))
         @test r.status == 200
-        new_ix = JSON3.read(String(r.body))
+        new_ix = JSON.parse(String(r.body))
         new_id = Int(new_ix.id)
 
         # Both the indices row and the user_actions row must exist with matching index_id.
@@ -393,9 +394,9 @@ end
         r = call("POST", "/api/exposures/$e_id/speculative";
             headers = ["Content-Type" => "application/json",
                        "X-Username"   => "alice"],
-            body = Vector{UInt8}(JSON3.write(body)))
+            body = Vector{UInt8}(JSON.json(body)))
         @test r.status == 200
-        new_ix = JSON3.read(String(r.body))
+        new_ix = JSON.parse(String(r.body))
         @test new_ix.kind == "speculative"
         @test new_ix.phase == "Lamellar"
         @test length(new_ix.peaks) == 2
@@ -407,7 +408,7 @@ end
 
         # DELETE rejects auto indices
         auto_ix_id = Int(first(filter(ix -> ix.kind != "speculative",
-                                       JSON3.read(String(call("GET", "/api/exposures/$e_id/indices").body)))).id)
+                                       JSON.parse(String(call("GET", "/api/exposures/$e_id/indices").body)))).id)
         r = call("DELETE", "/api/indices/$auto_ix_id")
         @test r.status == 403
 
@@ -571,7 +572,7 @@ end
 
 @testset "the frontend's reflection indices match core phaseratios" begin
     path = joinpath(@__DIR__, "..", "frontend", "src", "lib", "phaseRatioIndices.json")
-    indices = JSON3.read(read(path, String))
+    indices = JSON.parse(read(path, String))
     phases = Dict("Pn3m" => Pn3m, "Im3m" => Im3m, "Ia3d" => Ia3d, "Fm3m" => Fm3m,
                   "Fd3m" => Fd3m, "Lamellar" => Lamellar, "Hexagonal" => Hexagonal,
                   "Square" => Square)

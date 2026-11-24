@@ -1,4 +1,5 @@
-using Test, HTTP, JSON3, SQLite, DBInterface, Tables
+using Test, HTTP, SQLite, DBInterface, Tables
+import JSON
 using HimalayaUI
 
 _pp_req() = HTTP.Request("POST", "/x", ["X-Username" => "alice"], UInt8[])
@@ -54,7 +55,7 @@ _n_events(db) = only(Tables.rowtable(DBInterface.execute(db, "SELECT COUNT(*) AS
             @test snap.direct == (kind == "set_exposure_status" ? 0 : 1)
             @test snap.shown_detector == HimalayaUI.ANALYSIS_VERSION
             @test ismissing(snap.shown_model_id)
-            peaks = JSON3.read(snap.peaks_json)
+            peaks = JSON.parse(snap.peaks_json)
             @test [p.q for p in peaks] == [0.1, 0.2]
             @test [p.found_by for p in peaks] == ["hybrid", "model"]
             @test [p.model_id for p in peaks] == [nothing, 3]
@@ -100,7 +101,7 @@ end
             "SELECT reviewed_at FROM exposures WHERE id = ?", [e]))).reviewed_at == "first"
         snaps = _reviews(fx.db, e)
         @test length(snaps) == 2
-        @test [p.found_by for p in JSON3.read(snaps[2].peaks_json)] == ["hybrid", "both"]
+        @test [p.found_by for p in JSON.parse(snaps[2].peaks_json)] == ["hybrid", "both"]
     end
 end
 
@@ -236,7 +237,7 @@ end
             @test snap.backfilled == 1 && ismissing(snap.event_id)
             @test snap.direct == (id in (e.cur, e.conf) ? 1 : 0)
             @test snap.shown_detector == HimalayaUI.ANALYSIS_VERSION
-            @test [p.found_by for p in JSON3.read(snap.peaks_json)] == ["hybrid"]
+            @test [p.found_by for p in JSON.parse(snap.peaks_json)] == ["hybrid"]
         end
         @test !_reviewed(db, e.none) && isempty(_reviews(db, e.none))
         @test only(Tables.rowtable(DBInterface.execute(db,
