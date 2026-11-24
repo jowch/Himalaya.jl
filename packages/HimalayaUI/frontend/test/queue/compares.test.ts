@@ -6,7 +6,7 @@ import { patchComparesMutator } from "../../src/lib/queue/mutators/compares";
 import { applyCompareChange, comparesOf, EMPTY_COMPARES } from "../../src/lib/compares";
 import { queryKeys } from "../../src/queries";
 import type { SseEvent } from "../../src/lib/queue/types";
-import type { CompareState } from "../../src/api";
+import type { CompareState, SampleBackground } from "../../src/api";
 
 const scope = { username: "jc", clientId: "c", clientOpId: "op", kind: "patch_compares", payload: {}, experimentId: 7 } as const;
 const base: CompareState = {
@@ -40,6 +40,50 @@ describe("compare changes", () => {
     expect(comparesOf(applyCompareChange(stale, 1, { remove: [3] }, "jc"), 1).subtraction).toBeUndefined();
     expect(comparesOf(applyCompareChange(stale, 1, { remove: [9] }, "jc"), 1).subtraction).toBe(2);
     expect(comparesOf(applyCompareChange(stale, 1, { add: [2], subtraction: 2 }, "jc"), 1).subtraction).toBe(2);
+  });
+});
+
+describe("autosampler backgrounds", () => {
+  const run = (over: Partial<SampleBackground> = {}): SampleBackground => ({
+    sample_id: 1, ref_sample_id: 8, source: "default", default_ref_sample_id: 8, is_buffer: false, run_buffer_ids: [8, 9], ...over,
+  });
+  const state = (bg: SampleBackground, subs: CompareState["subtractions"] = []): CompareState => ({
+    compares: [{ sample_id: 1, ref_sample_id: 2, added_by: "jc" }],
+    subtractions: subs,
+    backgrounds: [bg, { sample_id: 8, ref_sample_id: null, source: "default", default_ref_sample_id: null, is_buffer: true, run_buffer_ids: [8, 9] }],
+  });
+
+  it("reads the effective background and where it came from, apart from the saved subtraction", () => {
+    expect(comparesOf(state(run()), 1).background).toMatchObject({ ref_sample_id: 8, source: "default" });
+    expect(comparesOf(state(run()), 1).subtraction).toBeUndefined();
+    expect(comparesOf(base, 1).background).toBeUndefined();
+  });
+
+  it("choosing a sample makes it the user's choice, whether or not it is a comparison", () => {
+    const next = applyCompareChange(state(run()), 1, { subtraction: 9 }, "jc");
+    expect(comparesOf(next, 1).background).toMatchObject({ ref_sample_id: 9, source: "user", default_ref_sample_id: 8 });
+    expect(comparesOf(next, 1)).toMatchObject({ refs: [2], subtraction: 9 });
+  });
+
+  it("null turns the background off and the default does not come back", () => {
+    const next = applyCompareChange(state(run({ ref_sample_id: 9, source: "user" }), [{ sample_id: 1, ref_sample_id: 9 }]), 1, { subtraction: null }, "jc");
+    expect(comparesOf(next, 1).background).toMatchObject({ ref_sample_id: null, source: "user" });
+    expect(comparesOf(next, 1).subtraction).toBeUndefined();
+  });
+
+  it("default goes back to the run's first buffer", () => {
+    const off = state(run({ ref_sample_id: null, source: "user" }));
+    expect(comparesOf(applyCompareChange(off, 1, { subtraction: "default" }, "jc"), 1).background).toMatchObject({ ref_sample_id: 8, source: "default" });
+  });
+
+  it("adding or removing a comparison leaves the background alone, even one that is not a comparison", () => {
+    const chosen = state(run({ ref_sample_id: 9, source: "user" }), [{ sample_id: 1, ref_sample_id: 9 }]);
+    expect(comparesOf(applyCompareChange(chosen, 1, { add: [3] }, "jc"), 1)).toMatchObject({ refs: [2, 3], subtraction: 9, background: { ref_sample_id: 9, source: "user" } });
+    expect(comparesOf(applyCompareChange(chosen, 1, { remove: [2] }, "jc"), 1)).toMatchObject({ refs: [], subtraction: 9 });
+  });
+
+  it("default clears the subtraction of a sample that has no default", () => {
+    expect(comparesOf(applyCompareChange(base, 1, { subtraction: "default" }, "jc"), 1).subtraction).toBeUndefined();
   });
 });
 
