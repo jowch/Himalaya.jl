@@ -737,7 +737,8 @@ export function WorkspacePage(): JSX.Element {
     if (!mainTrace) return out;
     const setupOf = (sid: number | undefined) => inExperiment.find((s) => s.id === sid)?.setup_id ?? null;
     const own = setupOf(sampleId);
-    compareTraces.forEach((t, rid) => out.set(rid, compareScale(mainTrace, t, peakQs, setupOf(rid) === own)));
+    const sameKnownSetup = (rid: number) => own !== null && setupOf(rid) === own;
+    compareTraces.forEach((t, rid) => out.set(rid, compareScale(mainTrace, t, peakQs, sameKnownSetup(rid))));
     return out;
   }, [mainTrace, compareTraces, peakQs, inExperiment, sampleId]);
   const compares: CompareLine[] = useMemo(() => {

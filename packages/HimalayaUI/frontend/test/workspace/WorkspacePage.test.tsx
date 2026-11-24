@@ -2305,6 +2305,7 @@ describe("WorkspacePage", () => {
 
   it("scales by the transmitted beam when both traces carry monitors, even where high-q matching would disagree", () => {
     const monitors = (transmitted_counts: number) => ({ transmitted_counts, exposure_time: 15, counting_time: 15.8 });
+    state.corpus = state.corpus.map((s) => ({ ...s, setup_id: 1 }));
     state.trace = { ...makeTrace(1), monitors: monitors(6000) };
     state.compareTraces = new Map([[11, { ...makeTrace(2), monitors: monitors(8000) }]]);
     renderAt("/experiments/1/workspace/10");
@@ -2328,7 +2329,20 @@ describe("WorkspacePage", () => {
     expect(scale).toHaveTextContent("×0.500 matched");
   });
 
+  it("matches at high q while the sample's setup is unknown, even when both carry monitors", () => {
+    const monitors = (transmitted_counts: number) => ({ transmitted_counts, exposure_time: 15, counting_time: 15.8 });
+    state.corpus = state.corpus.map((s) => ({ ...s, setup_id: null }));
+    state.trace = { ...makeTrace(1), monitors: monitors(6000) };
+    state.compareTraces = new Map([[11, { ...makeTrace(2), monitors: monitors(8000) }]]);
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "c" });
+    fireEvent.click(within(screen.getByRole("dialog")).getByText("A2"));
+    const scale = screen.getByRole("button", { name: "Remove A2" }).parentElement!.querySelector("[data-scale-source]")!;
+    expect(scale).toHaveAttribute("data-scale-source", "other_setup");
+  });
+
   it("says when a comparison had no monitors and was matched at high q instead", () => {
+    state.corpus = state.corpus.map((s) => ({ ...s, setup_id: 1 }));
     state.trace = makeTrace(1);
     state.compareTraces = new Map([[11, makeTrace(2)]]);
     renderAt("/experiments/1/workspace/10");

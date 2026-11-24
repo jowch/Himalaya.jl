@@ -10,12 +10,19 @@ Reads every .prp under the folder and changes nothing. For each folder of .prp f
   - how many look beam-off (I_0 at or below zero)
   - the spread of I_2 / I_signal against the folder median. Scaling a buffer by I_2
     instead of I_signal changes its scale by the ratio of the two images' values.
+  - I_2 on beam-off images, which should be near zero
+  - the spread of I_2 / I_0 against the folder median, with images more than
+    STEP_FRACTION away listed: a jump there is a gain or attenuator step, or a
+    blocked or moved beamstop
+  - I_2 per second of counting time for each counting time seen, which should agree
 """
+
+const STEP_FRACTION = 0.2
 
 number(line) = (m = match(r"=\s*([+-]?[0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?)", line); m === nothing ? nothing : parse(Float64, m[1]))
 
 function read_monitors(path)
-    channel, signal, i2, i0 = nothing, nothing, nothing, nothing
+    channel, signal, i2, i0, counting = nothing, nothing, nothing, nothing, nothing
     for line in eachline(path)
         if startswith(line, "I_Signal (i.e. I1 in header file) is from:")
             channel = strip(split(line, ":"; limit = 2)[2])
@@ -25,9 +32,11 @@ function read_monitors(path)
             i2 = number(line)
         elseif startswith(line, "I_0(")
             i0 = number(line)
+        elseif startswith(line, "Counting time=")
+            counting = number(line)
         end
     end
-    (; channel, signal, i2, i0)
+    (; channel, signal, i2, i0, counting)
 end
 
 usable(x) = x !== nothing && isfinite(x) && x > 0
@@ -39,6 +48,41 @@ function prp_folders(root)
         isempty(prps) || (found[dir] = sort(prps))
     end
     found
+end
+
+spread(xs) = quantile(xs, [0.0, 0.05, 0.5, 0.95, 1.0])
+
+function report_beam_off(io, rows)
+    i2 = [m.i2 for (_, m) in rows if m.i2 !== nothing]
+    isempty(i2) && return
+    @printf(io, "   I_2 on beam-off images: min %.1f  median %.1f  max %.1f\n", minimum(i2), median(i2), maximum(i2))
+end
+
+function report_incident_ratio(io, lit, outliers)
+    ratio = [(n, m.i2 / m.i0) for (n, m) in lit if usable(m.i2) && usable(m.i0)]
+    isempty(ratio) && return
+    mid = median(last.(ratio))
+    rel = [(n, r / mid) for (n, r) in ratio]
+    @printf(io, "   I_2 / I_0 vs folder median: min %.3f  p5 %.3f  median %.3f  p95 %.3f  max %.3f\n", spread(last.(rel))...)
+    steps = sort([x for x in rel if abs(x[2] - 1) > STEP_FRACTION]; by = x -> abs(log(x[2])), rev = true)
+    @printf(io, "   more than %d%% off (gain, attenuator or beamstop step?): %d\n", round(Int, 100 * STEP_FRACTION), length(steps))
+    for (n, r) in first(steps, outliers)
+        @printf(io, "      %-48s %.3f\n", n, r)
+    end
+end
+
+function report_counting_time(io, lit)
+    by_time = Dict{Float64,Vector{Float64}}()
+    for (_, m) in lit
+        (usable(m.i2) && usable(m.counting)) || continue
+        push!(get!(by_time, m.counting, Float64[]), m.i2 / m.counting)
+    end
+    isempty(by_time) && return
+    println(io, "   I_2 per counting second, by counting time:")
+    for t in sort(collect(keys(by_time)))
+        rates = by_time[t]
+        @printf(io, "      %8.2f s  × %-5d median %.4g\n", t, length(rates), median(rates))
+    end
 end
 
 function report_folder(io, root, dir, paths, outliers)
@@ -60,10 +104,13 @@ function report_folder(io, root, dir, paths, outliers)
     for n in first(fallback, outliers)
         println(io, "      ", n)
     end
+    report_beam_off(io, [(n, m) for (n, m) in rows if m.i0 !== nothing && m.i0 <= 0])
+    report_incident_ratio(io, lit, outliers)
+    report_counting_time(io, lit)
     isempty(paired) && return
     mid = median(last.(paired))
     rel = [(n, r / mid) for (n, r) in paired]
-    q = quantile(last.(rel), [0.0, 0.05, 0.5, 0.95, 1.0])
+    q = spread(last.(rel))
     @printf(io, "   I_2 / I_signal vs folder median: min %.3f  p5 %.3f  median %.3f  p95 %.3f  max %.3f\n", q...)
     @printf(io, "   so a buffer scale would move by up to %+.1f%% / %+.1f%% (p5 / p95 pair against the median)\n",
             100 * (q[2] - 1), 100 * (q[4] - 1))

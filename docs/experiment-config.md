@@ -299,7 +299,10 @@ runs once per included setup (`_scan_setup!`), reading `data_dir`,
    still marked `monitors_read = 0`, on every scan request and at the start of
    every pass, so a finished beamtime ingested before the monitors
    were parsed picks them up with no new files. Each file is read once, and a
-   stored value is never overwritten.
+   stored value is never overwritten, with one exception: the
+   `exposures_transmitted_from_i2_v1` migration clears every stored
+   `transmitted_counts` once, because it held `I_signal`, so the backfill reads
+   `I_2` in its place.
 5. **Analyzes**, outside the write transaction, every exposure that is new,
    never analyzed, whose integration file has appeared since it was last
    tried, or whose stored `analysis_version` differs from `ANALYSIS_VERSION`
