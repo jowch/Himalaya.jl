@@ -41,9 +41,6 @@ function backgrounds_for_experiment(db, exp_id::Int, subs)
     out
 end
 
-_int_list(raw) = raw === nothing ? Int[] :
-    (raw isa AbstractVector && all(x -> x isa Integer, raw)) ? Int.(collect(raw)) : nothing
-
 _current_compares(db, sample_id::Int) = Set(Int(r.ref_sample_id) for r in sqlrows(DBInterface.execute(db,
     "SELECT ref_sample_id FROM sample_compares WHERE sample_id = ?", [sample_id])))
 
@@ -94,8 +91,8 @@ function register_compare_routes!()
             return _json_error(400, "body must be JSON")
         end
         body isa AbstractDict || return _json_error(400, "body must be a JSON object")
-        add = _int_list(get(body, "add", nothing))
-        remove = _int_list(get(body, "remove", nothing))
+        add = body_int_list(get(body, "add", nothing))
+        remove = body_int_list(get(body, "remove", nothing))
         (add === nothing || remove === nothing) && return _json_error(400, "add and remove must be lists of sample ids")
         sub_given = haskey(body, "subtraction")
         sub = sub_given ? body["subtraction"] : nothing

@@ -41,6 +41,7 @@ Julia/Oxygen.jl REST backend, SQLite DB, event-log dispatcher, SSE multiplayer, 
 
 - Use the singleton API: `@get "/path/{id}" function(req::HTTP.Request, id::Int) ... end`. Typed function args extract path params.
 - Parse JSON body with `json(req)` (unqualified, imported via `using Oxygen`), **not** `Oxygen.json(req)`.
+- **Read a JSON list into a typed vector with a typed comprehension (`Int[Int(x) for x in raw]`), never a broadcast (`Int.(raw)`).** `JSON.parse` returns every array as `Vector{Any}`, and a broadcast over an empty one takes its element type from inference. With HimalayaUI loaded, `Int(::Any)` infers as `Any`, so `Int.(Any[])` is a `Vector{Any}` and a method typed `Vector{Int}` throws (a 500 on `{"remove": []}`). In a bare REPL it infers `Int`, so a unit test outside the package can't catch it. Lists of ids go through `body_int_list` (`json.jl`). Route tests send `[]` for every list field.
 - Test harness pattern: `Oxygen.resetstate()` before `Oxygen.serve(; async=true)`, `Oxygen.terminate()` after. A module-level `Ref{Union{SQLite.DB, Nothing}}` holds the live DB (matches the one-experiment-per-process model).
 - Mount static files with `Oxygen.dynamicfiles(dir, "/")` — only if `isdir(dir)`, so empty frontends don't break tests.
 - Oxygen emits a harmless warning about OpenAPI schema generation for some routes; ignore it.
