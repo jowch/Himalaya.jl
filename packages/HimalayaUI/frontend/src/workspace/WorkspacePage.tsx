@@ -70,8 +70,9 @@ import { samePeak, type PeakRef } from "../lib/peakRef";
 import { clampDomain, compareScale, COMPARES_FULL, MAX_COMPARES, scaledTrace, subtractTrace } from "./compare";
 import type { CompareScale } from "./compare";
 import { useCompareTraces, useTraceStatuses } from "./useCompareTraces";
+import { backgroundsToFetch, planMinusCompares } from "./minusCompares";
 import { usePrefetchNeighbours } from "./prefetch";
-import { CompareBar } from "../ui/CompareBar";
+import { CompareBar, type CompareChip } from "../ui/CompareBar";
 import { ComparePicker } from "../ui/ComparePicker";
 import { SubtractToggle } from "../ui/SubtractToggle";
 import { BackgroundModule, type BackgroundView } from "../ui/BackgroundModule";
@@ -503,12 +504,25 @@ export function WorkspacePage(): JSX.Element {
     (rid: number, shown: boolean) => setShownOverride((m) => new Map(m).set(`${sampleId}:${rid}`, shown)),
     [sampleId],
   );
+  const [minusChoice, setMinusChoice] = useState<ReadonlyMap<number, boolean>>(() => new Map());
+  const minusWanted = managed && subRef !== undefined && sampleId !== undefined && (minusChoice.get(sampleId) ?? true);
+  const backgrounds = useMemo(() => comparesQuery.data?.backgrounds ?? [], [comparesQuery.data]);
+  const minusChips = useMemo(
+    () => (minusWanted && refsOn ? shownRefs.filter((r) => r !== sampleId && !hiddenRefs.has(r)) : []),
+    [minusWanted, refsOn, shownRefs, sampleId, hiddenRefs],
+  );
+  const minusBackgrounds = useMemo(() => backgroundsToFetch(minusChips, backgrounds, hiddenSamples), [minusChips, backgrounds, hiddenSamples]);
   const fetchRefs = useMemo(() => {
     const base = shownRefs.filter((r) => !hiddenRefs.has(r) || r === subRef);
-    return subRef !== undefined && !base.includes(subRef) ? [...base, subRef] : base;
-  }, [shownRefs, hiddenRefs, subRef]);
+    const extra = [...(subRef !== undefined ? [subRef] : []), ...minusBackgrounds];
+    return [...base, ...[...new Set(extra)].filter((r) => !base.includes(r))];
+  }, [shownRefs, hiddenRefs, subRef, minusBackgrounds]);
   const compareTraces = useCompareTraces(fetchRefs);
-  const traceStatuses = useTraceStatuses(useMemo(() => (bgRef !== undefined && !bgHidden ? [bgRef] : []), [bgRef, bgHidden]));
+  const statusIds = useMemo(
+    () => [...new Set([...(bgRef !== undefined && !bgHidden ? [bgRef] : []), ...minusChips, ...minusBackgrounds])],
+    [bgRef, bgHidden, minusChips, minusBackgrounds],
+  );
+  const traceStatuses = useTraceStatuses(statusIds);
 
   const callOnFrame = useCallback(
     (eid: number): PhaseIdentity[] => {
@@ -789,7 +803,6 @@ export function WorkspacePage(): JSX.Element {
     () => (mainTrace && subTrace && subScale !== undefined ? subtractTrace(mainTrace, subTrace, subScale) : null),
     [mainTrace, subTrace, subScale],
   );
-  const [minusChoice, setMinusChoice] = useState<ReadonlyMap<number, boolean>>(() => new Map());
   const setMinus = useCallback(
     (on: boolean) => {
       if (sampleId === undefined) return;
@@ -799,10 +812,37 @@ export function WorkspacePage(): JSX.Element {
   );
   const minusOn = difference !== null && subRef !== undefined && sampleId !== undefined && (minusChoice.get(sampleId) ?? managed);
   const subName = subRef !== undefined ? (sampleNames.get(subRef) ?? `Sample ${subRef}`) : "";
-  const shownCompareSet = useMemo<ReadonlySet<number>>(
-    () => (!refsOn ? new Set(shownRefs) : minusOn ? new Set(shownRefs.filter((r) => r !== subRef)) : hiddenRefs),
-    [refsOn, minusOn, shownRefs, subRef, hiddenRefs],
+  const managedMinus = minusOn && managed;
+  const setupIdOf = useMemo(() => new Map(inExperiment.map((s) => [s.id, s.setup_id ?? null] as const)), [inExperiment]);
+  const minusPlan = useMemo(
+    () => new Map(planMinusCompares({
+      chips: minusChips, backgrounds, traces: compareTraces, statuses: traceStatuses, hidden: hiddenSamples,
+      setupOf: (id) => setupIdOf.get(id) ?? null, peakQs,
+    }).map((p) => [p.id, p] as const)),
+    [minusChips, backgrounds, compareTraces, traceStatuses, hiddenSamples, setupIdOf, peakQs],
   );
+  const minusLines: CompareLine[] = useMemo(
+    () => (managedMinus
+      ? [...minusPlan.values()].flatMap((p) => (p.kind === "drawn"
+        ? [{ id: p.id, name: sampleNames.get(p.id) ?? `Sample ${p.id}`, q: p.q, I: p.d, color: compareColors.get(p.id) ?? COMPARE_COLORS[0]!, emphasis: false }]
+        : []))
+      : []),
+    [managedMinus, minusPlan, sampleNames, compareColors],
+  );
+  const shownCompareSet = useMemo<ReadonlySet<number>>(
+    () => (!refsOn ? new Set(shownRefs) : minusOn && !managed ? new Set(shownRefs.filter((r) => r !== subRef)) : hiddenRefs),
+    [refsOn, minusOn, managed, shownRefs, subRef, hiddenRefs],
+  );
+  const chipMinus = (rid: number): CompareChip["minus"] => {
+    const p = managedMinus ? minusPlan.get(rid) : undefined;
+    if (!p) return undefined;
+    return p.kind === "drawn" ? { kind: "drawn", background: sampleNames.get(p.background) ?? `Sample ${p.background}` } : { kind: "skipped", reason: p.reason };
+  };
+  const chipScale = (rid: number): CompareScale | undefined => {
+    if (!managedMinus) return scales.get(rid);
+    const p = minusPlan.get(rid);
+    return p?.kind === "drawn" ? p.scale : undefined;
+  };
   const xExtent = useMemo<[number, number] | null>(
     () => (mainTrace && mainTrace.q.length > 1 ? positiveExtent(mainTrace.q) : null),
     [mainTrace],
@@ -1639,14 +1679,15 @@ export function WorkspacePage(): JSX.Element {
                   name: sampleNames.get(rid) ?? `Sample ${rid}`,
                   setup: sampleSetup.get(rid) !== (sampleId === undefined ? undefined : sampleSetup.get(sampleId)) ? sampleSetup.get(rid) : undefined,
                   color: COMPARE_COLORS[activeRefs.indexOf(rid) % COMPARE_COLORS.length]!,
-                  scale: scales.get(rid),
+                  scale: chipScale(rid),
+                  minus: chipMinus(rid),
                   hidden: shownCompareSet.has(rid),
                 }))}
                 subtractId={subRef}
                 hidden={!refsOn}
                 modKey={MOD_KEY}
                 onToggleShown={(rid) => {
-                  if (minusOn && rid !== subRef) {
+                  if (minusOn && !managed && rid !== subRef) {
                     setMinus(false);
                     setShown(rid, true);
                     return;
@@ -1684,7 +1725,7 @@ export function WorkspacePage(): JSX.Element {
                   peaks={peaks.data ?? []}
                   combs={combs}
                   highlight={highlight}
-                  compares={compares}
+                  compares={managedMinus ? minusLines : compares}
                   members={members}
                   {...(minusOn && difference ? { difference: managed ? { ...difference, kind: "curve" as const } : difference } : {})}
                   xDomain={shownDomain}
