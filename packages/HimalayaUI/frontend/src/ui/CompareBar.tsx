@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Kbd } from "./Kbd";
 import { Tooltip } from "./Tooltip";
 import { isMatchedScale, type CompareScale } from "../workspace/compare";
+import { SKIP_NOTES, type SkipReason } from "../workspace/minusCompares";
 import { COMPARE_DASH } from "./WorkspacePlot";
 
 export interface CompareChip {
@@ -11,6 +12,7 @@ export interface CompareChip {
   scale: CompareScale | undefined;
   hidden?: boolean;
   setup?: string | undefined;
+  minus?: { kind: "drawn"; background: string } | { kind: "skipped"; reason: SkipReason } | undefined;
 }
 
 interface Props {
@@ -67,6 +69,8 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
                   <>
                     <span className="block font-semibold">{c.setup ? `${c.name} · ${c.setup}` : c.name}</span>
                     <span className="block">{`Click to ${off ? "show" : "hide"}.`}{canSubtract && ` ${modKey}-click to ${sub ? "stop subtracting" : "subtract it from the current trace"}.`}</span>
+                    {c.minus?.kind === "drawn" && <span className="block">{`Minus ${c.minus.background}`}</span>}
+                    {c.minus?.kind === "skipped" && <span className="block">{SKIP_NOTES[c.minus.reason]}</span>}
                     {c.scale !== undefined && <span className="block">{SCALE_NOTES[c.scale.source]}</span>}
                   </>
                 }
@@ -92,6 +96,13 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
                   )}
                 </button>
               </Tooltip>
+              {c.minus?.kind === "skipped" && (
+                <Tooltip content={SKIP_NOTES[c.minus.reason]}>
+                  <span className={"min-w-0 truncate whitespace-nowrap text-ink-faint" + dim} data-minus-note={c.minus.reason}>
+                    {c.minus.reason === "loading" ? "loading" : "not subtracted"}
+                  </span>
+                </Tooltip>
+              )}
               {c.scale !== undefined && (
                 <Tooltip content={SCALE_NOTES[c.scale.source]}>
                   <span
