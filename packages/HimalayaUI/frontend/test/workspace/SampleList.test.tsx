@@ -229,5 +229,6 @@ describe("SampleList review marks", () => {
       />,
     );
     expect(screen.getByTestId("workspace-status")).toHaveTextContent("All dropped");
+    expect(screen.getByTestId("workspace-status")).toHaveAccessibleName("Every image is dropped, so nothing is analyzed.");
   });
 });

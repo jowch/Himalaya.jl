@@ -4,7 +4,7 @@ import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
 import type { CorpusSample, Exposure, IndexEntry, Assignment, Peak, ProblemExposure, SampleBridge, SampleCall, SampleCallMember, SampleLabel, LabelColorEntry, LabelColor, Trace } from "../../src/api";
 import { ApiError } from "../../src/api";
 import { WorkspacePage } from "../../src/workspace/WorkspacePage";
-import type { PrefetchTarget } from "../../src/workspace/prefetch";
+import { neighbourSamples, type PrefetchTarget } from "../../src/workspace/prefetch";
 import { peakList } from "../fixtures/peaks";
 import { makeExposure } from "../helpers/exposure";
 import { useSyncExternalStore } from "react";
@@ -229,7 +229,8 @@ vi.mock("../../src/queries", () => ({
 }));
 
 const prefetchTargets: PrefetchTarget[] = [];
-vi.mock("../../src/workspace/prefetch", () => ({
+vi.mock("../../src/workspace/prefetch", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/workspace/prefetch")>()),
   usePrefetchNeighbours: (target: PrefetchTarget) => {
     prefetchTargets.push(target);
   },
@@ -4060,5 +4061,74 @@ describe("WorkspacePage modules by setup mode", () => {
     expect(screen.queryByTestId("workspace-progress")).toBeNull();
     fireEvent.keyDown(window, { key: "z" });
     expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/10");
+  });
+
+  describe("a bridged pair of an autosampler and a capillary sample", () => {
+    const mateImages = (sampleId: number): void => {
+      state.mateExposures = new Map([[sampleId, [exposure(300, { sample_id: sampleId }), exposure(301, { sample_id: sampleId })]]]);
+    };
+    const bridge = (a: number, b: number): void => {
+      state.bridges = [{ sample_id: a, group_id: 4 }, { sample_id: b, group_id: 4 }];
+    };
+    const mateTile = (): HTMLElement => within(screen.getByTestId("workspace-exposures")).getAllByRole("button", { name: /^Image 1 of / })[0]!;
+    const checkboxes = (): string[] =>
+      within(screen.getByTestId("workspace-exposures")).queryAllByRole("checkbox").map((c) => c.getAttribute("aria-label") ?? "");
+
+    it("gives a capillary mate's images selection controls while the autosampler sample is open, and acts on the mate", () => {
+      bridge(AUTOSAMPLER, CAPILLARY);
+      ownExposures(AUTOSAMPLER);
+      mateImages(CAPILLARY);
+      renderAt(`/experiments/1/workspace/${AUTOSAMPLER}`);
+      expect(checkboxes()).toHaveLength(2);
+      expect(checkboxes().every((l) => / of /.test(l))).toBe(true);
+      fireEvent.click(mateTile());
+      fireEvent.keyDown(window, { key: "Enter" });
+      expect(calls.filter((c) => c.hook === "op:setSelection").map((c) => c.arg[0])).toEqual([CAPILLARY]);
+    });
+
+    it("gives an autosampler mate's image no selection control while the capillary sample is open, and Enter on it does nothing", () => {
+      bridge(CAPILLARY, AUTOSAMPLER);
+      ownExposures(CAPILLARY);
+      mateImages(AUTOSAMPLER);
+      renderAt(`/experiments/1/workspace/${CAPILLARY}`);
+      expect(checkboxes()).toHaveLength(2);
+      expect(checkboxes().some((l) => / of /.test(l))).toBe(false);
+      fireEvent.click(mateTile());
+      expect(screen.queryByTestId("exposure-selection-caption")).not.toBeNull();
+      fireEvent.keyDown(window, { key: "Enter" });
+      expect(calls.filter((c) => c.hook === "op:setSelection")).toEqual([]);
+      fireEvent.keyDown(window, { key: " " });
+      const overlay = screen.queryByRole("dialog", { name: "Detector image" });
+      if (overlay) expect(within(overlay).queryByRole("checkbox")).toBeNull();
+    });
+  });
+
+  describe("settling the call of a bridged pair", () => {
+    const callAs = (id: number, over: Partial<CorpusSample>): void => {
+      state.corpus = state.corpus.map((x) => (x.id === id ? { ...x, ...over } : x));
+    };
+
+    it("never asks an autosampler sample to settle a call, and never asks about an autosampler mate", () => {
+      callAs(AUTOSAMPLER, { assignment_state: "indexed", phase: "Pn3m" });
+      state.bridges = [{ sample_id: AUTOSAMPLER, group_id: 4 }, { sample_id: 12, group_id: 4 }];
+      const view = renderAt(`/experiments/1/workspace/${AUTOSAMPLER}`);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      view.unmount();
+      renderAt("/experiments/1/workspace/12");
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+
+    it("still asks for a capillary pair whose calls differ", () => {
+      callAs(CAPILLARY, { assignment_state: "indexed", phase: "Pn3m" });
+      state.bridges = [{ sample_id: CAPILLARY, group_id: 4 }, { sample_id: 12, group_id: 4 }];
+      renderAt(`/experiments/1/workspace/${CAPILLARY}`);
+      expect(screen.getByRole("dialog", { name: /^Calls differ/ })).toBeInTheDocument();
+    });
+  });
+
+  it("prefetches the sample Z opens, not an autosampler sample", () => {
+    renderAt("/experiments/1/workspace/13");
+    const target = prefetchTargets.at(-1)!;
+    expect(neighbourSamples(target.samples, target.currentId, target.reviewable).map((s) => s.id)).toEqual([CAPILLARY, 12]);
   });
 });

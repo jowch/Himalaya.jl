@@ -245,6 +245,8 @@ end
     with_inproc_routes(db) do call
         review = JSON3.read(String(call("GET", "/api/experiments/$eid").body)).stats.review
         @test (review.reviewed, review.total) == (1, 2)
+        timeline = JSON3.read(String(call("GET", "/api/experiments/$eid").body)).stats.timeline
+        @test [Int(x[3]) for x in timeline.samples] == [2, 2, 1, 0]
     end
 
     DBInterface.execute(db, "UPDATE setups SET included = 0 WHERE id = ?", [cap])

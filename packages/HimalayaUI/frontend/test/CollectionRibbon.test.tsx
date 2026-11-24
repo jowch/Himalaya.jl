@@ -43,4 +43,12 @@ describe("CollectionRibbon", () => {
     expect(screen.queryByText(/to review/)).toBeNull();
     expect(screen.getByRole("img")).not.toHaveAccessibleName(/reviewed/);
   });
+
+  it("draws a span with no review state apart from reviewed and unreviewed ones", () => {
+    const tl: CollectionTimeline = { start: "2026-04-25T10:00:00", samples: [[0, 300, 2], [420, 900, 1], [4500, 5400, 0]], beam_off: [] };
+    const { container } = render(<CollectionRibbon timeline={tl} review={{ reviewed: 1, total: 2 }} />);
+    const spans = Array.from(container.querySelectorAll("rect[data-reviewed]"));
+    expect(spans.map((r) => r.getAttribute("data-reviewable"))).toEqual(["false", "true", "true"]);
+    expect(spans.map((r) => r.getAttribute("data-reviewed"))).toEqual(["false", "true", "false"]);
+  });
 });

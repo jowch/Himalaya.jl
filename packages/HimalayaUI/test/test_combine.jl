@@ -189,6 +189,22 @@ end
     end
 end
 
+@testset "the selection route refuses a sample of an autosampler setup" begin
+    fx = _combine_fixture()
+    db = fx.db
+    auto = HimalayaUI.create_setup!(db; experiment_id = fx.exp_id, folder = "solution",
+        root_dir = fx.tmp, data_dir = fx.tmp, analysis_dir = fx.analysis_dir, mode = "autosampler")
+    water = HimalayaUI.create_sample!(db; experiment_id = fx.exp_id, name = "water 01A (B0101)", setup_id = auto)
+    image = HimalayaUI.create_exposure!(db; experiment_id = fx.exp_id, sample_id = water, setup_id = auto, filename = "a_tot")
+    with_inproc_routes(db) do call
+        resp = call("PUT", "/api/samples/$water/selection";
+            body = JSON3.write(Dict(:exposure_ids => Int[])), headers = ["Content-Type" => "application/json"])
+        @test resp.status == 422
+        @test JSON3.read(String(resp.body)).error == "An autosampler sample has one image, so there is nothing to select."
+        @test HimalayaUI.selected_image_ids(db, water) == [image]
+    end
+end
+
 @testset "a rescan keeps a custom selection and grows an all-selected one" begin
     fx = _combine_fixture()
     db = fx.db
