@@ -178,12 +178,6 @@ and tolerates a missing or failing `broadcast_event!`.
 function _maybe_broadcast_event!(db, result, kind, entity_type, entity_id, payload, post_state)
     isdefined(@__MODULE__, :broadcast_event!) || return nothing
 
-    # M0.4: suppress SSE broadcast for analyze_run no-ops (both skip flags true).
-    # M2 wires synchronous reanalyze inside curation routes; without this guard
-    # every curation event would also fan out an analyze_run frame even when
-    # nothing changed — O(N) extra frames per session. The user_actions row is
-    # still written; only the broadcast is suppressed. Strict `=== true` guards
-    # against the JSON.Object case where a missing key would return `nothing`.
     suppress = kind == "analyze_run" &&
                payload !== nothing &&
                get(payload, :findpeaks_skipped, false) === true &&
@@ -223,19 +217,6 @@ function _enqueue_post_commit_broadcast!(args...; kwargs...)
     nothing
 end
 
-"""
-    _enqueue_broadcast_from_result!(result, kind, entity_type, entity_id;
-                                    post_state = nothing)
-
-Convenience: queue a post-commit SSE broadcast from the NamedTuple returned
-by `apply_event!(InTransaction(), ...)`. Routes wrapped in `with_idempotency`
-that call the InTransaction variant must explicitly enqueue their broadcast
-(the InTransaction variant does NOT broadcast — see `apply_event!` docstring).
-This helper centralizes the field-by-field unpack so callers don't drift.
-
-Reuses `result.payload_json` (the canonical serialization frozen by
-`apply_event!` after its JSON round-trip) — no re-serialization needed.
-"""
 function _enqueue_broadcast_from_result!(result, kind::String,
                                          entity_type::String, entity_id::Integer;
                                          post_state::Union{Dict, Nothing} = nothing)
@@ -303,17 +284,6 @@ const RETIRED_EVENT_KINDS = (
 
 payload_as_replayed(payload_json::String) = JSON.parse(payload_json)
 
-"""
-Dispatcher that updates materialized views based on event kind.
-Currently a no-op for most events; populated as routes migrate to apply_event!.
-
-**Payload contract:** `payload` is normalized to a `JSON.Object` (or `nothing`)
-before this is called. The live path in `apply_event!` round-trips through
-`to_json` → `JSON.parse` so dispatcher branches see the same shape they'd
-see during `rebuild_views_from_log!`. This eliminates the Symbol-key vs
-String-key footgun: `JSON.Object` supports both `obj.q` and `obj[:q]` /
-`obj["q"]`. Branch code accesses fields uniformly via `payload.q` style.
-"""
 function update_view_for_event!(db, kind, entity_id, payload, event_id)
     # R4.2 dispatcher branches — one per view-producing curation kind.
     # All writes happen inside the transaction opened by apply_event!.

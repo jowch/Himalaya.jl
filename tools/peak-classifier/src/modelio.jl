@@ -3,7 +3,7 @@ const MODEL_FILE_VERSION = 3
 function save_model(path::AbstractString, m::TrainedModel)
     mkpath(dirname(abspath(path)))
     open(path, "w") do io
-        JSON.json(io, Dict{String, Any}("file_version" => MODEL_FILE_VERSION, "model" => to_dict(m)))
+        JSON.json(io, Dict{String, Any}("file_version" => MODEL_FILE_VERSION, "model" => to_dict(m)); sort_keys = false)
     end
     path
 end

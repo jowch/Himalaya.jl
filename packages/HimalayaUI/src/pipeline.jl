@@ -645,17 +645,6 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
             new_d  = locked_row ? lattice_d_for(P, new_basis) : fit_result.d
             new_r2 = locked_row ?
                 Himalaya.R²(new_basis .* observed_ratios_used, qvals) : fit_result.R²
-            # R² is undefined for a single claimed peak: R² = 1 - RSS/TSS and
-            # TSS == 0 with one observation. The unlocked path yields NaN there
-            # (fit refits THROUGH the point, so RSS == 0 too) and SQLite binds
-            # NaN to NULL, which is why the ismissing guards downstream sufficed.
-            # The locked path yields -Inf deterministically — RSS > 0 by
-            # construction, since the claim was made at CUSTOM_SNAP_TOL — and
-            # -Inf round-trips as a live Float64, walks past every ismissing
-            # guard, and then throws in to_json inside the analyze
-            # transaction. That makes the exposure permanently un-analyzable:
-            # the value recomputes identically on every retry. Normalize both
-            # arities and both branches to NULL.
             new_r2 = (length(qvals) < 2 || !isfinite(new_r2)) ? missing : new_r2
 
             DBInterface.execute(db,

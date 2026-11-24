@@ -199,7 +199,7 @@ end
 
         # The route's body is _assignment_body; assert its JSON-serialized shape.
         body = HimalayaUI._assignment_body(db, e_id)
-        round = JSON.parse(JSON.json(body))
+        round = JSON.parse(HimalayaUI.to_json(body))
         @test round.exposure_id == e_id
         @test round.state == "form_factor"
         @test collect(round.members) == Int[]
@@ -471,7 +471,7 @@ if isdefined(@__MODULE__, :with_test_server)
                 entity_type="exposure", entity_id=e_id, payload=Dict(:index_id => 10))
             b = HimalayaUI._assignment_body(db, e_id)
             post_state = Dict(:assignment => Dict(:state => b[:state], :members => b[:members]))
-            round = JSON.parse(JSON.json(post_state))
+            round = JSON.parse(HimalayaUI.to_json(post_state))
             @test haskey(round, :assignment)
             @test !haskey(round, :indices)
             @test round.assignment.state == "indexed"
@@ -615,12 +615,6 @@ end
 end
 
 @testset "a one-peak locked index stores NULL r_squared, not -Inf" begin
-    # R² = 1 - RSS/TSS is undefined at one observation (TSS == 0). On the
-    # locked branch RSS > 0 by construction — the claim is made at
-    # CUSTOM_SNAP_TOL — so the result is -Inf, deterministically. Unlike NaN
-    # (which SQLite binds to NULL), -Inf round-trips as a live Float64 and
-    # then throws in JSON.json INSIDE the analyze transaction, making the
-    # exposure permanently un-analyzable: every retry recomputes it.
     mktempdir() do dir
         db = open_prepared_clone(dir)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
@@ -659,11 +653,8 @@ end
         @test !ismissing(row.score)
         @test ismissing(row.r_squared)   # NULL, not -Inf
 
-        # The reachable consequence: this must serialize. Pre-guard it threw
-        # ErrorException("-Inf not allowed to be written in JSON spec"),
-        # unwinding the whole analyze transaction on every retry.
         payload = HimalayaUI._serialized_indices_for_broadcast(db, e_id)
-        @test JSON.json(payload) isa String
+        @test HimalayaUI.to_json(payload) isa String
     end
 end
 
