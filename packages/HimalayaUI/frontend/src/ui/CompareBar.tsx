@@ -41,11 +41,14 @@ export const SCALE_NOTES: Record<CompareScale["source"], string> = {
   unknown_normalisation: "Integration settings not found, so matched at high q",
 };
 
+const isMatchedAtHighQ = (s: CompareScale): boolean => s.source !== "normalised" && s.source !== "monitor";
+
 function describe(c: CompareChip, subtracted: boolean): string | undefined {
   const parts = [
     subtracted ? "Subtracted from the current trace" : undefined,
     c.minus?.kind === "drawn" ? `Minus ${c.minus.background}` : undefined,
     c.minus?.kind === "skipped" ? SKIP_NOTES[c.minus.reason] : undefined,
+    c.scale && isMatchedAtHighQ(c.scale) ? SCALE_NOTES[c.scale.source] : undefined,
   ].filter(Boolean);
   return parts.length > 0 ? parts.join(". ") : undefined;
 }

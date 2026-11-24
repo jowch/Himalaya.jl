@@ -79,7 +79,6 @@ export interface CompareScale {
   source: "normalised" | "monitor" | "matched" | "other_setup" | "beam_off" | "i2_collapsed" | "unknown_normalisation" | "capillary" | "unknown_mode";
 }
 
-
 type ScaledTrace = Pick<Trace, "q" | "I" | "monitors">;
 
 // physics: counts per pixel also depend on the sample-to-detector distance and on
