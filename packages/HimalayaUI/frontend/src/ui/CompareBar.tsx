@@ -41,6 +41,15 @@ export const SCALE_NOTES: Record<CompareScale["source"], string> = {
   unknown_normalisation: "Integration settings not found, so matched at high q",
 };
 
+function describe(c: CompareChip, subtracted: boolean): string | undefined {
+  const parts = [
+    subtracted ? "Subtracted from the current trace" : undefined,
+    c.minus?.kind === "drawn" ? `Minus ${c.minus.background}` : undefined,
+    c.minus?.kind === "skipped" ? SKIP_NOTES[c.minus.reason] : undefined,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(". ") : undefined;
+}
+
 export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, onSubtract, onRemove, onAdd, full = false, canSubtract = true, trailing }: Props): JSX.Element {
   const perRow = Math.max(1, Math.ceil((chips.length + (full ? 0 : 1) + 1) / 2));
   const basis = `calc((100% - ${perRow - 1} * 0.5rem) / ${perRow})`;
@@ -79,7 +88,7 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
                   type="button"
                   aria-pressed={!off}
                   {...(off || c.setup ? { "aria-label": [c.name, c.setup, off ? "hidden" : undefined].filter(Boolean).join(", ") } : {})}
-                  aria-description={sub ? "Subtracted from the current trace" : undefined}
+                  {...(describe(c, sub) ? { "aria-description": describe(c, sub) } : {})}
                   data-subtracted={sub ? "" : undefined}
                   onClick={(e) => {
                     if (e.metaKey || e.ctrlKey) onSubtract(c.id);
