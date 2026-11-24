@@ -127,13 +127,13 @@ end
         # Seed typed geometry columns directly (Phase B would do this via scan_and_group!)
         DBInterface.execute(db, """
             UPDATE setups SET
-                beam_center_x       = 421.409,
-                beam_center_y       = 836.946,
+                beam_center_x       = 420.5,
+                beam_center_y       = 835.5,
                 beam_center_x_source = 'setup',
                 beam_center_y_source = 'setup',
                 pixel_size_um       = 172.0,
                 pixel_size_um_source = 'prp',
-                flight_path_m       = 1.8095,
+                flight_path_m       = 1.81,
                 flight_path_m_source = 'setup',
                 energy_kev          = 9.0,
                 energy_kev_source   = 'prp',
@@ -156,9 +156,9 @@ end
 
             # Typed geometry
             st = only(body.setups)
-            @test st.beam_center_x       ≈ 421.409
+            @test st.beam_center_x       ≈ 420.5
             @test st.beam_center_x_source == "setup"
-            @test st.flight_path_m       ≈ 1.8095
+            @test st.flight_path_m       ≈ 1.81
             @test st.flight_path_m_source == "setup"
             @test st.energy_kev          ≈ 9.0
             @test st.energy_kev_source   == "prp"

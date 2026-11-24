@@ -3,7 +3,7 @@ import { detectorGeometry, ringCircles } from "../../src/lib/detectorRings";
 import type { Setup } from "../../src/api";
 
 const setup = (over: Partial<Setup> = {}): Setup => ({
-  beam_center_x: 421.409, beam_center_y: 836.946, pixel_size_um: 172, energy_kev: 9.000027604502573, flight_path_m: 1.8095, q_units: "A-1",
+  beam_center_x: 420.5, beam_center_y: 835.5, pixel_size_um: 172, energy_kev: 9.0, flight_path_m: 1.81, q_units: "A-1",
   ...over,
 } as Setup);
 
@@ -31,16 +31,16 @@ describe("ringCircles", () => {
 
   it("puts the beam centre in image pixels, measured from the bottom-left with y up", () => {
     const c = ringCircles([0.1], "A-1", detectorGeometry(setup())!, size)!;
-    expect(c.cx).toBeCloseTo(421.909, 3);
-    expect(c.cy).toBeCloseTo(1043 - 836.946 - 0.5, 3);
+    expect(c.cx).toBeCloseTo(421.0, 3);
+    expect(c.cy).toBeCloseTo(1043 - 835.5 - 0.5, 3);
   });
 
   it("matches the radius the demo generator draws a ring at, q = 4π sin(θ)/λ with r = L tan 2θ", () => {
-    const lambda = 12398.42 / 9000.027604502573;
-    const radius = (q: number) => (1.8095 * Math.tan(2 * Math.asin((q * lambda) / (4 * Math.PI)))) / 172e-6;
+    const lambda = 12398.42 / 9000.0;
+    const radius = (q: number) => (1.81 * Math.tan(2 * Math.asin((q * lambda) / (4 * Math.PI)))) / 172e-6;
     const c = ringCircles([0.05, 0.1, 0.2], "A-1", detectorGeometry(setup())!, size)!;
     c.radii.forEach((r, i) => expect(r).toBeCloseTo(radius([0.05, 0.1, 0.2][i]!), 1));
-    expect(c.radii[1]).toBeCloseTo(230.7, 1);
+    expect(c.radii[1]).toBeCloseTo(230.8, 1);
   });
 
   it("reads q in the units it is given, whatever units the image's own setup uses", () => {
@@ -53,7 +53,7 @@ describe("ringCircles", () => {
 
   it("puts the rings on the narrower side of the beam, so the wider side shows the image out to the highest q", () => {
     const g = (x: number) => detectorGeometry(setup({ beam_center_x: x }))!;
-    expect(ringCircles([0.1], "A-1", g(421.409), size)!.side).toBe("left");
+    expect(ringCircles([0.1], "A-1", g(420.5), size)!.side).toBe("left");
     expect(ringCircles([0.1], "A-1", g(700), size)!.side).toBe("right");
     expect(ringCircles([0.1], "A-1", g(490), size)!.side).toBe("right");
     expect(ringCircles([0.1], "A-1", g(-12.5), size)!.side).toBe("right");

@@ -21,7 +21,7 @@ function exposureOf(sampleId: number, monitors: boolean, frame = 0, averaged = f
     image_path: null, image_version: "", sources: averaged ? [sampleId * 10] : [], trace_hash: null, analysis_inputs_hash: null,
     exposure_time: monitors ? 15 : null, counting_time: monitors ? 15 : null,
     transmitted_counts: monitors ? 7000 : null, incident_monitor: monitors ? 1.5 : null,
-    timestamp: monitors ? "2026-04-26T18:20:27" : null, beam_energy_ev: monitors ? 11000 : null,
+    timestamp: monitors ? "2026-03-14T14:05:11" : null, beam_energy_ev: monitors ? 11000 : null,
     pipe_length_m: monitors ? 1.7 : null, detector: monitors ? "Pilatus 1M" : null,
   };
 }

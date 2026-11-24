@@ -312,14 +312,14 @@ end
 # NOT include that file; duplicating the two writers avoids cross-bucket deps.
 
 function _fs_write_prp(path::AbstractString;
-        beam_energy_ev = 9000.027604502573,
+        beam_energy_ev = 9000.0,
         pipe_length_mm = 1700,
         detector = "Pilatus 1M",
         exposure_time = 15,
         horizontal_position_mm = 58.9)
     open(path, "w") do io
         println(io, "Image file name: $(basename(path)[1:end-4]).tif")
-        println(io, "Time this file was written: 26 Apr 2026 18:20:27")
+        println(io, "Time this file was written: 14 Mar 2026 14:05:11")
         println(io, "Exposure time=$exposure_time")
         println(io, "Beam energy=$beam_energy_ev eV")
         println(io, "Pipe length=$pipe_length_mm mm")
@@ -329,12 +329,12 @@ function _fs_write_prp(path::AbstractString;
 end
 
 function _fs_write_setup_info(path::AbstractString;
-        beam_center_x = 421.409,
-        beam_center_y = 836.946,
-        mean_distance_mm = 1809.5)
+        beam_center_x = 420.5,
+        beam_center_y = 835.5,
+        mean_distance_mm = 1810.0)
     open(path, "w") do io
         println(io, "File used for calibration:")
-        println(io, "../data/agbe_1p7m_S1958_0_001.tif")
+        println(io, "../data/agbe_1p7m_S1000_0_001.tif")
         println(io, "")
         println(io, "Beam center is at ($beam_center_x, $beam_center_y)")
         println(io, "")
@@ -357,8 +357,8 @@ end
             # Write an analysis/setup_info file (the real parse_setup_info format).
             analysis_dir = joinpath(dir, "analysis")
             mkpath(analysis_dir)
-            _fs_write_setup_info(joinpath(analysis_dir, "setup_info_20260425_181705.txt");
-                beam_center_x = 421.409, beam_center_y = 836.946, mean_distance_mm = 1809.5)
+            _fs_write_setup_info(joinpath(analysis_dir, "setup_info_20260301_120000.txt");
+                beam_center_x = 420.5, beam_center_y = 835.5, mean_distance_mm = 1810.0)
 
             q = "path=$(HTTP.escapeuri(dir))&image_pattern=$(HTTP.escapeuri("{name}.tif"))&metadata_pattern=$(HTTP.escapeuri("{name}.prp"))&integration_pattern=$(HTTP.escapeuri("{name}.dat"))"
             resp = call("GET", "/api/fs/manifest?$q")
@@ -372,11 +372,11 @@ end
             # Geometry block present and populated from setup_info (beam center) and PRP (energy).
             @test haskey(m, :geometry)
             geo = m.geometry
-            @test geo.beam_center_x ≈ 421.409
+            @test geo.beam_center_x ≈ 420.5
             @test geo.beam_center_x_source == "setup"
-            @test geo.beam_center_y ≈ 836.946
+            @test geo.beam_center_y ≈ 835.5
             @test geo.beam_center_y_source == "setup"
-            @test geo.flight_path_m ≈ 1809.5 / 1000.0
+            @test geo.flight_path_m ≈ 1810.0 / 1000.0
             @test geo.flight_path_m_source == "setup"
             @test geo.energy_kev ≈ 9.0
             @test geo.energy_kev_source == "prp"
@@ -457,7 +457,7 @@ function _fs_make_experiment_root(root::AbstractString)
         _fs_write_prp(joinpath(data, "$stem.prp"))
     end
     analysis = joinpath(root, "analysis"); mkpath(analysis)
-    _fs_write_setup_info(joinpath(analysis, "setup_info_20260425_181705.txt"))
+    _fs_write_setup_info(joinpath(analysis, "setup_info_20260301_120000.txt"))
     totdir = joinpath(analysis, "automatic_analysis", "tot_files"); mkpath(totdir)
     touch(joinpath(totdir, "a_001_tot.dat"))
     return root
@@ -476,7 +476,7 @@ end
         @test r.integration_pattern == "{name}_tot.dat"
         @test r.image_pattern == "{name}.tif"        # fixture stems carry no _0_NNN frame
         @test r.metadata_pattern == "{name}.prp"
-        @test r.setup_file !== nothing && endswith(r.setup_file, "setup_info_20260425_181705.txt")
+        @test r.setup_file !== nothing && endswith(r.setup_file, "setup_info_20260301_120000.txt")
         @test r.setup_ambiguous == false
     end
 end
@@ -487,11 +487,11 @@ end
     mktempdir() do tmp
         root = joinpath(tmp, "ssrl"); mkpath(root)
         data = joinpath(root, "data"); mkpath(data)
-        for stem in ("HA_1_001_S1_0_001", "HA_1_002_S2_0_001")
+        for stem in ("SY_1_001_S1_0_001", "SY_1_002_S2_0_001")
             touch(joinpath(data, "$stem.tif")); _fs_write_prp(joinpath(data, "$stem.prp"))
         end
         totdir = joinpath(root, "analysis", "automatic_analysis", "tot_files"); mkpath(totdir)
-        touch(joinpath(totdir, "HA_1_001_S1_tot.dat")); touch(joinpath(totdir, "HA_1_002_S2_tot.dat"))
+        touch(joinpath(totdir, "SY_1_001_S1_tot.dat")); touch(joinpath(totdir, "SY_1_002_S2_tot.dat"))
         r = HimalayaUI.resolve_experiment_layout(root)
         @test r.analysis_dir == totdir
         @test r.image_pattern == "{name}_0_001.tif"
@@ -523,27 +523,27 @@ end
             for stem in ("a_001", "b_002")
                 touch(joinpath(data, "$stem.tif")); _fs_write_prp(joinpath(data, "$stem.prp"))
             end
-            setup = joinpath(mktempdir(), "setup_info_20260425_181705.txt")
+            setup = joinpath(mktempdir(), "setup_info_20260301_120000.txt")
             _fs_write_setup_info(setup)
             q = "path=$(HTTP.escapeuri(data))&setup_file=$(HTTP.escapeuri(setup))" *
                 "&metadata_pattern=$(HTTP.escapeuri("{name}.prp"))"
             resp = call("GET", "/api/fs/manifest?$q")
             @test resp.status == 200
             geo = JSON3.read(resp.body).geometry
-            @test geo.beam_center_x ≈ 421.409
+            @test geo.beam_center_x ≈ 420.5
             @test geo.beam_center_x_source == "setup"
         end
     end
 end
 
-function _fs_make_ssrl_setup(root::AbstractString; stems, traced = stems, distance_mm = 1809.5)
+function _fs_make_ssrl_setup(root::AbstractString; stems, traced = stems, distance_mm = 1810.0)
     data = joinpath(root, "data"); mkpath(data)
     for stem in stems
         touch(joinpath(data, "$(stem)_0_001.tif"))
         _fs_write_prp(joinpath(data, "$(stem)_0_001.prp"))
     end
     analysis = joinpath(root, "analysis"); mkpath(analysis)
-    _fs_write_setup_info(joinpath(analysis, "setup_info_20260425_181705.txt"); mean_distance_mm = distance_mm)
+    _fs_write_setup_info(joinpath(analysis, "setup_info_20260301_120000.txt"); mean_distance_mm = distance_mm)
     totdir = joinpath(analysis, "automatic_analysis", "tot_files"); mkpath(totdir)
     for stem in traced
         touch(joinpath(totdir, "$(stem)_tot.dat"))
@@ -554,7 +554,7 @@ end
 @testset "resolve_experiment_layout outvotes a first image that has no trace" begin
     mktempdir() do tmp
         root = joinpath(tmp, "setup1")
-        stems = ["AA_cal", "HA_1_001_S1", "HA_1_002_S2", "HA_1_003_S3"]
+        stems = ["AA_cal", "SY_1_001_S1", "SY_1_002_S2", "SY_1_003_S3"]
         _fs_make_ssrl_setup(root; stems, traced = stems[2:end])
         touch(joinpath(root, "analysis", "automatic_analysis", "tot_files", "AA_cal_0_001.dat"))
         r = HimalayaUI.resolve_experiment_layout(root)
@@ -569,7 +569,7 @@ end
         db = open_prepared_clone(tmp)
         with_inproc_routes(db) do call
             root = joinpath(mktempdir(), "20261103", "setup1")
-            _fs_make_ssrl_setup(root; stems = ["HA_1_001_S1", "HA_1_002_S2"], traced = ["HA_1_001_S1"])
+            _fs_make_ssrl_setup(root; stems = ["SY_1_001_S1", "SY_1_002_S2"], traced = ["SY_1_001_S1"])
             resp = call("GET", "/api/fs/preview?path=$(HTTP.escapeuri(root))")
             @test resp.status == 200
             setups = JSON3.read(resp.body).setups
@@ -595,15 +595,15 @@ end
         with_inproc_routes(db) do call
             day = joinpath(mktempdir(), "20261103")
             _fs_make_ssrl_setup(joinpath(day, "setup2"); stems = ["HB_1_001_S9"], distance_mm = 500.0)
-            _fs_make_ssrl_setup(joinpath(day, "setup1"); stems = ["HA_1_001_S1", "HA_1_002_S2"])
+            _fs_make_ssrl_setup(joinpath(day, "setup1"); stems = ["SY_1_001_S1", "SY_1_002_S2"])
             mkpath(joinpath(day, "notes")); touch(joinpath(day, "notes", "plan.txt"))
             resp = call("GET", "/api/fs/preview?path=$(HTTP.escapeuri(day))")
             @test resp.status == 200
             setups = JSON3.read(resp.body).setups
             @test [s.name for s in setups] == ["20261103/setup1", "20261103/setup2"]
             @test [s.exposures for s in setups] == [2, 1]
-            @test setups[1].setup_file == joinpath(day, "setup1", "analysis", "setup_info_20260425_181705.txt")
-            @test setups[2].setup_file == joinpath(day, "setup2", "analysis", "setup_info_20260425_181705.txt")
+            @test setups[1].setup_file == joinpath(day, "setup1", "analysis", "setup_info_20260301_120000.txt")
+            @test setups[2].setup_file == joinpath(day, "setup2", "analysis", "setup_info_20260301_120000.txt")
             @test setups[1].geometry.flight_path_m != setups[2].geometry.flight_path_m
         end
     end
@@ -613,7 +613,7 @@ end
     mktempdir() do tmp
         db = open_prepared_clone(tmp)
         day = joinpath(mktempdir(), "20261103")
-        root = _fs_make_ssrl_setup(joinpath(day, "setup1"); stems = ["HA_1_001_S1"])
+        root = _fs_make_ssrl_setup(joinpath(day, "setup1"); stems = ["SY_1_001_S1"])
         HimalayaUI.create_experiment!(db; name = "first", path = joinpath(root, "data"),
             data_dir = joinpath(root, "data"), analysis_dir = root)
         with_inproc_routes(db) do call
@@ -646,8 +646,8 @@ end
 @testset "a setup copied before any trace was written still gets the SSRL layout" begin
     mktempdir() do tmp
         root = joinpath(tmp, "setup1")
-        _fs_make_ssrl_setup(root; stems = ["HA_1_001_S1", "HA_1_002_S2"], traced = String[])
-        touch(joinpath(root, "data", "._HA_1_001_S1_0_001.tif"))
+        _fs_make_ssrl_setup(root; stems = ["SY_1_001_S1", "SY_1_002_S2"], traced = String[])
+        touch(joinpath(root, "data", "._SY_1_001_S1_0_001.tif"))
         r = HimalayaUI.resolve_experiment_layout(root)
         @test r.analysis_dir == joinpath(root, "analysis", "automatic_analysis", "tot_files")
         @test r.image_pattern == "{name}_0_001.tif"
@@ -659,8 +659,8 @@ end
 @testset "a stray image at the top of a beamtime folder does not hide its setups" begin
     mktempdir() do tmp
         day = joinpath(tmp, "20261103")
-        _fs_make_ssrl_setup(joinpath(day, "setup1"); stems = ["HA_1_001_S1"])
-        _fs_make_ssrl_setup(joinpath(day, "setup2"); stems = ["HA_1_001_S1"])
+        _fs_make_ssrl_setup(joinpath(day, "setup1"); stems = ["SY_1_001_S1"])
+        _fs_make_ssrl_setup(joinpath(day, "setup2"); stems = ["SY_1_001_S1"])
         touch(joinpath(day, "stray.tif"))
         @test HimalayaUI.setup_roots(day) == [joinpath(day, "setup1"), joinpath(day, "setup2")]
     end
@@ -670,7 +670,7 @@ end
     mktempdir() do tmp
         db = open_prepared_clone(tmp)
         day = joinpath(mktempdir(), "20261103")
-        root = _fs_make_ssrl_setup(joinpath(day, "setup1"); stems = ["HA_1_001_S1"])
+        root = _fs_make_ssrl_setup(joinpath(day, "setup1"); stems = ["SY_1_001_S1"])
         HimalayaUI.create_experiment!(db; name = "first", path = joinpath(root, "data"),
             data_dir = joinpath(root, "data"), analysis_dir = root)
         link = joinpath(mktempdir(), "linked"); symlink(root, link)

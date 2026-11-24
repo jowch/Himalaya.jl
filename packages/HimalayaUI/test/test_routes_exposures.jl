@@ -16,10 +16,10 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         exposure_time=15.0, transmitted_counts=7000.0, incident_monitor=1.4321, counting_time=15.8)
     e2 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="other")
     prp = joinpath(tmp, "with_prp.prp")
-    write(prp, "Time this file was written: 26 Apr 2026 18:20:27\nBeam energy=9000.5 eV\nPipe length=1700 mm\nDetector=Pilatus 1M\n")
+    write(prp, "Time this file was written: 14 Mar 2026 14:05:11\nBeam energy=9000.5 eV\nPipe length=1700 mm\nDetector=Pilatus 1M\n")
     s2_id = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D2")
     e3 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s2_id, filename="with_prp",
-        prp_path=prp, timestamp="2026-04-26T18:20:27")
+        prp_path=prp, timestamp="2026-03-14T14:05:11")
     e4 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s2_id, filename="prp_gone",
         prp_path=joinpath(tmp, "missing.prp"))
 
@@ -51,7 +51,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test r.status == 200
         withprp = JSON3.read(String(r.body))
         @test withprp[1].id == e3
-        @test withprp[1].timestamp == "2026-04-26T18:20:27"
+        @test withprp[1].timestamp == "2026-03-14T14:05:11"
         @test withprp[1].beam_energy_ev ≈ 9000.5
         @test withprp[1].pipe_length_m ≈ 1.7
         @test withprp[1].detector == "Pilatus 1M"

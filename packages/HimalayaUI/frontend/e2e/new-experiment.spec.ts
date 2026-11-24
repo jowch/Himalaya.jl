@@ -4,7 +4,7 @@ const json = (body: unknown) => ({ status: 200, contentType: "application/json",
 
 const GEOMETRY = {
   energy_kev: 9, energy_kev_source: "prp",
-  flight_path_m: 1.8095, flight_path_m_source: "setup",
+  flight_path_m: 1.81, flight_path_m_source: "setup",
   beam_center_x: 421.4, beam_center_x_source: "setup",
   beam_center_y: 836.9, beam_center_y_source: "setup",
   pixel_size_um: 172, pixel_size_um_source: "computed",
@@ -48,7 +48,7 @@ async function mockFunnel(page: Page, created: Created[]): Promise<void> {
   await page.route(/\/api\/fs\/preview\?/, (r) => {
     const path = (new URL(r.request().url()).searchParams.get("path") ?? "").replace(/\/+$/, "");
     return r.fulfill(json(path === "/lab/20261103"
-      ? { path, existing: null, setups: [setup("setup1", 1.8095, 1220), setup("setup2", 0.5, 340)] }
+      ? { path, existing: null, setups: [setup("setup1", 1.81, 1220), setup("setup2", 0.5, 340)] }
       : { path, existing: null, setups: [] }));
   });
   await page.route((url) => url.pathname === "/api/experiments", (r) => {
@@ -79,7 +79,7 @@ test("a beamtime folder becomes one experiment holding every setup", async ({ pa
   expect(created[0]!.name).toBe("20261103");
   expect(created[0]!.path).toBe("/lab/20261103");
   expect(created[0]!.setups.map((s) => [s.data_dir, s.included, s.geometry?.flight_path_m])).toEqual([
-    ["/lab/20261103/setup1/data", true, 1.8095],
+    ["/lab/20261103/setup1/data", true, 1.81],
     ["/lab/20261103/setup2/data", true, 0.5],
   ]);
 });

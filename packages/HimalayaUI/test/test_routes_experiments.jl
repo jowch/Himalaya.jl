@@ -382,7 +382,7 @@ end
                 :data_dir => data_dir, :name => "Geo",
                 :geometry => Dict(
                     :beam_center_x => 421.4, :beam_center_x_source => "setup",
-                    :flight_path_m => 1.8095, :flight_path_m_source => "setup",
+                    :flight_path_m => 1.81, :flight_path_m_source => "setup",
                     :pixel_size_um => 172.0, :pixel_size_um_source => "prp",
                     :energy_kev    => 11.2,  :energy_kev_source    => "user")))))
         @test r.status == 202
@@ -392,7 +392,7 @@ end
                     energy_kev_source, flight_path_m FROM setups WHERE experiment_id = ?", [eid]))[1]
         @test row.beam_center_x_source == "setup"   # honest provenance, not 'user'
         @test row.flight_path_m_source == "setup"
-        @test row.flight_path_m == 1.8095           # the setup value, not a PRP re-derive
+        @test row.flight_path_m == 1.81           # the setup value, not a PRP re-derive
         @test row.pixel_size_um_source == "prp"
         @test row.energy_kev_source == "user"       # the one edited field
     end
@@ -403,7 +403,7 @@ end
     db = open_prepared_clone(tmp)
     eid = HimalayaUI.create_experiment!(db; path = tmp, data_dir = joinpath(tmp, "d"),
         analysis_dir = joinpath(tmp, "a"),
-        flight_path_m = 1.8095, flight_path_m_source = "setup",      # established
+        flight_path_m = 1.81, flight_path_m_source = "setup",      # established
         beam_center_x = 421.4, beam_center_x_source = "setup")        # established
     # A later scan re-derives DIFFERENT values (e.g. from PRP only, no setup file).
     geo = (energy_kev = 9.0, energy_kev_source = "prp",
@@ -415,7 +415,7 @@ end
     row = Tables.rowtable(DBInterface.execute(db,
         "SELECT flight_path_m, flight_path_m_source, energy_kev, energy_kev_source,
                 beam_center_x, pixel_size_um FROM setups WHERE experiment_id = ?", [eid]))[1]
-    @test row.flight_path_m == 1.8095                # established 'setup' value PRESERVED
+    @test row.flight_path_m == 1.81                # established 'setup' value PRESERVED
     @test row.flight_path_m_source == "setup"
     @test row.energy_kev == 9.0                      # was 'default' → filled
     @test row.energy_kev_source == "prp"

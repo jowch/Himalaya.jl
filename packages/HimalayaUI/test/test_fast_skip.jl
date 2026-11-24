@@ -443,11 +443,11 @@ end
     tmp = mktempdir()
     analysis_dir = joinpath(tmp, "analysis"); mkpath(analysis_dir)
     fixture = joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat")
-    cp(fixture, joinpath(analysis_dir, "HA_5_010_S1965_tot.dat"); force = true)
+    cp(fixture, joinpath(analysis_dir, "SY_5_010_S1965_tot.dat"); force = true)
 
     db = open_db(joinpath(tmp, "h.db"))
     seeded = seed_experiment!(db, tmp; name = "E", analysis_dir = analysis_dir,
-        stems  = ["HA_5_010_S1965_0_001"],
+        stems  = ["SY_5_010_S1965_0_001"],
         integration_pattern = "{name}_tot.dat")
     eid = seeded.exposure_ids[1]
 
