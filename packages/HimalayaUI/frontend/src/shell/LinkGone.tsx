@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate } from "react-router";
 import { showToast } from "../lib/toast";
 
 export function LinkGone({ message }: { message: string }): JSX.Element {
