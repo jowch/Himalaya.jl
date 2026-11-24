@@ -300,11 +300,14 @@ deselection. `pending_analysis_ids` never reports its exposures, and
 model pass skip these setups, and `refresh_selection!` makes no average for
 their samples. A sample's shown image is its one exposure, so the image strip
 and the trace route work without analysis. The server refuses edits that would
-analyze it: adding, excluding or removing a peak, changing a call (including
-form factor), adding or removing an assignment member, a custom or speculative
-index, deleting an index, `POST /api/exposures/:id/analyze` and
-`PUT /api/samples/:id/selection` all answer 422 and write no event. Labels,
-bridges, comparisons and drop or restore still work.
+analyze it: adding, excluding or removing a peak, adding or removing an
+assignment member, a custom or speculative index, deleting an index,
+`POST /api/exposures/:id/analyze` and `PUT /api/samples/:id/selection` all
+answer 422 and write no event. Setting a call state is not refused: it cannot
+start an analysis, and a bridge writes one to an autosampler mate that undo
+must be able to restore. Labels, bridges, comparisons and drop or restore
+still work. The workspace never asks which call to keep when the other side of
+a bridge is an autosampler sample.
 
 **In the workspace.** The workspace picks its modules from the setup mode of
 the open sample (`workspace/modules.ts`). A `capillary` or undecided setup has

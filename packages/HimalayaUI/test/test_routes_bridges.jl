@@ -37,6 +37,60 @@ _label_body(label) = Vector{UInt8}(JSON3.write(Dict(:label => label)))
 _label_states(db, sid) = Dict(String(r.label) => String(r.state) for r in Tables.rowtable(DBInterface.execute(db,
     "SELECT label, state FROM sample_labels WHERE sample_id = ?", [sid])))
 
+@testset "bridges by setup mode" begin
+    function seeded()
+        db = open_prepared_clone(mktempdir())
+        exp_id = HimalayaUI.create_experiment!(db; path="/d", data_dir="/d", analysis_dir="/a")
+        setup(folder, mode) = HimalayaUI.create_setup!(db; experiment_id = exp_id, folder = folder,
+            root_dir = "/d/$folder", data_dir = "/d/$folder", analysis_dir = "/a/$folder", mode = mode)
+        sample(name, st) = HimalayaUI.create_sample!(db; experiment_id = exp_id, name = name, setup_id = st)
+        (; db, exp_id, setup, sample)
+    end
+    bridge(call, a, b) = call("POST", "/api/samples/$a/bridge"; headers = _BRIDGE_HEADERS, body = _bridge_body(b))
+    count(db, table) = Int(only(Tables.rowtable(DBInterface.execute(db, "SELECT COUNT(*) AS c FROM $table"))).c)
+
+    @testset "a capillary and an autosampler sample are not bridged, and nothing is written" begin
+        (; db, exp_id, setup, sample) = seeded()
+        cap, auto = setup("capillary", "capillary"), setup("solution", "autosampler")
+        a, b = sample("lipidA 01B (S0102)", cap), sample("water 01A (B0101)", auto)
+        with_inproc_routes(db) do call
+            events, cached = count(db, "user_actions"), count(db, "idempotent_responses")
+            r = call("POST", "/api/samples/$a/bridge"; headers = vcat(_BRIDGE_HEADERS, ["X-Client-Op-Id" => "op-mixed"]), body = _bridge_body(b))
+            @test r.status == 422
+            @test JSON3.read(String(r.body)).error == "A capillary sample and an autosampler sample can't be the same sample."
+            @test (count(db, "user_actions"), count(db, "idempotent_responses")) == (events, cached)
+            @test _groups(call, exp_id) == Set()
+        end
+    end
+
+    @testset "two autosampler samples are bridged, and so are two capillary ones, and a sample with no setup counts as capillary" begin
+        (; db, exp_id, setup, sample) = seeded()
+        cap, auto = setup("capillary", "capillary"), setup("solution", "autosampler")
+        undecided = setup("other", nothing)
+        a1, a2 = sample("water 01A (B0101)", auto), sample("water 02A (B0102)", auto)
+        c1, c2, c3 = sample("lipidA 01B (S0102)", cap), sample("lipidA 02B (S0103)", cap), sample("lipidA 03B (S0104)", undecided)
+        with_inproc_routes(db) do call
+            @test bridge(call, a1, a2).status == 200
+            @test bridge(call, c1, c2).status == 200
+            @test bridge(call, c2, c3).status == 200
+            @test _groups(call, exp_id) == Set([Set([a1, a2]), Set([c1, c2, c3])])
+        end
+    end
+
+    @testset "joining a group of the other mode is refused" begin
+        (; db, exp_id, setup, sample) = seeded()
+        cap, auto = setup("capillary", "capillary"), setup("solution", "autosampler")
+        a1, a2 = sample("water 01A (B0101)", auto), sample("water 02A (B0102)", auto)
+        c1 = sample("lipidA 01B (S0102)", cap)
+        with_inproc_routes(db) do call
+            @test bridge(call, a1, a2).status == 200
+            @test bridge(call, c1, a1).status == 422
+            @test bridge(call, a2, c1).status == 422
+            @test _groups(call, exp_id) == Set([Set([a1, a2])])
+        end
+    end
+end
+
 @testset "sample bridges" begin
     @testset "bridging two unbridged samples puts them in one group" begin
         db = open_prepared_clone(mktempdir())

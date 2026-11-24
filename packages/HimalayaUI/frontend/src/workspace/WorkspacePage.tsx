@@ -904,9 +904,9 @@ export function WorkspacePage(): JSX.Element {
   const bridgeChoices = useCallback(
     (rid: number) => {
       const there = samples.find((s) => s.id === rid);
-      return sample && there ? keepChoices(sample, there, nameWithSetup) : undefined;
+      return sample && there && modules.calls && modulesOf(there).calls ? keepChoices(sample, there, nameWithSetup) : undefined;
     },
-    [sample, samples, nameWithSetup],
+    [sample, samples, nameWithSetup, modules.calls, modulesOf],
   );
   const unsettledMate = useMemo(() => {
     if (!sample) return undefined;
@@ -1394,7 +1394,7 @@ export function WorkspacePage(): JSX.Element {
       names: (id) => nameWithSetup({ id, name: sampleNames.get(id) ?? `Sample ${id}` }),
       bridged: bridgedNames,
       leave: leaveBridges,
-      groupChoices: (ids) => (sample ? groupKeepChoices(sample, ids.flatMap((id) => samples.filter((s) => s.id === id)), nameWithSetup) : undefined),
+      groupChoices: (ids) => (sample && modules.calls ? groupKeepChoices(sample, ids.flatMap((id) => samples.filter((s) => s.id === id && modulesOf(s).calls)), nameWithSetup) : undefined),
       pickMany: (ids, keep) => void bridgeMany(ids, keep),
     },
     candidates: {

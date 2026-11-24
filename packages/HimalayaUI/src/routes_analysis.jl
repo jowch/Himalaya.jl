@@ -101,8 +101,6 @@ function register_analysis_routes!()
 
     @post "/api/samples/{id}/call/state" function(req::HTTP.Request, id::Int)
         db   = current_db()
-        refusal = refuse_autosampler_sample(db, id)
-        refusal === nothing || return refusal
         body = json(req)
         if !haskey(body, :state)
             return HTTP.Response(400, ["Content-Type" => "application/json"],

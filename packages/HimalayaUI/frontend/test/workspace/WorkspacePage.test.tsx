@@ -1526,12 +1526,12 @@ describe("WorkspacePage", () => {
       expect(toasts.at(-1)).toBe("Undone: marked A1 as the same sample as A2, A4");
     });
 
-    it("bridges a capillary sample with an autosampler sample without asking which call to keep, and undoes and redoes it, restoring both calls", async () => {
+    it("bridges two autosampler samples without asking which call to keep, and undoes and redoes it without a failure", async () => {
       state.setups = [
         { id: 1, name: "setup1", folder: "setup1", included: true, mode: "autosampler" },
         { id: 2, name: "setup2", folder: "setup2", included: true, mode: "capillary" },
       ];
-      state.corpus = state.corpus.map((x) => (x.id === 10 ? { ...x, setup_id: 2 } : x.id === 11 ? { ...x, setup_id: 1, assignment_state: "form_factor" } : x));
+      state.corpus = state.corpus.map((x) => (x.id === 10 || x.id === 11 ? { ...x, setup_id: 1, assignment_state: "form_factor" } : { ...x, setup_id: 2 }));
       renderAt("/experiments/1/workspace/10");
       runFromPalette("same sample as…");
       const input = screen.getByRole("combobox", { name: "Sample" });
@@ -1543,7 +1543,7 @@ describe("WorkspacePage", () => {
       state.bridges = [{ sample_id: 10, group_id: 1 }, { sample_id: 11, group_id: 1 }];
       calls.length = 0;
       await undo();
-      expect(ops()).toContainEqual(["setCallState", 11, "form_factor"]);
+      expect(ops().filter((o) => o[0] === "unbridge")).not.toEqual([]);
       expect(toasts.at(-1)).toMatch(/^Undone: /);
       state.bridges = [];
       calls.length = 0;
@@ -4107,44 +4107,52 @@ describe("WorkspacePage modules by setup mode", () => {
     expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/10");
   });
 
-  describe("a bridged pair of an autosampler and a capillary sample", () => {
-    const mateImages = (sampleId: number): void => {
-      state.mateExposures = new Map([[sampleId, [exposure(300, { sample_id: sampleId, image_path: "/m.tif" }), exposure(301, { sample_id: sampleId, image_path: "/m.tif" })]]]);
+  describe("bridges by setup mode", () => {
+    const pickerNames = (): string[] => {
+      runFromPalette("same sample as…");
+      const names = screen.getAllByRole("option").map((o) => o.textContent ?? "");
+      fireEvent.keyDown(screen.getByRole("combobox", { name: "Sample" }), { key: "Escape" });
+      return names;
     };
-    const bridge = (a: number, b: number): void => {
-      state.bridges = [{ sample_id: a, group_id: 4 }, { sample_id: b, group_id: 4 }];
-    };
-    const mateTile = (): HTMLElement => within(screen.getByTestId("workspace-exposures")).getAllByRole("button", { name: /^Image 1 of / })[0]!;
-    const checkboxes = (): string[] =>
-      within(screen.getByTestId("workspace-exposures")).queryAllByRole("checkbox").map((c) => c.getAttribute("aria-label") ?? "");
 
-    it("gives a capillary mate's images selection controls while the autosampler sample is open, and acts on the mate", () => {
-      bridge(AUTOSAMPLER, CAPILLARY);
-      ownExposures(AUTOSAMPLER);
-      mateImages(CAPILLARY);
-      renderAt(`/experiments/1/workspace/${AUTOSAMPLER}`);
-      expect(checkboxes()).toHaveLength(2);
-      expect(checkboxes().every((l) => / of /.test(l))).toBe(true);
-      fireEvent.click(mateTile());
-      fireEvent.keyDown(window, { key: "Enter" });
-      expect(calls.filter((c) => c.hook === "op:setSelection").map((c) => (c.arg as number[])[0])).toEqual([CAPILLARY]);
+    beforeEach(() => {
+      state.corpus = [...state.corpus, { ...sample(14, "water 02A (B0102)"), setup_id: 1 }];
     });
 
-    it("gives an autosampler mate's image no selection control while the capillary sample is open, and Enter on it does nothing", () => {
-      bridge(CAPILLARY, AUTOSAMPLER);
-      ownExposures(CAPILLARY);
-      mateImages(AUTOSAMPLER);
+    it("offers only samples of the open sample's mode on the same-sample page", () => {
+      const view = renderAt(`/experiments/1/workspace/${AUTOSAMPLER}`);
+      const fromAutosampler = pickerNames();
+      expect(fromAutosampler.some((n) => n.includes("water 02A"))).toBe(true);
+      expect(fromAutosampler.some((n) => n.includes("lipidA"))).toBe(false);
+      view.unmount();
       renderAt(`/experiments/1/workspace/${CAPILLARY}`);
-      expect(checkboxes()).toHaveLength(2);
-      expect(checkboxes().some((l) => / of /.test(l))).toBe(false);
-      fireEvent.click(mateTile());
-      expect(screen.queryByTestId("exposure-selection-caption")).not.toBeNull();
+      const fromCapillary = pickerNames();
+      expect(fromCapillary.some((n) => n.includes("lipidA 02B"))).toBe(true);
+      expect(fromCapillary.some((n) => n.includes("water"))).toBe(false);
+    });
+
+    it("shows a bridged autosampler mate's image with no selection control, and Enter on it does nothing", () => {
+      state.bridges = [{ sample_id: AUTOSAMPLER, group_id: 4 }, { sample_id: 14, group_id: 4 }];
+      ownExposures(AUTOSAMPLER);
+      state.mateExposures = new Map([[14, [exposure(300, { sample_id: 14, image_path: "/m.tif" })]]]);
+      renderAt(`/experiments/1/workspace/${AUTOSAMPLER}`);
+      const strip = screen.getByTestId("workspace-exposures");
+      expect(within(strip).queryAllByRole("checkbox")).toEqual([]);
+      fireEvent.click(within(strip).getAllByRole("button", { name: /^Image 1 of / })[0]!);
       fireEvent.keyDown(window, { key: "Enter" });
       expect(calls.filter((c) => c.hook === "op:setSelection")).toEqual([]);
       fireEvent.keyDown(window, { key: " " });
       const overlay = screen.getByRole("dialog", { name: "Detector image" });
       expect(within(overlay).queryByRole("checkbox")).toBeNull();
-      expect(within(overlay).queryByRole("button", { name: /select/i })).toBeNull();
+    });
+
+    it("keeps a mixed-mode group that was stored before this rule listed and open without crashing", () => {
+      state.bridges = [{ sample_id: AUTOSAMPLER, group_id: 4 }, { sample_id: CAPILLARY, group_id: 4 }];
+      ownExposures(AUTOSAMPLER);
+      state.mateExposures = new Map([[CAPILLARY, [exposure(300, { sample_id: CAPILLARY, image_path: "/m.tif" })]]]);
+      renderAt(`/experiments/1/workspace/${AUTOSAMPLER}`);
+      expect(screen.getByTestId("workspace-exposures")).toBeInTheDocument();
+      expect(screen.queryByRole("dialog")).toBeNull();
     });
   });
 
@@ -4152,16 +4160,6 @@ describe("WorkspacePage modules by setup mode", () => {
     const callAs = (id: number, over: Partial<CorpusSample>): void => {
       state.corpus = state.corpus.map((x) => (x.id === id ? { ...x, ...over } : x));
     };
-
-    it("never asks an autosampler sample to settle a call, and never asks about an autosampler mate", () => {
-      callAs(AUTOSAMPLER, { assignment_state: "indexed", phase: "Pn3m" });
-      state.bridges = [{ sample_id: AUTOSAMPLER, group_id: 4 }, { sample_id: 12, group_id: 4 }];
-      const view = renderAt(`/experiments/1/workspace/${AUTOSAMPLER}`);
-      expect(screen.queryByRole("dialog")).toBeNull();
-      view.unmount();
-      renderAt("/experiments/1/workspace/12");
-      expect(screen.queryByRole("dialog")).toBeNull();
-    });
 
     it("still asks for a capillary pair whose calls differ", () => {
       callAs(CAPILLARY, { assignment_state: "indexed", phase: "Pn3m" });
@@ -4185,26 +4183,15 @@ describe("WorkspacePage modules by setup mode", () => {
       return text;
     };
 
-    it("lists the selection rows when a bridged capillary mate's images can be selected, though the open sample cannot", () => {
-      state.bridges = [{ sample_id: AUTOSAMPLER, group_id: 4 }, { sample_id: CAPILLARY, group_id: 4 }];
-      state.exposures = [exposure(100, { sample_id: AUTOSAMPLER, image_path: "/a.tif" })];
-      state.mateExposures = new Map([[CAPILLARY, [exposure(300, { sample_id: CAPILLARY, image_path: "/m.tif" })]]]);
-      renderAt(`/experiments/1/workspace/${AUTOSAMPLER}`);
-      expect(helpText()).toContain("Select the image to analyze");
-      expect(helpText()).not.toContain("Tick or untick a phase candidate");
-    });
-
     it("says Enter works inside the enlarged view only while the shown image can be selected", () => {
-      state.bridges = [{ sample_id: CAPILLARY, group_id: 4 }, { sample_id: AUTOSAMPLER, group_id: 4 }];
+      state.setups = [setup(1, "capillary")];
+      state.corpus = state.corpus.map((x) => ({ ...x, setup_id: 1 }));
+      state.bridges = [{ sample_id: CAPILLARY, group_id: 4 }, { sample_id: 12, group_id: 4 }];
       state.exposures = [exposure(100, { sample_id: CAPILLARY, image_path: "/a.tif" })];
-      state.mateExposures = new Map([[AUTOSAMPLER, [exposure(300, { sample_id: AUTOSAMPLER, image_path: "/m.tif" })]]]);
+      state.mateExposures = new Map([[12, [exposure(300, { sample_id: 12, image_path: "/m.tif" })]]]);
       renderAt(`/experiments/1/workspace/${CAPILLARY}`);
       fireEvent.click(screen.getByRole("button", { name: "Image 1" }));
       expect(helpText()).toContain("X and Enter work inside it");
-      fireEvent.click(screen.getAllByRole("button", { name: /^Image 1 of / })[0]!);
-      const text = helpText();
-      expect(text).toContain("X work inside it");
-      expect(text).not.toContain("X and Enter work inside it");
     });
 
     it("lists no selection rows when no image in the strip can be selected", () => {
