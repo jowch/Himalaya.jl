@@ -22,6 +22,7 @@ const traceRefetch = vi.fn();
 const corpusRequests: number[] = [];
 const state = {
   experimentLoaded: true,
+  corpusLoaded: true,
   experiments: [] as { id: number; name: string }[],
   allCorpus: [] as CorpusSample[],
   allCorpusEnabled: [] as boolean[],
@@ -155,7 +156,7 @@ vi.mock("../../src/queries", () => ({
   },
   useExperimentCorpusSamples: (experimentId: number) => {
     corpusRequests.push(experimentId);
-    return { data: state.corpus, isLoading: false };
+    return state.corpusLoaded ? { data: state.corpus, isLoading: false, isError: false } : { data: undefined, isLoading: true, isError: false };
   },
   useExperiment: () => ({
     data: state.experimentLoaded ? { id: 1, name: "BL-19", last_scanned_at: "2026-11-01T00:00:00", setups: state.setups } : undefined,
@@ -355,6 +356,7 @@ beforeEach(() => {
   prefetchTargets.length = 0;
   state.username = "jc";
   state.experimentLoaded = true;
+  state.corpusLoaded = true;
   state.experiments = [{ id: 1, name: "BL-19" }, { id: 2, name: "Beamtime 12" }];
   state.allCorpus = [];
   state.allCorpusEnabled = [];
@@ -4038,6 +4040,24 @@ describe("WorkspacePage modules by setup mode", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it("paints nothing in the tools column, and acts on no call key, until the corpus has loaded and the sample's mode is known", () => {
+    state.corpusLoaded = false;
+    const view = renderAt(`/experiments/1/workspace/${AUTOSAMPLER}`);
+    expect(slotOrder()).toEqual([]);
+    for (const key of ["0", "1", "i", "Enter"]) fireEvent.keyDown(window, { key });
+    expect(sideEffects()).toEqual([]);
+    state.corpusLoaded = true;
+    view.rerender(page(`/experiments/1/workspace/${AUTOSAMPLER}`));
+    expect(slotOrder()).toEqual(["Image"]);
+    view.unmount();
+    state.corpusLoaded = false;
+    const second = renderAt(`/experiments/1/workspace/${CAPILLARY}`);
+    expect(slotOrder()).toEqual([]);
+    state.corpusLoaded = true;
+    second.rerender(page(`/experiments/1/workspace/${CAPILLARY}`));
+    expect(slotOrder()).toEqual(["Assignment", "Indexing", "Image"]);
   });
 
   it("paints nothing in the tools column until the setups, and so each sample's mode, are known", () => {
