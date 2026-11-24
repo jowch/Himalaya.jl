@@ -19,12 +19,12 @@ describe("explainScale", () => {
 
   it("explains the physics of a high-q match before the factor", () => {
     expect(explainScale({ scale: 1.1, source: "capillary" })).toBe(
-      "Scattered intensity grows with how much material the beam crosses: the path length and how evenly the sample fills it. Both change from capillary to capillary, and I₂ corrects only for transmission. This trace is scaled ×1.10 to match at high q, where the solvent dominates.",
+      "Scattered intensity grows with how much material the beam crosses: the path length and how evenly the sample fills it. Both change from capillary to capillary, and I₂ corrects only for transmission. This trace is scaled ×1.10 to match at high q, where the solvent dominates. A sample that still scatters there, such as vesicles, throws this factor off.",
     );
   });
 
   it.each(matched)("ends every %s match with the factor the chip shows", (source) => {
-    expect(explainScale({ scale: 1.5, source })).toMatch(/^[A-ZI].*\. This trace is scaled ×1\.50 to match at high q, where the solvent dominates\.$/);
+    expect(explainScale({ scale: 1.5, source })).toMatch(/^[A-ZI].*\. This trace is scaled ×1\.50 to match at high q, where the solvent dominates\. A sample that still scatters there, such as vesicles, throws this factor off\.$/);
   });
 
   it("names the background when it is the one scaled", () => {

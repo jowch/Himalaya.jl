@@ -21,5 +21,5 @@ export function explainScale({ scale, source }: CompareScale, subject = "This tr
   if (source === "monitor") {
     return `Scattered intensity grows with the beam that gets through the sample. ${subject} is scaled ×${formatScale(scale)}, the ratio of that transmitted beam (I₂ × exposure time) between the two images.`;
   }
-  return `${SCALE_REASONS[source]} ${subject} is scaled ×${formatScale(scale)} to match at high q, where the solvent dominates.`;
+  return `${SCALE_REASONS[source]} ${subject} is scaled ×${formatScale(scale)} to match at high q, where the solvent dominates. A sample that still scatters there, such as vesicles, throws this factor off.`;
 }
