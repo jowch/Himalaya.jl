@@ -8,7 +8,7 @@
  *
  * Discipline: each frame's `payload` is derived from the actual
  * `apply_event!` call site in routes_*.jl / pipeline.jl. The route-side
- * payload SHAPE is what the JSON3-serialized SSE frame carries, so this is
+ * payload SHAPE is what the serialized SSE frame carries, so this is
  * the canonical wire contract from the consumer's point of view.
  *
  * Each test:

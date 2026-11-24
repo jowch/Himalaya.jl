@@ -59,7 +59,7 @@ describe("queries — peak mutations (queue-driven, M2.2)", () => {
   it("useAddPeak replaces the placeholder with the server peak on success", async () => {
     const { client, wrapper } = withClient();
     client.setQueryData<Peak[]>(queryKeys.peaks(EXPOSURE_ID), []);
-    // Flat shape (matches `routes_peaks.jl` JSON3.write Dict). Earlier
+    // Flat shape (matches `routes_peaks.jl` flat Dict). Earlier
     // version of this fixture wrapped under `peak: {...}`, which matched
     // a stale `PeakAddResponse.peak: Peak` type but NOT the actual server
     // response — the production mutator crashed on `response.peak.id`

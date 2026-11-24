@@ -43,10 +43,10 @@ The fixup commit in PR #29 explicitly migrated `peak_removed` / `speculative_cre
 
 ### 3. Design the payload
 
-The payload becomes a `JSON3.Object` inside the dispatcher (`apply_event!` round-trips through `JSON3.write` → `JSON3.read` so live and replay see the same shape). Branch code accesses fields uniformly via `payload.q`-style.
+The payload becomes a `JSON.Object` inside the dispatcher (`apply_event!` round-trips through `to_json` → `payload_as_replayed` so live and replay see the same shape). Branch code accesses fields uniformly via `payload.q`-style.
 
 Rules:
-- **Use symbol keys in the route**: `Dict(:q => q, :group_id => gid)` — JSON3 emits string keys; the dispatcher reads back as `JSON3.Object` which accepts both.
+- **Use symbol keys in the route**: `Dict(:q => q, :group_id => gid)` — JSON has string keys; the dispatcher reads back as `JSON.Object`, which accepts both. Iterating its keys gives `String`s.
 - **Include enough context for replay.** `rebuild_views_from_log!` re-folds payloads in id-order — the dispatcher must be able to reproduce the view write from payload alone. If the dispatcher needs to query `auto_peaks` to resolve a reference, fine; just don't depend on the *current* state of a view it's about to write to.
 - **Never include actor/user data in payload.** That's already on the `user_actions` row (`user_id`, `created_at`). Payload is what the dispatcher needs.
 

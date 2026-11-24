@@ -480,7 +480,7 @@ export interface Peak {
 
 /**
  * Backend response for POST /api/exposures/:id/peaks. The peak fields are
- * inlined (matches `routes_peaks.jl` which JSON3.writes a flat Dict). Earlier
+ * inlined (matches `routes_peaks.jl` which writes a flat Dict). Earlier
  * draft typed this as `{peak: Peak, ...}` and mutators read `response.peak.id`
  * — that would throw in production; only the unit tests passed because their
  * mock fixture matched the (wrong) type. Now extends `Peak` like
