@@ -1658,6 +1658,7 @@ export function WorkspacePage(): JSX.Element {
                 onRemove={removeCompare}
                 onAdd={() => setPicking(true)}
                 full={comparesFull}
+                canSubtract={!bgEntry?.is_buffer}
                 trailing={difference && subRef !== undefined ? <SubtractToggle name={subName} on={minusOn} onChange={setMinus} /> : undefined}
               />
               {picking && (
