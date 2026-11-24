@@ -215,6 +215,9 @@ The swap is safe with the old server still running:
 - **The first deploy after this change is the exception.** `dist` is still a
   plain folder then, and the running server follows it, so it serves the new
   UI to the old backend. Restart straight away that one time.
+- **A failed deploy leaves no release behind**, and pruning never removes the
+  release that was live before the deploy.
+- **The swap uses GNU `mv -T`**, so `make deploy` runs on Linux, not macOS.
 
 Until you restart, the CLI runs the new code against the same database as the
 old server, and `open_db` runs any new schema migrations when it connects. So

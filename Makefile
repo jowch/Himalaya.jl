@@ -58,7 +58,7 @@ check-sysimage:
 	echo "Sysimage OK (Julia $$current, depot $$current_depot)"
 
 clean:
-	rm -rf $(BUILD_DIR) $(FRONTEND_DIR)/dist
+	rm -rf $(BUILD_DIR) $(FRONTEND_DIR)/dist $(FRONTEND_DIR)/dist.releases
 
 # NOTE: must match the bucket names in packages/HimalayaUI/test/runtests.jl
 # (the GROUPS const). This convenience runner is NOT cross-checked against it;
@@ -108,13 +108,14 @@ RELEASE_STAMP    := $(shell date +%Y%m%d-%H%M%S)
 RESOLVE_DIST = $(LOAD_ENV) dist="$${HIMALAYA_FRONTEND_DIST:-$(FRONTEND_DIR)/dist}"; \
 	case "$$dist" in /*) ;; *) dist="$(CURDIR)/$$dist" ;; esac; dist="$${dist%/}"; \
 	release="$$dist.releases/$(RELEASE_STAMP)";
+DROP_RELEASE = { rm -rf "$${release:?}"; echo "Deploy failed before the swap; nothing changed."; exit 1; }
 
 deploy:
 	$(MAKE) setup
 	@$(RESOLVE_DIST) mkdir -p "$$dist.releases" && \
-	cd $(FRONTEND_DIR) && npm run build -- --outDir "$$release" --emptyOutDir
-	$(MAKE) sysimage BUILD_DIR=$(NEXT_BUILD_DIR)
-	$(MAKE) check-sysimage BUILD_DIR=$(NEXT_BUILD_DIR)
+	(cd $(FRONTEND_DIR) && npm run build -- --outDir "$$release" --emptyOutDir) || $(DROP_RELEASE)
+	$(MAKE) sysimage BUILD_DIR=$(NEXT_BUILD_DIR) || { $(RESOLVE_DIST) $(DROP_RELEASE); }
+	$(MAKE) check-sysimage BUILD_DIR=$(NEXT_BUILD_DIR) || { $(RESOLVE_DIST) $(DROP_RELEASE); }
 	@$(RESOLVE_DIST) scripts/deploy_swap.sh "$$dist" "$$release" $(NEXT_BUILD_DIR) $(BUILD_DIR) $(HIMALAYA_SERVICE)
 
 dev-setup:

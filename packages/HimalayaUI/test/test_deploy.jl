@@ -54,7 +54,7 @@ end
         @test islink(dist)
         @test readlink(dist) == joinpath("dist.releases", "20261124-010000")
         @test read(joinpath(dist, "index.html"), String) == "new-ui"
-        @test read(joinpath(root, "dist.releases", "00000000-000000", "index.html"), String) == "old-ui"
+        @test read(joinpath(root, "dist.releases", "00000000-000000-before-20261124-010000", "index.html"), String) == "old-ui"
         @test read(joinpath(root, "build", "himalaya.so"), String) == "so-20261124-010000"
         @test read(running_sysimage, String) == "so-old"
         close(running_sysimage)
@@ -89,6 +89,38 @@ end
         @test !r.ok
         @test occursin("the old frontend is back", r.err)
         @test read(joinpath(root, "dist", "index.html"), String) == "ui-1"
+        @test !isdir(release)
+    end
+end
+
+@testset "make deploy never prunes the release that was live before it, even past failed deploys" begin
+    mktempdir() do tmp
+        bin, _ = _fake_privileged_path(tmp)
+        root = mkpath(joinpath(tmp, "checkout"))
+        mkpath(joinpath(root, "build"))
+        @test _run_swap(root, _stage_release(root, "20261124-010000", "ui-1"); path_prefix=bin).ok
+        for orphan in ("20261124-020000", "20261124-030000")
+            mkpath(joinpath(root, "dist.releases", orphan))
+        end
+        @test _run_swap(root, _stage_release(root, "20261124-040000", "ui-4"); path_prefix=bin).ok
+        @test read(joinpath(root, "dist.releases", "20261124-010000", "index.html"), String) == "ui-1"
+        @test read(joinpath(root, "dist", "index.html"), String) == "ui-4"
+    end
+end
+
+@testset "make deploy refuses to convert a plain dist folder over an earlier conversion" begin
+    mktempdir() do tmp
+        bin, _ = _fake_privileged_path(tmp)
+        root = mkpath(joinpath(tmp, "checkout"))
+        mkpath(joinpath(root, "build"))
+        mkpath(joinpath(root, "dist"))
+        write(joinpath(root, "dist", "index.html"), "plain")
+        release = _stage_release(root, "20261124-010000", "new-ui")
+        mkpath(joinpath(root, "dist.releases", "00000000-000000-before-20261124-010000"))
+        r = _run_swap(root, release; path_prefix=bin)
+        @test !r.ok
+        @test !islink(joinpath(root, "dist"))
+        @test read(joinpath(root, "dist", "index.html"), String) == "plain"
     end
 end
 
