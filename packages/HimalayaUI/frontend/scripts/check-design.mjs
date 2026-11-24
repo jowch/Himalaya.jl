@@ -47,6 +47,15 @@ const COLOR_LITERAL = "(?:oklch|oklab|hsla?|rgba?)\\(|#[0-9a-fA-F]{3,8}\\b";
 
 const RULES = [
   {
+    id: "explained-term-only",
+    everywhere: true,
+    allowlisted: (relPath) => relPath === "ui/Term.tsx",
+    test: (line) => {
+      const m = /\b(?:decoration-dotted|cursor-help)\b/.exec(line);
+      return m ? m[0] : null;
+    },
+  },
+  {
     // #1 inline arbitrary type size or color: text-[10px], text-[var(--color-…)]
     id: "no-arbitrary-text",
     test: (line) => {
@@ -135,12 +144,12 @@ function isExcluded(relPath) {
 // Scan one file's text. Returns [{ rule, file, line, text }].
 // Exported so the fixture test can drive it without touching disk.
 export function scanContent(relPath, content) {
-  if (isExcluded(relPath)) return [];
+  const rules = isExcluded(relPath) ? RULES.filter((r) => r.everywhere) : RULES;
   const violations = [];
   const lines = content.split("\n");
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    for (const rule of RULES) {
+    for (const rule of rules) {
       if (rule.allowlisted && rule.allowlisted(relPath)) continue;
       const matched = rule.test(line);
       if (matched != null) {
