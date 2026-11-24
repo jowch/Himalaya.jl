@@ -1,5 +1,6 @@
 import type { IndexEntry } from "../api";
-import { CUSTOM_SNAP_TOL, customRefls, latticeBounds, SYMS } from "../lib/customIndex";
+import { CUSTOM_SNAP_TOL, customRefls, latticeBounds, latticeForFirstOrderOnPeak, SYMS } from "../lib/customIndex";
+import type { PeakRef } from "../lib/peakRef";
 
 export interface IndexPoint {
   ratio: number;
@@ -107,6 +108,15 @@ export function latticeParam(phase: string): string {
 export interface CustomDraft {
   phase: string;
   lattice: number;
+  snap?: PeakRef;
+}
+
+export function reviseDraft(prev: CustomDraft | null, next: CustomDraft, snappedQ: (ref: PeakRef) => number | undefined): CustomDraft {
+  const { snap, ...free } = next;
+  if (!snap || (prev !== null && next.lattice !== prev.lattice)) return free;
+  if (prev === null || next.phase === prev.phase) return next;
+  const q = snappedQ(snap);
+  return q === undefined ? free : { phase: next.phase, lattice: latticeForFirstOrderOnPeak(next.phase, q), snap };
 }
 
 export function clampLattice(phase: string, value: number, qWindow: readonly [number, number] | null): number {
