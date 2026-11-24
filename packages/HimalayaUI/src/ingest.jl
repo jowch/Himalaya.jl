@@ -56,6 +56,49 @@ function backfill_monitors!(db::SQLite.DB, experiment_id::Int)
     length(parsed)
 end
 
+function backfill_frame_counts!(db::SQLite.DB, experiment_id::Int)
+    rows = sqlrows(DBInterface.execute(db, """
+        SELECT e.id, e.filename, st.root_dir, st.image_pattern
+          FROM exposures e JOIN setups st ON st.id = e.setup_id
+         WHERE e.experiment_id = ? AND e.kind = 'file' AND e.frames_total IS NULL
+           AND e.filename IS NOT NULL AND st.mode = 'autosampler'
+           AND st.root_dir IS NOT NULL AND st.image_pattern IS NOT NULL""", [experiment_id]))
+    parsed = Tuple{Int,Int,Int}[]
+    for r in rows
+        path = frame_log_path(r.root_dir, r.image_pattern, r.filename)
+        isfile(path) || continue
+        counts = try
+            parse_frame_log(String(read(path)))
+        catch err
+            @warn "backfill_frame_counts!: could not read" path exception = err
+            continue
+        end
+        counts === nothing && continue
+        counts.final || time() - mtime(path) >= FRAME_LOG_SETTLE_SECONDS || continue
+        push!(parsed, (Int(r.id), counts.total, counts.rejected))
+    end
+    isempty(parsed) && return 0
+    lock(_DB_WRITE_LOCK) do
+        SQLite.transaction(db) do
+            for (id, total, rejected) in parsed
+                DBInterface.execute(db,
+                    "UPDATE exposures SET frames_total = ?, frames_rejected = ? WHERE id = ? AND frames_total IS NULL",
+                    [total, rejected, id])
+            end
+        end
+    end
+    length(parsed)
+end
+
+function try_backfill_frame_counts!(db::SQLite.DB, experiment_id::Int)
+    try
+        backfill_frame_counts!(db, experiment_id)
+    catch err
+        @warn "frame count backfill failed" experiment_id = experiment_id exception = err
+        0
+    end
+end
+
 function scan_and_group!(
     db           ::SQLite.DB,
     experiment_id::Int;
@@ -65,6 +108,7 @@ function scan_and_group!(
 )
     results = [_scan_setup!(db, experiment_id, setup; analyze, retry_failed, on_progress)
                for setup in setups_of(db, experiment_id; included_only = true)]
+    try_backfill_frame_counts!(db, experiment_id)
     ok = filter(r -> r.status == :ok, results)
     isempty(ok) && return (status = :empty, added_loads = 0, added_samples = 0, added_exposures = 0)
     (status          = :ok,

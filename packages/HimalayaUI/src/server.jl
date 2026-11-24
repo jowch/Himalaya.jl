@@ -268,6 +268,17 @@ function backfill_all_monitors!(db::SQLite.DB)
     nothing
 end
 
+function backfill_all_frame_counts!(db::SQLite.DB)
+    ids = sqlrows(DBInterface.execute(db, """
+        SELECT DISTINCT e.experiment_id FROM exposures e JOIN setups st ON st.id = e.setup_id
+         WHERE e.frames_total IS NULL AND e.kind = 'file' AND st.mode = 'autosampler'
+           AND e.experiment_id IS NOT NULL"""))
+    for r in ids
+        try_backfill_frame_counts!(db, Int(r.experiment_id))
+    end
+    nothing
+end
+
 function start_background!(db::SQLite.DB; resume::Bool = true, train::Bool = resume)
     start_gc_timer!(db)
     train && start_peak_training_timer!(db)
@@ -282,6 +293,7 @@ function _boot_background_work(db::SQLite.DB, resume::Bool)
     try
         with_background_db(db) do bg
             backfill_all_monitors!(bg)
+            backfill_all_frame_counts!(bg)
             resume && resume_ingests!(bg)
             backfill_trace_medians!(bg)
             deselect_beam_off_once!(bg)

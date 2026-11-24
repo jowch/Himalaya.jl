@@ -283,6 +283,7 @@ end
                     :transmitted_counts, :incident_monitor, :counting_time, :monitors_read,
                     :analysis_version, :analysis_error, :analysis_trace_stat, :setup_id,
                     :sources, :image_version, :selected,
+                    :frames_total, :frames_rejected,
                     :beam_energy_ev, :pipe_length_m, :detector, :beam_off,
                 ]
                 assert_keys(body, expected)
