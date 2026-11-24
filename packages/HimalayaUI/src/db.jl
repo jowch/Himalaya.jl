@@ -31,6 +31,7 @@ const MIGRATION_DROP_SCAN_SIGNATURE = "drop_scan_signature_v1"
 const MIGRATION_EXPOSURES_BEAM_MONITORS = "exposures_beam_monitors_v1"
 const MIGRATION_EXPOSURES_PIPE_LENGTH = "exposures_pipe_length_v1"
 const MIGRATION_EXPOSURES_Q_STEP = "exposures_q_step_v1"
+const MIGRATION_TRANSMITTED_FROM_I2 = "exposures_transmitted_from_i2_v1"
 const MIGRATION_EXPOSURES_DESELECTED = "exposures_deselected_v1"
 const MIGRATION_EXPOSURES_TRACE_MEDIAN = "exposures_trace_median_v1"
 const MIGRATION_BEAM_OFF_DESELECTED = "beam_off_deselected_v1"
@@ -547,6 +548,7 @@ function migrate_schema!(db::SQLite.DB)
     migrate_share_bridged_calls!(db)
     migrate_setups!(db)
     migrate_exposures_pipe_length!(db)
+    migrate_transmitted_from_i2!(db)
     migrate_exposures_q_step!(db)
     migrate_exposures_trace_median!(db)
     migrate_peak_provenance!(db)
@@ -927,6 +929,16 @@ function migrate_exposures_pipe_length!(db::SQLite.DB)
         DBInterface.execute(db,
             "UPDATE exposures SET monitors_read = 0 WHERE prp_path IS NOT NULL AND pipe_length_m IS NULL")
         _record_migration!(db, MIGRATION_EXPOSURES_PIPE_LENGTH)
+    end
+    nothing
+end
+
+function migrate_transmitted_from_i2!(db::SQLite.DB)
+    _migrated(db, MIGRATION_TRANSMITTED_FROM_I2) && return nothing
+    SQLite.transaction(db) do
+        DBInterface.execute(db, "UPDATE exposures SET transmitted_counts = NULL WHERE kind = 'file'")
+        DBInterface.execute(db, "UPDATE exposures SET monitors_read = 0 WHERE kind = 'file' AND prp_path IS NOT NULL")
+        _record_migration!(db, MIGRATION_TRANSMITTED_FROM_I2)
     end
     nothing
 end

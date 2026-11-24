@@ -292,7 +292,9 @@ runs once per included setup (`_scan_setup!`), reading `data_dir`,
    at least one new exposure, so no pass leaves an empty sample behind. Existing samples and exposures are never
    rewritten, so renames, rejections, peak curation and phase calls survive.
    The one exception is the beam monitors (`transmitted_counts` from
-   `I_signal`, `incident_monitor` from `I_0`, `counting_time`).
+   `I_2`, the beamstop photodiode, `incident_monitor` from `I_0`, `counting_time`).
+   `I_signal` is not read: it copies whichever counter the `.prp` names, usually
+   the APD, which reads close to the incident beam.
    `backfill_monitors!` reads them from the stored `prp_path` of every exposure
    still marked `monitors_read = 0`, on every scan request and at the start of
    every pass, so a finished beamtime ingested before the monitors

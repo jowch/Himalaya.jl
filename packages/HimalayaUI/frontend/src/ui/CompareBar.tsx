@@ -27,7 +27,9 @@ interface Props {
 }
 
 function scaleNote(scale: CompareScale): string {
-  return scale.source === "monitor" ? "Scaled by the transmitted beam" : "No beam monitors, so matched at high q";
+  if (scale.source === "monitor") return "Scaled by the transmitted beam";
+  if (scale.source === "other_setup") return "From another setup, so matched at high q";
+  return "No transmitted-beam reading, so matched at high q";
 }
 
 export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, onSubtract, onRemove, onAdd, full = false, trailing }: Props): JSX.Element {
@@ -90,7 +92,7 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
                     data-scale-source={c.scale.source}
                   >
                     <span data-scale-value className="shrink-0">×{c.scale.scale.toPrecision(3)}</span>
-                    {c.scale.source === "matched" && <span className="min-w-0 truncate">{"\u00a0matched"}</span>}
+                    {c.scale.source !== "monitor" && <span className="min-w-0 truncate">{"\u00a0matched"}</span>}
                   </span>
                 </Tooltip>
               )}

@@ -57,8 +57,8 @@ const _EXPOSURE_COLS = """id, experiment_id, setup_id, sample_id, filename, kind
     exposures(db; sample=nothing) -> Vector{<:NamedTuple}
 
 Exposures (HimalayaUI calls them frames), optionally filtered to one sample id.
-`transmitted_counts` and `incident_monitor` are the beam monitors read from the
-exposure's `.prp` file (`missing` when none was read).
+`transmitted_counts` (beamstop `I_2`) and `incident_monitor` (`I_0`) are the beam
+monitors read from the exposure's `.prp` file (`missing` when none was read).
 """
 function exposures(db::SQLite.DB; sample::Union{Integer,Nothing}=nothing)
     if sample === nothing

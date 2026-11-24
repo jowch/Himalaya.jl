@@ -2315,6 +2315,19 @@ describe("WorkspacePage", () => {
     expect(scale).toHaveTextContent(/^×0\.750$/);
   });
 
+  it("matches a comparison from another setup at high q, even when both carry monitors", () => {
+    const monitors = (transmitted_counts: number) => ({ transmitted_counts, exposure_time: 15, counting_time: 15.8 });
+    state.corpus = state.corpus.map((s) => (s.id === 11 ? { ...s, setup_id: 2 } : { ...s, setup_id: 1 }));
+    state.trace = { ...makeTrace(1), monitors: monitors(6000) };
+    state.compareTraces = new Map([[11, { ...makeTrace(2), monitors: monitors(8000) }]]);
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "c" });
+    fireEvent.click(within(screen.getByRole("dialog")).getByText("A2"));
+    const scale = screen.getByRole("button", { name: "Remove A2" }).parentElement!.querySelector("[data-scale-source]")!;
+    expect(scale).toHaveAttribute("data-scale-source", "other_setup");
+    expect(scale).toHaveTextContent("×0.500 matched");
+  });
+
   it("says when a comparison had no monitors and was matched at high q instead", () => {
     state.trace = makeTrace(1);
     state.compareTraces = new Map([[11, makeTrace(2)]]);
@@ -3029,17 +3042,17 @@ describe("WorkspacePage", () => {
     expect(text).toContain("KindSingle");
     expect(text).toContain("Exposure—");
     expect(text).toContain("I₀—");
-    expect(text).toContain("I signal—");
+    expect(text).toContain("I₂—");
   });
 
-  it("lists the shown exposure's time, I₀ and I signal under the .prp names", () => {
+  it("lists the shown exposure's time, I₀ and transmitted beam I₂ under the .prp names", () => {
     state.exposures = [exposure(100), exposure(101, { exposure_time: 10, incident_monitor: 1.5007, transmitted_counts: 7798.4 })];
     renderAt("/experiments/1/workspace/10");
     const section = screen.getByRole("heading", { name: "Image" }).closest("section")!;
     const text = section.textContent ?? "";
     expect(text).toContain("Exposure10.0 s");
     expect(text).toContain("I₀1.501");
-    expect(text).toContain("I signal7,798");
+    expect(text).toContain("I₂7,798");
   });
 
   it("lists the shown exposure's acquisition time, flight tube, energy and detector from the .prp", () => {

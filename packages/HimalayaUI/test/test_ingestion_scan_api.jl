@@ -410,7 +410,7 @@ end
         for (i, stem) in enumerate(stems)
             write(joinpath(dir, "$stem.tif"), "fake tif")
             write(joinpath(dir, "$stem.prp"),
-                "I_signal=$(7000.0 + i) (corrected for dark counts)\nI_0(daqIon3.0)=1.5\n" *
+                "I_signal=4100.0 (corrected for dark counts)\nI_2(daqCounter1.1)=$(7000.0 + i) (corrected for dark counts)\nI_0(daqIon3.0)=1.5\n" *
                 "Exposure time=15\nCounting time=15.8\n")
             HimalayaUI.create_exposure!(db; experiment_id = exp_id, filename = stem,
                 prp_path = joinpath(dir, "$stem.prp"), monitors_read = false)
@@ -440,7 +440,7 @@ end
     @testset "an ingest pass backfills missing beam monitors" begin
         db, dir, exp_id = scan_test_db()
         stem = "TICK_S0001_0_001"
-        write(joinpath(dir, "$stem.prp"), "I_signal=6500.0\nExposure time=15\nCounting time=15.8\n")
+        write(joinpath(dir, "$stem.prp"), "I_2(daqCounter1.1)=6500.0\nExposure time=15\nCounting time=15.8\n")
         HimalayaUI.create_exposure!(db; experiment_id = exp_id, filename = stem,
             prp_path = joinpath(dir, "$stem.prp"), monitors_read = false)
         try

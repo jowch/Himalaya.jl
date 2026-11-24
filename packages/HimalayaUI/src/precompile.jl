@@ -43,7 +43,7 @@ end
 function _workload_prp(path::AbstractString)
     write(path, """
         Image file name: frame.tif
-        I_signal=1000.0 (corrected for dark counts)
+        I_2(daqCounter1.1)=1000.0 (corrected for dark counts)
         I_0(daqIon3.0)=1.5
         Exposure time=1
         Counting time=1.05

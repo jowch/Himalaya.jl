@@ -65,6 +65,17 @@ describe("CompareBar scale tooltip", () => {
     act(() => {
       vi.advanceTimersByTime(TOOLTIP_OPEN_DELAY_MS);
     });
-    expect(screen.getByRole("tooltip")).toHaveTextContent("No beam monitors, so matched at high q");
+    expect(screen.getByRole("tooltip")).toHaveTextContent("No transmitted-beam reading, so matched at high q");
+  });
+
+  it("says a chip from another setup was matched at high q", () => {
+    bar([chip({ scale: { scale: 1, source: "other_setup" } as CompareChip["scale"] })]);
+    const scale = document.querySelector("[data-scale-source]") as HTMLElement;
+    expect(scale).toHaveTextContent("matched");
+    fireEvent.mouseEnter(scale);
+    act(() => {
+      vi.advanceTimersByTime(TOOLTIP_OPEN_DELAY_MS);
+    });
+    expect(screen.getByRole("tooltip")).toHaveTextContent("From another setup, so matched at high q");
   });
 });

@@ -122,24 +122,33 @@ describe("beam-monitor scaling", () => {
   it("scales a raw-count reference by the ratio of transmitted flux, even when the sample scatters at high q", () => {
     const sample = withMonitors({ q, I: q.map((x) => 1.2 * background(x) + 40 * x) }, mon(6000));
     const buffer = withMonitors({ q, I: q.map((x) => 2 * background(x)) }, mon(10000));
-    const r = compareScale(sample, buffer, []);
+    const r = compareScale(sample, buffer, [], true);
     expect(r.source).toBe("monitor");
     expect(r.scale).toBeCloseTo(0.6, 9);
     expect(Math.min(...subtractTrace(sample, buffer, r.scale).d)).toBeGreaterThan(0);
   });
 
   it("puts exposures of different length on one scale", () => {
-    expect(compareScale(withMonitors({ q, I: q }, mon(7000, 30, 30.8)), withMonitors({ q, I: q }, mon(7000, 15, 15.8)), []).scale)
+    expect(compareScale(withMonitors({ q, I: q }, mon(7000, 30, 30.8)), withMonitors({ q, I: q }, mon(7000, 15, 15.8)), [], true).scale)
       .toBeCloseTo((30 / 30.8) / (15 / 15.8), 9);
+  });
+
+  it("matches at high q across setups even when both traces carry monitors", () => {
+    const sample = withMonitors({ q, I: q.map((x) => 3 * background(x)) }, mon(7000));
+    const other = withMonitors({ q, I: q.map(background) }, mon(7000));
+    const r = compareScale(sample, other, [], false);
+    expect(r.source).toBe("other_setup");
+    expect(r.scale).toBeCloseTo(matchScale(sample, other, []), 9);
+    expect(r.scale).toBeCloseTo(3, 6);
   });
 
   it("falls back to the peak-masked high-q match when either trace lacks monitors or saw no beam", () => {
     const sample = withMonitors({ q, I: q.map((x) => 3 * background(x)) }, mon(7000));
     const buffer = withMonitors({ q, I: q.map(background) }, mon(null));
-    const r = compareScale(sample, buffer, []);
+    const r = compareScale(sample, buffer, [], true);
     expect(r.source).toBe("matched");
     expect(r.scale).toBeCloseTo(3, 3);
-    expect(compareScale({ q, I: sample.I }, withMonitors({ q, I: buffer.I }, mon(7000)), []).source).toBe("matched");
-    expect(compareScale(withMonitors({ q, I: sample.I }, mon(7000)), withMonitors({ q, I: buffer.I }, mon(-3)), []).source).toBe("matched");
+    expect(compareScale({ q, I: sample.I }, withMonitors({ q, I: buffer.I }, mon(7000)), [], true).source).toBe("matched");
+    expect(compareScale(withMonitors({ q, I: sample.I }, mon(7000)), withMonitors({ q, I: buffer.I }, mon(-3)), [], true).source).toBe("matched");
   });
 });

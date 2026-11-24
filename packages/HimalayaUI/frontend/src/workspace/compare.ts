@@ -56,17 +56,16 @@ export function matchScale(
 }
 
 // physics: the SSRL integration writes raw detector counts, so a trace scales with
-// physics: the flux that crossed the sample while the detector counted. I_signal (the
-// physics: beamstop APD behind the sample, dark-corrected) integrates that flux over
-// physics: the counting time, which runs longer than the exposure, so the flux during
-// physics: the exposure is I_signal × exposure time / counting time. It already folds
-// physics: in the sample's transmission, so the ratio of two exposures' flux puts a
+// physics: the flux that crossed the sample while the detector counted. I_2, the
+// physics: beamstop photodiode behind the sample, dark-corrected, integrates that flux
+// physics: over the counting time, which runs longer than the exposure, so the flux
+// physics: during the exposure is I_2 × exposure time / counting time. It folds in
+// physics: each sample's own transmission, so the ratio of two exposures' flux puts a
 // physics: buffer on the sample's scale with no assumption about what either scatters.
-// physics: Raw counts, not counts per I_signal: the error column of the real
+// physics: Raw counts, not counts per I_2: the error column of the real
 // physics: test/data/*_tot.dat files is Poisson per pixel. Their first bin has
 // physics: σ² = I exactly, and at high q σ²/I ≈ 1e-3 (about 1000 pixels a ring).
-// physics: Divided by an I_signal near 7000, σ²/I would be near 1e-7, under one pixel.
-// physics: If the integration ever does divide by I_signal, set this to "per_flux".
+// physics: If the integration ever does divide by the monitor, set this to "per_flux".
 export const TRACE_NORMALISATION: "raw_counts" | "per_flux" = "raw_counts";
 
 export type BeamMonitors = TraceMonitors;
@@ -80,12 +79,17 @@ export function transmittedFlux(m: BeamMonitors | undefined): number | null {
 
 export interface CompareScale {
   scale: number;
-  source: "monitor" | "matched";
+  source: "monitor" | "matched" | "other_setup";
 }
 
 type ScaledTrace = Pick<Trace, "q" | "I" | "monitors">;
 
-export function compareScale(main: ScaledTrace, ref: ScaledTrace, peakQs: readonly number[]): CompareScale {
+// physics: counts per pixel also depend on the sample-to-detector distance and on
+// physics: where the beamstop diode sits, which change between setups. A flux ratio
+// physics: puts two images on one scale only within a setup, so across setups the
+// physics: high-q match is the better estimate.
+export function compareScale(main: ScaledTrace, ref: ScaledTrace, peakQs: readonly number[], sameSetup: boolean): CompareScale {
+  if (!sameSetup) return { scale: matchScale(main, ref, peakQs), source: "other_setup" };
   const fm = transmittedFlux(main.monitors);
   const fr = transmittedFlux(ref.monitors);
   if (fm !== null && fr !== null) {
