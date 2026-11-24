@@ -21,7 +21,8 @@ using HimalayaUI
 using Himalaya
 using SQLite, DBInterface, Tables
 using SparseArrays
-using JSON3, HTTP
+using HTTP
+import JSON
 
 # Standalone-run support: under runtests.jl the shared harness is already
 # loaded (test_http.jl is included first); on a standalone run pull it in.
@@ -95,8 +96,7 @@ function _fwipe_capture_sse(f::Function, kind_filter::String)
     frames
 end
 
-# "event: curation\ndata: {json}\n\n" → parsed JSON3 object.
-_fwipe_frame_json(frame::String) = JSON3.read(split(frame, "data: "; limit=2)[2])
+_fwipe_frame_json(frame::String) = JSON.parse(split(frame, "data: "; limit=2)[2])
 
 """Hand-built 2-peak Pn3m candidate at `basis` (normalized-q₁-slope convention)."""
 function _fwipe_pn3m_candidate(basis::Float64)
@@ -403,7 +403,7 @@ _fwipe_empty_pr()  = (q = Float64[], indices = Int[],
                     frames = _fwipe_capture_sse("peak_excluded") do
                         r = call("PATCH", "/api/peaks/auto/$patch_id";
                             headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
-                            body = Vector{UInt8}(JSON3.write(Dict(:excluded => true))))
+                            body = Vector{UInt8}(JSON.json(Dict(:excluded => true))))
                         @test r.status == 200
                     end
                     @test length(frames) == 1

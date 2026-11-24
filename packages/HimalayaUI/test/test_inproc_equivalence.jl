@@ -2,7 +2,8 @@
 # produces the SAME HTTP.Response as a real socket request, for the shapes most
 # likely to diverge. This is the single load-bearing equivalence proof (spec
 # §5.1). Keep it green permanently.
-using Test, HTTP, SQLite, JSON3, DBInterface, Tables
+using Test, HTTP, SQLite, DBInterface, Tables
+import JSON
 using FileIO, ImageCore, TiffImages   # for the binary-PNG contract row
 using HimalayaUI
 
@@ -94,7 +95,7 @@ end
         mktempdir() do d
             fx = _seed(d)
             hdrs = ["Content-Type" => "application/json", "X-Username" => "alice"]
-            bodyj = JSON3.write(Dict(:q => 0.05))
+            bodyj = JSON.json(Dict(:q => 0.05))
             w = with_test_server(fx.db) do port, base
                 HTTP.post("$base/api/exposures/99999/peaks"; body=bodyj, headers=hdrs, status_exception=false)
             end
@@ -131,7 +132,7 @@ end
         function _replay(call_with, opid)
             hdrs = ["Content-Type"=>"application/json", "X-Username"=>"alice",
                     "X-Client-Id"=>"tab-1", "X-Client-Op-Id"=>opid]
-            bodyj = JSON3.write(Dict(:q => 0.0731))
+            bodyj = JSON.json(Dict(:q => 0.0731))
             call_with(hdrs, bodyj)
         end
         wire_bodies = mktempdir() do d
@@ -190,7 +191,7 @@ end
             count(f -> !startswith(f, ":") && occursin("set_exposure_status", f), collect(pending))
         end
         hdrs = ["Content-Type"=>"application/json", "X-Username"=>"alice"]
-        bodyj = JSON3.write(Dict(:status => "rejected"))
+        bodyj = JSON.json(Dict(:status => "rejected"))
         wire_n = mktempdir() do d
             fx = _seed(d)
             _count_frames() do

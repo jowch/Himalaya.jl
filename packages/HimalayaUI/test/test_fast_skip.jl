@@ -2,7 +2,8 @@ using Test
 using HimalayaUI
 using HimalayaUI: open_db, analyze_exposure!,
                   effective_peaks, hash_peak_set, load_dat
-using SQLite, DBInterface, Tables, JSON3, HTTP
+using SQLite, DBInterface, Tables, HTTP
+import JSON
 
 include("seed.jl")
 
@@ -45,7 +46,7 @@ function latest_analyze_run(db, exposure_id)
            WHERE action = 'analyze_run' AND entity_type = 'exposure' AND entity_id = ?
            ORDER BY id DESC LIMIT 1""", [exposure_id]))
     isempty(rows) && return nothing
-    return (id=Int(rows[1].id), payload=JSON3.read(String(rows[1].payload)))
+    return (id=Int(rows[1].id), payload=JSON.parse(String(rows[1].payload)))
 end
 
 @testset "fast-skip: zero file I/O on no-change with trace_known_unchanged=true" begin
@@ -147,7 +148,7 @@ end
             """SELECT payload FROM user_actions
                WHERE entity_id = ? AND action = 'analyze_run'
                ORDER BY id DESC LIMIT 1""", [ctx.exposure_id]))
-        payload = JSON3.read(String(latest_run[1].payload))
+        payload = JSON.parse(String(latest_run[1].payload))
         @test payload[:indexpeaks_skipped] === false
         @test payload[:findpeaks_skipped]  === true   # trace unchanged ⇒ findpeaks still skipped
     end
@@ -399,7 +400,7 @@ end
         rows = Tables.rowtable(DBInterface.execute(ctx.db,
             "SELECT payload FROM user_actions WHERE entity_id = ? AND action = 'analyze_run' ORDER BY id DESC LIMIT 1",
             [ctx.exposure_id]))
-        payload = JSON3.read(String(rows[1].payload))
+        payload = JSON.parse(String(rows[1].payload))
         @test get(payload, :post_state_size_bytes, 0) > 0
     end
 end

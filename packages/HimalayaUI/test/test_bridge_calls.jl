@@ -1,4 +1,5 @@
-using Test, HTTP, JSON3, SQLite, DBInterface, Tables
+using Test, HTTP, SQLite, DBInterface, Tables
+import JSON
 using HimalayaUI
 
 if !isdefined(@__MODULE__, :with_test_server)
@@ -22,8 +23,8 @@ function _bridge_call_fixture(dir)
 end
 
 const _BC_HEADERS = ["Content-Type" => "application/json", "X-Username" => "alice"]
-_bc_post(call, path, body) = call("POST", path; headers = _BC_HEADERS, body = Vector{UInt8}(JSON3.write(body)))
-_bc_json(r) = JSON3.read(String(r.body))
+_bc_post(call, path, body) = call("POST", path; headers = _BC_HEADERS, body = Vector{UInt8}(JSON.json(body)))
+_bc_json(r) = JSON.parse(String(r.body))
 _bc_tick(call, eid, iid) = _bc_post(call, "/api/exposures/$eid/assignment/members", Dict(:index_id => iid))
 _bc_state(call, sid, state) = _bc_post(call, "/api/samples/$sid/call/state", Dict(:state => state))
 _bc_bridge(call, a, b; keep = nothing) =
@@ -247,7 +248,7 @@ _bc_states(db) = Dict(Int(r.sample_id) => String(r.state) for r in Tables.rowtab
                             ("/api/exposures/$(fx.ea)/assignment/members", Dict(:index_id => 10), "assignment_add"),
                             ("/api/samples/$(fx.a)/call/state", Dict(:state => "form_factor"), "sample_call_set_state"))
                         r = call("POST", path; headers = vcat(_BC_HEADERS, "X-Client-Op-Id" => "op-$(first_kind)"),
-                            body = Vector{UInt8}(JSON3.write(body)))
+                            body = Vector{UInt8}(JSON.json(body)))
                         @test r.status == 200
                         frames = String[]
                         while isready(sub.pending)
@@ -276,7 +277,7 @@ _bc_states(db) = Dict(Int(r.sample_id) => String(r.state) for r in Tables.rowtab
                 _bc_tick(call, fx.eb, 20)
                 _bc_tick(call, fx.eb, 21)
                 r = call("POST", "/api/samples/$(fx.a)/bridge"; headers = vcat(_BC_HEADERS, "X-Client-Op-Id" => "op-keep"),
-                    body = Vector{UInt8}(JSON3.write(Dict(:to_sample_id => fx.b, :keep_call => fx.a))))
+                    body = Vector{UInt8}(JSON.json(Dict(:to_sample_id => fx.b, :keep_call => fx.a))))
                 @test r.status == 200
                 @test _bc_members(fx.db) == [(fx.ea, 10)]
                 @test _bc_states(fx.db) == Dict(fx.a => "indexed", fx.b => "indexed")

@@ -44,11 +44,11 @@ Decide which HTTP verbs apply to the new resource, following REST conventions:
 Following exactly the patterns you read in step 1:
 
 - **Function name**: `register_<resource>_routes!()`
-- **Imports**: copy the `using` line from the reference — `HTTP, JSON3, DBInterface, Tables, Oxygen, SQLite`
+- **Imports**: copy the `using` line from the reference — `HTTP, DBInterface, Tables, Oxygen, SQLite` (`JSON` is imported once, in `json_writer.jl`)
 - **Reads**: `Tables.rowtable(DBInterface.execute(db, sql, params))` — never access raw cursor values, they vanish after the query closes
 - **Inserts**: capture `res = DBInterface.execute(...)` then `id = Int(DBInterface.lastrowid(res))` — `lastrowid` takes the result, not the db
 - **Mutations**: call `log_action!(db, req; action = "...", entity_type = "...", entity_id = ...)` after every write
-- **Responses**: `HTTP.Response(status, ["Content-Type" => "application/json"], JSON3.write(...))`
+- **Responses**: `HTTP.Response(status, ["Content-Type" => "application/json"], to_json(...))` (never `JSON.json`: see "Cold start" in `packages/HimalayaUI/src/AGENTS.md`)
   - 200 for GET/PATCH
   - 201 for POST (include the newly-created row)
   - 204 for DELETE (no body)

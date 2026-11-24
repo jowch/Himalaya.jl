@@ -1,4 +1,4 @@
-using HTTP, JSON3, DBInterface, Tables, Oxygen
+using HTTP, DBInterface, Tables, Oxygen
 
 _setup_infos(dir::AbstractString)::Vector{String} =
     String[joinpath(dir, f) for f in list_names(dir) if startswith(f, "setup_info_") && endswith(f, ".txt")]

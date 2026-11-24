@@ -209,7 +209,7 @@ end
 function write_evaluation(path::AbstractString, r)
     mkpath(dirname(abspath(path)))
     open(path, "w") do io
-        JSON3.write(io, evaluation_dict(r))
+        JSON.json(io, evaluation_dict(r); sort_keys = false)
     end
     path
 end

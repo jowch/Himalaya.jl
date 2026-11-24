@@ -1,4 +1,5 @@
-using Test, HTTP, JSON3, SQLite, DBInterface, Tables
+using Test, HTTP, SQLite, DBInterface, Tables
+import JSON
 using HimalayaUI
 
 if !isdefined(@__MODULE__, :with_test_server)
@@ -16,12 +17,12 @@ end
 
 const _BRIDGE_HEADERS = ["Content-Type" => "application/json", "X-Username" => "alice"]
 
-_bridge_body(to) = Vector{UInt8}(JSON3.write(Dict(:to_sample_id => to)))
+_bridge_body(to) = Vector{UInt8}(JSON.json(Dict(:to_sample_id => to)))
 
 function _groups(call, exp_id)
     r = call("GET", "/api/experiments/$exp_id/bridges")
     @test r.status == 200
-    rows = JSON3.read(String(r.body))
+    rows = JSON.parse(String(r.body))
     by = Dict{Int, Set{Int}}()
     for row in rows
         push!(get!(by, Int(row.group_id), Set{Int}()), Int(row.sample_id))
@@ -32,7 +33,7 @@ end
 _bridge_rows(db) = Set(Int(r.sample_id) for r in Tables.rowtable(DBInterface.execute(db,
     "SELECT sample_id FROM sample_bridges")))
 
-_label_body(label) = Vector{UInt8}(JSON3.write(Dict(:label => label)))
+_label_body(label) = Vector{UInt8}(JSON.json(Dict(:label => label)))
 
 _label_states(db, sid) = Dict(String(r.label) => String(r.state) for r in Tables.rowtable(DBInterface.execute(db,
     "SELECT label, state FROM sample_labels WHERE sample_id = ?", [sid])))
@@ -57,7 +58,7 @@ _label_states(db, sid) = Dict(String(r.label) => String(r.state) for r in Tables
             events, cached = count(db, "user_actions"), count(db, "idempotent_responses")
             r = call("POST", "/api/samples/$a/bridge"; headers = vcat(_BRIDGE_HEADERS, ["X-Client-Op-Id" => "op-mixed"]), body = _bridge_body(b))
             @test r.status == 422
-            @test JSON3.read(String(r.body)).error == "A capillary sample and an autosampler sample can't be the same sample."
+            @test JSON.parse(String(r.body)).error == "A capillary sample and an autosampler sample can't be the same sample."
             @test (count(db, "user_actions"), count(db, "idempotent_responses")) == (events, cached)
             @test _groups(call, exp_id) == Set()
         end
@@ -100,7 +101,7 @@ end
             r = call("POST", "/api/samples/$a/bridge"; headers=_BRIDGE_HEADERS, body=_bridge_body(b))
             @test r.status == 200
             @test _groups(call, exp_id) == Set([Set([a, b])])
-            body = JSON3.read(String(r.body))
+            body = JSON.parse(String(r.body))
             @test Set(Int(x.sample_id) for x in body) == Set([a, b])
         end
     end
@@ -152,7 +153,7 @@ end
         with_inproc_routes(db) do call
             @test call("POST", "/api/samples/$a/bridge"; headers=_BRIDGE_HEADERS, body=_bridge_body(a)).status == 400
             @test call("POST", "/api/samples/$a/bridge"; headers=_BRIDGE_HEADERS,
-                       body=Vector{UInt8}(JSON3.write(Dict(:x => 1)))).status == 400
+                       body=Vector{UInt8}(JSON.json(Dict(:x => 1)))).status == 400
             @test call("POST", "/api/samples/$a/bridge"; headers=_BRIDGE_HEADERS, body=_bridge_body(999_999)).status == 404
             @test call("POST", "/api/samples/$a/bridge"; headers=_BRIDGE_HEADERS, body=_bridge_body(z)).status == 422
             @test call("DELETE", "/api/samples/999999/bridge"; headers=_BRIDGE_HEADERS).status == 404
@@ -287,7 +288,7 @@ end
         c = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="lone", setup_id=s1)
         with_inproc_routes(db) do call
             call("POST", "/api/samples/$a/bridge"; headers=_BRIDGE_HEADERS, body=_bridge_body(b))
-            body = JSON3.read(String(call("GET", "/api/experiments/$exp_id/export?format=json").body))
+            body = JSON.parse(String(call("GET", "/api/experiments/$exp_id/export?format=json").body))
             rows = Dict(String(s.setup) * "/" * String(s.name) => s for s in body)
             @test [(String(x.name), String(x.setup)) for x in rows["setup1/DOPE_H2O"].bridged_with] == [("DOPE_H2O", "long pipe")]
             @test [(String(x.name), String(x.setup)) for x in rows["long pipe/DOPE_H2O"].bridged_with] == [("DOPE_H2O", "setup1")]

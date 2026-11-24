@@ -1,4 +1,5 @@
-using Test, HTTP, JSON3, DBInterface
+using Test, HTTP, DBInterface
+import JSON
 
 @testset "trace route" begin
     tmp = mktempdir()
@@ -23,7 +24,7 @@ using Test, HTTP, JSON3, DBInterface
     with_inproc_routes(db) do call
         r = call("GET", "/api/exposures/$e_id/trace")
         @test r.status == 200
-        body = JSON3.read(String(r.body))
+        body = JSON.parse(String(r.body))
         @test haskey(body, :q) && haskey(body, :I) && haskey(body, :sigma)
         @test body.monitors.transmitted_counts ≈ 7000.0
         @test body.monitors.exposure_time ≈ 15.0
@@ -33,13 +34,13 @@ using Test, HTTP, JSON3, DBInterface
         @test length(body.q) > 100
         @test all(q -> q > 0, body.q)
 
-        sib = JSON3.read(String(call("GET", "/api/exposures/$sib_id/trace").body))
+        sib = JSON.parse(String(call("GET", "/api/exposures/$sib_id/trace").body))
         @test sib.monitors.transmitted_counts ≈ 1.0
         @test sib.monitors.exposure_time ≈ 5.0
         @test sib.monitors.counting_time ≈ 5.4
         @test sib.I != body.I
 
-        bare = JSON3.read(String(call("GET", "/api/exposures/$bare_id/trace").body))
+        bare = JSON.parse(String(call("GET", "/api/exposures/$bare_id/trace").body))
         @test haskey(bare.monitors, :transmitted_counts) && bare.monitors.transmitted_counts === nothing
         @test haskey(bare.monitors, :exposure_time) && bare.monitors.exposure_time === nothing
         @test haskey(bare.monitors, :counting_time) && bare.monitors.counting_time === nothing
@@ -48,17 +49,17 @@ using Test, HTTP, JSON3, DBInterface
 
         write(joinpath(dirname(analysis_dir), "integ.mpp"), "-o out\n-i yes i2 2.5e6\n-s 1\n")
         @test HimalayaUI.read_trace_normalisations!(db) == 1
-        @test JSON3.read(String(call("GET", "/api/exposures/$e_id/trace").body)).monitors.normalised_by == "i2"
+        @test JSON.parse(String(call("GET", "/api/exposures/$e_id/trace").body)).monitors.normalised_by == "i2"
 
         @test body.monitors.i2_collapsed == false
         DBInterface.execute(db, "UPDATE exposures SET incident_monitor = 1.5 WHERE id IN (?, ?)", [e_id, sib_id])
-        @test JSON3.read(String(call("GET", "/api/exposures/$sib_id/trace").body)).monitors.i2_collapsed == true
-        @test JSON3.read(String(call("GET", "/api/exposures/$e_id/trace").body)).monitors.i2_collapsed == false
+        @test JSON.parse(String(call("GET", "/api/exposures/$sib_id/trace").body)).monitors.i2_collapsed == true
+        @test JSON.parse(String(call("GET", "/api/exposures/$e_id/trace").body)).monitors.i2_collapsed == false
         DBInterface.execute(db, "UPDATE setups SET mode = 'autosampler'")
-        @test JSON3.read(String(call("GET", "/api/exposures/$e_id/trace").body)).monitors.mode == "autosampler"
+        @test JSON.parse(String(call("GET", "/api/exposures/$e_id/trace").body)).monitors.mode == "autosampler"
 
         DBInterface.execute(db, "UPDATE exposures SET trace_median = 0.2 WHERE id = ?", [e_id])
-        @test JSON3.read(String(call("GET", "/api/exposures/$e_id/trace").body)).monitors.beam_off == true
+        @test JSON.parse(String(call("GET", "/api/exposures/$e_id/trace").body)).monitors.beam_off == true
 
         r = call("GET", "/api/exposures/99999/trace")
         @test r.status == 404
@@ -87,7 +88,7 @@ end
     with_inproc_routes(db) do call
         r = call("GET", "/api/exposures/$e_id/trace")
         @test r.status == 200
-        body = JSON3.read(String(r.body))
+        body = JSON.parse(String(r.body))
         @test length(body.q) > 100
     end
 end
@@ -113,11 +114,11 @@ end
     with_inproc_routes(db) do call
         r = call("GET", "/api/exposures/$e_id/trace")
         @test r.status == 200
-        body = JSON3.read(String(r.body))
+        body = JSON.parse(String(r.body))
         @test length(body.q) > 100
         @test body.monitors.transmitted_counts ≈ 7000.0
 
-        sib = JSON3.read(String(call("GET", "/api/exposures/$sib_id/trace").body))
+        sib = JSON.parse(String(call("GET", "/api/exposures/$sib_id/trace").body))
         @test sib.monitors.transmitted_counts ≈ 6000.0
         @test sib.I != body.I
     end

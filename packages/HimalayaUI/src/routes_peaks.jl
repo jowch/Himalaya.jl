@@ -1,4 +1,4 @@
-using HTTP, JSON3, DBInterface, Tables, Oxygen, SQLite
+using HTTP, DBInterface, Tables, Oxygen, SQLite
 
 function _resolve_analysis_dir(db::SQLite.DB, exposure_id::Int)::Union{String, Nothing}
     setup = exposure_setup(db, exposure_id)
@@ -47,7 +47,7 @@ function _queue_peak_added_broadcast!(result, entity_id::Integer,
     _enqueue_post_commit_broadcast!(
         Int(result.event_id), "peak_added", "exposure", Int(entity_id),
         result.user_id, result.client_id, result.client_op_id,
-        JSON3.write(payload);
+        to_json(payload);
         post_state = post_state)
 end
 
@@ -65,7 +65,7 @@ function register_peaks_routes!()
         db   = current_db()
         rows = peak_listing(db, id)
         HTTP.Response(200, ["Content-Type" => "application/json"],
-            JSON3.write(rows_to_json(rows; bool_keys = (:excluded,))))
+            to_json(rows_to_json(rows; bool_keys = (:excluded,))))
     end
 
     @post "/api/exposures/{id}/peaks" function(req::HTTP.Request, id::Int)
@@ -81,7 +81,7 @@ function register_peaks_routes!()
         if !haskey(body, :q)
             return HTTP.Response(400,
                 ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => "missing field: q")))
+                to_json(Dict(:error => "missing field: q")))
         end
         local q::Float64
         try
@@ -89,7 +89,7 @@ function register_peaks_routes!()
         catch
             return HTTP.Response(400,
                 ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => "q must be a number")))
+                to_json(Dict(:error => "q must be a number")))
         end
         return with_idempotency(db, req) do
 
@@ -132,7 +132,7 @@ function register_peaks_routes!()
             _queue_peak_added_broadcast!(result, id, payload, post_state)
 
             HTTP.Response(201, ["Content-Type" => "application/json"],
-                JSON3.write(Dict(
+                to_json(Dict(
                     # Full Peak-shape — manual peaks have no analysis-derived
                     # metrics yet, so intensity/prominence/sharpness are
                     # explicitly null (NOT omitted). Pre-fix the response
@@ -165,14 +165,14 @@ function register_peaks_routes!()
             if !haskey(body, :excluded)
                 return HTTP.Response(400,
                     ["Content-Type" => "application/json"],
-                    JSON3.write(Dict(:error => "missing field: excluded")))
+                    to_json(Dict(:error => "missing field: excluded")))
             end
 
             peak_row = _auto_peak_row(db, id)
             if peak_row === nothing
                 return HTTP.Response(404,
                     ["Content-Type" => "application/json"],
-                    JSON3.write(Dict(:error => "auto peak not found")))
+                    to_json(Dict(:error => "auto peak not found")))
             end
 
             exposure_id = Int(peak_row.exposure_id)
@@ -257,13 +257,13 @@ function register_peaks_routes!()
             out = _auto_peak_row(db, id)
             out === nothing && return HTTP.Response(404,
                 ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => "auto peak not found after update")))
+                to_json(Dict(:error => "auto peak not found after update")))
 
             d = row_to_json(out; bool_keys = (:excluded,))
             d[:event_id]             = event_id_out
             d[:view_row_id]          = view_row_id_out
             d[:analysis_inputs_hash] = read_inputs_hash(db, exposure_id)
-            HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(d))
+            HTTP.Response(200, ["Content-Type" => "application/json"], to_json(d))
         end
     end
 
@@ -278,7 +278,7 @@ function register_peaks_routes!()
             if isempty(curation_rows)
                 return HTTP.Response(404,
                     ["Content-Type" => "application/json"],
-                    JSON3.write(Dict(:error => "manual peak not found")))
+                    to_json(Dict(:error => "manual peak not found")))
             end
             exposure_id = Int(curation_rows[1].exposure_id)
             removed_q   = Float64(curation_rows[1].q)
@@ -311,7 +311,7 @@ function register_peaks_routes!()
 
             HTTP.Response(200,
                 ["Content-Type" => "application/json"],
-                JSON3.write(Dict(
+                to_json(Dict(
                     :event_id             => result.event_id,
                     :view_row_id          => result.view_row_id,
                     :analysis_inputs_hash => post_state[:analysis_inputs_hash],

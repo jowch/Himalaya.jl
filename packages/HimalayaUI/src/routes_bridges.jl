@@ -1,6 +1,6 @@
-using HTTP, JSON3, DBInterface, Tables, Oxygen
+using HTTP, DBInterface, Tables, Oxygen
 
-_json_ok(body) = HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(body))
+_json_ok(body) = HTTP.Response(200, ["Content-Type" => "application/json"], to_json(body))
 
 function bridge_groups_for_experiment(db, exp_id::Int)
     rows = sqlrows(DBInterface.execute(db,

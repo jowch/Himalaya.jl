@@ -486,7 +486,7 @@ exposures are therefore analysed twice after a core bump, but ingest and the fir
 or rejected retrain leaves the hybrid in place without any extra state.
 
 **Cold start.** The precompile workload builds a three-tree model, promotes it and runs a pass over a synthetic trace, and fails
-the build if the model did not write that exposure's peaks. Model JSON is read through `JSON3.read(::String)`: with an abstract
+the build if the model did not write that exposure's peaks. Model JSON is read through `JSON.parse(::String)`: with an abstract
 `AbstractString` the precompiled analysis code was thrown away at load (see "Cold start" in `packages/HimalayaUI/src/AGENTS.md`).
 
 ## No model UI

@@ -68,8 +68,7 @@ using SQLite
 end
 
 using HimalayaUI: init_experiment!, analyze_exposure!, open_db, get_experiment
-using JSON3
-
+import JSON
 @testset "init_experiment!" begin
     tmp = mktempdir()
     data_dir     = joinpath(tmp, "data")
@@ -874,7 +873,7 @@ end
         "SELECT trace_hash, analysis_inputs_hash FROM exposures WHERE id = ?", [e_id])))
     event = first(Tables.rowtable(DBInterface.execute(db,
         "SELECT payload FROM user_actions WHERE action = 'analyze_run' ORDER BY id DESC LIMIT 1")))
-    p = JSON3.read(String(event.payload))
+    p = JSON.parse(String(event.payload))
     @test String(state.trace_hash)          == String(p[:trace_hash_after])
     @test String(state.analysis_inputs_hash) == String(p[:inputs_hash_after])
 
@@ -924,7 +923,7 @@ end
     analyze_exposure!(db, e_id, analysis_dir)
     row1 = first(Tables.rowtable(DBInterface.execute(db,
         "SELECT payload FROM user_actions WHERE action = 'analyze_run' ORDER BY id DESC LIMIT 1")))
-    p1 = JSON3.read(String(row1.payload))
+    p1 = JSON.parse(String(row1.payload))
     @test p1[:findpeaks_skipped]  == false
     @test p1[:indexpeaks_skipped] == false
 
@@ -932,7 +931,7 @@ end
     analyze_exposure!(db, e_id, analysis_dir)
     row2 = first(Tables.rowtable(DBInterface.execute(db,
         "SELECT payload FROM user_actions WHERE action = 'analyze_run' ORDER BY id DESC LIMIT 1")))
-    p2 = JSON3.read(String(row2.payload))
+    p2 = JSON.parse(String(row2.payload))
     @test p2[:findpeaks_skipped]  == true
     @test p2[:indexpeaks_skipped] == true
 end

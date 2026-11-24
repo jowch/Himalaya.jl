@@ -278,7 +278,7 @@ const _T0 = DateTime(2026, 4, 26, 23, 0, 0)
         with_inproc_routes(db) do call
             r = call("GET", "/api/experiments/$id/problems")
             @test r.status == 200
-            body = HimalayaUI.JSON3.read(r.body)
+            body = HimalayaUI.JSON.parse(r.body)
             @test body.ingest_error === nothing
             @test [(String(p.filename), String(p.problem)) for p in body.exposures] ==
                   [("A_S0001_0_001", "no_trace"), ("A_S0002_0_001", "failed")]
@@ -297,7 +297,7 @@ const _T0 = DateTime(2026, 4, 26, 23, 0, 0)
         @test row.ingest_status == "failed"
         @test !ismissing(row.ingest_error) && !isempty(row.ingest_error)
         with_inproc_routes(db) do call
-            body = HimalayaUI.JSON3.read(call("GET", "/api/experiments/$id/problems").body)
+            body = HimalayaUI.JSON.parse(call("GET", "/api/experiments/$id/problems").body)
             @test body.ingest_error == row.ingest_error
         end
         DBInterface.execute(db, "UPDATE setups SET image_pattern = NULL WHERE experiment_id = ?", [id])

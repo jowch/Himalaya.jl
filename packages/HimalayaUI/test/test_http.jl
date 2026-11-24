@@ -1,4 +1,5 @@
-using Test, HTTP, SQLite, JSON3
+using Test, HTTP, SQLite
+import JSON
 using HimalayaUI
 using Himalaya
 

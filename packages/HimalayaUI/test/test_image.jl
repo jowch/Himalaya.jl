@@ -57,7 +57,9 @@ end
 # Issue #261 (H) — thumb downscale-before-lognormalize + disk cache + prewarm
 # ---------------------------------------------------------------------------
 
-using SQLite, DBInterface, Tables, JSON3
+using SQLite, DBInterface, Tables
+
+import JSON
 
 """
 Build a synthetic detector TIFF: a `dim`×`dim` faint background with a BROAD
@@ -430,7 +432,7 @@ end
                 frame = take!(pending)
                 lines = filter(l -> startswith(l, "data: "), split(frame, '\n'))
                 isempty(lines) && continue
-                obj = JSON3.read(replace(first(lines), r"^data: " => ""))
+                obj = JSON.parse(replace(first(lines), r"^data: " => ""))
                 haskey(obj, :kind) && push!(kinds, String(obj.kind))
                 haskey(obj, :payload) && haskey(obj.payload, :stage) && push!(stages, String(obj.payload.stage))
             end

@@ -1,4 +1,5 @@
-using Test, HTTP, JSON3, SQLite, DBInterface, Tables
+using Test, HTTP, SQLite, DBInterface, Tables
+import JSON
 using HimalayaUI
 
 if !isdefined(@__MODULE__, :with_test_server)
@@ -16,7 +17,7 @@ end
 
 const _LABEL_HEADERS = ["Content-Type" => "application/json", "X-Username" => "alice"]
 
-_label_body(label) = Vector{UInt8}(JSON3.write(Dict(:label => label)))
+_label_body(label) = Vector{UInt8}(JSON.json(Dict(:label => label)))
 
 _add_label(call, sid, label) =
     call("POST", "/api/samples/$sid/labels"; headers=_LABEL_HEADERS, body=_label_body(label))
@@ -36,7 +37,7 @@ _label_events(db, kind) = length(Tables.rowtable(DBInterface.execute(db,
 function _listed(call, exp_id)
     r = call("GET", "/api/experiments/$exp_id/labels")
     @test r.status == 200
-    Set((Int(x.sample_id), String(x.label), String(x.state)) for x in JSON3.read(String(r.body)))
+    Set((Int(x.sample_id), String(x.label), String(x.state)) for x in JSON.parse(String(r.body)))
 end
 
 _label_rows(db) = Set((Int(r.sample_id), String(r.label), String(r.state)) for r in
@@ -50,7 +51,7 @@ _label_rows(db) = Set((Int(r.sample_id), String(r.label), String(r.state)) for r
             @test _listed(call, exp_id) == Set()
             r = _add_label(call, a, "37C")
             @test r.status == 200
-            @test Set((Int(x.sample_id), String(x.label)) for x in JSON3.read(String(r.body))) ==
+            @test Set((Int(x.sample_id), String(x.label)) for x in JSON.parse(String(r.body))) ==
                   Set([(a, "37C")])
             _add_label(call, b, "buffer")
             @test _listed(call, exp_id) == Set([(a, "37C", "confirmed"), (b, "buffer", "confirmed")])
@@ -74,7 +75,7 @@ _label_rows(db) = Set((Int(r.sample_id), String(r.label), String(r.state)) for r
             _add_label(call, a, "retake")
             r = _remove_label(call, a, "RETAKE")
             @test r.status == 200
-            @test isempty(JSON3.read(String(r.body)))
+            @test isempty(JSON.parse(String(r.body)))
             @test _listed(call, exp_id) == Set()
         end
         @test _label_rows(db) == Set([(a, "retake", "removed")])
@@ -174,7 +175,7 @@ _label_rows(db) = Set((Int(r.sample_id), String(r.label), String(r.state)) for r
             _remove_label(call, b, "calibrant")
             r = _restore_suggestion(call, a, "BUFFER")
             @test r.status == 200
-            @test (a, "buffer", "suggested") in Set((Int(x.sample_id), String(x.label), String(x.state)) for x in JSON3.read(String(r.body)))
+            @test (a, "buffer", "suggested") in Set((Int(x.sample_id), String(x.label), String(x.state)) for x in JSON.parse(String(r.body)))
             _restore_suggestion(call, b, "calibrant")
             @test _listed(call, exp_id) == Set([(a, "buffer", "suggested"), (b, "calibrant", "suggested")])
         end

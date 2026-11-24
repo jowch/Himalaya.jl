@@ -1,24 +1,3 @@
-/**
- * SSE event-payload contract test.
- *
- * Pins the third leg of the contract triangle: route emit (Julia) ↔ cache
- * row shape (Vitest cache-shape) ↔ SSE frame payload (this file). If a route
- * silently changes its SSE payload shape, foreign-tab convergence breaks
- * silently — only manifests as "the other tab didn't update."
- *
- * Discipline: each frame's `payload` is derived from the actual
- * `apply_event!` call site in routes_*.jl / pipeline.jl. The route-side
- * payload SHAPE is what the JSON3-serialized SSE frame carries, so this is
- * the canonical wire contract from the consumer's point of view.
- *
- * Each test:
- *   1. Seeds the relevant query cache.
- *   2. Dispatches an SseEvent whose payload mirrors a real route emit.
- *   3. Asserts the cache reaches the expected post-state.
- *
- * If you change a route's apply_event! payload, update the corresponding
- * test here — and double-check applyRemoteToCache.ts reads the same fields.
- */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import { applyRemoteToCache, applyPostStateOnly } from "../../src/lib/queue/applyRemoteToCache";

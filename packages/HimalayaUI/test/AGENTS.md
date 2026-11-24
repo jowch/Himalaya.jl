@@ -28,11 +28,11 @@ The default fixture for route tests is `with_inproc_routes` (`test_inproc.jl`), 
 with_inproc_routes(db) do call
     r = call("GET", "/api/samples?experiment_id=$exp_id")
     @test r.status == 200
-    list = JSON3.read(String(r.body))
+    list = JSON.parse(String(r.body))
     # POST/PATCH/DELETE: headers + a Vector{UInt8} body
     r = call("PATCH", "/api/samples/$sid";
              headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
-             body = Vector{UInt8}(JSON3.write(Dict(:notes => "hi"))))
+             body = Vector{UInt8}(JSON.json(Dict(:notes => "hi"))))
 end
 ```
 
