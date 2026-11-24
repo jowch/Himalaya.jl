@@ -181,24 +181,25 @@ function background(rng, formfactor::Bool)
     @. SOLVENT_FLOOR * (1 + rise * Q^-RISE_EXP + hump * exp(-0.5 * ((Q - HUMP_Q) / HUMP_W)^2))
 end
 
-# physics: traces are written as raw detector counts, as the beamline's integration
-# physics: writes them, so each scales with the flux that crossed the sample during
-# physics: the exposure. That flux is the incident beam (I_0, which decays between
-# physics: top-ups) times the sample's transmission, and the beamstop APD downstream
-# physics: records it as I_signal. Dividing a trace by its I_signal puts every
-# physics: exposure on one scale; a high-q match cannot, when the sample scatters there.
-# physics: The constants are round numbers of the size an SSRL .prp shows: I_0 about
-# physics: 1.5 V and I_signal about 7000 counts for 15 s on a lipid sample, with the
-# physics: APD's dark rate included in raw I_1 and removed from I_signal.
+# physics: a raw trace scales with the flux that crossed the sample during the
+# physics: exposure: the incident beam (I_0, which decays between top-ups) times the
+# physics: sample's transmission, which the beamstop photodiode records as I_2,
+# physics: dark-corrected. SASTool usually divides each trace by its I_2 (integ.mpp
+# physics: `-i yes i2`), which puts every exposure on one scale; the demo does the
+# physics: same, and large mode leaves every other experiment raw. The APD that
+# physics: I_signal copies reads close to the incident beam and is mostly dark counts.
 const I0_VOLTS     = 1.5
-const APD_PER_VOLT = 7000.0 / (1.5 * 0.86)
+const APD_PER_VOLT = 7000.0 / 1.5
 const APD_DARK_RATE = 18000.0
-# physics: I_signal is a small difference of two large numbers: raw I_1 minus the
-# physics: nominal dark rate × counting time, about 97% of I_1 in the real file. The
-# physics: dark rate drifts between its calibration and each exposure, so a 0.1% drift
-# physics: moves I_signal by about 4%. The demo draws that drift, so the monitor scale
-# physics: it shows carries the error a real one would, rather than agreeing exactly.
-const APD_DARK_DRIFT = 0.001
+const I2_PER_VOLT  = 3.0e7 / 1.5
+const I2_DARK_RATE = 4.0e4
+# physics: a dark-corrected reading is the raw count minus the nominal dark rate ×
+# physics: counting time. The dark rate drifts between its calibration and each
+# physics: exposure. On the APD that is most of the reading, so a 0.1% drift moves
+# physics: I_signal by a few percent; on I_2 the dark is a small part and the same
+# physics: drift barely shows. The demo draws that drift on both. I_2's noise has its
+# physics: own stream per file, so every other output stays as it was.
+const DARK_DRIFT = 0.001
 const TRANSMISSION = Dict("buffer_blank" => 0.93, "vesicles_ULV" => 0.90)
 const AIR_TRANSMISSION = 1.0
 
@@ -325,13 +326,23 @@ write_tif(path, counts::Matrix{Int32}) = save(path, Gray.(reinterpret.(Q0f31, co
 # physics: frame's output stay as they were.
 electrometer_offset(stem) = -(0.07 + 0.05 * rand(Xoshiro(hash(stem))))
 
+counting_time(exposure_time) = exposure_time + 0.8
+
+function i2_reading(stem, i0, transmission; exposure_time = 15)
+    counting = counting_time(exposure_time)
+    i2_rng = Xoshiro(hash((stem, :i_2)))
+    transmitted = I2_PER_VOLT * I0_VOLTS * i0 * counting / 15.8 * transmission * (1 + 0.003 * randn(i2_rng))
+    round(transmitted + I2_DARK_RATE * DARK_DRIFT * randn(i2_rng) * counting; digits = 1)
+end
+
 function write_prp(path, ts; exposure_time = 15, horiz = 58.9, pipe_mm = PIPE_LENGTH_MM, i0 = 1.0, transmission = 0.86, rng = Xoshiro(0))
     stem = splitext(basename(path))[1]
-    counting = exposure_time + 0.8
-    transmitted = APD_PER_VOLT * I0_VOLTS * i0 * transmission * counting / 15.8 * (1 + 0.003 * randn(rng))
-    dark = APD_DARK_RATE * (1 + APD_DARK_DRIFT * randn(rng))
-    i_1 = round(transmitted + dark * counting; digits = 1)
+    counting = counting_time(exposure_time)
+    window = I0_VOLTS * i0 * counting / 15.8
+    incident = APD_PER_VOLT * window * (1 + 0.003 * randn(rng))
+    i_1 = round(incident + APD_DARK_RATE * (1 + DARK_DRIFT * randn(rng)) * counting; digits = 1)
     i_signal = round(i_1 - APD_DARK_RATE * counting; digits = 1)
+    i_2 = i2_reading(stem, i0, transmission; exposure_time)
     open(path, "w") do io
         println(io, "Image file name: $stem.tif")
         println(io, "Time this file was written: $ts")
@@ -339,10 +350,12 @@ function write_prp(path, ts; exposure_time = 15, horiz = 58.9, pipe_mm = PIPE_LE
         println(io, "I_signal=$i_signal (corrected for dark counts)")
         @printf(io, "I_0(daqIon3.0)=%.4f\n", i0 == 0 ? electrometer_offset(stem) : I0_VOLTS * i0)
         println(io, "I_1(daqCounter1.0)=$i_1")
+        println(io, "I_2(daqCounter1.1)=$i_2 (corrected for dark counts)")
         println(io, "I_apd(daqCounter1.0)=$i_1")
         println(io, "Exposure time=$exposure_time")
         println(io, "Counting time=$counting")
         println(io, "i1 dark counts=$APD_DARK_RATE per sec")
+        println(io, "i2 dark counts=$I2_DARK_RATE per sec")
         println(io, "Beam energy=$ENERGY_EV eV")
         println(io, "Pipe length=$pipe_mm mm")
         println(io, "Scan motor=motor\nScan range=delta mm")
@@ -351,6 +364,19 @@ function write_prp(path, ts; exposure_time = 15, horiz = 58.9, pipe_mm = PIPE_LE
         println(io, "Detector=Pilatus 1M")
         println(io, "Detector mode=Pilatus; 0 for normal and 1 for dezingered")
         println(io, "Phi position=157\nAttenuator=0 um Al")
+    end
+end
+
+# physics: SASTool's integ.mpp line `-i yes i2 <grand base>` divides every trace by
+# physics: its I_2 and multiplies by the grand base, a constant shared by the series.
+# physics: The base here is about the I_2 of a full beam, so traces keep their size.
+const GRAND_BASE = 2.5e7
+
+function write_integ_mpp(path; normalised::Bool)
+    open(path, "w") do io
+        println(io, "-o automatic_analysis")
+        normalised && println(io, "-i yes i2 $GRAND_BASE")
+        println(io, "-s 1")
     end
 end
 
@@ -451,19 +477,20 @@ rendered frame would show. RNG draws happen in a fixed order (measure, beam,
 exposure gap, slot jitter, monitors) that the default demo's output depends on.
 """
 function write_scan!(rng, rng_beam, dirs, base, label, kind, model, t, t0, slot, emit_tif;
-                     pipe_mm = PIPE_LENGTH_MM)
+                     pipe_mm = PIPE_LENGTH_MM, normalised::Bool = true)
     I, sig = measure(rng, kind === nothing ? model : bad_trace(kind, model))
     b = beam(rng_beam, label, kind, Dates.value(t - t0) / 60_000)
     flux = kind === :beam_off ? 1.0 : b.i0 * b.t / 0.86
     ring = kind === :flare ? FLARE_SAMPLE_FRACTION .* model : I
-    I = I .* flux; sig = sig .* flux
+    stem = base * "_0_001"
+    divide = normalised && kind !== :beam_off ? GRAND_BASE / i2_reading(stem, b.i0, b.t) : 1.0
+    I = I .* (flux * divide); sig = sig .* (sqrt(flux) * divide)
     open(joinpath(dirs.tot, "$(base)_tot.dat"), "w") do io
         for j in eachindex(Q)
             Q[j] <= get(Q_MAX, label, Inf) || continue
             @printf(io, "%.6e %.6e %.6e\n", Q[j], I[j], sig[j])
         end
     end
-    stem = base * "_0_001"
     t += Second(rand(rng, 100:160))
     # Each sample sits in its own capillary slot: HimalayaUI groups exposures
     # into samples by horizontal-position jumps (grouping.jl _cluster_slots).
@@ -491,6 +518,7 @@ function main_curated(o)
     data, analysis, tot = prepare_tree(out)
     dirs = (data = data, tot = tot)
     write_setup_info(joinpath(analysis, "setup_info_20260301_120000.txt"))
+    write_integ_mpp(joinpath(analysis, "integ.mpp"); normalised = true)
 
     qm, dx, dy = images ? q_map() : (nothing, nothing, nothing)
     gaps = gap_mask()
@@ -666,6 +694,8 @@ function write_large_experiment(out, e, nsamples, seed, images)
     data, analysis, tot = prepare_tree(out)
     dirs = (data = data, tot = tot)
     write_setup_info(joinpath(analysis, "setup_info_$(Dates.format(t0, "yyyymmdd"))_090000.txt"); distance_mm)
+    normalised = isodd(e)
+    write_integ_mpp(joinpath(analysis, "integ.mpp"); normalised)
 
     pooldir = joinpath(out, ".pool")
     pool = nothing
@@ -695,7 +725,7 @@ function write_large_experiment(out, e, nsamples, seed, images)
             kind === nothing || push!(drops, base)
             kind === :flare && push!(flares, base)
             pk = () -> pool_frame(rng_pick, pool, kind, comps)
-            t = write_scan!(rng, rng_beam, dirs, base, label, kind, model, t, t0, slot, emit_tif(pk); pipe_mm)
+            t = write_scan!(rng, rng_beam, dirs, base, label, kind, model, t, t0, slot, emit_tif(pk); pipe_mm, normalised)
         end
         note = isempty(comps) ? "no Bragg peaks" : "generated phases"
         push!(truth, truth_row(label, bases, comps, peaks, "", images, drops, flares, note))

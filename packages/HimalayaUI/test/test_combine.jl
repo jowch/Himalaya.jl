@@ -1,4 +1,4 @@
-using Test, HTTP, JSON3, SQLite, DBInterface
+using Test, HTTP, JSON3, SQLite, DBInterface, Tables
 
 @testset "combine_traces" begin
     q = [0.01, 0.02, 0.03]
@@ -134,6 +134,13 @@ end
         tr = JSON3.read(String(call("GET", "/api/exposures/$cid/trace").body))
         @test sort(collect(tr.sources)) == fx.ids
         @test tr.monitors.transmitted_counts ≈ 1000.0
+        @test tr.monitors.i2_collapsed == false
+        @test haskey(tr.monitors, :mode)
+        DBInterface.execute(db, "UPDATE exposures SET incident_monitor = 1.5 WHERE kind = 'file'")
+        original = only(Tables.rowtable(DBInterface.execute(db, "SELECT transmitted_counts FROM exposures WHERE id = ?", [fx.ids[2]]))).transmitted_counts
+        DBInterface.execute(db, "UPDATE exposures SET transmitted_counts = 1.0 WHERE id = ?", [fx.ids[2]])
+        @test JSON3.read(String(call("GET", "/api/exposures/$cid/trace").body)).monitors.i2_collapsed == true
+        DBInterface.execute(db, "UPDATE exposures SET transmitted_counts = ? WHERE id = ?", [original, fx.ids[2]])
 
         r = put([fx.ids[3], fx.ids[1]])(call)
         @test r.status == 200

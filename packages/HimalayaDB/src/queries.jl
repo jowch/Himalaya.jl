@@ -9,16 +9,17 @@ experiments(db::SQLite.DB) = Tables.rowtable(DBInterface.execute(db,
 
 const _SETUP_COLS = """id, experiment_id, folder, display_name, position, included, mode, mode_source,
     root_dir, data_dir, analysis_dir, image_pattern, metadata_pattern, integration_pattern,
-    energy_kev, flight_path_m, beam_center_x, beam_center_y, pixel_size_um, q_units"""
+    energy_kev, flight_path_m, beam_center_x, beam_center_y, pixel_size_um, q_units,
+    trace_normalisation, normalisation_base"""
 
 """
     setups(db; experiment=nothing) -> Vector{<:NamedTuple}
 
-Setups (one per subfolder of a beamtime), optionally filtered to one experiment
-id, in the order HimalayaUI shows them. Each row carries the setup's
-directories, file patterns and geometry (`energy_kev`, `flight_path_m`, beam
-centre, `pixel_size_um`, `q_units`). Join an exposure or sample to its setup by
-`setup_id`: setups of one beamtime can differ in flight path and energy.
+Setups (one per beamtime subfolder), optionally for one experiment id, in UI order.
+Rows carry directories, file patterns, geometry (`energy_kev`, `flight_path_m`, beam
+centre, `pixel_size_um`, `q_units`) and `trace_normalisation` (`"i2"`: traces divided
+by I_2, `"none"`: raw counts) with `normalisation_base`. Join by `setup_id`:
+setups of one beamtime can differ in flight path and energy.
 """
 function setups(db::SQLite.DB; experiment::Union{Integer,Nothing}=nothing)
     if experiment === nothing
@@ -57,8 +58,8 @@ const _EXPOSURE_COLS = """id, experiment_id, setup_id, sample_id, filename, kind
     exposures(db; sample=nothing) -> Vector{<:NamedTuple}
 
 Exposures (HimalayaUI calls them frames), optionally filtered to one sample id.
-`transmitted_counts` and `incident_monitor` are the beam monitors read from the
-exposure's `.prp` file (`missing` when none was read).
+`transmitted_counts` (beamstop `I_2`) and `incident_monitor` (`I_0`) are the beam
+monitors read from the exposure's `.prp` file (`missing` when none was read).
 """
 function exposures(db::SQLite.DB; sample::Union{Integer,Nothing}=nothing)
     if sample === nothing

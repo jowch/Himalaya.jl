@@ -412,12 +412,25 @@ runs once per included setup (`_scan_setup!`), reading `data_dir`,
    at least one new exposure, so no pass leaves an empty sample behind. Existing samples and exposures are never
    rewritten, so renames, rejections, peak curation and phase calls survive.
    The one exception is the beam monitors (`transmitted_counts` from
-   `I_signal`, `incident_monitor` from `I_0`, `counting_time`).
+   `I_2`, the beamstop photodiode, `incident_monitor` from `I_0`, `counting_time`).
+   `I_signal` is not read: it copies whichever counter the `.prp` names, usually
+   the APD, which reads close to the incident beam. Each setup's trace
+   normalisation comes from the nearest `integ.mpp` at or above its analysis folder,
+   searching no higher than the experiment's own folder
+   (`setups.trace_normalisation`: `i2`, `i1`, `none` or `unknown`). It is re-read with the
+   monitors on every scan and after new setups are added, and a changed `integ.mpp`
+   updates the stored value. An unreachable analysis folder keeps the stored value.
+   SSRL writes it at `<setup>/analysis/integ.mpp`, two levels above `tot_files`, and
+   lines starting with `#` are skipped. Only autosampler setups use it for the buffer
+   scale (scale 1 on `i2`, the `I_2` flux ratio on `none`); capillary setups match at high q.
    `backfill_monitors!` reads them from the stored `prp_path` of every exposure
    still marked `monitors_read = 0`, on every scan request and at the start of
    every pass, so a finished beamtime ingested before the monitors
    were parsed picks them up with no new files. Each file is read once, and a
-   stored value is never overwritten.
+   stored value is never overwritten, with one exception: the
+   `exposures_transmitted_from_i2_v1` migration clears every stored
+   `transmitted_counts` once, because it held `I_signal`, so the backfill reads
+   `I_2` in its place.
 5. **Analyzes** (capillary setups only), outside the write transaction, every exposure that is new,
    never analyzed, whose integration file has appeared since it was last
    tried, or whose stored `analysis_version` differs from `ANALYSIS_VERSION`

@@ -170,6 +170,7 @@ function run_ingest!(db::SQLite.DB, experiment_id::Int; phase::Union{String,Noth
             try
                 try_backfill_monitors!(db, experiment_id)
                 add_new_setups!(db, experiment_id)
+                read_trace_normalisations!(db; experiment_id)
                 scan_and_group!(db, experiment_id; retry_failed = force,
                     on_progress = (p, t, stage) -> broadcast_progress!(experiment_id;
                         kind = "ingest_progress", processed = p, total = t, stage = stage, extra...))
@@ -252,6 +253,11 @@ function try_backfill_monitors!(db::SQLite.DB, experiment_id::Int)
 end
 
 function backfill_all_monitors!(db::SQLite.DB)
+    try
+        read_trace_normalisations!(db)
+    catch err
+        @warn "trace normalisation read failed" exception = err
+    end
     ids = sqlrows(DBInterface.execute(db,
         "SELECT DISTINCT experiment_id FROM exposures
           WHERE prp_path IS NOT NULL AND monitors_read = 0 AND experiment_id IS NOT NULL"))

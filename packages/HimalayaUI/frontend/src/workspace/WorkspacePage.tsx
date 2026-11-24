@@ -176,7 +176,7 @@ const HELP = helpSections(MOD_KEY);
 
 const RECENT_LABELS = "label";
 
-const EXPOSURE_LABELS = ["Sample", "File", "Kind", "Acquired", "Exposure", "Flight tube", "Energy", "Detector", "I₀", "I signal"];
+const EXPOSURE_LABELS = ["Sample", "File", "Kind", "Acquired", "Exposure", "Flight tube", "Energy", "Detector", "I₀", "I₂"];
 
 function exposureRows(e: Exposure | undefined, owner: string | undefined): [string, string][] {
   if (!e) return EXPOSURE_LABELS.map((label) => [label, "—"]);
@@ -190,7 +190,7 @@ function exposureRows(e: Exposure | undefined, owner: string | undefined): [stri
   rows.push(["Energy", e.beam_energy_ev != null ? `${(e.beam_energy_ev / 1000).toFixed(3)} keV` : "—"]);
   rows.push(["Detector", e.detector || "—"]);
   rows.push(["I₀", i0 != null ? i0.toLocaleString("en-US", { maximumSignificantDigits: 4 }) : "—"]);
-  rows.push(["I signal", i2 != null ? Math.round(i2).toLocaleString("en-US") : "—"]);
+  rows.push(["I₂", i2 != null ? Math.round(i2).toLocaleString("en-US") : "—"]);
   return rows;
 }
 
@@ -735,9 +735,12 @@ export function WorkspacePage(): JSX.Element {
   const scales = useMemo(() => {
     const out = new Map<number, CompareScale>();
     if (!mainTrace) return out;
-    compareTraces.forEach((t, rid) => out.set(rid, compareScale(mainTrace, t, peakQs)));
+    const setupOf = (sid: number | undefined) => inExperiment.find((s) => s.id === sid)?.setup_id ?? null;
+    const own = setupOf(sampleId);
+    const sameKnownSetup = (rid: number) => own !== null && setupOf(rid) === own;
+    compareTraces.forEach((t, rid) => out.set(rid, compareScale(mainTrace, t, peakQs, sameKnownSetup(rid))));
     return out;
-  }, [mainTrace, compareTraces, peakQs]);
+  }, [mainTrace, compareTraces, peakQs, inExperiment, sampleId]);
   const compares: CompareLine[] = useMemo(() => {
     if (!mainTrace || !refsOn) return [];
     return activeRefs.flatMap((rid, i) => {
