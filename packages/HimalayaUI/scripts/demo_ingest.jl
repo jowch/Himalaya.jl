@@ -40,18 +40,18 @@ function ingest_root(root, port, name)
     base = "http://127.0.0.1:$port/api"
     getj(path, q) = JSON3.read(HTTP.get(base * path; query = q).body)
 
-    setups = getj("/fs/preview", ["path" => root]).setups
-    length(setups) == 1 || error("$root holds $(length(setups)) setups; expected one demo setup folder.")
-    rs = only(setups)
-    if !rs.layout_detected
+    setups = sort(collect(getj("/fs/preview", ["path" => root]).setups); by = rs -> rs.mode == "autosampler")
+    isempty(setups) && error("$root holds no setup folder. Regenerate it with `make demo-clean demo-data`.")
+    if !all(rs -> rs.layout_detected, setups)
         error("$root doesn't look like an SSRL-style demo tree (no analysis/.../tot_files " *
               "*_tot.dat found). Regenerate it with `make demo-clean demo-data`.")
     end
+    data_dirs = Set(rs.data_dir for rs in setups)
 
     # Already there? Done if its scan finished; otherwise (a previous run was
     # interrupted mid-scan, or the scan failed) force a rescan and wait for it.
     for e in JSON3.read(HTTP.get("$base/experiments").body)
-        any(st -> get(st, :data_dir, nothing) == rs.data_dir, get(e, :setups, [])) || continue
+        any(st -> get(st, :data_dir, nothing) in data_dirs, get(e, :setups, [])) || continue
         if get(e, :ingest_status, "") == "complete"
             println("$name already ingested (id $(e.id)); nothing to do.")
             return
@@ -62,12 +62,14 @@ function ingest_root(root, port, name)
         return wait_for_scan(base, e.id)
     end
 
-    println("Found $(rs.exposures) exposures, $(rs.without_trace) without a trace.")
+    println("Found $(length(setups)) setups, $(sum(rs -> rs.exposures, setups)) exposures, ",
+            "$(sum(rs -> rs.without_trace, setups)) without a trace.")
 
     body = Dict(
         :name => name, :path => root,
         :setups => [Dict(:root => rs.root, :data_dir => rs.data_dir, :analysis_dir => rs.analysis_dir,
-                         :included => true, :patterns => rs.patterns, :geometry => rs.geometry)],
+                         :included => true, :patterns => rs.patterns, :geometry => rs.geometry)
+                    for rs in setups],
     )
     created = JSON3.read(HTTP.post("$base/experiments", ["Content-Type" => "application/json"],
                                    JSON3.write(body)).body)

@@ -43,7 +43,7 @@ for _ in $(seq 1 300); do
   kill -0 "$base_pid" 2>/dev/null || { echo "the base backend exited; see $OUT/base-backend.log"; exit 1; }
   sleep 1
 done
-(cd "$WT" && $JL --project=packages/HimalayaUI packages/HimalayaUI/scripts/demo_ingest.jl "$DEMO" --port "$PORT") > "$OUT/base-ingest.log" 2>&1
+$JL --project=packages/HimalayaUI packages/HimalayaUI/scripts/demo_ingest.jl "$DEMO" --port "$PORT" > "$OUT/base-ingest.log" 2>&1
 review="$WT/$HISTORY"
 [[ -f $review ]] || review="$HISTORY"
 echo "review script: ${review#$REPO/}"

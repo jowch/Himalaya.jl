@@ -34,10 +34,11 @@ function prepare(root, db_path)
     db = H.open_db(db_path)
     H.boot!(db)
     call("POST", "/api/users", Dict(:username => "precompile"))
-    rs = only(call("GET", "/api/fs/preview?path=" * HTTP.escapeuri(root)).setups)
+    previews = sort(collect(call("GET", "/api/fs/preview?path=" * HTTP.escapeuri(root)).setups); by = rs -> rs.mode == "autosampler")
     call("POST", "/api/experiments", Dict(:name => "Demo (synthetic)", :path => root,
         :setups => [Dict(:root => rs.root, :data_dir => rs.data_dir, :analysis_dir => rs.analysis_dir,
-                         :included => true, :patterns => rs.patterns, :geometry => rs.geometry)]))
+                         :included => true, :patterns => rs.patterns, :geometry => rs.geometry)
+                    for rs in previews]))
     deadline = time() + 600
     while time() < deadline
         e = only(call("GET", "/api/experiments"))
@@ -113,8 +114,9 @@ function measure(db_path)
         call("GET", "/api/samples?experiment_id=$e")
         e
     end
+    capillary_setups = Set(st.id for st in call("GET", "/api/experiments/$experiment").setups if st.mode == "capillary")
     samples = [s for s in call("GET", "/api/samples?experiment_id=$experiment")
-               if s.analyzed_exposure_id !== nothing]
+               if s.analyzed_exposure_id !== nothing && get(s, :setup_id, nothing) in capillary_setups]
     length(samples) >= 3 || error("the demo needs at least 3 samples with a kept image")
     step(() -> sample_open(samples[1]), "first sample")
     step(() -> sample_open(samples[2]), "second sample")
