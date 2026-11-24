@@ -17,7 +17,7 @@ using Test, HTTP, JSON3, DBInterface
     sib_id = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="cubic_tot",
         transmitted_counts=1.0, exposure_time=5.0, counting_time=5.4)
     e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot",
-        transmitted_counts=7365.0, exposure_time=15.0, counting_time=15.8)
+        transmitted_counts=7000.0, exposure_time=15.0, counting_time=15.8)
     bare_id = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="form-factor_tot")
 
     with_inproc_routes(db) do call
@@ -25,7 +25,7 @@ using Test, HTTP, JSON3, DBInterface
         @test r.status == 200
         body = JSON3.read(String(r.body))
         @test haskey(body, :q) && haskey(body, :I) && haskey(body, :sigma)
-        @test body.monitors.transmitted_counts ≈ 7365.0
+        @test body.monitors.transmitted_counts ≈ 7000.0
         @test body.monitors.exposure_time ≈ 15.0
         @test body.monitors.counting_time ≈ 15.8
         @test !haskey(body, :frames)
@@ -67,7 +67,7 @@ end
     analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
     mkpath(analysis_dir)
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
-       joinpath(analysis_dir, "JC_D01_1_S2449_tot.dat"))
+       joinpath(analysis_dir, "SY_D07_2_S0731_tot.dat"))
 
 
     db     = open_prepared_clone(tmp)
@@ -75,7 +75,7 @@ end
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir,
         integration_pattern="{name}_tot.dat")
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
-    e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="JC_D01_1_S2449")
+    e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="SY_D07_2_S0731")
 
     with_inproc_routes(db) do call
         r = call("GET", "/api/exposures/$e_id/trace")
@@ -90,18 +90,18 @@ end
     analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
     mkpath(analysis_dir)
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
-       joinpath(analysis_dir, "JC_D01_1_S2449_tot.dat"))
+       joinpath(analysis_dir, "SY_D07_2_S0731_tot.dat"))
     cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "cubic_tot.dat"),
-       joinpath(analysis_dir, "JC_D01_1_S2448_tot.dat"))
+       joinpath(analysis_dir, "SY_D07_2_S0730_tot.dat"))
 
     db     = open_prepared_clone(tmp)
     exp_id = HimalayaUI.init_experiment!(db; path=tmp,
         data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir, integration_pattern="{name}_tot.dat")
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
     sib_id = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id,
-        filename="JC_D01_1_S2448_0_001", transmitted_counts=6000.0, exposure_time=15.0, counting_time=15.8)
+        filename="SY_D07_2_S0730_0_001", transmitted_counts=6000.0, exposure_time=15.0, counting_time=15.8)
     e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id,
-        filename="JC_D01_1_S2449_0_001", transmitted_counts=7000.0, exposure_time=15.0, counting_time=15.8)
+        filename="SY_D07_2_S0731_0_001", transmitted_counts=7000.0, exposure_time=15.0, counting_time=15.8)
 
     with_inproc_routes(db) do call
         r = call("GET", "/api/exposures/$e_id/trace")

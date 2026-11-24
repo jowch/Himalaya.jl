@@ -35,11 +35,11 @@ using ImageCore.FixedPointNumbers: Q0f31
 using Dates, Printf, Random
 
 # ---- instrument (matches the SSRL 2026-04 defaults used in the test fixtures) ----
-const ENERGY_EV        = 9000.027604502573
+const ENERGY_EV        = 9000.0
 const WAVELENGTH_A     = 12398.42 / ENERGY_EV   # ~1.3776 Å
 const PIPE_LENGTH_MM   = 1700
-const MEAN_DISTANCE_MM = 1809.5                 # AgBe-calibrated sample-detector distance
-const BEAM_X, BEAM_Y   = 421.409, 836.946       # detector px, origin bottom-left, y-up
+const MEAN_DISTANCE_MM = 1810.0                 # AgBe-calibrated sample-detector distance
+const BEAM_X, BEAM_Y   = 420.5, 835.5       # detector px, origin bottom-left, y-up
 const PIXEL_UM         = 172.0
 const DET_W, DET_H     = 981, 1043              # Pilatus 1M: 2 x 5 modules of 487 x 195
 const PILATUS_MAX_COUNTS = 1_000_000
@@ -188,10 +188,10 @@ end
 # physics: `-i yes i2`), which puts every exposure on one scale; the demo does the
 # physics: same, and large mode leaves every other experiment raw. The APD that
 # physics: I_signal copies reads close to the incident beam and is mostly dark counts.
-const I0_VOLTS     = 1.5007
-const APD_PER_VOLT = 7365.0 / 1.5007
-const APD_DARK_RATE = 18320.0
-const I2_PER_VOLT  = 3.0e7 / 1.5007
+const I0_VOLTS     = 1.5
+const APD_PER_VOLT = 7000.0 / 1.5
+const APD_DARK_RATE = 18000.0
+const I2_PER_VOLT  = 3.0e7 / 1.5
 const I2_DARK_RATE = 4.0e4
 # physics: a dark-corrected reading is the raw count minus the nominal dark rate ×
 # physics: counting time. The dark rate drifts between its calibration and each
@@ -382,10 +382,10 @@ end
 
 function write_setup_info(path; distance_mm = MEAN_DISTANCE_MM)
     open(path, "w") do io
-        print(io, "File used for calibration:\n../data/agbe_1p7m_S1958_0_001.tif\n\n")
+        print(io, "File used for calibration:\n../data/agbe_1p7m_S1000_0_001.tif\n\n")
         print(io, "Beam center is at ($BEAM_X, $BEAM_Y)\n\n")
         println(io, "Calculated detector distances are:")
-        for (i, d) in enumerate([1806.0, 1811.1, 1811.5])
+        for (i, d) in enumerate([1807.0, 1810.5, 1812.5])
             @printf(io, "Ring %d:\t pixel %.2f:\t %s mm\n", i, 247.82 * i, d)
         end
         println(io, "-"^58)
@@ -517,7 +517,7 @@ function main_curated(o)
     rng_beam = Xoshiro(seed + 2)
     data, analysis, tot = prepare_tree(out)
     dirs = (data = data, tot = tot)
-    write_setup_info(joinpath(analysis, "setup_info_20260425_181705.txt"))
+    write_setup_info(joinpath(analysis, "setup_info_20260301_120000.txt"))
     write_integ_mpp(joinpath(analysis, "integ.mpp"); normalised = true)
 
     qm, dx, dy = images ? q_map() : (nothing, nothing, nothing)

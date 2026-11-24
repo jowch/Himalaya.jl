@@ -10,16 +10,16 @@ using HimalayaUI
 
 """
 Write a synthetic PRP file to `path` with the given field overrides.
-Defaults match the real HA_85_422_S2404_0_001.prp from the SSRL 2026-04 run.
+Defaults are invented values of the size an SSRL .prp holds.
 
 Note: scan id and frame number are NOT PRP fields — they live in the *filename
 stem* (`_S<digits>_…_<frame>`) and are recovered by `_parse_scan_frame` (Task 7),
 so `write_prp` takes no `scan_id`/`frame_no` kwargs. Tests exercise scan/frame
-parsing by naming the fixture file accordingly (e.g. `HA_85_422_S2404_0_001.prp`).
+parsing by naming the fixture file accordingly (e.g. `SY_12_034_S0567_0_001.prp`).
 """
 function write_prp(path::AbstractString;
-        timestamp = "26 Apr 2026 18:20:27",
-        beam_energy_ev = 9000.027604502573,
+        timestamp = "14 Mar 2026 14:05:11",
+        beam_energy_ev = 9000.0,
         pipe_length_mm = 1700,
         detector = "Pilatus 1M",
         exposure_time = 15,
@@ -54,16 +54,16 @@ end
 
 """
 Write a synthetic setup_info file to `path`.
-Defaults match the real setup_info_20260425_181705.txt from SSRL 2026-04.
+Defaults are invented values of the size an SSRL setup_info file holds.
 """
 function write_setup_info(path::AbstractString;
-        beam_center_x = 421.409,
-        beam_center_y = 836.946,
-        mean_distance_mm = 1809.5,
-        ring_distances = [1806.0, 1811.1, 1811.5])
+        beam_center_x = 420.5,
+        beam_center_y = 835.5,
+        mean_distance_mm = 1810.0,
+        ring_distances = [1807.0, 1810.5, 1812.5])
     open(path, "w") do io
         println(io, "File used for calibration:")
-        println(io, "../data/agbe_1p7m_S1958_0_001.tif")
+        println(io, "../data/agbe_1p7m_S1000_0_001.tif")
         println(io, "")
         println(io, "Beam center is at ($beam_center_x, $beam_center_y)")
         println(io, "")
@@ -96,15 +96,15 @@ end
 
     @testset "parse_setup_info" begin
         dir = mktempdir()
-        setup_path = joinpath(dir, "setup_info_20260425_181705.txt")
+        setup_path = joinpath(dir, "setup_info_20260301_120000.txt")
         write_setup_info(setup_path;
-            beam_center_x = 421.409,
-            beam_center_y = 836.946,
-            mean_distance_mm = 1809.5)
+            beam_center_x = 420.5,
+            beam_center_y = 835.5,
+            mean_distance_mm = 1810.0)
         info = HimalayaUI.parse_setup_info(setup_path)
-        @test info.beam_center_x ≈ 421.409
-        @test info.beam_center_y ≈ 836.946
-        @test info.mean_distance_m ≈ 1.8095
+        @test info.beam_center_x ≈ 420.5
+        @test info.beam_center_y ≈ 835.5
+        @test info.mean_distance_m ≈ 1.81
 
         # Missing Mean distance line → missing
         bad_path = joinpath(dir, "setup_bad.txt")
@@ -128,9 +128,9 @@ end
         analysis = joinpath(root, "analysis")
         tot_files = joinpath(analysis, "automatic_analysis", "tot_files")
         mkpath(tot_files)
-        setup = joinpath(analysis, "setup_info_20260425_181705.txt")
-        write_setup_info(setup; beam_center_x = 421.409, beam_center_y = 836.946,
-                         mean_distance_mm = 1809.5)
+        setup = joinpath(analysis, "setup_info_20260301_120000.txt")
+        write_setup_info(setup; beam_center_x = 420.5, beam_center_y = 835.5,
+                         mean_distance_mm = 1810.0)
 
         # From the leaf, it must ascend to the analysis root and find the file.
         found = HimalayaUI._find_setup_files(tot_files)
@@ -151,11 +151,11 @@ end
         mkpath(analysis_dir)
 
         # Two PRP files with consistent geometry. The nominal pipe length (1700 mm)
-        # differs from the setup calibrated distance (1809.5 mm) by ~6.4%, but that
+        # differs from the setup calibrated distance (1810.0 mm) by ~6.4%, but that
         # expected calibration gap is NOT flagged as a discrepancy (option A).
-        for (name, hpos) in [("HA_001", 58.9), ("HA_002", 63.1)]
+        for (name, hpos) in [("SY_001", 58.9), ("SY_002", 63.1)]
             write_prp(joinpath(data_dir, "$name.prp");
-                beam_energy_ev = 9000.027604502573,
+                beam_energy_ev = 9000.0,
                 pipe_length_mm = 1700,
                 detector = "Pilatus 1M",
                 exposure_time = 15.0,
@@ -163,25 +163,25 @@ end
         end
 
         # One setup file with calibrated distance
-        write_setup_info(joinpath(analysis_dir, "setup_info_20260425_181705.txt");
-            beam_center_x = 421.409, beam_center_y = 836.946, mean_distance_mm = 1809.5)
+        write_setup_info(joinpath(analysis_dir, "setup_info_20260301_120000.txt");
+            beam_center_x = 420.5, beam_center_y = 835.5, mean_distance_mm = 1810.0)
 
-        prp_paths   = [joinpath(data_dir, "HA_001.prp"), joinpath(data_dir, "HA_002.prp")]
-        setup_files = [joinpath(analysis_dir, "setup_info_20260425_181705.txt")]
+        prp_paths   = [joinpath(data_dir, "SY_001.prp"), joinpath(data_dir, "SY_002.prp")]
+        setup_files = [joinpath(analysis_dir, "setup_info_20260301_120000.txt")]
 
         geo, discrepancies = HimalayaUI.derive_geometry(prp_paths, setup_files)
 
         # Energy from PRP
-        @test geo.energy_kev ≈ 9.000027604502573
+        @test geo.energy_kev ≈ 9.0
         @test geo.energy_kev_source == "prp"
 
         # flight_path_m from calibrated setup file (authority per spec §6)
-        @test geo.flight_path_m ≈ 1.8095
+        @test geo.flight_path_m ≈ 1.81
         @test geo.flight_path_m_source == "setup"
 
         # Beam center from setup file
-        @test geo.beam_center_x ≈ 421.409
-        @test geo.beam_center_y ≈ 836.946
+        @test geo.beam_center_x ≈ 420.5
+        @test geo.beam_center_y ≈ 835.5
         @test geo.beam_center_x_source == "setup"
 
         # Pixel size from detector→pitch lookup
@@ -192,15 +192,15 @@ end
         @test isempty(discrepancies)
 
         # Discrepancy when PRP beam energies disagree
-        write_prp(joinpath(data_dir, "HA_003.prp");
+        write_prp(joinpath(data_dir, "SY_003.prp");
             beam_energy_ev = 8900.0,    # different!
             pipe_length_mm = 1700, detector = "Pilatus 1M",
             horizontal_position_mm = 68.0)
         geo2, disc2 = HimalayaUI.derive_geometry(
-            vcat(prp_paths, [joinpath(data_dir, "HA_003.prp")]), setup_files)
+            vcat(prp_paths, [joinpath(data_dir, "SY_003.prp")]), setup_files)
         @test any(d -> d.field == "beam_energy_ev", disc2)
 
-        # No setup file → fall back to PRP pipe length (HA_001/HA_002 have pipe_length=1700mm)
+        # No setup file → fall back to PRP pipe length (SY_001/SY_002 have pipe_length=1700mm)
         geo3, _ = HimalayaUI.derive_geometry(prp_paths, String[])
         @test geo3.flight_path_m ≈ 1.700
         @test geo3.flight_path_m_source == "prp"
@@ -223,11 +223,11 @@ end
         @test geo_empty2.energy_kev_source == "default"
 
         # Unknown detector → pixel_size_um missing, discrepancy flagged
-        write_prp(joinpath(data_dir, "HA_004.prp");
+        write_prp(joinpath(data_dir, "SY_004.prp");
             beam_energy_ev = 9000.0, pipe_length_mm = 1700,
             detector = "SuperDetector X",
             horizontal_position_mm = 72.0)
-        geo4, disc4 = HimalayaUI.derive_geometry([joinpath(data_dir, "HA_004.prp")], String[])
+        geo4, disc4 = HimalayaUI.derive_geometry([joinpath(data_dir, "SY_004.prp")], String[])
         @test geo4.pixel_size_um === missing
         @test any(d -> d.field == "pixel_size_um", disc4)
     end
@@ -239,9 +239,9 @@ end
         mkpath(data_dir); mkpath(analysis_dir)
 
         # Write 6 PRP files with 3 distinct horizontal positions (2 frames per slot)
-        stems = ["HA_01_S001_0_001", "HA_01_S002_0_001",   # slot 1 (H ≈ 58.9)
-                 "HA_02_S003_0_001", "HA_02_S004_0_001",   # slot 2 (H ≈ 63.1)
-                 "HA_03_S005_0_001", "HA_03_S006_0_001"]   # slot 3 (H ≈ 67.3)
+        stems = ["SY_01_S001_0_001", "SY_01_S002_0_001",   # slot 1 (H ≈ 58.9)
+                 "SY_02_S003_0_001", "SY_02_S004_0_001",   # slot 2 (H ≈ 63.1)
+                 "SY_03_S005_0_001", "SY_03_S006_0_001"]   # slot 3 (H ≈ 67.3)
         h_positions = [58.9, 58.91, 63.1, 63.09, 67.3, 67.31]
         for (stem, hpos) in zip(stems, h_positions)
             write_prp(joinpath(data_dir, "$stem.prp");
@@ -251,7 +251,7 @@ end
         end
 
         # Write one setup_info file
-        write_setup_info(joinpath(analysis_dir, "setup_info_20260425_181705.txt"))
+        write_setup_info(joinpath(analysis_dir, "setup_info_20260301_120000.txt"))
 
         metas = HimalayaUI.scan_directory(data_dir, analysis_dir)
 
@@ -266,10 +266,10 @@ end
         # Stems returned sorted
         @test [m.stem for m in metas] == sort([m.stem for m in metas])
         # A missing PRP (has tif but no prp) → prp is missing
-        write(joinpath(data_dir, "HA_04_S007_0_001.tif"), "fake tif")
+        write(joinpath(data_dir, "SY_04_S007_0_001.tif"), "fake tif")
         metas2 = HimalayaUI.scan_directory(data_dir, analysis_dir)
         @test length(metas2) == 7
-        tif_only = first(filter(m -> m.stem == "HA_04_S007_0_001", metas2))
+        tif_only = first(filter(m -> m.stem == "SY_04_S007_0_001", metas2))
         @test tif_only.prp_path === nothing
     end
 
@@ -281,7 +281,7 @@ end
         t0 = DateTime(2026, 4, 26, 23, 14, 8)
         offsets = [0, 19, 38, 57, 2635, 2654, 2673, 2692]  # seconds
         metas = [HimalayaUI.ExposureMeta(
-            "HA_$(lpad(i,2,'0'))_S$(lpad(i,4,'0'))_0_001",
+            "SY_$(lpad(i,2,'0'))_S$(lpad(i,4,'0'))_0_001",
             nothing, nothing, nothing,
             (timestamp = t0 + Second(s), horizontal_position_mm = 58.9 + Float64(i)*4.0,
              beam_energy_ev = 9000.0, energy_kev = 9.0, pipe_length_m = 1.7,
@@ -293,12 +293,12 @@ end
         @test length(loads) == 2
         @test length(loads[1]) == 4
         @test length(loads[2]) == 4
-        @test loads[1][1].stem == "HA_01_S0001_0_001"
-        @test loads[2][1].stem == "HA_05_S0005_0_001"
+        @test loads[1][1].stem == "SY_01_S0001_0_001"
+        @test loads[2][1].stem == "SY_05_S0005_0_001"
 
         # Unimodal fallback: all gaps equal → one load, returned with flag
         uniform_metas = [HimalayaUI.ExposureMeta(
-            "HA_$(lpad(i,2,'0'))_S$(lpad(i,4,'0'))_0_001",
+            "SY_$(lpad(i,2,'0'))_S$(lpad(i,4,'0'))_0_001",
             nothing, nothing, nothing,
             (timestamp = t0 + Second(i * 20), horizontal_position_mm = 58.9 + Float64(i)*4.0,
              beam_energy_ev = 9000.0, energy_kev = 9.0, pipe_length_m = 1.7,
@@ -317,10 +317,10 @@ end
 
     @testset "parse_prp" begin
         dir = mktempdir()
-        prp_path = joinpath(dir, "HA_85_422_S2404_0_001.prp")
+        prp_path = joinpath(dir, "SY_12_034_S0567_0_001.prp")
         write_prp(prp_path;
-            timestamp = "26 Apr 2026 18:20:27",
-            beam_energy_ev = 9000.027604502573,
+            timestamp = "14 Mar 2026 14:05:11",
+            beam_energy_ev = 9000.0,
             pipe_length_mm = 1700,
             detector = "Pilatus 1M",
             exposure_time = 15.0,
@@ -328,8 +328,8 @@ end
         prp = HimalayaUI.parse_prp(prp_path)
 
         # Energy: strip "eV", convert to keV
-        @test prp.beam_energy_ev ≈ 9000.027604502573
-        @test prp.energy_kev ≈ 9.000027604502573
+        @test prp.beam_energy_ev ≈ 9000.0
+        @test prp.energy_kev ≈ 9.0
 
         # Pipe length: strip "mm", store as metres
         @test prp.pipe_length_m ≈ 1.700
@@ -346,7 +346,7 @@ end
         # Timestamp parses to a DateTime
         @test prp.timestamp isa DateTime
         @test year(prp.timestamp) == 2026
-        @test month(prp.timestamp) == 4
+        @test month(prp.timestamp) == 3
 
         # Graceful missing: a truncated PRP returns missing for absent fields
         trunc_path = joinpath(dir, "trunc.prp")
@@ -368,9 +368,9 @@ end
             I_Signal (i.e. I1 in header file) is from: i_apd
             I_signal=4100.0 (corrected for dark counts)
             I_0(daqIon3.0)=1.2345
-            I_1(daqCounter1.0)=210000.0
+            I_1(daqCounter1.0)=209300.0
             I_2(daqCounter1.1)=31000000.5 (corrected for dark counts)
-            I_apd(daqCounter1.0)=210000.0
+            I_apd(daqCounter1.0)=209300.0
             Exposure time=10
             Counting time=10.8
             i1 dark counts=19000.0 per sec
@@ -394,7 +394,7 @@ end
 
     @testset "slot clustering" begin
         # Simulate one load: 3 slots × 4 frames each, H positions stepped ~4 mm apart,
-        # within-burst jitter ≈ 0.3 mm. Mirrors the real HA data pattern from spec §5.
+        # within-burst jitter ≈ 0.3 mm. Mirrors the SSRL slot pattern from spec §5.
         t0 = DateTime(2026, 4, 26, 23, 14, 8)
         slot_h = [74.80, 70.85, 67.22]  # three slot centers
         jitter = [0.0, 0.13, -0.24, 0.05]  # within-burst jitter, 4 frames
@@ -402,7 +402,7 @@ end
         for (si, h_center) in enumerate(slot_h)
             for (fi, j) in enumerate(jitter)
                 offset = (si - 1) * 4 * 19 + (fi - 1) * 19
-                stem = "HA_$(si)_$(fi)_S$(lpad((si-1)*4+fi, 4,'0'))_0_001"
+                stem = "SY_$(si)_$(fi)_S$(lpad((si-1)*4+fi, 4,'0'))_0_001"
                 push!(frames, HimalayaUI.ExposureMeta(stem, nothing, nothing, nothing,
                     (timestamp = t0 + Second(offset),
                      horizontal_position_mm = h_center + j,
@@ -479,7 +479,7 @@ end
             for (si, h) in enumerate(slot_h)
                 for fi in 1:2
                     offset = load_start + (si - 1) * 2 * 19 + (fi - 1) * 19
-                    stem = "HA_$(li)_$(si)_$(fi)_S$(lpad(global_s, 4,'0'))_0_001"
+                    stem = "SY_$(li)_$(si)_$(fi)_S$(lpad(global_s, 4,'0'))_0_001"
                     global_s += 1
                     push!(frames, HimalayaUI.ExposureMeta(stem, "/d/$stem.tif", "/d/$stem.prp", "/a/$stem.dat",
                         (timestamp = t0 + Second(offset),
@@ -499,7 +499,7 @@ end
         # 2 frames per sample
         @test all(length(s.exposures) == 2 for l in result.loads for s in l.samples)
 
-        # Auto-naming: first sample of load 1, slot 1 → "HA ... (S01P01)"
+        # Auto-naming: first sample of load 1, slot 1 → "SY ... (S01P01)"
         name11 = result.loads[1].samples[1].name
         @test occursin("S01P01", name11)
         # Second load: S02P01
@@ -531,7 +531,7 @@ end
         analysis_dir = joinpath(dir, "analysis")
         mkpath(data_dir); mkpath(analysis_dir)
 
-        SLOT_CENTERS_MM = [74.80, 70.85, 67.22, 63.49]  # from real HA data
+        SLOT_CENTERS_MM = [74.80, 70.85, 67.22, 63.49]  # typical SSRL slot spacing
         WITHIN_BURST_JITTER = [0.0, 0.13, -0.24, 0.05]
         FRAME_GAP_S = 19
         t0 = DateTime(2026, 4, 25, 23, 14, 8)
@@ -541,12 +541,12 @@ end
         for (si, h_center) in enumerate(SLOT_CENTERS_MM)
             for (fi, jitter) in enumerate(WITHIN_BURST_JITTER)
                 offset = (si - 1) * length(WITHIN_BURST_JITTER) * FRAME_GAP_S + (fi - 1) * FRAME_GAP_S
-                stem = "HA_$(si)_$(lpad(scan_id, 4,'0'))_S$(scan_id)_0_001"
+                stem = "SY_$(si)_$(lpad(scan_id, 4,'0'))_S$(scan_id)_0_001"
                 scan_id += 1
                 push!(stems, stem)
                 write_prp(joinpath(data_dir, "$stem.prp");
                     timestamp        = Dates.format(t0 + Second(offset), "dd u yyyy HH:MM:SS"),
-                    beam_energy_ev   = 9000.027604502573,
+                    beam_energy_ev   = 9000.0,
                     pipe_length_mm   = 1700,
                     detector         = "Pilatus 1M",
                     exposure_time    = 15.0,
@@ -554,8 +554,8 @@ end
                 write(joinpath(data_dir, "$stem.tif"), "fake tif")
             end
         end
-        write_setup_info(joinpath(analysis_dir, "setup_info_20260425_181705.txt");
-            beam_center_x = 421.409, beam_center_y = 836.946, mean_distance_mm = 1809.5)
+        write_setup_info(joinpath(analysis_dir, "setup_info_20260301_120000.txt");
+            beam_center_x = 420.5, beam_center_y = 835.5, mean_distance_mm = 1810.0)
 
         metas = HimalayaUI.scan_directory(data_dir, analysis_dir)
 
@@ -577,13 +577,13 @@ end
 
         # Geometry derivation
         prp_paths   = filter(!isnothing, [m.prp_path for m in metas])
-        setup_files = [joinpath(analysis_dir, "setup_info_20260425_181705.txt")]
+        setup_files = [joinpath(analysis_dir, "setup_info_20260301_120000.txt")]
         geo, disc   = HimalayaUI.derive_geometry(String.(prp_paths), String.(setup_files))
 
-        @test geo.energy_kev ≈ 9.000027604502573
-        @test geo.flight_path_m ≈ 1.8095            # calibrated, not PRP nominal
+        @test geo.energy_kev ≈ 9.0
+        @test geo.flight_path_m ≈ 1.81            # calibrated, not PRP nominal
         @test geo.flight_path_m_source == "setup"
-        @test geo.beam_center_x ≈ 421.409
+        @test geo.beam_center_x ≈ 420.5
         @test geo.pixel_size_um ≈ 172.0
 
         # The ~6.4% nominal-vs-calibrated flight-path gap is EXPECTED calibration
@@ -611,11 +611,11 @@ end
         for (si, h) in enumerate(slot_h)
             for fi in 1:2
                 offset = (si - 1) * 2 * 19 + (fi - 1) * 19
-                stem = "HA_$(si)_$(fi)_S$(lpad((si-1)*2+fi, 4,'0'))_0_001"
+                stem = "SY_$(si)_$(fi)_S$(lpad((si-1)*2+fi, 4,'0'))_0_001"
                 push!(all_stems, stem)
                 write_prp(joinpath(data_dir, "$stem.prp");
                     timestamp = Dates.format(t0 + Second(offset), "dd u yyyy HH:MM:SS"),
-                    beam_energy_ev = 9000.027604502573,
+                    beam_energy_ev = 9000.0,
                     pipe_length_mm = 1700, detector = "Pilatus 1M",
                     exposure_time = 15.0, horizontal_position_mm = h)
                 write(joinpath(data_dir, "$stem.tif"), "fake tif")
@@ -623,7 +623,7 @@ end
                 # for this insert-path test (we set analyze=false)
             end
         end
-        write_setup_info(joinpath(analysis_dir, "setup_info_20260425_181705.txt"))
+        write_setup_info(joinpath(analysis_dir, "setup_info_20260301_120000.txt"))
 
         db = fresh_db()
         # Create a bare experiment (Phase-A create_experiment! signature)
@@ -667,10 +667,10 @@ end
         row = first(Tables.rowtable(DBInterface.execute(db,
             "SELECT energy_kev, flight_path_m, flight_path_m_source, beam_center_x FROM setups WHERE experiment_id = ?",
             [exp_id])))
-        @test row.energy_kev ≈ 9.000027604502573
-        @test row.flight_path_m ≈ 1.8095   # from setup file
+        @test row.energy_kev ≈ 9.0
+        @test row.flight_path_m ≈ 1.81   # from setup file
         @test row.flight_path_m_source == "setup"
-        @test row.beam_center_x ≈ 421.409
+        @test row.beam_center_x ≈ 420.5
 
         # Idempotent: a second scan of the same directory is a true no-op. Insert-only
         # discipline applies to loads AND samples AND exposures — re-running must not mint
@@ -693,14 +693,14 @@ end
         analysis_dir = joinpath(dir, "analysis")
         mkpath(data_dir); mkpath(analysis_dir)
         t0 = DateTime(2026, 4, 26, 23, 14, 8)
-        stems = ["HA_1_$(fi)_S$(lpad(fi, 4, '0'))_0_001" for fi in 1:2]
+        stems = ["SY_1_$(fi)_S$(lpad(fi, 4, '0'))_0_001" for fi in 1:2]
         for (fi, stem) in enumerate(stems)
             write_prp(joinpath(data_dir, "$stem.prp");
                 timestamp = Dates.format(t0 + Second(19 * fi), "dd u yyyy HH:MM:SS"),
                 exposure_time = 15.0, i_2 = 7000.0 + fi, i_0 = 1.5)
             write(joinpath(data_dir, "$stem.tif"), "fake tif")
         end
-        write_setup_info(joinpath(analysis_dir, "setup_info_20260425_181705.txt"))
+        write_setup_info(joinpath(analysis_dir, "setup_info_20260301_120000.txt"))
         db = fresh_db()
         exp_id = HimalayaUI.create_experiment!(db;
             name = "test-monitors", path = dir,
@@ -747,13 +747,13 @@ end
         mkpath(data_dir); mkpath(analysis_dir)
         t0 = DateTime(2026, 4, 26, 23, 14, 8)
         for fi in 1:2
-            stem = "HA_1_$(fi)_S$(lpad(fi, 4, '0'))_0_001"
+            stem = "SY_1_$(fi)_S$(lpad(fi, 4, '0'))_0_001"
             write_prp(joinpath(data_dir, "$stem.prp");
                 timestamp = Dates.format(t0 + Second(19 * fi), "dd u yyyy HH:MM:SS"),
                 exposure_time = 15.0, i_2 = 7000.0 + fi, i_0 = 1.5)
             write(joinpath(data_dir, "$stem.tif"), "fake tif")
         end
-        write_setup_info(joinpath(analysis_dir, "setup_info_20260425_181705.txt"))
+        write_setup_info(joinpath(analysis_dir, "setup_info_20260301_120000.txt"))
         db = HimalayaUI.open_db(joinpath(dir, "h.db"))
         exp_id = HimalayaUI.create_experiment!(db;
             name = "upgraded", path = dir, data_dir = data_dir, analysis_dir = analysis_dir)
@@ -784,14 +784,14 @@ end
         analysis_dir = joinpath(dir, "analysis")
         mkpath(data_dir); mkpath(analysis_dir)
         t0 = DateTime(2026, 4, 26, 23, 14, 8)
-        stems = ["HA_1_$(fi)_S$(lpad(fi, 4, '0'))_0_001" for fi in 1:2]
+        stems = ["SY_1_$(fi)_S$(lpad(fi, 4, '0'))_0_001" for fi in 1:2]
         for (fi, stem) in enumerate(stems)
             write_prp(joinpath(data_dir, "$stem.prp");
                 timestamp = Dates.format(t0 + Second(19 * fi), "dd u yyyy HH:MM:SS"),
                 exposure_time = 15.0, i_2 = 7000.0 + fi, i_0 = 1.5)
             write(joinpath(data_dir, "$stem.tif"), "fake tif")
         end
-        write_setup_info(joinpath(analysis_dir, "setup_info_20260425_181705.txt"))
+        write_setup_info(joinpath(analysis_dir, "setup_info_20260301_120000.txt"))
         db = fresh_db()
         exp_id = HimalayaUI.create_experiment!(db;
             name = "old-signal", path = dir, data_dir = data_dir, analysis_dir = analysis_dir)
@@ -837,7 +837,7 @@ end
         t0 = DateTime(2026, 4, 26, 23, 14, 8)
         # Write 2 TIF/PRP pairs
         for (i, h) in enumerate([58.9, 63.1])
-            stem = "HA_$(i)_S$(lpad(i, 4,'0'))_0_001"
+            stem = "SY_$(i)_S$(lpad(i, 4,'0'))_0_001"
             write_prp(joinpath(data_dir, "$stem.prp");
                 timestamp = Dates.format(t0 + Second((i-1)*19), "dd u yyyy HH:MM:SS"),
                 beam_energy_ev = 9000.0, pipe_length_mm = 1700,
@@ -845,7 +845,7 @@ end
                 horizontal_position_mm = h)
             write(joinpath(data_dir, "$stem.tif"), "fake tif")
         end
-        write_setup_info(joinpath(analysis_dir, "setup_info_20260425_181705.txt"))
+        write_setup_info(joinpath(analysis_dir, "setup_info_20260301_120000.txt"))
 
         db = fresh_db()
         exp_id = HimalayaUI.create_experiment!(db;
@@ -859,7 +859,7 @@ end
         @test HimalayaUI.ingest_has_work(db, exp_id) == false
 
         # Add a new TIF/PRP pair on disk (not yet ingested) → changed again
-        new_stem = "HA_3_S0003_0_001"
+        new_stem = "SY_3_S0003_0_001"
         write_prp(joinpath(data_dir, "$new_stem.prp");
             timestamp = Dates.format(t0 + Second(600), "dd u yyyy HH:MM:SS"),
             beam_energy_ev = 9000.0, pipe_length_mm = 1700,
@@ -946,7 +946,7 @@ end
         # One load (all frames close together), so we expect session_id = 1.
         t0 = DateTime(2026, 4, 26, 23, 14, 8)
         for (i, h) in enumerate([58.9, 63.1])
-            stem = "HA_$(i)_S$(lpad(i, 4,'0'))_0_001"
+            stem = "SY_$(i)_S$(lpad(i, 4,'0'))_0_001"
             write_prp(joinpath(data_dir, "$stem.prp");
                 timestamp = Dates.format(t0 + Second((i-1)*19), "dd u yyyy HH:MM:SS"),
                 beam_energy_ev = 9000.0, pipe_length_mm = 1700,
@@ -954,7 +954,7 @@ end
                 horizontal_position_mm = h)
             write(joinpath(data_dir, "$stem.tif"), "fake tif")
         end
-        write_setup_info(joinpath(analysis_dir, "setup_info_20260425_181705.txt"))
+        write_setup_info(joinpath(analysis_dir, "setup_info_20260301_120000.txt"))
 
         db = fresh_db()
         exp_id = HimalayaUI.create_experiment!(db;

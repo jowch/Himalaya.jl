@@ -16,12 +16,12 @@ const trace = { q, I: q.map((x) => 1 / (x * x) + 50 * Math.exp(-(((x - 0.1) / 0.
 
 function exposureOf(sampleId: number, monitors: boolean, frame = 0, averaged = false) {
   return {
-    id: sampleId * 10 + frame, sample_id: sampleId, filename: `JC_S${sampleId}_0_00${frame + 1}`,
+    id: sampleId * 10 + frame, sample_id: sampleId, filename: `sample_S${sampleId}_0_00${frame + 1}`,
     kind: averaged ? "averaged" : "file", status: null,
     image_path: null, image_version: "", sources: averaged ? [sampleId * 10] : [], trace_hash: null, analysis_inputs_hash: null,
     exposure_time: monitors ? 15 : null, counting_time: monitors ? 15 : null,
     transmitted_counts: monitors ? 7000 : null, incident_monitor: monitors ? 1.5 : null,
-    timestamp: monitors ? "2026-04-26T18:20:27" : null, beam_energy_ev: monitors ? 11000 : null,
+    timestamp: monitors ? "2026-03-14T14:05:11" : null, beam_energy_ev: monitors ? 11000 : null,
     pipe_length_m: monitors ? 1.7 : null, detector: monitors ? "Pilatus 1M" : null,
   };
 }
@@ -152,7 +152,7 @@ async function openSample(page: Page, id: number): Promise<void> {
     if (!CANDIDATES[id]) await expect(page.getByText("No candidate indices for this image.")).toBeVisible();
   }
   await expect(page.locator("[data-testid=workspace-exposures] li")).toHaveCount(FRAMES[id] ?? 1);
-  const file = `JC_S${id}_0_00${FRAMES[id] ?? 1}`;
+  const file = `sample_S${id}_0_00${FRAMES[id] ?? 1}`;
   if (await exposureOpen(page)) await expect(page.locator("aside").getByText(file)).toBeVisible();
   else await expect(page.locator("[data-testid=workspace-exposures] [aria-current='true']")).toBeVisible();
 }
@@ -196,7 +196,7 @@ test("stepping between frames and hovering frames in another row keeps everythin
   expect(await measured(page), "hovering a frame in the other row").toEqual(first);
   await page.mouse.move(0, 0);
   await page.keyboard.press("ArrowLeft");
-  await expect(page.locator("aside").getByText("JC_S44_0_006")).toBeVisible();
+  await expect(page.locator("aside").getByText("sample_S44_0_006")).toBeVisible();
   await expect(page.locator("aside").getByText("Single")).toBeVisible();
   await expect(page.locator("[data-testid=workspace-trace]")).toBeVisible();
   expect(await measured(page), "on the single frame").toEqual(first);
@@ -348,7 +348,7 @@ test("on a short window Assignment and Frame fold as an accordion, and stay put 
   await openSample(page, 41);
   await expect(callToggle(page)).toHaveAttribute("aria-expanded", "true");
   await expect(exposureToggle(page)).toHaveAttribute("aria-expanded", "false");
-  await expect(page.locator("aside").getByText("JC_S41_0_001")).toHaveCount(0);
+  await expect(page.locator("aside").getByText("sample_S41_0_001")).toHaveCount(0);
   const aside = page.locator("aside");
   const fits = () => aside.evaluate((a) => a.scrollHeight <= a.clientHeight);
   expect(await fits(), "the tools column itself never scrolls").toBe(true);
@@ -357,7 +357,7 @@ test("on a short window Assignment and Frame fold as an accordion, and stay put 
   await expect(exposureToggle(page)).toHaveAttribute("aria-expanded", "true");
   await expect(callToggle(page)).toHaveAttribute("aria-expanded", "false");
   await expect(page.locator("[data-testid=workspace-candidates]")).toHaveCount(0);
-  await expect(page.locator("aside").getByText("JC_S41_0_001")).toBeVisible();
+  await expect(page.locator("aside").getByText("sample_S41_0_001")).toBeVisible();
   expect(await fits()).toBe(true);
   const lastRow = () => page.locator("aside section[data-section=Image] dl > :last-child > dd").evaluate((el) => Math.round(el.getBoundingClientRect().top));
   const first = await measured(page);
@@ -444,7 +444,7 @@ test("on a very short window the open Frame section scrolls inside a column that
   await page.goto("/experiments/17/workspace/44");
   await openSample(page, 44);
   await exposureToggle(page).click();
-  await expect(page.locator("aside").getByText("JC_S44_0_007")).toBeVisible();
+  await expect(page.locator("aside").getByText("sample_S44_0_007")).toBeVisible();
   const state = await page.evaluate(() => {
     const aside = document.querySelector("aside")!;
     const exposure = aside.querySelector("section[data-section=Image]") as HTMLElement;

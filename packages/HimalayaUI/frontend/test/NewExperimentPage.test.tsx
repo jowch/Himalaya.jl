@@ -13,7 +13,7 @@ vi.mock("react-router-dom", async (orig) => {
 
 const GEOMETRY: api.ManifestGeometry = {
   energy_kev: 9, energy_kev_source: "prp",
-  flight_path_m: 1.8095, flight_path_m_source: "setup",
+  flight_path_m: 1.81, flight_path_m_source: "setup",
   beam_center_x: 421.4, beam_center_x_source: "setup",
   beam_center_y: 836.9, beam_center_y_source: "setup",
   pixel_size_um: 172, pixel_size_um_source: "computed",
@@ -144,7 +144,7 @@ describe("NewExperimentPage", () => {
       analysis_dir: "/b/20261103/setup1/analysis/automatic_analysis/tot_files",
       patterns: { image: "{name}_0_001.tif", metadata: "{name}_0_001.prp", integration: "{name}_tot.dat" },
     });
-    expect(body.setups[0]!.geometry).toMatchObject({ flight_path_m: 1.8095, flight_path_m_source: "setup" });
+    expect(body.setups[0]!.geometry).toMatchObject({ flight_path_m: 1.81, flight_path_m_source: "setup" });
     expect(body.setups[1]).toMatchObject({ root: "/b/20261103/setup2", included: false });
   });
 

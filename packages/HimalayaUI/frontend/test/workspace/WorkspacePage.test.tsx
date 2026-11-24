@@ -3074,23 +3074,23 @@ describe("WorkspacePage", () => {
   });
 
   it("lists the shown exposure's time, I₀ and transmitted beam I₂ under the .prp names", () => {
-    state.exposures = [exposure(100), exposure(101, { exposure_time: 10, incident_monitor: 1.5007, transmitted_counts: 7798.4 })];
+    state.exposures = [exposure(100), exposure(101, { exposure_time: 10, incident_monitor: 1.4326, transmitted_counts: 7654.3 })];
     renderAt("/experiments/1/workspace/10");
     const section = screen.getByRole("heading", { name: "Image" }).closest("section")!;
     const text = section.textContent ?? "";
     expect(text).toContain("Exposure10.0 s");
-    expect(text).toContain("I₀1.501");
-    expect(text).toContain("I₂7,798");
+    expect(text).toContain("I₀1.433");
+    expect(text).toContain("I₂7,654");
   });
 
   it("lists the shown exposure's acquisition time, flight tube, energy and detector from the .prp", () => {
     state.exposures = [exposure(100), exposure(101, {
-      timestamp: "2026-04-26T18:20:27", pipe_length_m: 0.7, beam_energy_ev: 11000.2, detector: "Area detector",
+      timestamp: "2026-03-14T14:05:11", pipe_length_m: 0.7, beam_energy_ev: 11000.2, detector: "Area detector",
     })];
     renderAt("/experiments/1/workspace/10");
     const section = screen.getByRole("heading", { name: "Image" }).closest("section")!;
     const text = section.textContent ?? "";
-    expect(text).toContain("Acquired2026-04-26 18:20:27");
+    expect(text).toContain("Acquired2026-03-14 14:05:11");
     expect(text).toContain("Flight tube700 mm");
     expect(text).toContain("Energy11.000 keV");
     expect(text).toContain("DetectorArea detector");
@@ -3226,7 +3226,7 @@ describe("WorkspacePage", () => {
     state.indices = [...state.indices, { ...index(3, "Ia3d", 0.2), kind: "speculative" }];
     state.assignment = { exposure_id: 101, state: "indexed", members: [2, 3] };
     state.setups = [{ id: 1, name: "setup1", folder: "setup1", included: true,
-      beam_center_x: 421.409, beam_center_y: 836.946, pixel_size_um: 172, energy_kev: 9, flight_path_m: 1.8095, q_units: "A-1" }];
+      beam_center_x: 420.5, beam_center_y: 835.5, pixel_size_um: 172, energy_kev: 9, flight_path_m: 1.81, q_units: "A-1" }];
     state.corpus = state.corpus.map((s) => (s.id === 10 ? { ...s, setup_id: 1 } : s));
     state.exposures = [exposure(100, { image_path: "/d/100.tif", image_version: "v" }), exposure(101, { image_path: "/d/101.tif", image_version: "v" })];
     state.detectorSize = { width: 981, height: 1043 };
@@ -3248,7 +3248,7 @@ describe("WorkspacePage", () => {
 
   it("draws the average's ticked phases as rings on the enlarged image being looked at, in that image's geometry", () => {
     state.setups = [{ id: 1, name: "setup1", folder: "setup1", included: true,
-      beam_center_x: 421.409, beam_center_y: 836.946, pixel_size_um: 172, energy_kev: 9, flight_path_m: 1.8095, q_units: "A-1" }];
+      beam_center_x: 420.5, beam_center_y: 835.5, pixel_size_um: 172, energy_kev: 9, flight_path_m: 1.81, q_units: "A-1" }];
     state.corpus = state.corpus.map((s) => (s.id === 10 ? { ...s, setup_id: 1 } : s));
     state.trace = makeTrace(1);
     state.memberTraces = new Map([[100, makeTrace(1)], [101, makeTrace(2)]]);
@@ -3273,7 +3273,7 @@ describe("WorkspacePage", () => {
   });
 
   it("draws a same sample's rings from another setup in that setup's geometry but in this sample's q units", () => {
-    const geometry = { beam_center_x: 421.409, beam_center_y: 836.946, pixel_size_um: 172, energy_kev: 9, flight_path_m: 1.8095 };
+    const geometry = { beam_center_x: 420.5, beam_center_y: 835.5, pixel_size_um: 172, energy_kev: 9, flight_path_m: 1.81 };
     state.setups = [{ id: 1, name: "Short pipe", folder: "s1", included: true, ...geometry, q_units: "A-1" },
       { id: 2, name: "Long pipe", folder: "s2", included: true, ...geometry, q_units: "nm-1" }];
     state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
@@ -3293,7 +3293,7 @@ describe("WorkspacePage", () => {
 
   it("Space opens the enlarged image while a custom index is open, with the draft's rings beside the ticked ones, and Esc there keeps the draft", () => {
     state.setups = [{ id: 1, name: "setup1", folder: "setup1", included: true,
-      beam_center_x: 421.409, beam_center_y: 836.946, pixel_size_um: 172, energy_kev: 9, flight_path_m: 1.8095, q_units: "A-1" }];
+      beam_center_x: 420.5, beam_center_y: 835.5, pixel_size_um: 172, energy_kev: 9, flight_path_m: 1.81, q_units: "A-1" }];
     state.corpus = state.corpus.map((s) => (s.id === 10 ? { ...s, setup_id: 1 } : s));
     state.exposures = [exposure(100, { image_path: "/d/100.tif", image_version: "v" }), exposure(101, { image_path: "/d/101.tif", image_version: "v" })];
     state.detectorSize = { width: 981, height: 1043 };
@@ -3314,7 +3314,7 @@ describe("WorkspacePage", () => {
 
   it("Space during a custom index enlarges the image being looked at when an average is analyzed", () => {
     state.setups = [{ id: 1, name: "setup1", folder: "setup1", included: true,
-      beam_center_x: 421.409, beam_center_y: 836.946, pixel_size_um: 172, energy_kev: 9, flight_path_m: 1.8095, q_units: "A-1" }];
+      beam_center_x: 420.5, beam_center_y: 835.5, pixel_size_um: 172, energy_kev: 9, flight_path_m: 1.81, q_units: "A-1" }];
     state.corpus = state.corpus.map((s) => (s.id === 10 ? { ...s, setup_id: 1 } : s));
     state.trace = makeTrace(1);
     state.memberTraces = new Map([[100, makeTrace(1)], [101, makeTrace(2)]]);

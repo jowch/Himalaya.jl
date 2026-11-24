@@ -212,14 +212,14 @@ indexes(db, table) = String.(getproperty.(Tables.rowtable(
             id = HimalayaUI.create_experiment!(db; name="geo",
                 path="/exp/geo", data_dir="/exp/geo/data", analysis_dir="/exp/geo/analysis",
                 energy_kev=9.0, energy_kev_source="prp",
-                flight_path_m=1.8095, flight_path_m_source="setup",
-                beam_center_x=421.409, beam_center_y=836.946, beam_center_x_source="setup",
+                flight_path_m=1.81, flight_path_m_source="setup",
+                beam_center_x=420.5, beam_center_y=835.5, beam_center_x_source="setup",
                 pixel_size_um=172.0, q_units="A^-1")
             row = first(Tables.rowtable(DBInterface.execute(db,
                 "SELECT flight_path_m, flight_path_m_source, beam_center_x FROM setups WHERE experiment_id = ?", [id])))
-            @test row.flight_path_m ≈ 1.8095
+            @test row.flight_path_m ≈ 1.81
             @test row.flight_path_m_source == "setup"
-            @test row.beam_center_x ≈ 421.409
+            @test row.beam_center_x ≈ 420.5
         end
     end
 
@@ -273,8 +273,8 @@ indexes(db, table) = String.(getproperty.(Tables.rowtable(
         with_db(path) do db
             eid = seed_experiment(db)   # honours NOT NULL name/path/data_dir/analysis_dir
             # sample_id omitted (transient pre-group state must be allowed)
-            xid = HimalayaUI.create_exposure!(db; experiment_id=eid, filename="HA_85_001.tif",
-                prp_path="/d/HA_85_001.prp", timestamp="2026-04-12T10:02:00",
+            xid = HimalayaUI.create_exposure!(db; experiment_id=eid, filename="SY_85_001.tif",
+                prp_path="/d/SY_85_001.prp", timestamp="2026-04-12T10:02:00",
                 exposure_time=2.0, horizontal_position=12.4, scan_id=2404, frame_no=1)
             row = first(Tables.rowtable(DBInterface.execute(db,
                 "SELECT experiment_id, sample_id, horizontal_position, frame_no FROM exposures WHERE id=?", [xid])))

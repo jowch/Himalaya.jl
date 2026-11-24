@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "./fixtures";
 
 const EXPERIMENT = {
-  id: 1, name: "SSRL May 2026", path: "/p", data_dir: "/p/data",
+  id: 1, name: "Beamtime 1", path: "/p", data_dir: "/p/data",
   analysis_dir: "/p/analysis", manifest_path: null, created_at: "2026-05-01",
 };
 const SAMPLES = [

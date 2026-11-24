@@ -70,7 +70,7 @@ end
 
 "Write the single per-experiment setup_info file into `analysis_dir`."
 function write_setup_dir!(analysis_dir::AbstractString; kwargs...)
-    path = joinpath(analysis_dir, "setup_info_20260425_181705.txt")
+    path = joinpath(analysis_dir, "setup_info_20260301_120000.txt")
     write_setup_info(path; kwargs...)
     path
 end
@@ -140,7 +140,7 @@ function build_legacy_db(dir::AbstractString)
 
     # ----- (a) collision: two samples, one shared image_path, one bare-stem filename -----
     # 'JC001'/'JC C04' mirror the legacy machine-name / human-label split.
-    collide_stem  = "HA_85_422_S2404_0_001"
+    collide_stem  = "SY_12_034_S0567_0_001"
     collide_image = joinpath(data_dir, "$collide_stem.tif")
     write_stem_fixtures!(data_dir, analysis_dir, collide_stem;
         horizontal_position_mm = 58.9,
@@ -172,7 +172,7 @@ function build_legacy_db(dir::AbstractString)
         "INSERT INTO index_peaks (index_id, peak_id, peak_kind, ratio_position) VALUES (2000, 1000, 'auto', 1)")
 
     # ----- (b) reshoot: ONE legacy sample, two stems, same slot, big time gap -----
-    reshoot_stems = ["HA_90_500_S2500_0_001", "HA_90_501_S2501_0_001"]
+    reshoot_stems = ["SY_90_500_S2500_0_001", "SY_90_501_S2501_0_001"]
     write_stem_fixtures!(data_dir, analysis_dir, reshoot_stems[1];
         horizontal_position_mm = 70.85, timestamp = DateTime(2026, 4, 26, 23, 30, 0))
     write_stem_fixtures!(data_dir, analysis_dir, reshoot_stems[2];
@@ -187,7 +187,7 @@ function build_legacy_db(dir::AbstractString)
         [reshoot_stems[2], joinpath(data_dir, "$(reshoot_stems[2]).tif")])
 
     # ----- (c) many-old → one-cell: two legacy samples, single stems each, same load+slot -----
-    onecell_stems = ["HA_60_600_S2600_0_001", "HA_60_601_S2601_0_001"]
+    onecell_stems = ["SY_60_600_S2600_0_001", "SY_60_601_S2601_0_001"]
     write_stem_fixtures!(data_dir, analysis_dir, onecell_stems[1];
         horizontal_position_mm = 63.49, timestamp = DateTime(2026, 4, 26, 23, 40, 0))
     write_stem_fixtures!(data_dir, analysis_dir, onecell_stems[2];
