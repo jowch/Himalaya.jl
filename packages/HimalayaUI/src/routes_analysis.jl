@@ -101,6 +101,8 @@ function register_analysis_routes!()
 
     @post "/api/samples/{id}/call/state" function(req::HTTP.Request, id::Int)
         db   = current_db()
+        refusal = refuse_autosampler_sample(db, id)
+        refusal === nothing || return refusal
         body = json(req)
         if !haskey(body, :state)
             return HTTP.Response(400, ["Content-Type" => "application/json"],
@@ -133,6 +135,8 @@ function register_analysis_routes!()
 
     @post "/api/exposures/{id}/assignment/members" function(req::HTTP.Request, id::Int)
         db   = current_db()
+        refusal = refuse_autosampler_exposure(db, id)
+        refusal === nothing || return refusal
         body = json(req)
         if !haskey(body, :index_id)
             return HTTP.Response(400, ["Content-Type" => "application/json"],
@@ -168,6 +172,8 @@ function register_analysis_routes!()
 
     @delete "/api/exposures/{id}/assignment/members/{index_id}" function(req::HTTP.Request, id::Int, index_id::Int)
         db = current_db()
+        refusal = refuse_autosampler_exposure(db, id)
+        refusal === nothing || return refusal
         return with_idempotency(db, req) do
             result = apply_event!(InTransaction(), db, req;
                 kind        = "assignment_remove",
@@ -185,6 +191,8 @@ function register_analysis_routes!()
 
     @post "/api/exposures/{id}/speculative" function(req::HTTP.Request, id::Int)
         db = current_db()
+        refusal = refuse_autosampler_exposure(db, id)
+        refusal === nothing || return refusal
         body = json(req)
         for field in (:phase, :anchor_peak_id, :anchor_ratio)
             if !haskey(body, field)
@@ -265,6 +273,8 @@ function register_analysis_routes!()
 
     @post "/api/exposures/{id}/custom-index" function(req::HTTP.Request, id::Int)
         db   = current_db()
+        refusal = refuse_autosampler_exposure(db, id)
+        refusal === nothing || return refusal
         body = json(req)
         for field in (:phase, :basis)
             if !haskey(body, field)
@@ -346,6 +356,8 @@ function register_analysis_routes!()
 
     @delete "/api/indices/{id}" function(req::HTTP.Request, id::Int)
         db = current_db()
+        refusal = refuse_autosampler_row(db, "indices", id)
+        refusal === nothing || return refusal
         return with_idempotency(db, req) do
             rows = sqlrows(DBInterface.execute(db,
                 "SELECT id, kind, exposure_id FROM indices WHERE id = ?", [id]))

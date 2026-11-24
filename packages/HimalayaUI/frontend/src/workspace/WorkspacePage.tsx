@@ -114,7 +114,7 @@ import { setupNames } from "../lib/sample/setupNames";
 import type { ExperimentPatch } from "../lib/queue/mutators/experiment";
 import type { SetupPatch } from "../lib/queue/mutators/setup";
 
-function helpSections(mod: string, modules: WorkspaceModules): HelpSection[] {
+function helpSections(mod: string, modules: WorkspaceModules, selectable: { strip: boolean; shown: boolean }): HelpSection[] {
   const when = <T,>(on: boolean, ...list: T[]): T[] => (on ? list : []);
   return [
     {
@@ -131,12 +131,12 @@ function helpSections(mod: string, modules: WorkspaceModules): HelpSection[] {
       rows: [
         { keys: ["←", "→"], what: "Previous or next image" },
         { keys: ["X"], what: "Drop the image and show the nearest kept one, or restore a dropped one" },
-        ...when(modules.imageSelection,
+        ...when(selectable.strip,
           { keys: ["Enter"], what: "Select the image to analyze, or take it out of the selection" },
           { keys: ["⇧ click"], what: "Select a range of images to analyze" },
           { keys: ["⌘ click"], what: "Add an image to the selection, or take it out" },
         ),
-        { keys: ["Space"], what: "Enlarge its detector image; ← →, X and Enter work inside it" },
+        { keys: ["Space"], what: selectable.shown ? "Enlarge its detector image; ← →, X and Enter work inside it" : "Enlarge its detector image; ← → and X work inside it" },
       ],
     },
     {
@@ -288,7 +288,6 @@ export function WorkspacePage(): JSX.Element {
   const sample = requested === undefined ? firstUnreviewed(samples, reviewable) : samples.find((s) => s.id === requested);
   const sampleId = sample?.id;
   const modules = useMemo(() => (sample ? modulesOf(sample) : modulesFor(null)), [sample, modulesOf]);
-  const help = useMemo(() => helpSections(MOD_KEY, modules), [modules]);
   const goSample = useCallback(
     (sid: number) => navigate(`/experiments/${experimentId}/workspace/${sid}`, { replace: true }),
     [navigate, experimentId],
@@ -677,6 +676,12 @@ export function WorkspacePage(): JSX.Element {
     if (tile && tileSelectable) tileSelection?.onToggle(tile.id);
   }, [tile, tileSelectable, tileSelection]);
 
+  const stripSelectable = Boolean(username) && groupSelections.size > 0;
+  const help = useMemo(
+    () => helpSections(MOD_KEY, modules, { strip: stripSelectable, shown: tileSelectable }),
+    [modules, stripSelectable, tileSelectable],
+  );
+
   const draftQs = useMemo(() => (draft ? draftPrediction(draft) : []), [draft]);
   const combs: CombLine[] = useMemo(
     () => callCombs(choices, hoverIds, assigned, draft ? { phase: draft.phase, qs: draftQs } : null),
@@ -1027,7 +1032,7 @@ export function WorkspacePage(): JSX.Element {
   const shortWindow = useMediaQuery(SHORT_WINDOW);
   const [openPanel, setOpenPanel] = useState<"call" | "exposure">("call");
   const callOpen = !shortWindow || openPanel === "call" || draft !== null;
-  const exposureOpen = !shortWindow || !modules.calls || (openPanel === "exposure" && draft === null);
+  const exposureOpen = !shortWindow || (openPanel === "exposure" && draft === null);
   const tabFree = useRef(false);
   const [pendingTab, setPendingTab] = useState<"first" | "last" | null>(null);
   useEffect(() => {
@@ -1247,7 +1252,8 @@ export function WorkspacePage(): JSX.Element {
           break;
         case "i":
         case "I":
-          openCustom();
+          if (modules.calls) openCustom();
+          else handled = false;
           break;
         case "l":
         case "L":
@@ -1453,14 +1459,15 @@ export function WorkspacePage(): JSX.Element {
   });
 
   const customIndexButton = <CustomIndexButton open={draft !== null} disabled={!canCall} onClick={draft ? () => setDraft(null) : openCustom} />;
-  const indexingSection = modules.indexing ? (
+  const indexingSection = (
     <Section
       title="Indexing"
       className="shrink-0"
+      reserved={!modules.indexing}
     >
-      <IndexingPlot series={indexSeries} />
+      <IndexingPlot series={modules.indexing ? indexSeries : []} />
     </Section>
-  ) : null;
+  );
 
   return (
     <WorkspaceLayout
@@ -1619,26 +1626,26 @@ export function WorkspacePage(): JSX.Element {
       }
       tools={
         <>
-          {modules.calls && (
-            <div className={callOpen ? "flex min-h-24 flex-1 flex-col overflow-y-auto" : "shrink-0"} data-testid="workspace-tools-middle">
-              {draft && draftBounds ? (
-                <Section title="Assignment" aside={customIndexButton} pinAside collapsible={shortWindow ? { open: true } : undefined}>
-                  <CustomIndexPanel
-                    panelRef={customPanel}
-                    draft={draft}
-                    min={draftBounds.min}
-                    max={draftBounds.max}
-                    landed={draftFit?.landed ?? 0}
-                    total={draftFit?.points.length ?? 0}
-                    disabled={!canCall}
-                    onChange={setDraftClamped}
-                    onAdd={addCustom}
-                    onCancel={() => setDraft(null)}
-                  />
-                </Section>
-              ) : (
-                <Section title="Assignment" aside={customIndexButton} pinAside collapsible={shortWindow ? { open: callOpen, onOpen: () => setOpenPanel("call") } : undefined}>
-                  <CandidateList
+          <div className={callOpen ? "flex min-h-24 flex-1 flex-col overflow-y-auto" : "shrink-0"} data-testid="workspace-tools-middle">
+            {draft && draftBounds ? (
+              <Section title="Assignment" aside={customIndexButton} pinAside collapsible={shortWindow ? { open: true } : undefined}>
+                <CustomIndexPanel
+                  panelRef={customPanel}
+                  draft={draft}
+                  min={draftBounds.min}
+                  max={draftBounds.max}
+                  landed={draftFit?.landed ?? 0}
+                  total={draftFit?.points.length ?? 0}
+                  disabled={!canCall}
+                  onChange={setDraftClamped}
+                  onAdd={addCustom}
+                  onCancel={() => setDraft(null)}
+                />
+              </Section>
+            ) : (
+              <Section title="Assignment" aside={customIndexButton} pinAside reserved={!modules.calls} collapsible={shortWindow ? { open: callOpen, onOpen: modules.calls ? () => setOpenPanel("call") : undefined } : undefined}>
+                {modules.calls && (
+                <CandidateList
                     rows={rows}
                     assigned={assigned}
                     unsupported={unsupportedIds}
@@ -1649,17 +1656,17 @@ export function WorkspacePage(): JSX.Element {
                     onFormFactor={toggleFormFactor}
                     onHover={hoverCandidates}
                   />
-                </Section>
-              )}
-            </div>
-          )}
+                )}
+              </Section>
+            )}
+          </div>
           {!shortWindow && indexingSection}
           <Section
             title="Image"
             aside="← →"
             folded={groups.length > 1 ? tileOwner : undefined}
             className={shortWindow && exposureOpen ? "min-h-0 flex-1 overflow-y-auto" : exposureOpen ? "min-h-0 shrink overflow-y-auto" : "shrink-0"}
-            collapsible={shortWindow && modules.calls ? { open: exposureOpen, onOpen: draft === null ? () => setOpenPanel("exposure") : undefined } : undefined}
+            collapsible={shortWindow ? { open: exposureOpen, onOpen: draft === null ? () => setOpenPanel("exposure") : undefined } : undefined}
           >
             <MetaList rows={exposureRows(tile, tileOwner)} />
           </Section>

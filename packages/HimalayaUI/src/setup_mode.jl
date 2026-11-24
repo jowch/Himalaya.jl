@@ -39,6 +39,33 @@ function first_frame_suffix(data_dir::AbstractString)::String
     best === nothing ? DEFAULT_FRAME_SUFFIX : best[2]
 end
 
+const AUTOSAMPLER_NOT_EDITABLE = "An autosampler sample is not analyzed, so its peaks, calls and indices can't be edited."
+const AUTOSAMPLER_NOT_SELECTABLE = "An autosampler sample has one image, so there is nothing to select."
+
+_autosampler_refusal(message) = HTTP.Response(422, ["Content-Type" => "application/json"],
+    JSON3.write(Dict(:error => message)))
+
+_in_autosampler_setup(db::SQLite.DB, sql::AbstractString, id::Integer) =
+    !isempty(sqlrows(DBInterface.execute(db, sql, [Int(id)])))
+
+function refuse_autosampler_sample(db::SQLite.DB, sample_id::Integer, message::AbstractString = AUTOSAMPLER_NOT_EDITABLE)
+    _in_autosampler_setup(db, """
+        SELECT 1 AS x FROM samples s JOIN setups st ON st.id = s.setup_id
+         WHERE s.id = ? AND st.mode = 'autosampler'""", sample_id) ? _autosampler_refusal(message) : nothing
+end
+
+function refuse_autosampler_exposure(db::SQLite.DB, exposure_id::Integer)
+    _in_autosampler_setup(db, """
+        SELECT 1 AS x FROM exposures e JOIN samples s ON s.id = e.sample_id
+          JOIN setups st ON st.id = s.setup_id
+         WHERE e.id = ? AND st.mode = 'autosampler'""", exposure_id) ? _autosampler_refusal(AUTOSAMPLER_NOT_EDITABLE) : nothing
+end
+
+function refuse_autosampler_row(db::SQLite.DB, table::AbstractString, id::Integer)
+    rows = sqlrows(DBInterface.execute(db, "SELECT exposure_id FROM $table WHERE id = ?", [Int(id)]))
+    isempty(rows) || ismissing(rows[1].exposure_id) ? nothing : refuse_autosampler_exposure(db, Int(rows[1].exposure_id))
+end
+
 function autosampler_layout(root::AbstractString)
     suffix = first_frame_suffix(_setup_data_dir(String(root)))
     (; dir = joinpath(String(root), "analysis", "automatic_analysis", "tot_files"),

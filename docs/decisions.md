@@ -132,7 +132,7 @@ Every row also needs the date it was decided, as `YYYY-MM-DD`.
 |---|---|---|---|---|
 | autosampler-mode | Autosampler setups are a dedicated mode per setup: one sample per acquisition, read from its averaged `_tot.dat`. | 2026-11-23 | built | packages/HimalayaUI/test/test_setup_mode.jl › an undecided setup with the wrong patterns is put right on its first scan |
 | autosampler-no-analysis | Automatic analysis is off for autosampler setups. | 2026-11-23 | built | packages/HimalayaUI/test/test_setup_mode.jl › nothing is analyzed and nothing is reported as a problem |
-| workspace-modules-by-mode | The workspace is composed of modules shown in the existing panels depending on the setup mode; autosampler samples get the trace plot, comparisons and subtraction, and no peak editing, indexing, phase calls, image selection or review state. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › shows neither Assignment nor Indexing for an autosampler sample, and both for a capillary one |
+| workspace-modules-by-mode | The workspace is composed of modules shown in the existing panels depending on the setup mode. The panels keep their places, and a module a mode lacks leaves its place empty. Autosampler samples get the trace plot, comparisons and subtraction, and no peak editing, indexing, phase calls, image selection or review state; the server refuses those edits too. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › keeps the Assignment, Indexing and Image slots in the same order for an autosampler sample, with nothing interactive in the first two |
 
 ## Images and combining them
 

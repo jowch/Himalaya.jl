@@ -154,11 +154,8 @@ function register_exposures_routes!()
         isempty(sqlrows(DBInterface.execute(db, "SELECT 1 AS x FROM samples WHERE id = ?", [id]))) &&
             return HTTP.Response(404, ["Content-Type" => "application/json"],
                 JSON3.write(Dict(:error => "sample not found")))
-        isempty(sqlrows(DBInterface.execute(db, """
-            SELECT 1 AS x FROM samples s JOIN setups st ON st.id = s.setup_id
-             WHERE s.id = ? AND st.mode = 'autosampler'""", [id]))) ||
-            return HTTP.Response(422, ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => "An autosampler sample has one image, so there is nothing to select.")))
+        refusal = refuse_autosampler_sample(db, id, AUTOSAMPLER_NOT_SELECTABLE)
+        refusal === nothing || return refusal
         kept = Set(Int[Int(r.id) for r in sqlrows(DBInterface.execute(db, """
             SELECT id FROM exposures WHERE sample_id = ? AND kind = 'file'
                AND (status IS NULL OR status != 'rejected')""", [id]))])
@@ -187,6 +184,8 @@ function register_exposures_routes!()
 
     @post "/api/exposures/{id}/analyze" function(req::HTTP.Request, id::Int)
         db   = current_db()
+        refusal = refuse_autosampler_exposure(db, id)
+        refusal === nothing || return refusal
         rows = sqlrows(DBInterface.execute(db,
             "SELECT e.id, st.analysis_dir
              FROM exposures e JOIN samples s ON s.id = e.sample_id

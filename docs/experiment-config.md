@@ -299,25 +299,38 @@ deselection. `pending_analysis_ids` never reports its exposures, and
 `ingest_has_work` still reports new images. The CLI `analyze` and the peak
 model pass skip these setups, and `refresh_selection!` makes no average for
 their samples. A sample's shown image is its one exposure, so the image strip
-and the trace route work without analysis. Edits a user makes (peaks, a custom
-index, `POST /api/exposures/:id/analyze`) still analyze that exposure.
+and the trace route work without analysis. The server refuses edits that would
+analyze it: adding, excluding or removing a peak, changing a call (including
+form factor), adding or removing an assignment member, a custom or speculative
+index, deleting an index, `POST /api/exposures/:id/analyze` and
+`PUT /api/samples/:id/selection` all answer 422 and write no event. Labels,
+bridges, comparisons and drop or restore still work.
 
 **In the workspace.** The workspace picks its modules from the setup mode of
 the open sample (`workspace/modules.ts`). A `capillary` or undecided setup has
 all of them. An `autosampler` sample keeps the trace plot (zoom, plot view,
 comparisons, subtraction), the image strip with Drop and Restore, labels and
-bridges, and has no peak editing, no Assignment or Indexing section, no
-call keys or palette entries, no image selection, and no review state. It has
-no unreviewed mark or call in the sample list (an analysis-gap mark such as
-"All dropped" still shows, without the word "Unreviewed"), is not counted in
-the header's "k of N reviewed" or on the home card (`review_progress`), and `Z`,
-prefetching and the landing sample skip it. The home ribbon draws its span in
-a neutral shade and its tooltip says nothing about review (the timeline's third
-value is `2`, against `1` reviewed and `0` not). Selecting images is refused for
-it: `PUT /api/samples/:id/selection` answers 422. The controls follow the
-sample that owns each image, so a bridged capillary mate keeps its selection
-controls beside an autosampler sample. When no sample in the experiment has a review state,
-the header shows no progress and the card shows no review count.
+bridges. It has no peak editing, no call keys or palette entries, no image
+selection, and no review state. The panels keep their places: the tools column
+keeps its Assignment, Indexing and Image slots in the same order and sizes, and
+for such a sample the first two are reserved but empty, so nothing moves when
+you cross a setup boundary. The header's progress block likewise keeps its
+place, hidden, when no sample has a review state.
+
+The sample list shows no unreviewed mark or call for it (an analysis-gap mark
+such as "All dropped" still shows, without the word "Unreviewed"). It is not
+counted in the header's "k of N reviewed" or on the home card
+(`review_progress`), and `Z`, the landing sample and the prefetch of the `Z`
+target skip it. The previous and next samples in the list are still prefetched,
+whatever their mode. The home ribbon draws its span in a neutral shade and its
+tooltip says nothing about review (the timeline's third value is `2`, against
+`1` reviewed and `0` not). The selection controls follow the sample that owns
+each image, so a bridged capillary mate keeps its selection controls beside an
+autosampler sample, and the help lists the selection rows when any image in the
+strip can be selected. A bridge still shares a call with an autosampler mate
+(`align_call_state!`): the call is stored on the mate but never shown. When no
+sample in the experiment has a review state, the header shows no progress and
+the card shows no review count.
 
 **Settling a setup.** At the start of every `_scan_setup!`:
 
