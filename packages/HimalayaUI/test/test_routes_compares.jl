@@ -119,6 +119,18 @@ _stored(db, sid) = [(r.ref_sample_id,) for r in Tables.rowtable(DBInterface.exec
         end
     end
 
+    @testset "each entry says whether the sample is a buffer and lists the buffers of its run in scan order" begin
+        (db, exp_id, ((b1, s1, s2, b2), (t1,))) = _seed_autosampler(run, [("S", 201)])
+        with_inproc_routes(db) do call
+            body = _compares(call, exp_id)
+            @test _background(body, b2).is_buffer == true
+            @test _background(body, s2).is_buffer == false
+            @test collect(Int, _background(body, s1).run_buffer_ids) == [b1, b2]
+            @test collect(Int, _background(body, b2).run_buffer_ids) == [b1, b2]
+            @test collect(Int, _background(body, t1).run_buffer_ids) == Int[]
+        end
+    end
+
     @testset "a capillary experiment reports no backgrounds and keeps its subtractions" begin
         (db, exp_id, ((b1, s1, s2, b2),)) = _seed_autosampler(run; mode = "capillary")
         with_inproc_routes(db) do call
