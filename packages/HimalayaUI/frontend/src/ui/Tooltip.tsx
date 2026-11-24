@@ -27,6 +27,7 @@ type TriggerProps = {
   onBlur?: (e: FocusEvent<HTMLElement>) => void;
   "aria-describedby"?: string;
   "aria-label"?: string;
+  "aria-description"?: string;
 };
 
 type Suppression = "pointer" | "key" | null;
@@ -193,7 +194,8 @@ export function Tooltip({ content, children, shortcut, side = "top", overflowOnl
   const childRef = (children as unknown as { ref?: Ref<HTMLElement> }).ref;
   const namesTrigger = overflowOnly || (typeof content === "string" && own["aria-label"] === content);
   const repeatsText = typeof content === "string" && (triggerRef.current?.textContent ?? "").includes(content);
-  const describes = open && !empty && !namesTrigger && !repeatsText;
+  const describedAlready = typeof content === "string" && own["aria-description"] === content;
+  const describes = open && !empty && !namesTrigger && !repeatsText && !describedAlready;
   const trigger = cloneElement(children, {
     ref: (node: HTMLElement | null) => {
       triggerRef.current = node;

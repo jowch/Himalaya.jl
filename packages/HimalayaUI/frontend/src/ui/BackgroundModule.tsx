@@ -1,9 +1,10 @@
 import type { ReactNode } from "react";
 import type { CompareScale } from "../workspace/compare";
-import { SCALE_NOTES } from "./CompareBar";
 import { Kbd } from "./Kbd";
 import { Section } from "./Section";
+import { Term } from "./Term";
 import { Tooltip } from "./Tooltip";
+import { explainScale, formatScale } from "./scaleExplanation";
 
 export type BackgroundView =
   | { kind: "loading" }
@@ -41,7 +42,7 @@ const SCALE_LABELS: Record<CompareScale["source"], string | undefined> = {
   capillary: MATCHED_AT_HIGH_Q,
   other_setup: "other setup, matched",
   beam_off: "beam off, matched",
-  i2_collapsed: "I₂ low, matched",
+  i2_collapsed: "I₂ collapsed, matched",
 };
 
 function offLabel(view: BackgroundView): string | undefined {
@@ -71,7 +72,7 @@ function traceNote(view: BackgroundView): { text: string; description?: string }
   if (!view.scale) return null;
   const label = SCALE_LABELS[view.scale.source];
   if (!label) return null;
-  return { text: `${label} ×${view.scale.scale.toPrecision(3)}`, description: SCALE_NOTES[view.scale.source] };
+  return { text: `${label} ×${formatScale(view.scale.scale)}`, description: explainScale(view.scale, "The background") };
 }
 
 export function BackgroundModule({ view, editable, picker, onChange, onNone, onDefault }: Props): JSX.Element {
@@ -84,11 +85,9 @@ export function BackgroundModule({ view, editable, picker, onChange, onNone, onD
   return (
     <Section title="Background" className="relative shrink-0">
       <div className="flex h-6 items-baseline justify-between gap-2" data-testid="background-name">{nameLine(view)}</div>
-      {note?.description ? (
-        <Tooltip content={note.description}><p className={NOTE} data-testid="background-note">{note.text}</p></Tooltip>
-      ) : (
-        <p className={NOTE} data-testid="background-note">{note?.text}</p>
-      )}
+      <p className={NOTE} data-testid="background-note">
+        {note?.description ? <Term explain={note.description}>{note.text}</Term> : note?.text}
+      </p>
       <div className="mt-1 flex h-7 items-center gap-1.5 overflow-hidden" data-testid="background-controls">
         {hasControls && (
           <>

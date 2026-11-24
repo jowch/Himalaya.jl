@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CompareBar, type CompareChip } from "../../src/ui/CompareBar";
+import { explainScale } from "../../src/ui/scaleExplanation";
 import { resetTooltipWarmth, TOOLTIP_OPEN_DELAY_MS } from "../../src/ui/Tooltip";
 
 const chip = (over: Partial<CompareChip> = {}): CompareChip => ({ id: 2, name: "MO_PEG5", color: "#888", scale: undefined, ...over });
@@ -44,9 +45,12 @@ describe("CompareBar chip tooltip", () => {
     expect(hover("MO_PEG5")).toHaveTextContent("MO_PEG5Click to hide. ⌘-click to stop subtracting.");
   });
 
-  it("repeats the scale's note on the chip, so keyboard focus reaches it", () => {
+  it("leaves the scale to its own tooltip, which keyboard focus reaches", () => {
     bar([chip({ scale: { scale: 1, source: "monitor" } as CompareChip["scale"] })]);
-    expect(hover("MO_PEG5")).toHaveTextContent("Scaled by the transmitted beam");
+    expect(hover("MO_PEG5")).not.toHaveTextContent("transmitted beam");
+    const term = document.querySelector("[data-scale-source]")!.parentElement!;
+    expect(term).toHaveAttribute("tabindex", "0");
+    expect(term).toHaveAccessibleDescription(explainScale({ scale: 1, source: "monitor" }));
   });
 
   it("carries no native title on the chip button", () => {
@@ -72,11 +76,11 @@ describe("CompareBar scale tooltip", () => {
     act(() => {
       vi.advanceTimersByTime(TOOLTIP_OPEN_DELAY_MS);
     });
-    expect(screen.getByRole("tooltip")).toHaveTextContent("No transmitted-beam reading, so matched at high q");
+    expect(screen.getByRole("tooltip")).toHaveTextContent(explainScale({ scale: 1, source: "matched" }));
   });
 
   it("tells a capillary setup apart from one whose type is not set yet", () => {
-    for (const [source, note] of [["capillary", "Capillary setup, so matched at high q"], ["unknown_mode", "Setup type not set, so matched at high q"]] as const) {
+    for (const [source, note] of [["capillary", "every capillary has its own"], ["unknown_mode", "this setup isn't marked as one"]] as const) {
       resetTooltipWarmth();
       const { unmount } = render(<CompareBar chips={[chip({ scale: { scale: 1, source } })]} subtractId={undefined} hidden={false} modKey="⌘" onToggleShown={() => {}} onSubtract={() => {}} onRemove={() => {}} onAdd={() => {}} />);
       fireEvent.mouseEnter(document.querySelector("[data-scale-source]") as HTMLElement);
@@ -93,7 +97,7 @@ describe("CompareBar scale tooltip", () => {
       chip({ scale: { scale: 1, source: "other_setup" } as CompareChip["scale"] }),
       chip({ id: 3, name: "MO_PEG6", scale: { scale: 1, source: "monitor" } as CompareChip["scale"] }),
     ]);
-    expect(screen.getByRole("button", { name: "MO_PEG5" })).toHaveAccessibleDescription("From another setup, so matched at high q");
+    expect(screen.getByRole("button", { name: "MO_PEG5" })).toHaveAccessibleDescription(explainScale({ scale: 1, source: "other_setup" }));
     expect(screen.getByRole("button", { name: "MO_PEG6" })).toHaveAccessibleDescription("");
   });
 
@@ -105,7 +109,7 @@ describe("CompareBar scale tooltip", () => {
     act(() => {
       vi.advanceTimersByTime(TOOLTIP_OPEN_DELAY_MS);
     });
-    expect(screen.getByRole("tooltip")).toHaveTextContent("From another setup, so matched at high q");
+    expect(screen.getByRole("tooltip")).toHaveTextContent(explainScale({ scale: 1, source: "other_setup" }));
   });
 });
 
@@ -125,9 +129,13 @@ describe("CompareBar in Minus view", () => {
     expect(document.querySelector("[data-minus-note]")).toBeNull();
   });
 
-  it("says in the tooltip that a pair was matched at high q, and shows only its factor", () => {
+  it("says in the scale's tooltip that a pair was matched at high q, and shows only its factor", () => {
     bar([chip({ minus: { kind: "drawn", background: "buf" }, scale: { scale: 0.9, source: "beam_off" } })]);
-    expect(hover("MO_PEG5")).toHaveTextContent("Taken with the beam off, so matched at high q");
+    fireEvent.mouseEnter(document.querySelector("[data-scale-source]") as HTMLElement);
+    act(() => {
+      vi.advanceTimersByTime(TOOLTIP_OPEN_DELAY_MS);
+    });
+    expect(screen.getByRole("tooltip")).toHaveTextContent(explainScale({ scale: 0.9, source: "beam_off" }));
     expect(document.querySelector("[data-scale-source='beam_off']")!.textContent).toBe("×0.900");
   });
 
