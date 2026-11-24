@@ -15,8 +15,11 @@ describe("WorkspaceHeader", () => {
     expect(screen.getByTestId("workspace-progress")).toHaveTextContent("2 of 4 reviewed");
   });
 
-  it("shows no progress when no sample can be reviewed", () => {
-    render(header(0, 0));
+  it("shows no progress when no sample can be reviewed, but keeps its place hidden from sight and from assistive tech", () => {
+    const { container } = render(header(0, 0));
     expect(screen.queryByTestId("workspace-progress")).toBeNull();
+    const reserved = container.querySelector("[data-reserved]");
+    expect(reserved).not.toBeNull();
+    expect(reserved).toHaveAttribute("aria-hidden", "true");
   });
 });

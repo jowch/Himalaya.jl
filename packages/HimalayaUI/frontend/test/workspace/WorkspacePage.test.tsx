@@ -3921,23 +3921,47 @@ describe("WorkspacePage modules by setup mode", () => {
     return ids;
   };
 
-  it("shows neither Assignment nor Indexing for an autosampler sample, and both for a capillary one", () => {
+  const slotOrder = (): (string | null)[] =>
+    Array.from(screen.getByRole("complementary", { name: "Tools" }).querySelectorAll("[data-section]")).map((n) => n.getAttribute("data-section"));
+  const reservedSlots = (): (string | null)[] =>
+    Array.from(screen.getByRole("complementary", { name: "Tools" }).querySelectorAll("[data-section][data-reserved]")).map((n) => n.getAttribute("data-section"));
+  const SHORT = (query: string) => ({ matches: query === "(max-height: 860px)", media: query, addEventListener: () => {}, removeEventListener: () => {} });
+
+  it("keeps the Assignment, Indexing and Image slots in the same order for an autosampler sample, with nothing interactive in the first two", () => {
     const view = renderAt(`/experiments/1/workspace/${AUTOSAMPLER}`);
+    expect(slotOrder()).toEqual(["Assignment", "Indexing", "Image"]);
+    expect(reservedSlots()).toEqual(["Assignment", "Indexing"]);
     expect(toolsHeadings()).toEqual(["Image"]);
+    const tools = screen.getByRole("complementary", { name: "Tools" });
+    for (const name of ["Assignment", "Indexing"]) {
+      const slot = tools.querySelector(`[data-section='${name}']`)!;
+      expect(slot).toHaveAttribute("aria-hidden", "true");
+      expect(within(slot as HTMLElement).queryAllByRole("button", { hidden: true })).toEqual([]);
+      expect(within(slot as HTMLElement).queryAllByRole("checkbox", { hidden: true })).toEqual([]);
+      expect(slot.querySelector("[data-testid='workspace-indexing-fit']")).toBeNull();
+    }
     expect(screen.queryByRole("button", { name: /Custom index/ })).toBeNull();
-    expect(screen.queryByTestId("workspace-indexing")).toBeNull();
     view.unmount();
     renderAt(`/experiments/1/workspace/${CAPILLARY}`);
+    expect(slotOrder()).toEqual(["Assignment", "Indexing", "Image"]);
+    expect(reservedSlots()).toEqual([]);
     expect(toolsHeadings()).toEqual(["Assignment", "Indexing", "Image"]);
   });
 
-  it("keeps the Image section open on a short window when it is the only section", () => {
-    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(max-height: 860px)", media: query, addEventListener: () => {}, removeEventListener: () => {} }));
+  it("keeps the same slot order and the same folded Image on a short window for an autosampler sample as for a capillary one", () => {
+    vi.stubGlobal("matchMedia", SHORT);
     try {
-      renderAt(`/experiments/1/workspace/${AUTOSAMPLER}`);
+      const view = renderAt(`/experiments/1/workspace/${AUTOSAMPLER}`);
+      expect(slotOrder()).toEqual(["Assignment", "Image", "Indexing"]);
+      expect(reservedSlots()).toEqual(["Assignment", "Indexing"]);
       const tools = screen.getByRole("complementary", { name: "Tools" });
-      expect(within(tools).getByText("File")).toBeInTheDocument();
-      expect(within(tools).queryByRole("button", { name: /^Image/ })).toBeNull();
+      expect(within(tools).getByRole("button", { name: /^Image/ })).toHaveAttribute("aria-expanded", "false");
+      expect(within(tools).queryByText("File")).toBeNull();
+      expect(tools.querySelector("[data-section='Assignment']")).not.toHaveAttribute("data-collapsed");
+      view.unmount();
+      renderAt(`/experiments/1/workspace/${CAPILLARY}`);
+      expect(slotOrder()).toEqual(["Assignment", "Image", "Indexing"]);
+      expect(within(screen.getByRole("complementary", { name: "Tools" })).getByRole("button", { name: /^Image/ })).toHaveAttribute("aria-expanded", "false");
     } finally {
       vi.unstubAllGlobals();
     }
@@ -4065,7 +4089,7 @@ describe("WorkspacePage modules by setup mode", () => {
 
   describe("a bridged pair of an autosampler and a capillary sample", () => {
     const mateImages = (sampleId: number): void => {
-      state.mateExposures = new Map([[sampleId, [exposure(300, { sample_id: sampleId }), exposure(301, { sample_id: sampleId })]]]);
+      state.mateExposures = new Map([[sampleId, [exposure(300, { sample_id: sampleId, image_path: "/m.tif" }), exposure(301, { sample_id: sampleId, image_path: "/m.tif" })]]]);
     };
     const bridge = (a: number, b: number): void => {
       state.bridges = [{ sample_id: a, group_id: 4 }, { sample_id: b, group_id: 4 }];
@@ -4098,8 +4122,9 @@ describe("WorkspacePage modules by setup mode", () => {
       fireEvent.keyDown(window, { key: "Enter" });
       expect(calls.filter((c) => c.hook === "op:setSelection")).toEqual([]);
       fireEvent.keyDown(window, { key: " " });
-      const overlay = screen.queryByRole("dialog", { name: "Detector image" });
-      if (overlay) expect(within(overlay).queryByRole("checkbox")).toBeNull();
+      const overlay = screen.getByRole("dialog", { name: "Detector image" });
+      expect(within(overlay).queryByRole("checkbox")).toBeNull();
+      expect(within(overlay).queryByRole("button", { name: /select/i })).toBeNull();
     });
   });
 
@@ -4123,6 +4148,49 @@ describe("WorkspacePage modules by setup mode", () => {
       state.bridges = [{ sample_id: CAPILLARY, group_id: 4 }, { sample_id: 12, group_id: 4 }];
       renderAt(`/experiments/1/workspace/${CAPILLARY}`);
       expect(screen.getByRole("dialog", { name: /^Calls differ/ })).toBeInTheDocument();
+    });
+  });
+
+  it("leaves I to the browser on an autosampler sample", () => {
+    renderAt(`/experiments/1/workspace/${AUTOSAMPLER}`);
+    expect(fireEvent.keyDown(window, { key: "i" })).toBe(true);
+    expect(fireEvent.keyDown(window, { key: "I" })).toBe(true);
+  });
+
+  describe("the help follows the images in the strip", () => {
+    const helpText = (): string => {
+      fireEvent.keyDown(window, { key: "?" });
+      const text = screen.getByRole("dialog").textContent ?? "";
+      fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+      return text;
+    };
+
+    it("lists the selection rows when a bridged capillary mate's images can be selected, though the open sample cannot", () => {
+      state.bridges = [{ sample_id: AUTOSAMPLER, group_id: 4 }, { sample_id: CAPILLARY, group_id: 4 }];
+      state.exposures = [exposure(100, { sample_id: AUTOSAMPLER, image_path: "/a.tif" })];
+      state.mateExposures = new Map([[CAPILLARY, [exposure(300, { sample_id: CAPILLARY, image_path: "/m.tif" })]]]);
+      renderAt(`/experiments/1/workspace/${AUTOSAMPLER}`);
+      expect(helpText()).toContain("Select the image to analyze");
+      expect(helpText()).not.toContain("Tick or untick a phase candidate");
+    });
+
+    it("says Enter works inside the enlarged view only while the shown image can be selected", () => {
+      state.bridges = [{ sample_id: CAPILLARY, group_id: 4 }, { sample_id: AUTOSAMPLER, group_id: 4 }];
+      state.exposures = [exposure(100, { sample_id: CAPILLARY, image_path: "/a.tif" })];
+      state.mateExposures = new Map([[AUTOSAMPLER, [exposure(300, { sample_id: AUTOSAMPLER, image_path: "/m.tif" })]]]);
+      renderAt(`/experiments/1/workspace/${CAPILLARY}`);
+      fireEvent.click(screen.getByRole("button", { name: "Image 1" }));
+      expect(helpText()).toContain("X and Enter work inside it");
+      fireEvent.click(screen.getAllByRole("button", { name: /^Image 1 of / })[0]!);
+      const text = helpText();
+      expect(text).toContain("X work inside it");
+      expect(text).not.toContain("X and Enter work inside it");
+    });
+
+    it("lists no selection rows when no image in the strip can be selected", () => {
+      ownExposures(AUTOSAMPLER);
+      renderAt(`/experiments/1/workspace/${AUTOSAMPLER}`);
+      expect(helpText()).not.toContain("Select the image to analyze");
     });
   });
 

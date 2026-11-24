@@ -677,3 +677,57 @@ end
         end
     end
 end
+
+@testset "the server refuses analysis edits on an autosampler sample" begin
+    tmp = mktempdir()
+    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+    mkpath(analysis_dir)
+    cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
+       joinpath(analysis_dir, "example_tot.dat"))
+    db     = open_prepared_clone(tmp)
+    exp_id = HimalayaUI.init_experiment!(db; path = tmp,
+        data_dir = joinpath(tmp, "data"), analysis_dir = analysis_dir)
+    auto   = HimalayaUI.create_setup!(db; experiment_id = exp_id, folder = "solution",
+        root_dir = tmp, data_dir = tmp, analysis_dir = analysis_dir, mode = "autosampler")
+    s_id   = HimalayaUI.create_sample!(db; experiment_id = exp_id, name = "water 01A (B0101)", setup_id = auto)
+    e_id   = HimalayaUI.create_exposure!(db; experiment_id = exp_id, sample_id = s_id, setup_id = auto, filename = "example_tot")
+    HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
+    auto_peak = Int(only(Tables.rowtable(DBInterface.execute(db,
+        "SELECT id FROM auto_peaks WHERE exposure_id = ? ORDER BY q LIMIT 1", [e_id]))).id)
+    index_id = Int(first(Tables.rowtable(DBInterface.execute(db,
+        "SELECT id FROM indices WHERE exposure_id = ?", [e_id]))).id)
+    DBInterface.execute(db, "INSERT INTO peak_curations (exposure_id, kind, q) VALUES (?, 'add', 0.5)", [e_id])
+    manual = Int(only(Tables.rowtable(DBInterface.execute(db, "SELECT MAX(id) AS id FROM peak_curations"))).id)
+    count(table) = Int(only(Tables.rowtable(DBInterface.execute(db, "SELECT COUNT(*) AS c FROM $table"))).c)
+    json_hdr = ["Content-Type" => "application/json", "X-Username" => "alice", "X-Client-Op-Id" => "op-refused"]
+
+    with_inproc_routes(db) do call
+        send(method, path, body = nothing) = body === nothing ?
+            call(method, path; headers = json_hdr) :
+            call(method, path; body = Vector{UInt8}(JSON3.write(body)), headers = json_hdr)
+        attempts = [
+            ("POST", "/api/exposures/$e_id/peaks", Dict(:q => 0.5)),
+            ("PATCH", "/api/peaks/auto/$auto_peak", Dict(:excluded => true)),
+            ("DELETE", "/api/peaks/manual/$manual", nothing),
+            ("POST", "/api/samples/$s_id/call/state", Dict(:state => "form_factor")),
+            ("POST", "/api/exposures/$e_id/assignment/members", Dict(:index_id => index_id)),
+            ("DELETE", "/api/exposures/$e_id/assignment/members/$index_id", nothing),
+            ("POST", "/api/exposures/$e_id/speculative", Dict(:phase => "Pn3m", :anchor_peak_id => auto_peak, :anchor_ratio => 2)),
+            ("POST", "/api/exposures/$e_id/custom-index", Dict(:phase => "Pn3m", :basis => 0.1, :ratios => [1.0, 1.4])),
+            ("DELETE", "/api/indices/$index_id", nothing),
+            ("POST", "/api/exposures/$e_id/analyze", nothing),
+        ]
+        for (method, path, body) in attempts
+            events, cached, peaks, curations = count("user_actions"), count("idempotent_responses"), count("auto_peaks"), count("peak_curations")
+            r = send(method, path, body)
+            @test (method, path, r.status) == (method, path, 422)
+            @test JSON3.read(String(r.body)).error == "An autosampler sample is not analyzed, so its peaks, calls and indices can't be edited."
+            @test (count("user_actions"), count("idempotent_responses"), count("auto_peaks"), count("peak_curations")) ==
+                  (events, cached, peaks, curations)
+        end
+
+        r = call("PATCH", "/api/exposures/$e_id/status";
+            body = Vector{UInt8}(JSON3.write(Dict(:status => "rejected"))), headers = json_hdr)
+        @test r.status == 200
+    end
+end
