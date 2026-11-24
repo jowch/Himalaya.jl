@@ -34,9 +34,9 @@ end
 
 const _COLD_ROUTES_OFF_THE_TRIAGE_PATH = Set([
     "GET /**",
-    "POST /api/experiments", "DELETE /api/experiments/{id}",
+    "DELETE /api/experiments/{id}",
     "POST /api/experiments/{id}/scan", "POST /api/experiments/{id}/setups",
-    "GET /api/fs/manifest", "GET /api/fs/preview",
+    "GET /api/fs/manifest",
     "PATCH /api/samples/{id}",
 ])
 
@@ -106,4 +106,45 @@ end
         Read query results with `sqlrows(DBInterface.execute(...))`, not `Tables.rowtable`. \
         `Tables.rowtable` types each column by the values it finds, so a NULL or an empty result \
         makes a new row type, and the code that reads it compiles again on first use.""" offenders
+end
+
+function _workload_beamtime_scanned(root)
+    db = HimalayaUI.open_db(joinpath(mktempdir(), "h.db"))
+    eid = HimalayaUI.create_experiment!(db; name = "workload", path = root)
+    for (i, setup_root) in enumerate(HimalayaUI.setup_roots(root))
+        r = HimalayaUI.resolve_experiment_layout(setup_root)
+        HimalayaUI.create_setup!(db; experiment_id = eid, data_dir = r.data_dir, analysis_dir = r.analysis_dir,
+            root_dir = setup_root, position = i - 1, mode = r.mode, image_pattern = r.image_pattern,
+            metadata_pattern = r.metadata_pattern, integration_pattern = r.integration_pattern)
+    end
+    HimalayaUI.scan_and_group!(db, eid)
+    (db, eid)
+end
+
+@testset "the workload's autosampler beamtime holds what a first real use hits" begin
+    root = mktempdir()
+    HimalayaUI._workload_beamtime_tree(root)
+    @test [basename(r) for r in HimalayaUI.setup_roots(root)] == ["autosampler", "capillary"]
+    @test HimalayaUI.resolve_experiment_layout(joinpath(root, "autosampler")).mode == "autosampler"
+    @test HimalayaUI.resolve_experiment_layout(joinpath(root, "capillary")).mode == "capillary"
+    (db, eid) = _workload_beamtime_scanned(root)
+    rows = HimalayaUI.sqlrows(DBInterface.execute(db, """
+        SELECT s.id AS id, s.name AS name, e.frames_total AS total, e.frames_rejected AS rejected,
+               e.transmitted_counts AS t, e.incident_monitor AS i, e.counting_time AS c, e.setup_id AS setup_id
+          FROM samples s JOIN exposures e ON e.sample_id = s.id JOIN setups st ON st.id = s.setup_id
+         WHERE st.mode = 'autosampler' ORDER BY s.id"""))
+    @test length(rows) == 5
+    ids = Dict(String(r.name) => Int(r.id) for r in rows)
+    defaults = HimalayaUI.default_backgrounds(db, eid)
+    firsts = [n for n in keys(ids) if occursin("(B0101)", n)]
+    @test length(firsts) == 1
+    @test count(!isnothing, values(defaults)) == 2
+    @test all(r -> ismissing(r.total) == occursin("agbe", String(r.name)), rows)
+    @test any(r -> !ismissing(r.rejected) && r.rejected > 0, rows)
+    @test any(r -> occursin("(B0101)", String(r.name)) && !ismissing(r.total), rows)
+    HimalayaUI.read_trace_normalisations!(db; experiment_id = eid)
+    @test only(HimalayaUI.sqlrows(DBInterface.execute(db,
+        "SELECT trace_normalisation AS n FROM setups WHERE mode = 'autosampler'"))).n == "i2"
+    median_t = HimalayaUI.setup_transmission_median(db, only(unique(r.setup_id for r in rows)))
+    @test count(r -> !ismissing(r.t) && HimalayaUI.is_i2_collapsed(r.t, r.i, r.c, median_t), rows) == 1
 end
