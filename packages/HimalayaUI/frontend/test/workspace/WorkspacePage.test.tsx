@@ -546,7 +546,7 @@ describe("WorkspacePage", () => {
 
   it("links the Himalaya brand to all experiments", () => {
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByRole("link", { name: "Himalaya" })).toHaveAttribute("href", "/experiments");
+    expect(screen.getByRole("link", { name: "Himalaya SAXS, go to experiments" })).toHaveAttribute("href", "/experiments");
   });
 
   it("opens an experiment without a sample on its first unreviewed sample", () => {
