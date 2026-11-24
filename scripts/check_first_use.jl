@@ -66,6 +66,27 @@ function sample_open(sample)
     x
 end
 
+function autosampler_open(everything, setups, experiment, step)
+    autosampler_setups = Set(st.id for st in setups if st.mode == "autosampler")
+    backgrounds = call("GET", "/api/experiments/$experiment/compares").backgrounds
+    with_background = first(b for b in backgrounds if b.ref_sample_id !== nothing)
+    sample = first(s for s in everything if s.id == with_background.sample_id)
+    get(sample, :setup_id, nothing) in autosampler_setups || error("the demo's autosampler sample is not in an autosampler setup")
+    background = first(s for s in everything if s.id == with_background.ref_sample_id)
+    step("autosampler sample") do
+        for s in (sample, background)
+            exposures = call("GET", "/api/samples/$(s.id)/exposures")
+            call("GET", "/api/samples/$(s.id)/call")
+            for e in exposures
+                get(e, :kind, "file") == "file" && call("GET", "/api/exposures/$(e.id)/image?thumb=1")
+            end
+            call("GET", "/api/exposures/$(s.analyzed_exposure_id)/trace")
+        end
+        call("GET", "/api/exposures/$(sample.analyzed_exposure_id)/image")
+        call("GET", "/api/experiments/$experiment/compares")
+    end
+end
+
 function measure(db_path)
     trace = Base.JLOptions().trace_compile
     (trace == C_NULL || Base.JLOptions().trace_compile_timing == 0) &&
@@ -114,12 +135,15 @@ function measure(db_path)
         call("GET", "/api/samples?experiment_id=$e")
         e
     end
-    capillary_setups = Set(st.id for st in call("GET", "/api/experiments/$experiment").setups if st.mode == "capillary")
-    samples = [s for s in call("GET", "/api/samples?experiment_id=$experiment")
+    setups = call("GET", "/api/experiments/$experiment").setups
+    capillary_setups = Set(st.id for st in setups if st.mode == "capillary")
+    everything = call("GET", "/api/samples?experiment_id=$experiment")
+    samples = [s for s in everything
                if s.analyzed_exposure_id !== nothing && get(s, :setup_id, nothing) in capillary_setups]
     length(samples) >= 3 || error("the demo needs at least 3 samples with a kept image")
     step(() -> sample_open(samples[1]), "first sample")
     step(() -> sample_open(samples[2]), "second sample")
+    autosampler_open(everything, setups, experiment, step)
 
     target = findfirst(smp -> any(p -> p.source == "auto",
                                   call("GET", "/api/exposures/$(smp.analyzed_exposure_id)/peaks")), samples)
