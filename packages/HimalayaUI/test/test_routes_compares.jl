@@ -379,6 +379,20 @@ end
         end
     end
 
+    @testset "an empty add or remove list means no change to that side" begin
+        db = open_prepared_clone(mktempdir())
+        (exp_id, (a, b, c)) = _seed_compare_samples(db, 3)
+        with_inproc_routes(db) do call
+            patch(body) = call("PATCH", "/api/samples/$a/compares"; headers=_compare_headers(), body=body)
+            @test patch(_compare_body(add=[b, c], remove=[])).status == 200
+            @test _refs(_compares(call, exp_id), a) == [b, c]
+            @test patch(_compare_body(add=[], remove=[c])).status == 200
+            @test _refs(_compares(call, exp_id), a) == [b]
+            @test patch(_compare_body(add=[], remove=[])).status == 200
+            @test _refs(_compares(call, exp_id), a) == [b]
+        end
+    end
+
     @testset "a sample holds at most five comparisons, one per comparison colour" begin
         db = open_prepared_clone(mktempdir())
         (exp_id, (a, rest...)) = _seed_compare_samples(db, 8)
