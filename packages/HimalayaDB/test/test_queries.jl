@@ -128,3 +128,17 @@ end
 
     close(db)
 end
+
+@testset "a subtraction turned off, and a default that is never stored, read as no background" begin
+    dir = mktempdir()
+    dbpath = joinpath(dir, "himalaya.db")
+    ids = build_fixture(dbpath, dir)
+    writer = SQLite.DB(dbpath)
+    DBInterface.execute(writer, "DELETE FROM sample_subtractions")
+    DBInterface.execute(writer, "INSERT INTO sample_subtractions (sample_id, ref_sample_id) VALUES (?, NULL)", [ids.sample_id])
+    close(writer)
+    db = HimalayaDB.connect(dbpath)
+    @test subtraction_background(db, ids.sample_id) === nothing
+    @test subtraction_background(db, ids.sample2_id) === nothing
+    close(db)
+end
