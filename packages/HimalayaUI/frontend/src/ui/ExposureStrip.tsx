@@ -144,8 +144,8 @@ export function ExposureStrip({ groups, currentId, onPick, onToggleDrop, warning
                     )}
                   </div>
                   <div data-tile-footer="" className="flex h-6 min-w-0 items-center gap-1">
-                    <span className={"min-w-0 flex-1 truncate text-xs " + (dropped ? "text-ink-soft" : "text-warning")} aria-hidden={dropped ? undefined : "true"}>
-                      {dropped ? "Dropped" : warning}
+                    <span className={"min-w-0 flex-1 truncate text-xs " + (warning !== undefined ? "text-warning" : "text-ink-soft")} aria-hidden={dropped ? undefined : "true"}>
+                      {dropped ? "Dropped" : warning ?? `Image ${i + 1}`}
                     </span>
                     <button
                       type="button"

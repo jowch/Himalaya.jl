@@ -135,7 +135,7 @@ export function SampleList({ samples, setupHeaders, currentId, filter, onFilter,
           return (
             <Fragment key={s.id}>
             {header !== undefined && (
-              <li data-testid="setup-header" className="sticky top-0 z-[1] border-b border-hair bg-paper px-2.5 pb-1 pt-2 text-xs font-semibold text-ink-soft">
+              <li data-testid="setup-header" className="sticky top-0 z-[1] border-b border-hair bg-paper px-3.5 pb-1 pt-2 text-xs font-semibold text-ink-soft">
                 {header}
               </li>
             )}
@@ -160,7 +160,7 @@ export function SampleList({ samples, setupHeaders, currentId, filter, onFilter,
                   onPick(s.id);
                 }}
                 className={
-                  "flex w-full items-center justify-between gap-2 px-2.5 py-[5px] text-left text-base text-ink " +
+                  "flex w-full items-center justify-between gap-2 px-3.5 py-[5px] text-left text-base text-ink " +
                   (cur ? "font-semibold " + SELECTED_ROW : s.id === highlightedId ? "bg-paper-sunk" : "hover:bg-paper-sunk")
                 }
               >

@@ -1657,7 +1657,7 @@ export function WorkspacePage(): JSX.Element {
           <>
             <SampleHeading
               name={sample.name}
-              eyebrow={sampleEyebrow(setups.find((st) => st.id === sample.setup_id)?.name, samples.findIndex((s) => s.id === sample.id), samples.length)}
+              eyebrow={sampleEyebrow(setups.length > 1 ? setups.find((st) => st.id === sample.setup_id)?.name : undefined, samples.findIndex((s) => s.id === sample.id), samples.length)}
               badge={bridgeMates.length > 0 ? <BridgeMenu key={sampleId} mates={bridgeMates} editable={Boolean(username)} onGo={goSample} onRemove={unbridgeOne} /> : undefined}
               aside={
                 <LabelRow

@@ -134,7 +134,7 @@ function Rows({ rows, assigned, unsupported, disabled, onToggle, onToggleGroup, 
               onMouseMove={() => onHover(ids)}
               onFocus={() => onHover(ids)}
               data-testid="workspace-bonnet-group"
-              className={ROW + "grid-cols-[auto_1fr_auto] gap-1.5 py-[6px] " + ROW_LOOK}
+              className={ROW + "grid-cols-[auto_1fr_auto] gap-1.5 py-[5px] " + ROW_LOOK}
             >
               <Key n={key} pressed={pressed} />
               <span className="min-w-0 truncate whitespace-nowrap">

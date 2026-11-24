@@ -488,7 +488,7 @@ for (const width of [1024, 1280]) {
         expect(await title.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
         const add = page.getByRole("button", { name: "+ Label L" });
         await expect(add).toBeVisible();
-        const heading = (await title.evaluate((el) => el.parentElement!.parentElement!.getBoundingClientRect().toJSON())) as DOMRect;
+        const heading = (await title.evaluate((el) => el.closest("[data-sample-heading]")!.getBoundingClientRect().toJSON())) as DOMRect;
         const btn = (await add.boundingBox())!;
         expect(btn.x + btn.width).toBeLessThanOrEqual(heading.x + heading.width);
         if (id === 42) await expect(page.getByTestId("workspace-label-chips").locator("[data-label], [data-testid=workspace-labels-more]").first()).toBeVisible();

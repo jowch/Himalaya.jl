@@ -28,5 +28,6 @@ describe("ExposureStrip tile layout", () => {
     expect(within(footer(2)).getByText("Dropped")).toBeTruthy();
     expect(within(footer(2)).getByRole("button", { name: "Restore" })).toBeTruthy();
     expect(within(footer(0)).getByRole("button", { name: "Drop" })).toBeTruthy();
+    expect(within(footer(0)).getByText("Image 1")).toBeTruthy();
   });
 });
