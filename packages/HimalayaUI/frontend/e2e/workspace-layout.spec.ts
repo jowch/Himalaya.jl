@@ -603,6 +603,21 @@ for (const width of [1024, 1280]) {
   });
 }
 
+test("a chip's scale is drawn as an explained term, dotted with a help cursor, and focusing it shows the same text a screen reader gets", async ({ page }) => {
+  await openChips(page, 1440, [42], false);
+  const term = page.getByTestId("workspace-compare-bar").locator("[data-scale-value]").locator("xpath=..");
+  const look = await term.evaluate((n) => {
+    const css = getComputedStyle(n);
+    return { line: css.textDecorationLine, style: css.textDecorationStyle, cursor: css.cursor };
+  });
+  expect(look).toEqual({ line: "underline", style: "dotted", cursor: "help" });
+  await term.focus();
+  const tip = page.getByRole("tooltip");
+  await expect(tip).toBeVisible();
+  const described = await term.evaluate((n) => document.getElementById(n.getAttribute("aria-describedby")!)!.textContent);
+  await expect(tip).toHaveText(described!);
+});
+
 for (const width of [1024, 1280, 1440]) {
   for (const subtracting of [false, true]) {
     test(`at ${width} px five compare chips${subtracting ? " and the subtraction toggle" : ""} fit in the two reserved rows, each whole`, async ({ page }) => {

@@ -29,6 +29,7 @@ function register_samples_routes!()
         rep_by_sample = Dict{Int, Int}()
         gap_by_sample = Dict{Int, String}()
         beam_off_by_sample = Dict{Int, Int}()
+        measured_by_sample = Dict{Int, String}()
         sids = [Int(sm.id) for sm in samples]
         if !isempty(samples)
             ph   = join(fill("?", length(sids)), ",")
@@ -49,6 +50,12 @@ function register_samples_routes!()
                 is_kept_exposure(e) && e.kind == "file" && is_beam_off(e.trace_median, e.analysis_error, e.incident_monitor) &&
                     (beam_off_by_sample[Int(e.sample_id)] = get(beam_off_by_sample, Int(e.sample_id), 0) + 1)
             end
+            for r in sqlrows(DBInterface.execute(db, """
+                    SELECT sample_id, MIN(timestamp) AS measured_at FROM exposures
+                     WHERE sample_id IN ($ph) AND kind = 'file' AND timestamp IS NOT NULL
+                     GROUP BY sample_id""", sids))
+                measured_by_sample[Int(r.sample_id)] = String(r.measured_at)
+            end
             for (sid, exps) in grouped_exps
                 rep = analyzed_exposure_id(exps)
                 rep === nothing || (rep_by_sample[sid] = rep)
@@ -66,6 +73,7 @@ function register_samples_routes!()
             d[:analyzed_exposure_id] = get(rep_by_sample, Int(sm.id), nothing)
             d[:analysis_gap] = get(gap_by_sample, Int(sm.id), nothing)
             d[:beam_off_images] = get(beam_off_by_sample, Int(sm.id), 0)
+            d[:measured_at] = get(measured_by_sample, Int(sm.id), nothing)
             state = get(call_states, Int(sm.id), "indexed")
             summary = call_summary(state, get(call_members, Int(sm.id), []))
             d[:assignment_state] = state

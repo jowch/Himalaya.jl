@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { getJson, request } from "./http.mjs";
 import { STALE_LAYOUT_HINT, autosamplerDir, findDemoExperiment, readAutosamplerTruth, readTruth, staleDemoLayout } from "./demo.mjs";
@@ -439,6 +440,29 @@ async function readAssignment(api, exposureId) {
   return { state: a.state, phases: a.members.map((m) => byId.get(m)).filter(Boolean) };
 }
 
+function tracePath(setup, filename) {
+  if (!setup?.analysis_dir || !setup?.integration_pattern) return null;
+  return path.join(setup.analysis_dir, setup.integration_pattern.replace("{name}", filename));
+}
+
+export function untracedIds(exposures, setups, exists = fs.existsSync) {
+  const byId = new Map(setups.map((st) => [st.id, st]));
+  return exposures
+    .filter((e) => e.kind === "file")
+    .filter((e) => {
+      const file = tracePath(byId.get(e.setup_id), e.filename);
+      return file !== null && !exists(file);
+    })
+    .map((e) => e.id);
+}
+
+async function untracedOutsideTruth(api, experimentId, setups, truthSampleIds) {
+  const samples = await getJson(api, `/api/samples?experiment_id=${experimentId}`);
+  const others = samples.filter((s) => !truthSampleIds.has(s.id));
+  const exposures = (await Promise.all(others.map((s) => getJson(api, `/api/samples/${s.id}/exposures`)))).flat();
+  return untracedIds(exposures, setups);
+}
+
 async function experimentSetups(api, experimentId) {
   const experiments = await getJson(api, "/api/experiments");
   return experiments.find((e) => e.id === experimentId)?.setups ?? [];
@@ -549,7 +573,10 @@ export async function checkTruth(cfg, flags, { views = readViews } = {}) {
   let workspaceRead = null;
   let opened = null;
   if (flags.ui) {
-    const heldIds = app.flatMap((s) => s.frames).filter((f) => heldSet.has(f.filename)).map((f) => f.id);
+    const heldIds = [
+      ...app.flatMap((s) => s.frames).filter((f) => heldSet.has(f.filename)).map((f) => f.id),
+      ...(await untracedOutsideTruth(cfg.apiBase, experimentId, setups, new Set(app.map((s) => s.id)))),
+    ];
     opened = await views(cfg, experimentId, app.map((s) => ({ id: s.id, name: s.name, frameOrder: s.frameOrder, heldIds })), { reload: Boolean(flags.reload) });
     const reused = [...opened.values()].map((v) => v.workspace_reused).filter((v) => v !== undefined);
     workspaceRead = reused.length ? (reused.every(Boolean) ? "in place" : "loaded") : null;

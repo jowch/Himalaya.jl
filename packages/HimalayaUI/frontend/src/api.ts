@@ -94,6 +94,7 @@ export interface CorpusSample extends Sample {
   analyzed_exposure_id?: number | null;
   analysis_gap?: "all_dropped" | "none_selected" | null;
   beam_off_images?: number;
+  measured_at?: string | null;
 }
 
 export class ApiError extends Error {

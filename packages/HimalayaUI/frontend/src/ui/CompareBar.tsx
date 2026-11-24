@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 import { Kbd } from "./Kbd";
+import { Term } from "./Term";
 import { Tooltip } from "./Tooltip";
+import { explainScale, formatScale } from "./scaleExplanation";
 import type { CompareScale } from "../workspace/compare";
 import { SKIP_NOTES, type SkipReason } from "../workspace/minusCompares";
 import { COMPARE_DASH } from "./WorkspacePlot";
@@ -29,26 +31,11 @@ interface Props {
   trailing?: ReactNode;
 }
 
-export const SCALE_NOTES: Record<CompareScale["source"], string> = {
-  normalised: "Both already divided by the transmitted beam, so not rescaled",
-  monitor: "Scaled by the transmitted beam",
-  matched: "No transmitted-beam reading, so matched at high q",
-  other_setup: "From another setup, so matched at high q",
-  beam_off: "Taken with the beam off, so matched at high q",
-  i2_collapsed: "Transmitted beam dropped on this image, so matched at high q",
-  capillary: "Capillary setup, so matched at high q",
-  unknown_mode: "Setup type not set, so matched at high q",
-  unknown_normalisation: "Integration settings not found, so matched at high q",
-};
-
-const isMatchedAtHighQ = (s: CompareScale): boolean => s.source !== "normalised" && s.source !== "monitor";
-
 function describe(c: CompareChip, subtracted: boolean): string | undefined {
   const parts = [
     subtracted ? "Subtracted from the current trace" : undefined,
     c.minus?.kind === "drawn" ? `Minus ${c.minus.background}` : undefined,
     c.minus?.kind === "skipped" ? SKIP_NOTES[c.minus.reason] : undefined,
-    c.scale && isMatchedAtHighQ(c.scale) ? SCALE_NOTES[c.scale.source] : undefined,
   ].filter(Boolean);
   return parts.length > 0 ? parts.join(". ") : undefined;
 }
@@ -84,7 +71,6 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
                     <span className="block">{`Click to ${off ? "show" : "hide"}.`}{canSubtract && ` ${modKey}-click to ${sub ? "stop subtracting" : "subtract it from the current trace"}.`}</span>
                     {c.minus?.kind === "drawn" && <span className="block">{`Minus ${c.minus.background}`}</span>}
                     {c.minus?.kind === "skipped" && <span className="block">{SKIP_NOTES[c.minus.reason]}</span>}
-                    {c.scale !== undefined && <span className="block">{SCALE_NOTES[c.scale.source]}</span>}
                   </>
                 }
               >
@@ -117,11 +103,9 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
                 </Tooltip>
               )}
               {c.scale !== undefined && (
-                <Tooltip content={SCALE_NOTES[c.scale.source]}>
-                  <span className={"shrink-0 whitespace-nowrap text-ink-faint" + dim} data-scale-source={c.scale.source} data-scale-value>
-                    ×{c.scale.scale.toPrecision(3)}
-                  </span>
-                </Tooltip>
+                <Term explain={explainScale(c.scale)} className={"shrink-0 whitespace-nowrap text-ink-faint" + dim}>
+                  <span data-scale-source={c.scale.source} data-scale-value>×{formatScale(c.scale.scale)}</span>
+                </Term>
               )}
               <button
                 type="button"
