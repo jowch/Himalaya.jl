@@ -1132,3 +1132,16 @@ end
     DBInterface.execute(migrated, "DELETE FROM samples WHERE id = ?", [a])
     @test [Int(r.sample_id) for r in q(migrated, "SELECT * FROM sample_subtractions")] == [b]
 end
+
+@testset "reopening a database that already holds a none row leaves it alone" begin
+    path = joinpath(mktempdir(), "none.db")
+    db = HimalayaUI.open_db(path)
+    exp_id = create_experiment!(db; path = "/d", data_dir = "/d", analysis_dir = "/a")
+    a = create_sample!(db; experiment_id = exp_id, name = "lipidA 01A (S0101)")
+    DBInterface.execute(db, "INSERT INTO sample_subtractions (sample_id, ref_sample_id) VALUES (?, NULL)", [a])
+    DBInterface.execute(db, "DELETE FROM schema_migrations WHERE name = ?", [HimalayaUI.MIGRATION_SUBTRACTION_NONE])
+    SQLite.close(db)
+    reopened = HimalayaUI.open_db(path)
+    rows = Tables.rowtable(DBInterface.execute(reopened, "SELECT sample_id, ref_sample_id FROM sample_subtractions"))
+    @test [(Int(r.sample_id), ismissing(r.ref_sample_id)) for r in rows] == [(a, true)]
+end
