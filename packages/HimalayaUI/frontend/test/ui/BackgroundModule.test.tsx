@@ -1,6 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { BackgroundModule, type BackgroundView } from "../../src/ui/BackgroundModule";
+import { SCALE_NOTES } from "../../src/ui/CompareBar";
+import type { CompareScale } from "../../src/workspace/compare";
 
 const set = (over: Partial<Extract<BackgroundView, { kind: "set" }>> = {}): BackgroundView => ({
   kind: "set", name: "lipidA 01A (B0100)", source: "default", trace: "ready", scale: { scale: 1, source: "normalised" }, canUseRunBuffer: false, ...over,
@@ -70,9 +72,18 @@ describe("BackgroundModule", () => {
     expect(on.onDefault).toHaveBeenCalled();
   });
 
-  it("says when the run has no buffer to use", () => {
+  it("says when the run has no buffer to use, and does not offer None, which would stop a later buffer being the default", () => {
     show({ kind: "off", reason: "no-buffer", canUseRunBuffer: false });
     expect(screen.getByText("No buffer in this run. Choose one to subtract.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "None" })).toBeNull();
+    expect(screen.getByRole("button", { name: /Change/ })).toBeInTheDocument();
+  });
+
+  it.each(Object.keys(SCALE_NOTES) as CompareScale["source"][])("shows the whole %s note on the page, not only in a tooltip", (source) => {
+    show(set({ scale: { scale: 1.5, source } }));
+    expect(screen.getByText(SCALE_NOTES[source])).toBeVisible();
+    expect(screen.getByText("×1.50")).toBeVisible();
+    expect(screen.queryByRole("tooltip")).toBeNull();
   });
 
   it("says a buffer has nothing subtracted and offers no controls", () => {

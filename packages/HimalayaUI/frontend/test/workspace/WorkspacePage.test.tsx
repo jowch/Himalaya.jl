@@ -4445,6 +4445,48 @@ describe("WorkspacePage autosampler background", () => {
     expect(within(module()).getByRole("button", { name: /Change/ })).toBeEnabled();
   });
 
+  it("offers the run's buffer again after the user picks that same buffer, so the default can be followed again", () => {
+    seed();
+    open(FIRST);
+    fireEvent.click(within(module()).getByRole("button", { name: "None" }));
+    fireEvent.click(within(module()).getByRole("button", { name: /Change/ }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Choose the background" })).getByRole("button", { name: /lipidA 01A \(B0100\)/ }));
+    expect(within(module()).getByText("Your choice")).toBeInTheDocument();
+    fireEvent.click(within(module()).getByRole("button", { name: "Use the run's buffer" }));
+    expect(patches().at(-1)).toEqual({ subtraction: "default" });
+  });
+
+  it("offers no None on a run without a buffer, and no B help row on a buffer sample", () => {
+    seed([entry(FIRST, { ref_sample_id: null, default_ref_sample_id: null, run_buffer_ids: [] }), entry(BUFFER)]);
+    const view = open(FIRST);
+    expect(within(module()).queryByRole("button", { name: "None" })).toBeNull();
+    view.unmount();
+    open(BUFFER);
+    fireEvent.keyDown(window, { key: "?" });
+    expect(within(screen.getByRole("dialog")).queryByText("Choose what is subtracted from this sample")).toBeNull();
+  });
+
+  it("shows the plot's loading state, not the raw trace, while the background's trace loads, then draws Minus", () => {
+    seed();
+    state.compareTraces = new Map();
+    state.traceLoading = new Set([BUFFER]);
+    const view = open(FIRST);
+    expect(screen.getByTestId("workspace-trace-empty")).toHaveTextContent("Loading the background's trace");
+    expect(screen.queryByTestId("workspace-trace")).toBeNull();
+    state.compareTraces = new Map([[BUFFER, makeTrace(1)]]);
+    view.rerender(page(`/experiments/1/workspace/${FIRST}`));
+    expect(plot().querySelector("[data-role='difference-line']")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Minus lipidA 01A (B0100)" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("reserves the toggle's place while the background's trace loads", () => {
+    seed();
+    state.compareTraces = new Map();
+    state.traceLoading = new Set([BUFFER]);
+    open(FIRST);
+    expect(screen.getByTestId("workspace-subtraction-toggle")).toHaveAttribute("aria-hidden", "true");
+  });
+
   it("sits above the Image section's beamline average without sharing its text", () => {
     seed();
     state.exposures = [exposure(100, { sample_id: FIRST, exposure_time: 1, frames_total: 10, frames_rejected: 1 })];
