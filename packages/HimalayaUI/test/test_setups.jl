@@ -215,12 +215,13 @@ end
     @test HimalayaUI.parse_integ_normalisation(mpp("-i yes ion3 1\n")).by == "unknown"
     @test HimalayaUI.parse_integ_normalisation(mpp("-i yes\n")).by == "unknown"
 
-    root = mktempdir()
+    outside = mktempdir()
+    root = joinpath(outside, "beamtime")
     analysis = joinpath(root, "setup1", "analysis", "automatic_analysis")
     mkpath(analysis)
-    @test HimalayaUI.trace_normalisation(analysis).by == "unknown"
+    @test HimalayaUI.trace_normalisation(analysis; within = root).by == "unknown"
     write(joinpath(root, "setup1", "analysis", "integ.mpp"), "-i yes i2 1e6\n")
-    @test HimalayaUI.trace_normalisation(analysis) == (by = "i2", base = 1e6)
+    @test HimalayaUI.trace_normalisation(analysis; within = root) == (by = "i2", base = 1e6)
 
     db = HimalayaUI.open_db(joinpath(mktempdir(), "h.db"))
     other = joinpath(root, "setup2", "analysis")
@@ -231,14 +232,18 @@ end
         analysis_dir = other, position = 1)
     stored() = Dict(Int(r.id) => (r.trace_normalisation, r.normalisation_base)
                     for r in Tables.rowtable(DBInterface.execute(db, "SELECT id, trace_normalisation, normalisation_base FROM setups")))
-    @test HimalayaUI.read_trace_normalisations!(db; experiment_id = eid) == 1
+    write(joinpath(outside, "integ.mpp"), "-i yes i1 1\n")
+    @test HimalayaUI.trace_normalisation(other; within = root).by == "unknown"
+    @test HimalayaUI.trace_normalisation(outside; within = root).by == "i1"
+    @test HimalayaUI.read_trace_normalisations!(db; experiment_id = eid) == 2
     @test isequal(stored()[sid2], ("unknown", missing))
     @test any(v -> v == ("i2", 1e6), values(stored()))
+    @test HimalayaUI.read_trace_normalisations!(db) == 0
 
     write(joinpath(other, "integ.mpp"), "-o x\n")
     @test HimalayaUI.read_trace_normalisations!(db) == 1
     @test isequal(stored()[sid2], ("none", missing))
     write(joinpath(other, "integ.mpp"), "-i yes i2 5\n")
-    @test HimalayaUI.read_trace_normalisations!(db) == 0
-    @test isequal(stored()[sid2], ("none", missing))
+    @test HimalayaUI.read_trace_normalisations!(db) == 1
+    @test isequal(stored()[sid2], ("i2", 5.0))
 end

@@ -6,16 +6,18 @@ const NORMALISED_BY_I1 = "i1"
 const RAW_COUNTS = "none"
 const NORMALISATION_UNKNOWN = "unknown"
 
-function find_integ_file(analysis_dir::AbstractString)::Union{String,Nothing}
-    dir = String(analysis_dir)
-    for _ in 1:4
+_dir_key(d) = rstrip(normpath(abspath(String(d))), '/')
+_inside(dir, root) = (d = _dir_key(dir); r = _dir_key(root); d == r || startswith(d, r * "/"))
+
+function find_integ_file(analysis_dir::AbstractString; within::AbstractString = analysis_dir)::Union{String,Nothing}
+    dir = _dir_key(analysis_dir)
+    while true
         candidate = joinpath(dir, INTEG_FILE)
         isfile(candidate) && return candidate
         parent = dirname(dir)
-        parent == dir && break
+        (parent == dir || !_inside(parent, within)) && return nothing
         dir = parent
     end
-    nothing
 end
 
 # physics: SASTool's `-i yes <i1|i2> <grand base>` divides every trace by that
@@ -35,8 +37,8 @@ function parse_integ_normalisation(path::AbstractString)
     (by = RAW_COUNTS, base = nothing)
 end
 
-function trace_normalisation(analysis_dir::AbstractString)
-    path = find_integ_file(analysis_dir)
+function trace_normalisation(analysis_dir::AbstractString; within::AbstractString = analysis_dir)
+    path = find_integ_file(analysis_dir; within)
     path === nothing && return (by = NORMALISATION_UNKNOWN, base = nothing)
     try
         parse_integ_normalisation(path)
@@ -47,18 +49,25 @@ function trace_normalisation(analysis_dir::AbstractString)
 end
 
 function read_trace_normalisations!(db::SQLite.DB; experiment_id::Union{Integer,Nothing} = nothing)::Int
-    sql = "SELECT id, analysis_dir FROM setups
-            WHERE (trace_normalisation IS NULL OR trace_normalisation = '$NORMALISATION_UNKNOWN')" *
-          (experiment_id === nothing ? "" : " AND experiment_id = ?")
+    sql = "SELECT s.id, s.analysis_dir, s.root_dir, e.path, s.trace_normalisation, s.normalisation_base
+             FROM setups s JOIN experiments e ON e.id = s.experiment_id" *
+          (experiment_id === nothing ? "" : " WHERE s.experiment_id = ?")
     rows = sqlrows(DBInterface.execute(db, sql, experiment_id === nothing ? [] : [Int(experiment_id)]))
-    found = [(Int(r.id), trace_normalisation(String(r.analysis_dir))) for r in rows]
-    isempty(found) && return 0
+    changed = Tuple{Int,NamedTuple}[]
+    for r in rows
+        root = ismissing(r.path) || isempty(String(r.path)) ? String(r.root_dir) : String(r.path)
+        n = trace_normalisation(String(r.analysis_dir); within = root)
+        isequal(coalesce(r.trace_normalisation, nothing), n.by) &&
+            isequal(coalesce(r.normalisation_base, nothing), n.base) && continue
+        push!(changed, (Int(r.id), n))
+    end
+    isempty(changed) && return 0
     lock(_DB_WRITE_LOCK) do
-        for (id, n) in found
+        for (id, n) in changed
             DBInterface.execute(db,
                 "UPDATE setups SET trace_normalisation = ?, normalisation_base = ? WHERE id = ?",
                 [n.by, n.base, id])
         end
     end
-    count(f -> f[2].by != NORMALISATION_UNKNOWN, found)
+    length(changed)
 end

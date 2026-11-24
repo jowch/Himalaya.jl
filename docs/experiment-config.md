@@ -295,9 +295,11 @@ runs once per included setup (`_scan_setup!`), reading `data_dir`,
    `I_2`, the beamstop photodiode, `incident_monitor` from `I_0`, `counting_time`).
    `I_signal` is not read: it copies whichever counter the `.prp` names, usually
    the APD, which reads close to the incident beam. Each setup's trace
-   normalisation comes from the nearest `integ.mpp` at or above its analysis folder
-   (`setups.trace_normalisation`: `i2`, `i1`, `none` or `unknown`). It is read with the
-   monitors and re-read while it is still unknown.
+   normalisation comes from the nearest `integ.mpp` at or above its analysis folder,
+   searching no higher than the experiment's own folder
+   (`setups.trace_normalisation`: `i2`, `i1`, `none` or `unknown`). It is re-read with the
+   monitors on every scan and after new setups are added, and a changed `integ.mpp`
+   updates the stored value.
    `backfill_monitors!` reads them from the stored `prp_path` of every exposure
    still marked `monitors_read = 0`, on every scan request and at the start of
    every pass, so a finished beamtime ingested before the monitors

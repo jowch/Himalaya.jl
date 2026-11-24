@@ -17,6 +17,8 @@
     @test sts[1].energy_kev == 11.0
     @test sts[1].flight_path_m == 1.1
     @test sts[1].integration_pattern == "{name}_tot.dat"
+    @test sts[1].trace_normalisation == "i2"
+    @test sts[1].normalisation_base == 2.5e7
     @test length(setups(db)) == 1
     @test isempty(setups(db; experiment=999999))
 
