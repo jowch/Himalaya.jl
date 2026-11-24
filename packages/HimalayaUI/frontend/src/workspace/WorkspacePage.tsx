@@ -95,6 +95,8 @@ import { clampLattice, stepSymmetry, draftCommit, draftPrediction, indexFit, ini
 import { latticeBounds, latticeForFirstOrderOnPeak } from "../lib/customIndex";
 
 import { WorkspaceHeader } from "../ui/WorkspaceHeader";
+import { SampleProgress, type ReviewMark } from "../ui/SampleProgress";
+import { sampleEyebrow } from "./sampleEyebrow";
 import { Note } from "../ui/Note";
 import { WorkspaceLayout } from "../ui/WorkspaceLayout";
 import { SampleList } from "../ui/SampleList";
@@ -454,6 +456,12 @@ export function WorkspacePage(): JSX.Element {
   const [helpOpen, setHelpOpen] = useState(false);
   const [bigOpen, setBigOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const closeOverlaysForPalette = useCallback(() => {
+    setHelpOpen(false);
+    setPicking(false);
+    setLabeling(false);
+    setColoringLabel(undefined);
+  }, []);
   const paletteCorpus = useCorpusPalette();
   const elsewhere = useMemo(
     () => ({
@@ -1225,10 +1233,7 @@ export function WorkspacePage(): JSX.Element {
       }
       if ((ev.metaKey || ev.ctrlKey) && !ev.altKey && !ev.shiftKey && ev.key.toLowerCase() === "k") {
         ev.preventDefault();
-        setHelpOpen(false);
-        setPicking(false);
-        setLabeling(false);
-        setColoringLabel(undefined);
+        closeOverlaysForPalette();
         setPaletteOpen((o) => !o);
         return;
       }
@@ -1397,12 +1402,14 @@ export function WorkspacePage(): JSX.Element {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [canChooseBackground, visible, sampleId, goSample, exposureList, tile, toggleDrop, tileSelectable, toggleTileSelection, keyed, toggleCandidate, toggleGroup, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor, view, setView, sample, openLabeling, applyHistory, callOpen, sampleListHidden, setSampleListHidden, modules.calls, reviewable]);
+  }, [canChooseBackground, visible, sampleId, goSample, exposureList, tile, toggleDrop, tileSelectable, toggleTileSelection, keyed, toggleCandidate, toggleGroup, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor, view, setView, sample, openLabeling, applyHistory, callOpen, sampleListHidden, setSampleListHidden, modules.calls, reviewable, closeOverlaysForPalette]);
 
   const droppedCount = ownFrames.filter((e) => e.status === "rejected").length;
   const keptHint = droppedCount > 0 ? `${ownFrames.length - droppedCount} of ${ownFrames.length} kept` : undefined;
-  const reviewableSamples = samples.filter(reviewable);
-  const reviewed = reviewableSamples.filter((s) => sampleStatus(s).kind !== "unreviewed").length;
+  const eyebrowSetup = sample?.setup_id != null ? setupHeaders?.get(sample.setup_id) : undefined;
+  const eyebrowPeers = eyebrowSetup === undefined ? samples : samples.filter((s) => s.setup_id === sample?.setup_id);
+  const eyebrow = sample ? sampleEyebrow(eyebrowSetup, eyebrowPeers.findIndex((s) => s.id === sample.id), eyebrowPeers.length) : undefined;
+  const reviewMarks: ReviewMark[] = samples.map((s) => (!reviewable(s) ? "none" : sampleStatus(s).kind === "unreviewed" ? "open" : "reviewed"));
   const countOf = (at: typeof tileFrame): string | undefined => (at ? `Image ${at.index + 1} of ${at.group.exposures.length}` : undefined);
   const tileOwnerSample = tileFrame ? inExperiment.find((s) => s.id === tileFrame.group.sampleId) : undefined;
   const tileOwner = tileOwnerSample ? frameSetupName(tileOwnerSample) : undefined;
@@ -1640,17 +1647,20 @@ export function WorkspacePage(): JSX.Element {
       header={
         <WorkspaceHeader
           experimentName={experiment.data?.name ?? `Experiment ${experimentId}`}
-          reviewed={reviewed}
-          total={reviewableSamples.length}
+          onActions={() => {
+            closeOverlaysForPalette();
+            setPaletteOpen(true);
+          }}
           onHelp={() => setHelpOpen(true)}
         />
       }
-      nav={<SampleList samples={visible} setupHeaders={setupHeaders} currentId={sampleId} filter={filter} onFilter={setFilter} onPick={goSample} onToggleCompare={toggleCompare} compareColors={compareColors} hiddenCompares={shownCompareSet} bridgeCounts={counts} reviewable={reviewable} listHidden={sampleListHidden} onToggleList={() => setSampleListHidden(!sampleListHidden)} notice={<ExperimentNotice progress={ingestProgress} ingestFailed={ingestFailed} waiting={waitingForTrace} failed={failedAnalyses} unrecognized={unrecognizedSetups} onDetails={() => setProblemsOpen(true)} />} />}
+      nav={<SampleList samples={visible} setupHeaders={setupHeaders} currentId={sampleId} filter={filter} onFilter={setFilter} onPick={goSample} onToggleCompare={toggleCompare} compareColors={compareColors} hiddenCompares={shownCompareSet} bridgeCounts={counts} reviewable={reviewable} progress={<SampleProgress marks={reviewMarks} />} listHidden={sampleListHidden} onToggleList={() => setSampleListHidden(!sampleListHidden)} notice={<ExperimentNotice progress={ingestProgress} ingestFailed={ingestFailed} waiting={waitingForTrace} failed={failedAnalyses} unrecognized={unrecognizedSetups} onDetails={() => setProblemsOpen(true)} />} />}
       main={
         sample ? (
           <>
             <SampleHeading
               name={sample.name}
+              eyebrow={eyebrow}
               badge={bridgeMates.length > 0 ? <BridgeMenu key={sampleId} mates={bridgeMates} editable={Boolean(username)} onGo={goSample} onRemove={unbridgeOne} /> : undefined}
               aside={
                 <LabelRow

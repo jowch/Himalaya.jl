@@ -1,44 +1,55 @@
 import { Link } from "react-router";
+import { MOD_KEY } from "../lib/modKey";
 import { Kbd } from "./Kbd";
 import { Tooltip } from "./Tooltip";
+import { Wordmark } from "./Wordmark";
 
 interface Props {
   experimentName: string;
-  reviewed: number;
-  total: number;
+  onActions: () => void;
   onHelp: () => void;
 }
 
-export function WorkspaceHeader({ experimentName, reviewed, total, onHelp }: Props): JSX.Element {
-  const pct = (reviewed / Math.max(total, 1)) * 100;
+export function WorkspaceHeader({ experimentName, onActions, onHelp }: Props): JSX.Element {
   return (
     <>
-      <span className="flex min-w-0 items-baseline gap-3.5">
-        <Tooltip content="All experiments">
-          <Link to="/experiments" className="text-lg font-semibold text-ink no-underline">
-            Himalaya
+      <span className="flex min-w-0 items-baseline gap-4">
+        <Link
+          to="/experiments"
+          aria-label="Himalaya SAXS, go to experiments"
+          className="shrink-0 rounded no-underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        >
+          <Wordmark tail="SAXS">Himalaya</Wordmark>
+        </Link>
+        <nav aria-label="Breadcrumb" className="flex min-w-0 items-baseline gap-1.5 text-base">
+          <Link to="/experiments" className="shrink-0 text-ink-soft no-underline hover:text-ink">
+            Experiments
           </Link>
-        </Tooltip>
-        <h1 className="min-w-0 truncate text-base font-normal text-ink-soft">{experimentName}</h1>
+          <span aria-hidden="true" className="text-ink-faint">/</span>
+          <Tooltip content={experimentName} overflowOnly>
+            <h1 aria-current="page" className="m-0 min-w-0 truncate text-base font-semibold text-ink">{experimentName}</h1>
+          </Tooltip>
+        </nav>
       </span>
       <span className="ml-auto" aria-hidden="true" />
-      <span
-        className={"flex items-center gap-2 whitespace-nowrap text-base text-ink-soft" + (total > 0 ? "" : " invisible")}
-        data-testid={total > 0 ? "workspace-progress" : undefined}
-        data-reserved={total > 0 ? undefined : ""}
-        aria-hidden={total > 0 ? undefined : true}
+      <button
+        type="button"
+        onClick={onActions}
+        aria-label={`Actions, ${MOD_KEY}K`}
+        className="flex items-center gap-2 rounded-sm border border-hair bg-plate py-1 pl-2.5 pr-1 text-base text-ink-soft hover:border-hair-strong hover:text-ink"
       >
-        <span className="block h-[5px] w-[90px] overflow-hidden rounded-sm bg-paper-sunk" aria-hidden="true">
-          <i className="block h-full bg-success" style={{ width: `${pct}%` }} />
+        Actions
+        <span className="flex gap-0.5">
+          <Kbd>{MOD_KEY}</Kbd>
+          <Kbd>K</Kbd>
         </span>
-        {reviewed} of {total} reviewed
-      </span>
+      </button>
       <Tooltip content="Keyboard shortcuts">
         <button
           type="button"
           onClick={onHelp}
           aria-label="Keyboard shortcuts"
-          className="flex items-center rounded-sm border border-hair bg-paper px-2 py-1 hover:border-hair-strong"
+          className="flex items-center rounded-sm border border-hair bg-plate px-1 py-1 hover:border-hair-strong"
         >
           <Kbd>?</Kbd>
         </button>

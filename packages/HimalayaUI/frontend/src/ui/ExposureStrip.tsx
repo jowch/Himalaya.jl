@@ -33,7 +33,7 @@ interface Props {
   warningOf?: (e: Exposure) => string | undefined;
 }
 
-const ACTION = "flex-1 rounded-[4px] border border-hair bg-paper py-0.5 text-xs text-ink hover:border-hair-strong";
+const ACTION = "shrink-0 rounded-[4px] px-2 border border-hair bg-paper py-0.5 text-xs text-ink hover:border-hair-strong";
 
 function selectionCaption(selection: ExposureSelection): string {
   const n = selection.selectedIds.size;
@@ -76,7 +76,7 @@ export function ExposureStrip({ groups, currentId, onPick, onToggleDrop, warning
             </Tooltip>
           )}
           {selection && <SelectionTools selection={selection} of={gi === 0 ? undefined : g.title} />}
-          <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,136px)] gap-2 p-0">
+          <ul className="-mx-1 my-0 grid list-none grid-cols-[repeat(auto-fill,136px)] gap-2 p-0">
             {g.exposures.map((e, i) => {
               const cur = e.id === currentId;
               const stop = cur || (!hasCurrent && gi === 0 && i === 0) ? 0 : -1;
@@ -143,9 +143,10 @@ export function ExposureStrip({ groups, currentId, onPick, onToggleDrop, warning
                       </span>
                     )}
                   </div>
-                  {dropped && <span className="text-xs text-ink-soft line-through">dropped</span>}
-                  {warning !== undefined && <span aria-hidden="true" className="truncate text-xs text-warning">{warning}</span>}
-                  <div className={(cur ? "visible" : "invisible group-hover:visible group-focus-within:visible") + " flex gap-1"}>
+                  <div data-tile-footer="" className="flex h-6 min-w-0 items-center gap-1">
+                    <span className={"min-w-0 flex-1 truncate text-xs " + (warning !== undefined ? "text-warning" : "text-ink-soft")} aria-hidden="true">
+                      {dropped ? "Dropped" : warning ?? `Image ${i + 1}`}
+                    </span>
                     <button
                       type="button"
                       tabIndex={stop}
@@ -154,7 +155,7 @@ export function ExposureStrip({ groups, currentId, onPick, onToggleDrop, warning
                         releaseMouseFocus(ev);
                         onToggleDrop(e);
                       }}
-                      className={ACTION}
+                      className={(cur ? "visible " : "invisible group-hover:visible group-focus-within:visible ") + ACTION}
                     >
                       {dropped ? "Restore" : "Drop"}
                     </button>

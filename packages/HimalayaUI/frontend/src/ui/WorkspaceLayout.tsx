@@ -40,7 +40,7 @@ export function WorkspaceLayout({ header, nav, main, tools, theme = "system", ov
   };
   return (
     <div className="grid h-full grid-rows-[auto_1fr] bg-paper text-ink" data-testid="workspace" data-theme={theme}>
-      <header className="flex min-w-0 items-center gap-3.5 border-b border-hair bg-plate px-3.5 py-2">{header}</header>
+      <header className="flex h-12 min-w-0 items-center gap-3 border-b border-hair bg-paper px-3.5">{header}</header>
       <div className={"relative grid min-h-0 overflow-clip " + (navHidden ? "grid-cols-[14px_minmax(0,1fr)_300px]" : "grid-cols-[270px_minmax(0,1fr)_300px]")}>
         {navHidden && (
           <button

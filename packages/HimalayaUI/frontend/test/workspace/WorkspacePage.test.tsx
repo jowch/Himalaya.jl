@@ -544,9 +544,11 @@ describe("WorkspacePage", () => {
     expect(screen.queryByRole("dialog", { name: "Detector image" })).toBeNull();
   });
 
-  it("links the Himalaya brand to all experiments", () => {
+  it("opens the command palette from the header's Actions button", async () => {
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByRole("link", { name: "Himalaya" })).toHaveAttribute("href", "/experiments");
+    expect(screen.queryByRole("dialog", { name: "Commands" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^Actions/ }));
+    expect(await screen.findByRole("dialog", { name: "Commands" })).toBeInTheDocument();
   });
 
   it("opens an experiment without a sample on its first unreviewed sample", () => {
