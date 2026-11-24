@@ -13,13 +13,13 @@ interface Props {
 }
 
 function useBodyScroll(body: React.RefObject<HTMLDivElement | null>): { more: boolean; bare: boolean } {
-  const [state, setState] = useState({ more: false, bare: false });
+  const [more, setMore] = useState(false);
+  const [bare, setBare] = useState(false);
   const measure = useRef((): void => {
     const el = body.current;
     if (!el) return;
-    const more = el.scrollTop + el.clientHeight < el.scrollHeight - 1;
-    const bare = el.querySelector(FOCUSABLE) === null;
-    setState((s) => (s.more === more && s.bare === bare ? s : { more, bare }));
+    setMore(el.scrollTop + el.clientHeight < el.scrollHeight - 1);
+    setBare(el.querySelector(FOCUSABLE) === null);
   }).current;
   useLayoutEffect(measure);
   useEffect(() => {
@@ -44,7 +44,7 @@ function useBodyScroll(body: React.RefObject<HTMLDivElement | null>): { more: bo
       kids?.disconnect();
     };
   }, [body, measure]);
-  return state;
+  return { more, bare };
 }
 
 export function Overlay({ label, onClose, children, testId, closeKeys = ["Escape"], onKey, heading = false }: Props): JSX.Element {

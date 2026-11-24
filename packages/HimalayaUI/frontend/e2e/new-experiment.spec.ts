@@ -73,6 +73,7 @@ async function mockFunnel(page: Page, created: Created[]): Promise<void> {
   });
   await page.route("**/api/experiments/1", (r) => r.fulfill(json({ id: 1, name: "20261103", path: "/lab/20261103", ingest_status: "scanning", setups: [] })));
   await page.route("**/api/experiments/1/**", (r) => r.fulfill(json([])));
+  await page.route("**/api/experiments/1/compares", (r) => r.fulfill(json({ compares: [], subtractions: [] })));
   await page.route((url) => url.pathname === "/api/samples", (r) => r.fulfill(json([])));
 }
 

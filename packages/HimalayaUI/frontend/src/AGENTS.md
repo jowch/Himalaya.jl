@@ -110,6 +110,8 @@ Full architecture in `docs/mutation-queue.md`; queue internals in `lib/queue/AGE
 
 Every reconciliation contract has six layers (route emit → SSE payload → `applyRemoteToCache` merge → cache row → `onMutate` → `onSuccess`). When fixing a bug at one layer, add a regression row at every other layer where the same class can manifest. See `docs/contract-testing.md` for canonical paired test files (`cache-shape.test.ts`, `sseEventPayload.contract.test.ts`, `rollbackSymmetry.test.ts`, `authHeaders.test.ts`, `test_route_response_shapes.jl`, `test_idempotency_replay_invariant.jl`).
 
+**Layout measurements go in primitive state.** A hook that measures the DOM in a layout effect and sets state (scroll fades, fit counts) keeps each value in its own `useState<boolean | number>` and sets it directly. Don't merge them into one object with an updater that returns `s` when nothing changed. When a scroll or resize update is still waiting at a lower priority, React replays queued updaters from an older base state on every urgent render, so the updater hands back an older object, React sees a change, commits, the layout effect measures again, and the loop ends in "Maximum update depth exceeded". `Overlay`'s scroll fade did this when Home was pressed during End's smooth scroll (`test/workspace/Overlay.test.tsx` reproduces it with `startTransition` plus `flushSync`).
+
 ## Anti-patterns
 
 - Mint `client_op_id` inside `mutationFn`, not at hook creation time.

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
-import { useState } from "react";
+import { startTransition, useState } from "react";
+import { flushSync } from "react-dom";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { Overlay } from "../../src/ui/Overlay";
 
@@ -98,5 +99,21 @@ describe("Overlay", () => {
     expect(onClose).not.toHaveBeenCalled();
     fireEvent.mouseDown(screen.getByRole("dialog").parentElement!);
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("survives a scroll update that is still waiting when an urgent one lands, as when Home is pressed mid-scroll", () => {
+    render(<Overlay label="Long" onClose={() => undefined}><p>x</p></Overlay>);
+    const body = screen.getByTestId("overlay-body");
+    Object.defineProperty(body, "scrollHeight", { configurable: true, value: 1000 });
+    Object.defineProperty(body, "clientHeight", { configurable: true, value: 100 });
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      startTransition(() => { body.dispatchEvent(new Event("scroll")); });
+      expect(() => flushSync(() => { window.dispatchEvent(new Event("resize")); })).not.toThrow();
+    } finally {
+      errors.mockRestore();
+    }
+    expect(screen.getByRole("dialog", { name: "Long" })).toBeInTheDocument();
+    expect(screen.getByTestId("overlay-more")).toBeInTheDocument();
   });
 });
