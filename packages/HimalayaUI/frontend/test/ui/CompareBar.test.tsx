@@ -88,6 +88,15 @@ describe("CompareBar scale tooltip", () => {
     }
   });
 
+  it("tells a screen reader why a chip was matched at high q, and says nothing extra for a monitor-scaled one", () => {
+    bar([
+      chip({ scale: { scale: 1, source: "other_setup" } as CompareChip["scale"] }),
+      chip({ id: 3, name: "MO_PEG6", scale: { scale: 1, source: "monitor" } as CompareChip["scale"] }),
+    ]);
+    expect(screen.getByRole("button", { name: "MO_PEG5" })).toHaveAccessibleDescription("From another setup, so matched at high q");
+    expect(screen.getByRole("button", { name: "MO_PEG6" })).toHaveAccessibleDescription("");
+  });
+
   it("shows only the factor on a chip from another setup, and says in its tooltip that it was matched at high q", () => {
     bar([chip({ scale: { scale: 1, source: "other_setup" } as CompareChip["scale"] })]);
     const scale = document.querySelector("[data-scale-source]") as HTMLElement;
