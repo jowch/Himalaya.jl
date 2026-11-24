@@ -169,7 +169,7 @@ describe("WorkspacePlot", () => {
 
   it("puts the difference on a pseudolog axis in the log views and a linear one otherwise", () => {
     const q = Array.from({ length: 40 }, (_, i) => 0.05 + i * 0.005);
-    const d = q.map((v, i) => (Math.abs(v - 0.12) < 0.004 ? 1000 : i % 2 ? 1 : -1));
+    const d = q.map((v, i) => (Math.abs(v - 0.12) < 0.004 ? 1000 : Math.abs(v - 0.2) < 0.004 ? -400 : i % 2 ? 1 : -1));
     const props = { trace, peaks: [], combs: [], difference: { q, d } };
     const { rerender } = render(<WorkspacePlot {...props} view="linear" />);
     expect(yLabels().some((t) => t.startsWith("−") || t.startsWith("-"))).toBe(true);
