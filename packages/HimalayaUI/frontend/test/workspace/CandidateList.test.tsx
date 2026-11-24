@@ -34,6 +34,17 @@ describe("CandidateList", () => {
     expect(onToggle).toHaveBeenCalledWith(candidates[11]);
   });
 
+  it("keeps a blank keycap on a choice past the ninth, so its tick still shows", () => {
+    const candidates = Array.from({ length: 11 }, (_, i) => candidate(i + 1));
+    render(
+      <CandidateList rows={candidates.map(one)} assigned={new Set([11])} disabled={false} formFactor={false}
+        onToggle={() => {}} onToggleGroup={() => {}} onFormFactor={() => {}} onHover={() => {}} />,
+    );
+    const rows = within(screen.getByTestId("workspace-candidates")).getAllByRole("button");
+    expect(rows[10]!.querySelector("[data-blank-key] kbd")).toHaveAttribute("data-pressed", "true");
+    expect(rows[9]!.querySelector("[data-blank-key] kbd")).not.toHaveAttribute("data-pressed");
+  });
+
   it("shows a Bonnet group as one numbered header over numbered members", async () => {
     const onToggle = vi.fn();
     const onToggleGroup = vi.fn();
