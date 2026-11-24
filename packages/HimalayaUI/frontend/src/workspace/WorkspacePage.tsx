@@ -109,7 +109,7 @@ import { CandidateList } from "../ui/CandidateList";
 import { callChoices, cycleChoice, inCallChoices } from "./callTab";
 import { callRows, keyedRows } from "./bonnetGroups";
 import { MetaList } from "../ui/MetaList";
-import { MainSection, SampleHeading, Section } from "../ui/Section";
+import { SampleHeading, Section } from "../ui/Section";
 import { claimedPeaks } from "./claimedPeaks";
 import { callCombs } from "./callCombs";
 import { exposureKindLabel, exposureTimeLabel } from "./exposureLabels";
@@ -1600,6 +1600,49 @@ export function WorkspacePage(): JSX.Element {
     </Section>
   ) : null;
 
+  const compareLegend = sample ? (
+    <div className="relative">
+      <CompareBar
+        chips={activeRefs.map((rid) => ({
+          id: rid,
+          name: sampleNames.get(rid) ?? `Sample ${rid}`,
+          setup: sampleSetup.get(rid) !== (sampleId === undefined ? undefined : sampleSetup.get(sampleId)) ? sampleSetup.get(rid) : undefined,
+          color: COMPARE_COLORS[activeRefs.indexOf(rid) % COMPARE_COLORS.length]!,
+          scale: chipScale(rid),
+          minus: chipMinus(rid),
+          hidden: shownCompareSet.has(rid),
+        }))}
+        subtractId={subRef}
+        hidden={!refsOn}
+        modKey={MOD_KEY}
+        onToggleShown={(rid) => {
+          if (minusOn && !managed && rid !== subRef) {
+            setMinus(false);
+            setShown(rid, true);
+            return;
+          }
+          setRefsOn(true);
+          setShown(rid, !(refsOn && !hiddenRefs.has(rid)));
+        }}
+        onSubtract={toggleSubtract}
+        onRemove={removeCompare}
+        onAdd={() => setPicking(true)}
+        full={comparesFull}
+        canSubtract={!bgEntry?.is_buffer}
+        trailing={difference && subRef !== undefined ? <SubtractToggle name={subName} on={minusOn} onChange={setMinus} /> : backgroundLoading ? <SubtractToggle name="" on onChange={setMinus} reserved /> : undefined}
+      />
+      {picking && (
+        <ComparePicker
+          samples={pickable}
+          notes={bufferNotes}
+          setups={sampleSetup}
+          full={comparesFull ? COMPARES_FULL : undefined}
+          onPick={addReference}
+          onClose={() => setPicking(false)}
+        />
+      )}
+    </div>
+  ) : null;
   return (
     <WorkspaceLayout
       theme={theme.theme}
@@ -1683,49 +1726,8 @@ export function WorkspacePage(): JSX.Element {
                 />
               }
             />
-            <div className="relative px-3.5 py-1">
-              <CompareBar
-                chips={activeRefs.map((rid) => ({
-                  id: rid,
-                  name: sampleNames.get(rid) ?? `Sample ${rid}`,
-                  setup: sampleSetup.get(rid) !== (sampleId === undefined ? undefined : sampleSetup.get(sampleId)) ? sampleSetup.get(rid) : undefined,
-                  color: COMPARE_COLORS[activeRefs.indexOf(rid) % COMPARE_COLORS.length]!,
-                  scale: chipScale(rid),
-                  minus: chipMinus(rid),
-                  hidden: shownCompareSet.has(rid),
-                }))}
-                subtractId={subRef}
-                hidden={!refsOn}
-                modKey={MOD_KEY}
-                onToggleShown={(rid) => {
-                  if (minusOn && !managed && rid !== subRef) {
-                    setMinus(false);
-                    setShown(rid, true);
-                    return;
-                  }
-                  setRefsOn(true);
-                  setShown(rid, !(refsOn && !hiddenRefs.has(rid)));
-                }}
-                onSubtract={toggleSubtract}
-                onRemove={removeCompare}
-                onAdd={() => setPicking(true)}
-                full={comparesFull}
-                canSubtract={!bgEntry?.is_buffer}
-                trailing={difference && subRef !== undefined ? <SubtractToggle name={subName} on={minusOn} onChange={setMinus} /> : backgroundLoading ? <SubtractToggle name="" on onChange={setMinus} reserved /> : undefined}
-              />
-              {picking && (
-                <ComparePicker
-                  samples={pickable}
-                  notes={bufferNotes}
-                  setups={sampleSetup}
-                  full={comparesFull ? COMPARES_FULL : undefined}
-                  onPick={addReference}
-                  onClose={() => setPicking(false)}
-                />
-              )}
-            </div>
-            <div className="mx-3.5">
-              <PlotCard {...(darkNotice ? { notice: darkNotice } : {})} corner={<PlotViewToggle options={PLOT_VIEWS} view={view} onChange={setView} />}>
+            <div className="mt-1">
+              <PlotCard legend={compareLegend} {...(darkNotice ? { notice: darkNotice } : {})} corner={<PlotViewToggle options={PLOT_VIEWS} view={view} onChange={setView} />}>
                 <WorkspacePlot
                   trace={backgroundLoading ? undefined : trace.data}
                   {...(backgroundLoading
@@ -1752,9 +1754,9 @@ export function WorkspacePage(): JSX.Element {
                 />
               </PlotCard>
             </div>
-            <MainSection title="Images" hint={keptHint}>
-              <ExposureStrip groups={groups.map((g) => ({ key: g.sampleId, title: g.title, exposures: g.exposures, selection: username ? groupSelections.get(g.sampleId) : undefined }))} currentId={tile?.id} onPick={setExposureId} onToggleDrop={toggleDrop} warningOf={beamOffWarning} />
-            </MainSection>
+            <section className="flex flex-col px-3.5 pb-4 pt-3">
+              <ExposureStrip title="Images" hint={keptHint} groups={groups.map((g) => ({ key: g.sampleId, title: g.title, exposures: g.exposures, selection: username ? groupSelections.get(g.sampleId) : undefined }))} currentId={tile?.id} onPick={setExposureId} onToggleDrop={toggleDrop} warningOf={beamOffWarning} />
+            </section>
           </>
         ) : (
           <div className="px-3.5 py-3">

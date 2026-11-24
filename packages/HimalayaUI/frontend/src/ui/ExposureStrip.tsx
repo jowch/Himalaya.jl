@@ -26,6 +26,8 @@ export interface ExposureSelection {
 }
 
 interface Props {
+  title?: string;
+  hint?: string | undefined;
   groups: readonly ExposureStripGroup[];
   currentId: number | undefined;
   onPick: (id: number) => void;
@@ -54,8 +56,9 @@ function SelectionTools({ selection, of }: { selection: ExposureSelection; of: s
   );
 }
 
-export function ExposureStrip({ groups, currentId, onPick, onToggleDrop, warningOf }: Props): JSX.Element {
+export function ExposureStrip({ title, hint, groups, currentId, onPick, onToggleDrop, warningOf }: Props): JSX.Element {
   const ref = useRovingFocus<HTMLDivElement>(currentId);
+  const hoisted = title !== undefined && groups[0]?.title === undefined;
   const hasCurrent = groups.some((g) => g.exposures.some((e) => e.id === currentId));
   const click = (ev: MouseEvent<HTMLElement>, id: number, selection: ExposureSelection | undefined): void => {
     releaseMouseFocus(ev);
@@ -66,6 +69,17 @@ export function ExposureStrip({ groups, currentId, onPick, onToggleDrop, warning
   };
   return (
     <div ref={ref} className="flex flex-col gap-1.5" data-testid="workspace-exposures">
+      {title !== undefined && (
+        <div data-strip-heading="" className="flex min-h-7 items-center gap-2.5">
+          <h2 className="shrink-0 text-sm font-semibold text-ink-soft">{title}</h2>
+          {hint && <span className="shrink-0 text-xs text-ink-faint">{hint}</span>}
+          {hoisted && groups[0]?.selection && (
+            <div className="min-w-0 flex-1">
+              <SelectionTools selection={groups[0].selection} of={undefined} />
+            </div>
+          )}
+        </div>
+      )}
       {groups.map((g, gi) => {
         const selection = g.selection;
         return (
@@ -75,7 +89,7 @@ export function ExposureStrip({ groups, currentId, onPick, onToggleDrop, warning
               <h4 data-testid="frame-group-header" className="m-0 truncate text-xs font-semibold text-ink-soft">{g.title}</h4>
             </Tooltip>
           )}
-          {selection && <SelectionTools selection={selection} of={gi === 0 ? undefined : g.title} />}
+          {selection && !(gi === 0 && hoisted) && <SelectionTools selection={selection} of={gi === 0 ? undefined : g.title} />}
           <ul className="-mx-1 my-0 grid list-none grid-cols-[repeat(auto-fill,136px)] gap-2 p-0">
             {g.exposures.map((e, i) => {
               const cur = e.id === currentId;
