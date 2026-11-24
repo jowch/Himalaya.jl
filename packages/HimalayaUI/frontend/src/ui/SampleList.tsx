@@ -21,6 +21,7 @@ interface Props {
   compareColors?: ReadonlyMap<number, string>;
   hiddenCompares?: ReadonlySet<number>;
   bridgeCounts?: ReadonlyMap<number, number>;
+  reviewable?: (s: CorpusSample) => boolean;
   notice?: ReactNode;
   listHidden?: boolean;
   onToggleList?: () => void;
@@ -31,8 +32,20 @@ const ANALYSIS_GAP = {
   none_selected: { mark: "None selected", why: "No image is selected, so nothing is analyzed.", label: "Unreviewed. No image is selected, so nothing is analyzed." },
 } as const;
 
-function StatusMark({ s }: { s: CorpusSample }): JSX.Element {
+function GapMark({ gap }: { gap: (typeof ANALYSIS_GAP)[keyof typeof ANALYSIS_GAP] }): JSX.Element {
+  return (
+    <Tooltip content={gap.why}>
+      <span data-testid="workspace-status" role="img" aria-label={gap.label} className="text-xs text-ink-faint">{gap.mark}</span>
+    </Tooltip>
+  );
+}
+
+function StatusMark({ s, reviewable }: { s: CorpusSample; reviewable: boolean }): JSX.Element | null {
   const st = sampleStatus(s);
+  if (!reviewable) {
+    const gap = s.analysis_gap ? ANALYSIS_GAP[s.analysis_gap] : null;
+    return gap ? <GapMark gap={gap} /> : null;
+  }
   if (st.kind === "phase") {
     const name = st.phases.join(" + ");
     const mark = (
@@ -44,13 +57,7 @@ function StatusMark({ s }: { s: CorpusSample }): JSX.Element {
   }
   if (st.kind === "form_factor") return <span data-testid="workspace-status" className="text-xs text-ink-faint">Form factor</span>;
   const gap = s.analysis_gap ? ANALYSIS_GAP[s.analysis_gap] : null;
-  if (gap) {
-    return (
-      <Tooltip content={gap.why}>
-        <span data-testid="workspace-status" role="img" aria-label={gap.label} className="text-xs text-ink-faint">{gap.mark}</span>
-      </Tooltip>
-    );
-  }
+  if (gap) return <GapMark gap={gap} />;
   return (
     <Tooltip content="Unreviewed">
       <span data-testid="workspace-status" role="img" aria-label="Unreviewed" className="text-xs text-ink-faint">○</span>
@@ -58,7 +65,7 @@ function StatusMark({ s }: { s: CorpusSample }): JSX.Element {
   );
 }
 
-export function SampleList({ samples, setupHeaders, currentId, filter, onFilter, onPick, onToggleCompare, compareColors, hiddenCompares, bridgeCounts, notice, listHidden = false, onToggleList }: Props): JSX.Element {
+export function SampleList({ samples, setupHeaders, currentId, filter, onFilter, onPick, onToggleCompare, compareColors, hiddenCompares, bridgeCounts, reviewable, notice, listHidden = false, onToggleList }: Props): JSX.Element {
   const currentRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     currentRef.current?.scrollIntoView({ block: "nearest" });
@@ -177,7 +184,7 @@ export function SampleList({ samples, setupHeaders, currentId, filter, onFilter,
                       <line x1={0} x2={14} y1={2} y2={2} stroke="currentColor" strokeWidth={2} strokeDasharray={COMPARE_DASH} />
                     </svg>
                   )}
-                  <StatusMark s={s} />
+                  <StatusMark s={s} reviewable={reviewable?.(s) ?? true} />
                 </span>
               </button>
             </li>

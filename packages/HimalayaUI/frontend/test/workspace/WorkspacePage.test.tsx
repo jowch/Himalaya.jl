@@ -3903,7 +3903,12 @@ describe("WorkspacePage modules by setup mode", () => {
       { ...sample(12, "lipidA 02B (S0103)", { assignment_state: "form_factor" }), setup_id: 2 },
       { ...sample(13, "lipidA 03B (S0104)"), setup_id: 2 },
     ];
+    state.mateExposures = new Map();
   });
+
+  const ownExposures = (sampleId: number): void => {
+    state.exposures = [exposure(100, { sample_id: sampleId }), exposure(101, { sample_id: sampleId })];
+  };
 
   const sideEffects = (): string[] => calls.map((c) => c.hook);
   const toolsHeadings = (): (string | null)[] =>
@@ -3960,6 +3965,7 @@ describe("WorkspacePage modules by setup mode", () => {
   });
 
   it("ignores the call keys, the custom index key and Enter on an autosampler sample, and leaves Tab alone", () => {
+    ownExposures(AUTOSAMPLER);
     renderAt(`/experiments/1/workspace/${AUTOSAMPLER}`);
     for (const key of ["0", "1", "5", "9", "i", "I", "Escape"]) fireEvent.keyDown(window, { key });
     expect(fireEvent.keyDown(window, { key: "Tab" })).toBe(true);
@@ -3970,6 +3976,7 @@ describe("WorkspacePage modules by setup mode", () => {
   });
 
   it("still handles the call keys and Enter on a capillary sample in the same experiment", () => {
+    ownExposures(CAPILLARY);
     renderAt(`/experiments/1/workspace/${CAPILLARY}`);
     fireEvent.keyDown(window, { key: "i" });
     expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
@@ -3981,6 +3988,7 @@ describe("WorkspacePage modules by setup mode", () => {
   });
 
   it("shows the image without a selection checkbox, Select all or none, or selection caption, and still drops and restores", () => {
+    ownExposures(AUTOSAMPLER);
     renderAt(`/experiments/1/workspace/${AUTOSAMPLER}`);
     const strip = screen.getByTestId("workspace-exposures");
     expect(within(strip).queryAllByRole("checkbox")).toEqual([]);
@@ -3991,11 +3999,13 @@ describe("WorkspacePage modules by setup mode", () => {
   });
 
   it("leaves the call and image-selection commands out of the palette for an autosampler sample only", () => {
+    ownExposures(AUTOSAMPLER);
     const view = renderAt(`/experiments/1/workspace/${AUTOSAMPLER}`);
     const without = paletteIds();
     for (const id of ["tick", "custom", "form-factor", "select-image"]) expect(without).not.toContain(id);
     expect(without).toEqual(expect.arrayContaining(["view", "compare", "label"]));
     view.unmount();
+    ownExposures(CAPILLARY);
     renderAt(`/experiments/1/workspace/${CAPILLARY}`);
     expect(paletteIds()).toEqual(expect.arrayContaining(["tick", "custom", "form-factor", "select-image"]));
   });

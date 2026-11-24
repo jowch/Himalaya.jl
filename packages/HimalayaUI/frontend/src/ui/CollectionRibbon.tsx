@@ -43,7 +43,8 @@ function Caption({ left, review }: { left: string; review: ReviewProgress | unde
   );
 }
 
-export function CollectionRibbon({ timeline, review, className }: CollectionRibbonProps): JSX.Element {
+export function CollectionRibbon({ timeline, review: progress, className }: CollectionRibbonProps): JSX.Element {
+  const review = progress && progress.total > 0 ? progress : undefined;
   const [point, setPoint] = useState<RibbonPoint | null>(null);
   const caption = timeline ? describeRibbon(timeline) : null;
 

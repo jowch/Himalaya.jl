@@ -10,7 +10,7 @@ interface Props {
 }
 
 export function WorkspaceHeader({ experimentName, reviewed, total, onHelp }: Props): JSX.Element {
-  const pct = total > 0 ? (reviewed / total) * 100 : 0;
+  const pct = (reviewed / Math.max(total, 1)) * 100;
   return (
     <>
       <Tooltip content="All experiments">
@@ -19,12 +19,15 @@ export function WorkspaceHeader({ experimentName, reviewed, total, onHelp }: Pro
         </Link>
       </Tooltip>
       <h1 className="min-w-0 truncate text-base font-normal text-ink-soft">{experimentName}</h1>
-      <span className="ml-auto flex items-center gap-2 whitespace-nowrap text-base text-ink-soft" data-testid="workspace-progress">
-        <span className="block h-[5px] w-[90px] overflow-hidden rounded-sm bg-paper-sunk" aria-hidden="true">
-          <i className="block h-full bg-success" style={{ width: `${pct}%` }} />
+      <span className="ml-auto" aria-hidden="true" />
+      {total > 0 && (
+        <span className="flex items-center gap-2 whitespace-nowrap text-base text-ink-soft" data-testid="workspace-progress">
+          <span className="block h-[5px] w-[90px] overflow-hidden rounded-sm bg-paper-sunk" aria-hidden="true">
+            <i className="block h-full bg-success" style={{ width: `${pct}%` }} />
+          </span>
+          {reviewed} of {total} reviewed
         </span>
-        {reviewed} of {total} reviewed
-      </span>
+      )}
       <Tooltip content="Keyboard shortcuts">
         <button
           type="button"

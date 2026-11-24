@@ -12,21 +12,25 @@ export function sampleStatus(s: Pick<CorpusSample, "assignment_state" | "phase" 
   return { kind: "phase", phases: [s.phase, ...(s.call_phases ?? []).filter((p) => p !== s.phase)] };
 }
 
-export function firstUnreviewed<T extends Pick<CorpusSample, "assignment_state" | "phase">>(samples: readonly T[]): T | undefined {
-  return samples.find((s) => sampleStatus(s).kind === "unreviewed") ?? samples[0];
+export function firstUnreviewed<T extends Pick<CorpusSample, "assignment_state" | "phase">>(
+  samples: readonly T[],
+  reviewable: (s: T) => boolean = () => true,
+): T | undefined {
+  return samples.find((s) => reviewable(s) && sampleStatus(s).kind === "unreviewed") ?? samples[0];
 }
 
 export function nextUnreviewed(
   samples: readonly CorpusSample[],
   currentId: number | undefined,
   dir: 1 | -1,
+  reviewable: (s: CorpusSample) => boolean = () => true,
 ): number | undefined {
   const n = samples.length;
   if (n === 0) return undefined;
   const start = Math.max(0, samples.findIndex((s) => s.id === currentId));
   for (let k = 1; k <= n; k++) {
     const s = samples[(((start + dir * k) % n) + n) % n]!;
-    if (s.id !== currentId && sampleStatus(s).kind === "unreviewed") return s.id;
+    if (s.id !== currentId && reviewable(s) && sampleStatus(s).kind === "unreviewed") return s.id;
   }
   return undefined;
 }
