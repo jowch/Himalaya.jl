@@ -1,11 +1,7 @@
 const AUTOSAMPLER_STEM = r"^(.+)_(\d{2}[A-Z])_[SB]\d+$"
 
 function autosampler_run_starts(data_dir::AbstractString)::Set{Int}
-    names = try
-        readdir(String(data_dir))
-    catch
-        String[]
-    end
+    names = list_names(data_dir)
     Set{Int}(parse(Int, m.captures[1]) for m in (match(AUTOSAMPLER_RUN_FILE, f) for f in names) if m !== nothing)
 end
 

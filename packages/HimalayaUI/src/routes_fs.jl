@@ -1,16 +1,11 @@
 using HTTP, JSON3, DBInterface, Tables, Oxygen
 
 _setup_infos(dir::AbstractString)::Vector{String} =
-    isdir(dir) ?
-        String[joinpath(dir, f) for f in (try readdir(dir) catch; String[] end)
-               if startswith(f, "setup_info_") && endswith(f, ".txt")] :
-        String[]
+    String[joinpath(dir, f) for f in list_names(dir) if startswith(f, "setup_info_") && endswith(f, ".txt")]
 
-_listdir(dir::AbstractString) = try readdir(String(dir)) catch; String[] end
+_listdir(dir::AbstractString) = list_names(dir)
 
-_subdirs(d::AbstractString) = isdir(d) ?
-    String[joinpath(d, x) for x in _listdir(d) if !startswith(x, ".") && isdir(joinpath(d, x))] :
-    String[]
+_subdirs(d::AbstractString) = String[joinpath(d, x) for x in folder_names(d)]
 
 const LAYOUT_PROBE_STEMS = 9
 
@@ -235,7 +230,7 @@ function fs_manifest(data_dir::AbstractString;
               matched_files = names[1:min(12, length(names))])
 end
 
-_has_tifs(dir::AbstractString) = any(_is_tif, _listdir(dir))
+_has_tifs(dir::AbstractString) = any_name(_is_tif, dir)
 
 _setup_data_dir(root) = isdir(joinpath(root, "data")) ? joinpath(root, "data") : String(root)
 
@@ -300,9 +295,6 @@ function _setup_preview(db, path, root)
          :duplicate_of => dup === nothing ? nothing : Dict(:id => dup.id, :name => dup.name))
 end
 
-const SUGGEST_LIMIT = 20
-const SUGGEST_DESCRIBE_SECONDS = Ref(0.5)
-
 expand_folder(p::AbstractString) = (q = String(strip(p)); q == "~" || startswith(q, "~/") ? expanduser(q) : q)
 
 function _natural_key(s::AbstractString)
@@ -315,10 +307,7 @@ end
 
 natural_sort(xs::Vector{String}) = xs[sortperm(map(_natural_key, xs))]
 
-_undescribed(dir, described) = Dict{Symbol,Any}(:path => dir, :kind => nothing, :setups => nothing,
-                                                :added => nothing, :described => described)
-
-function _describe_folder(db, dir)
+function describe_folder(db, dir::AbstractString)
     roots = setup_roots(dir)
     kind, setups = isempty(roots) ? (nothing, nothing) :
                    roots == [dir] ? ("setup", nothing) : ("beamtime", length(roots))
@@ -326,43 +315,38 @@ function _describe_folder(db, dir)
             kind == "setup" ? something(experiment_using_dir(db, _setup_data_dir(dir)),
                                         experiment_at_path(db, dir), Some(nothing)) :
             nothing
-    Dict(:path => dir, :kind => kind, :setups => setups, :described => true,
+    Dict(:path => dir, :kind => kind, :setups => setups,
          :added => added === nothing ? nothing : Dict(:id => added.id, :name => added.name))
 end
 
-function suggest_folders(db, prefix::AbstractString)
-    none = (; folders = Dict{Symbol,Any}[], more = false)
-    p = expand_folder(prefix)
-    isabspath(p) || return none
-    dir, base = endswith(p, "/") ? (p, "") : (dirname(p), basename(p))
-    isdir(dir) || return none
-    needle = lowercase(base)
-    names = natural_sort(String[n for n in _listdir(dir)
-                                if startswith(lowercase(n), needle) && (startswith(base, ".") || !startswith(n, "."))])
-    found = String[]
-    more = false
-    for n in names
-        full = joinpath(dir, n)
-        isdir(full) || continue
-        length(found) == SUGGEST_LIMIT && (more = true; break)
-        push!(found, full)
-    end
-    trimmed = rstrip(dir, '/')
-    inside_setup = _has_tifs(_setup_data_dir(isempty(trimmed) ? "/" : trimmed))
-    deadline = time() + SUGGEST_DESCRIBE_SECONDS[]
-    folders = map(found) do full
-        inside_setup ? _undescribed(full, true) :
-        time() >= deadline ? _undescribed(full, false) :
-            _describe_folder(db, full)
-    end
-    (; folders, more)
+function start_folder(db)
+    rows = sqlrows(DBInterface.execute(db, "SELECT path FROM experiments WHERE path IS NOT NULL ORDER BY id DESC LIMIT 1"))
+    last = isempty(rows) ? nothing : dirname(_trim_slash(String(first(rows).path)))
+    last !== nothing && isdir(last) ? last : homedir()
+end
+
+_parent_folder(dir) = (t = _trim_slash(dir); isempty(t) ? nothing : (p = dirname(t); isempty(p) ? "/" : p))
+
+function list_folder(db, path::AbstractString)
+    dir = isempty(strip(path)) ? start_folder(db) : expand_folder(path)
+    isabspath(dir) || return (400, "use a full path, starting with / or ~")
+    isdir(dir) || return (400, "that folder does not exist")
+    dir = _trim_slash(dir) == "" ? "/" : String(_trim_slash(dir))
+    (200, Dict(:path => dir, :parent => _parent_folder(dir), :folders => natural_sort(folder_names(dir))))
 end
 
 function register_fs_routes!()
-    @get "/api/fs/suggest" function(req::HTTP.Request)
+    @get "/api/fs/list" function(req::HTTP.Request)
         q = HTTP.queryparams(HTTP.URI(req.target))
-        r = suggest_folders(current_db(), get(q, "prefix", ""))
-        _json(200, Dict(:folders => r.folders, :more => r.more))
+        status, body = list_folder(current_db(), get(q, "path", ""))
+        _json(status, status == 200 ? body : Dict(:error => body))
+    end
+    @get "/api/fs/describe" function(req::HTTP.Request)
+        q = HTTP.queryparams(HTTP.URI(req.target))
+        path = expand_folder(get(q, "path", ""))
+        isabspath(path) || return _json(400, Dict(:error => "use a full path, starting with / or ~"))
+        isdir(path) || return _json(400, Dict(:error => "that folder does not exist"))
+        _json(200, describe_folder(current_db(), String(_trim_slash(path)) == "" ? "/" : String(_trim_slash(path))))
     end
     @get "/api/fs/preview" function(req::HTTP.Request)
         q    = HTTP.queryparams(HTTP.URI(req.target))
