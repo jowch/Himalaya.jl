@@ -99,3 +99,71 @@ describe("CompareBar scale tooltip", () => {
     expect(screen.getByRole("tooltip")).toHaveTextContent("From another setup, so matched at high q");
   });
 });
+
+describe("CompareBar in Minus view", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    resetTooltipWarmth();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("names what is subtracted from a drawn chip, and keeps the pair's scale", () => {
+    bar([chip({ minus: { kind: "drawn", background: "lipidA 01A (B0100)" }, scale: { scale: 1, source: "normalised" } })]);
+    expect(hover("MO_PEG5")).toHaveTextContent("Minus lipidA 01A (B0100)");
+    expect(document.querySelector("[data-scale-source='normalised']")).not.toBeNull();
+    expect(document.querySelector("[data-minus-note]")).toBeNull();
+  });
+
+  it("flags a pair that was matched at high q in the chip's words", () => {
+    bar([chip({ minus: { kind: "drawn", background: "buf" }, scale: { scale: 0.9, source: "beam_off" } })]);
+    expect(hover("MO_PEG5")).toHaveTextContent("Taken with the beam off, so matched at high q");
+    expect(document.querySelector("[data-scale-source='beam_off']")).toHaveTextContent("matched");
+  });
+
+  it.each([
+    ["buffer", "Not subtracted: this is a buffer"],
+    ["none", "Not subtracted: its background is set to none"],
+    ["hidden", "Not subtracted: the setup of its background is hidden"],
+  ] as const)("says on the chip and in its tooltip why a %s chip is not drawn", (reason, note) => {
+    bar([chip({ minus: { kind: "skipped", reason } })]);
+    expect(document.querySelector(`[data-minus-note='${reason}']`)).toHaveTextContent("not subtracted");
+    expect(hover("MO_PEG5")).toHaveTextContent(note);
+    expect(document.querySelector("[data-scale-source]")).toBeNull();
+  });
+
+  it("reads a background still loading as loading, not as an error", () => {
+    bar([chip({ minus: { kind: "skipped", reason: "loading" } })]);
+    expect(document.querySelector("[data-minus-note='loading']")).toHaveTextContent("loading");
+    expect(document.querySelector("[data-minus-note='loading']")).not.toHaveTextContent("not subtracted");
+    expect(hover("MO_PEG5")).toHaveTextContent("Loading the background trace");
+  });
+
+  it("gives a chip that is not drawn its full reason as an accessible description, without hover", () => {
+    bar([chip({ minus: { kind: "skipped", reason: "buffer" } })]);
+    expect(screen.getByRole("button", { name: "MO_PEG5" })).toHaveAccessibleDescription("Not subtracted: this is a buffer");
+  });
+
+  it("gives a loading chip the loading note, and a drawn chip what is subtracted", () => {
+    bar([chip({ minus: { kind: "skipped", reason: "loading" } }), chip({ id: 3, name: "MO_PEG6", minus: { kind: "drawn", background: "buf" } })]);
+    expect(screen.getByRole("button", { name: "MO_PEG5" })).toHaveAccessibleDescription("Loading the background trace");
+    expect(screen.getByRole("button", { name: "MO_PEG6" })).toHaveAccessibleDescription("Minus buf");
+  });
+
+  it("keeps the short note whole and apart from the name, which is the only part that truncates", () => {
+    bar([chip({ name: "a very long sample name that cannot fit in the chip", minus: { kind: "skipped", reason: "buffer" } })]);
+    const note = document.querySelector("[data-minus-note='buffer']") as HTMLElement;
+    const name = document.querySelector("[data-chip-name]") as HTMLElement;
+    expect(note.textContent).toBe("not subtracted");
+    expect(name.contains(note)).toBe(false);
+    expect(note.hasAttribute("data-chip-name")).toBe(false);
+    expect(document.querySelectorAll("[data-chip-truncates]")).toHaveLength(1);
+    expect(name).toHaveAttribute("data-chip-truncates");
+  });
+
+  it("still says how to hide and subtract on a chip that is not drawn", () => {
+    bar([chip({ minus: { kind: "skipped", reason: "buffer" } })]);
+    expect(hover("MO_PEG5")).toHaveTextContent("Click to hide. ⌘-click to subtract it from the current trace.");
+  });
+});

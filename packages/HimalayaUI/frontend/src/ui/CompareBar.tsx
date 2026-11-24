@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Kbd } from "./Kbd";
 import { Tooltip } from "./Tooltip";
 import { isMatchedScale, type CompareScale } from "../workspace/compare";
+import { SKIP_NOTES, type SkipReason } from "../workspace/minusCompares";
 import { COMPARE_DASH } from "./WorkspacePlot";
 
 export interface CompareChip {
@@ -11,6 +12,7 @@ export interface CompareChip {
   scale: CompareScale | undefined;
   hidden?: boolean;
   setup?: string | undefined;
+  minus?: { kind: "drawn"; background: string } | { kind: "skipped"; reason: SkipReason } | undefined;
 }
 
 interface Props {
@@ -39,6 +41,15 @@ export const SCALE_NOTES: Record<CompareScale["source"], string> = {
   unknown_normalisation: "Integration settings not found, so matched at high q",
 };
 
+function describe(c: CompareChip, subtracted: boolean): string | undefined {
+  const parts = [
+    subtracted ? "Subtracted from the current trace" : undefined,
+    c.minus?.kind === "drawn" ? `Minus ${c.minus.background}` : undefined,
+    c.minus?.kind === "skipped" ? SKIP_NOTES[c.minus.reason] : undefined,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(". ") : undefined;
+}
+
 export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, onSubtract, onRemove, onAdd, full = false, canSubtract = true, trailing }: Props): JSX.Element {
   const perRow = Math.max(1, Math.ceil((chips.length + (full ? 0 : 1) + 1) / 2));
   const basis = `calc((100% - ${perRow - 1} * 0.5rem) / ${perRow})`;
@@ -49,6 +60,7 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
           const sub = c.id === subtractId;
           const off = hidden || c.hidden === true;
           const dim = off ? " opacity-45" : "";
+          const description = describe(c, sub);
           return (
             <span
               key={c.id}
@@ -67,6 +79,8 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
                   <>
                     <span className="block font-semibold">{c.setup ? `${c.name} · ${c.setup}` : c.name}</span>
                     <span className="block">{`Click to ${off ? "show" : "hide"}.`}{canSubtract && ` ${modKey}-click to ${sub ? "stop subtracting" : "subtract it from the current trace"}.`}</span>
+                    {c.minus?.kind === "drawn" && <span className="block">{`Minus ${c.minus.background}`}</span>}
+                    {c.minus?.kind === "skipped" && <span className="block">{SKIP_NOTES[c.minus.reason]}</span>}
                     {c.scale !== undefined && <span className="block">{SCALE_NOTES[c.scale.source]}</span>}
                   </>
                 }
@@ -75,7 +89,7 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
                   type="button"
                   aria-pressed={!off}
                   {...(off || c.setup ? { "aria-label": [c.name, c.setup, off ? "hidden" : undefined].filter(Boolean).join(", ") } : {})}
-                  aria-description={sub ? "Subtracted from the current trace" : undefined}
+                  {...(description ? { "aria-description": description } : {})}
                   data-subtracted={sub ? "" : undefined}
                   onClick={(e) => {
                     if (e.metaKey || e.ctrlKey) onSubtract(c.id);
@@ -83,7 +97,7 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
                   }}
                   className={"grid min-w-min grow grid-cols-[minmax(4ch,1fr)_auto] items-center gap-1 text-left text-ink" + dim}
                 >
-                  <span className="min-w-0 truncate">{c.name}</span>
+                  <span data-chip-name data-chip-truncates className="min-w-0 truncate">{c.name}</span>
                   {c.setup && (
                     <svg data-chip-setup width={10} height={10} viewBox="0 0 10 10" aria-hidden="true" className="text-ink-faint">
                       <rect x={0.5} y={3.5} width={6} height={6} rx={1} fill="none" stroke="currentColor" />
@@ -92,6 +106,13 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
                   )}
                 </button>
               </Tooltip>
+              {c.minus?.kind === "skipped" && (
+                <Tooltip content={SKIP_NOTES[c.minus.reason]}>
+                  <span className={"shrink-0 whitespace-nowrap text-ink-faint" + dim} data-minus-note={c.minus.reason}>
+                    {c.minus.reason === "loading" || c.minus.reason === "loading-own" ? "loading" : "not subtracted"}
+                  </span>
+                </Tooltip>
+              )}
               {c.scale !== undefined && (
                 <Tooltip content={SCALE_NOTES[c.scale.source]}>
                   <span
@@ -99,7 +120,7 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
                     data-scale-source={c.scale.source}
                   >
                     <span data-scale-value className="shrink-0">×{c.scale.scale.toPrecision(3)}</span>
-                    {isMatchedScale(c.scale) && <span className="min-w-0 truncate">{"\u00a0matched"}</span>}
+                    {isMatchedScale(c.scale) && <span data-chip-truncates className="min-w-0 truncate">{"\u00a0matched"}</span>}
                   </span>
                 </Tooltip>
               )}

@@ -72,4 +72,11 @@ describe("subtracted curve series", () => {
     expect(subtractedSeries("kratky", sq, sd, [0.02, 0.2]).I[2]).toBeCloseTo(0.1 * 0.1 * 20);
     expect(subtractedSeries("log", sq, sd, [0.02, 0.2]).I).toEqual(sd);
   });
+
+  it("views other curves the same way and keeps them in the y range", () => {
+    const other = { q: sq, d: [9e5, 4e4, 20, 3, 1] };
+    const out = subtractedSeries("kratky", sq, sd, [0.02, 0.2], [other]);
+    expect(out.others[0]![2]).toBeCloseTo(0.1 * 0.1 * 20);
+    expect(out.domain[1]).toBeGreaterThan(subtractedSeries("kratky", sq, sd, [0.02, 0.2]).domain[1]);
+  });
 });

@@ -175,9 +175,11 @@ export function WorkspacePlot({
   const lineQ = difference ? difference.q : trace.q;
   const viewed = (difference ? difference.d : trace.I).map((v, i) => viewIntensity(view, lineQ[i]!, v));
   const diffAxis = residual && difference ? differenceAxis(view, lineQ, viewed, shownX, peaks.filter((p) => !p.excluded).map((p) => p.q)) : null;
-  const curve = difference && !residual ? subtractedSeries(view, lineQ, difference.d, shownX) : null;
+  const curve = difference && !residual ? subtractedSeries(view, lineQ, difference.d, shownX, compares.map((c) => ({ q: c.q, d: c.I }))) : null;
   const I = diffAxis ? viewed.map(diffAxis.to) : curve ? curve.I : viewed;
-  const shownCompares = difference ? [] : compares.map((c) => ({ ...c, I: c.I.map((v, i) => viewIntensity(view, c.q[i]!, v)) }));
+  const shownCompares = residual
+    ? []
+    : compares.map((c, i) => ({ ...c, I: curve ? curve.others[i]! : c.I.map((v, k) => viewIntensity(view, c.q[k]!, v)) }));
   const shownMembers = difference ? [] : members.map((m) => ({ ...m, I: m.I.map((v, i) => viewIntensity(view, m.q[i]!, v)) }));
   const yDomain = diffAxis ? diffAxis.domain : curve ? curve.domain : fitYDomain({ q: trace.q, I }, [...shownCompares, ...shownMembers], shownX, yType);
   const yLabel = viewLabel(view);

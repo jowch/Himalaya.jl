@@ -73,13 +73,22 @@ export function differenceAxis(
   return { kind: "pseudolog", to, domain, ticks: pseudologTicks(domain, c, to) };
 }
 
+interface Subtracted {
+  q: readonly number[];
+  d: readonly number[];
+}
+
 export function subtractedSeries(
   view: PlotView,
   q: readonly number[],
   d: readonly number[],
   shownX: [number, number],
-): { I: number[]; yType: ScaleType; domain: [number, number] } {
+  others: readonly Subtracted[] = [],
+): { I: number[]; yType: ScaleType; domain: [number, number]; others: number[][] } {
   const yType = viewAxes(view).yType;
-  const I = d.map((v, i) => viewIntensity(view, q[i]!, v));
-  return { I, yType, domain: fitYDomain({ q, I }, [], shownX, yType, true) };
+  const viewed = (s: Subtracted): number[] => s.d.map((v, i) => viewIntensity(view, s.q[i]!, v));
+  const I = viewed({ q, d });
+  const otherI = others.map(viewed);
+  const extra = others.map((s, i) => ({ q: s.q, I: otherI[i]! }));
+  return { I, yType, domain: fitYDomain({ q, I }, extra, shownX, yType, true), others: otherI };
 }
