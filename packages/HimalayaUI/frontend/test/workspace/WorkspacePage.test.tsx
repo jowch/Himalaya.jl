@@ -4445,6 +4445,24 @@ describe("WorkspacePage autosampler background", () => {
     expect(within(module()).getByRole("button", { name: /Change/ })).toBeEnabled();
   });
 
+  it("does not offer to subtract a comparison on a buffer sample, and Ctrl-click changes nothing", () => {
+    seed();
+    open(BUFFER);
+    runFromPalette("compare with a sample", "lipidA 01B");
+    const chip = within(screen.getByTestId("workspace-compare-bar")).getByRole("button", { name: /^lipidA 01B/ });
+    fireEvent.mouseEnter(chip);
+    fireEvent.click(chip, { ctrlKey: true });
+    expect(patches().filter((a) => "subtraction" in (a as object))).toEqual([]);
+  });
+
+  it("draws an autosampler Minus curve on the selected view's axes, not around zero", () => {
+    seed();
+    window.localStorage.setItem("himalaya-ui:workspace-plot-view", "loglog");
+    open(FIRST);
+    expect(plot().querySelector("[data-role='difference-line']")).not.toBeNull();
+    expect(plot().querySelector("[data-role='zero-line']")).toBeNull();
+  });
+
   it("makes the chip the background on a Ctrl-click, keeps it as a chip, and a second Ctrl-click turns the background off", () => {
     seed();
     open(FIRST);

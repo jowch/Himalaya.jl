@@ -1,6 +1,7 @@
 import { stripRange } from "./compare";
-import { linearTicks, type AxisTick } from "./plotScale";
-import { viewAxes, type PlotView } from "./plotView";
+import { fitYDomain, linearTicks, type AxisTick } from "./plotScale";
+import { viewAxes, viewIntensity, type PlotView } from "./plotView";
+import type { ScaleType } from "../plot/projection";
 import { formatTicks } from "../lib/plot/formatAxis";
 
 export interface DifferenceAxis {
@@ -70,4 +71,15 @@ export function differenceAxis(
   const to = (v: number): number => Math.asinh(v / c);
   const domain = padded(...stripRange(q, d.map(to), shownX, peakQs));
   return { kind: "pseudolog", to, domain, ticks: pseudologTicks(domain, c, to) };
+}
+
+export function subtractedSeries(
+  view: PlotView,
+  q: readonly number[],
+  d: readonly number[],
+  shownX: [number, number],
+): { I: number[]; yType: ScaleType; domain: [number, number] } {
+  const yType = viewAxes(view).yType;
+  const I = d.map((v, i) => viewIntensity(view, q[i]!, v));
+  return { I, yType, domain: fitYDomain({ q, I }, [], shownX, yType, true) };
 }

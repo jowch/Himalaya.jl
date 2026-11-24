@@ -1685,7 +1685,7 @@ export function WorkspacePage(): JSX.Element {
                   highlight={highlight}
                   compares={compares}
                   members={members}
-                  {...(minusOn && difference ? { difference } : {})}
+                  {...(minusOn && difference ? { difference: managed ? { ...difference, kind: "curve" as const } : difference } : {})}
                   xDomain={shownDomain}
                   view={view}
                   onXDomain={setXDomain}
