@@ -98,7 +98,7 @@ function Rows({ rows, assigned, unsupported, disabled, onToggle, onToggleGroup, 
           className={ROW + "grid-cols-[auto_auto_1fr_auto] py-[5px] " + (inGroup ? "gap-1 " : "gap-1.5 ") + ROW_LOOK}
         >
           <Key n={key} pressed={on} />
-          <PhaseChip phase={c.phase} />
+          <PhaseChip phase={c.phase} variant="text" size="md" />
           <Tooltip content={lattice} overflowOnly>
             <span className="min-w-0 truncate whitespace-nowrap text-ink-soft">{lattice}</span>
           </Tooltip>

@@ -25,6 +25,7 @@ interface Props {
   notice?: ReactNode;
   listHidden?: boolean;
   onToggleList?: () => void;
+  progress?: ReactNode;
 }
 
 const ANALYSIS_GAP = {
@@ -65,7 +66,7 @@ function StatusMark({ s, reviewable }: { s: CorpusSample; reviewable: boolean })
   );
 }
 
-export function SampleList({ samples, setupHeaders, currentId, filter, onFilter, onPick, onToggleCompare, compareColors, hiddenCompares, bridgeCounts, reviewable, notice, listHidden = false, onToggleList }: Props): JSX.Element {
+export function SampleList({ samples, setupHeaders, currentId, filter, onFilter, onPick, onToggleCompare, compareColors, hiddenCompares, bridgeCounts, reviewable, notice, progress, listHidden = false, onToggleList }: Props): JSX.Element {
   const currentRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     currentRef.current?.scrollIntoView({ block: "nearest" });
@@ -93,7 +94,9 @@ export function SampleList({ samples, setupHeaders, currentId, filter, onFilter,
   const hasCurrent = samples.some((s) => s.id === currentId);
   return (
     <>
-      <div className="flex items-center gap-1.5 border-b border-hair px-2.5 pb-2 pt-2.5">
+      <div className="flex flex-col gap-2.5 border-b border-hair px-3.5 pb-2.5 pt-3">
+        {progress}
+        <div className="flex items-center gap-1.5">
         <input
           id="workspace-filter"
           type="search"
@@ -115,6 +118,7 @@ export function SampleList({ samples, setupHeaders, currentId, filter, onFilter,
             <span aria-hidden="true" className="text-base">{listHidden ? "›" : "‹"}</span>
           </IconButton>
         )}
+        </div>
       </div>
       {notice}
       <ul ref={listRef} className="min-h-0 flex-1 overflow-y-auto" data-testid="workspace-samples">
