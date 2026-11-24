@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, render, screen, fireEvent, within, waitFor } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
-import type { CorpusSample, Exposure, IndexEntry, Assignment, Peak, ProblemExposure, SampleBridge, SampleCall, SampleCallMember, SampleLabel, LabelColorEntry, LabelColor, Trace } from "../../src/api";
+import type { CorpusSample, SampleBackground, Exposure, IndexEntry, Assignment, Peak, ProblemExposure, SampleBridge, SampleCall, SampleCallMember, SampleLabel, LabelColorEntry, LabelColor, Trace } from "../../src/api";
 import { ApiError } from "../../src/api";
 import { WorkspacePage } from "../../src/workspace/WorkspacePage";
 import { neighbourSamples, type PrefetchTarget } from "../../src/workspace/prefetch";
@@ -44,6 +44,7 @@ const state = {
   traceFetching: false,
   peaks: [] as Peak[],
   compareTraces: new Map<number, Trace>(),
+  traceLoading: new Set<number>(),
   memberTraces: new Map<number, Trace>(),
   bridges: [] as SampleBridge[],
   labels: [] as SampleLabel[],
@@ -249,6 +250,8 @@ vi.mock("../../src/workspace/useCompareTraces", () => ({
     compareFetches.push([...ids]);
     return new Map(ids.flatMap((id) => (state.compareTraces.has(id) ? [[id, state.compareTraces.get(id)!] as const] : [])));
   },
+  useTraceStatuses: (ids: readonly number[]) =>
+    new Map(ids.flatMap((id) => (state.compareTraces.has(id) ? [] : [[id, state.traceLoading.has(id) ? "loading" : "missing"] as const]))),
 }));
 
 function makeTrace(level: number): Trace {
@@ -383,6 +386,7 @@ beforeEach(() => {
   state.traceFetching = false;
   state.peaks = [];
   state.compareTraces = new Map();
+  state.traceLoading = new Set();
   state.bridges = [];
   compareStore.data = EMPTY_COMPARES;
   localStorage.removeItem("himalaya-ui:recent:comparison:1");
@@ -4014,9 +4018,9 @@ describe("WorkspacePage modules by setup mode", () => {
     Array.from(screen.getByRole("complementary", { name: "Tools" }).querySelectorAll("[data-section]")).map((n) => n.getAttribute("data-section"));
   const SHORT = (query: string) => ({ matches: query === "(max-height: 860px)", media: query, addEventListener: () => {}, removeEventListener: () => {} });
 
-  it("holds only the Image section in an autosampler sample's tools column, and all three in a capillary sample's", () => {
+  it("holds the Background and Image sections in an autosampler sample's tools column, and the three call sections in a capillary sample's", () => {
     const view = renderAt(`/experiments/1/workspace/${AUTOSAMPLER}`);
-    expect(slotOrder()).toEqual(["Image"]);
+    expect(slotOrder()).toEqual(["Background", "Image"]);
     expect(screen.getByRole("complementary", { name: "Tools" }).querySelector("[data-section='Image']")).not.toHaveAttribute("data-collapsed");
     expect(screen.queryByTestId("workspace-tools-middle")).toBeNull();
     expect(screen.queryByTestId("workspace-indexing")).toBeNull();
@@ -4026,11 +4030,11 @@ describe("WorkspacePage modules by setup mode", () => {
     expect(slotOrder()).toEqual(["Assignment", "Indexing", "Image"]);
   });
 
-  it("holds only the open Image section on a short window for an autosampler sample, with no accordion", () => {
+  it("holds only the Background and the open Image section on a short window for an autosampler sample, with no accordion", () => {
     vi.stubGlobal("matchMedia", SHORT);
     try {
       const view = renderAt(`/experiments/1/workspace/${AUTOSAMPLER}`);
-      expect(slotOrder()).toEqual(["Image"]);
+      expect(slotOrder()).toEqual(["Background", "Image"]);
       const tools = screen.getByRole("complementary", { name: "Tools" });
       expect(within(tools).getByText("File")).toBeInTheDocument();
       expect(within(tools).queryByRole("button", { name: /^Image/ })).toBeNull();
@@ -4050,7 +4054,7 @@ describe("WorkspacePage modules by setup mode", () => {
     expect(sideEffects()).toEqual([]);
     state.corpusLoaded = true;
     view.rerender(page(`/experiments/1/workspace/${AUTOSAMPLER}`));
-    expect(slotOrder()).toEqual(["Image"]);
+    expect(slotOrder()).toEqual(["Background", "Image"]);
     view.unmount();
     state.corpusLoaded = false;
     const second = renderAt(`/experiments/1/workspace/${CAPILLARY}`);
@@ -4066,7 +4070,7 @@ describe("WorkspacePage modules by setup mode", () => {
     expect(slotOrder()).toEqual([]);
     state.experimentLoaded = true;
     rerender(page(`/experiments/1/workspace/${AUTOSAMPLER}`));
-    expect(slotOrder()).toEqual(["Image"]);
+    expect(slotOrder()).toEqual(["Background", "Image"]);
   });
 
   it("does not add or toggle a peak when the plot is clicked on an autosampler sample, but does on a capillary one", () => {
@@ -4287,5 +4291,246 @@ describe("WorkspacePage modules by setup mode", () => {
     renderAt("/experiments/1/workspace/13");
     const target = prefetchTargets.at(-1)!;
     expect(neighbourSamples(target.samples, target.currentId, target.reviewable).map((s) => s.id)).toEqual([CAPILLARY, 12]);
+  });
+});
+
+describe("WorkspacePage autosampler background", () => {
+  const BUFFER = 20;
+  const FIRST = 21;
+  const SECOND = 22;
+  const END_BUFFER = 23;
+  const OTHER_BUFFER = 30;
+  const OTHER_RUN = 31;
+  const keyOf = (id: number): number[] => (id === OTHER_BUFFER || id === OTHER_RUN ? [OTHER_BUFFER] : [BUFFER, END_BUFFER]);
+  const entry = (id: number, over: Partial<SampleBackground> = {}): SampleBackground => {
+    const buffer = [BUFFER, END_BUFFER, OTHER_BUFFER].includes(id);
+    return {
+      sample_id: id, ref_sample_id: buffer ? null : keyOf(id)[0]!, source: "default", default_ref_sample_id: buffer ? null : keyOf(id)[0]!,
+      is_buffer: buffer, run_buffer_ids: keyOf(id), ...over,
+    };
+  };
+  const seed = (backgrounds: SampleBackground[] = [BUFFER, FIRST, SECOND, END_BUFFER, OTHER_BUFFER, OTHER_RUN].map((id) => entry(id)), subtractions: CompareState["subtractions"] = []): void => {
+    state.setups = [
+      { id: 1, name: "setup1", folder: "setup1", included: true, mode: "autosampler" },
+      { id: 2, name: "setup2", folder: "setup2", included: false, mode: "autosampler" },
+      { id: 3, name: "setup3", folder: "setup3", included: true, mode: "capillary" },
+    ];
+    state.corpus = [
+      { ...sample(BUFFER, "lipidA 01A (B0100)"), setup_id: 1 },
+      { ...sample(FIRST, "lipidA 01B (S0101)"), setup_id: 1 },
+      { ...sample(SECOND, "lipidA 01C (S0102)"), setup_id: 1 },
+      { ...sample(END_BUFFER, "lipidA 01D (B0103)"), setup_id: 1 },
+      { ...sample(OTHER_BUFFER, "lipidB 01A (B0200)"), setup_id: 1 },
+      { ...sample(OTHER_RUN, "lipidB 01B (S0201)"), setup_id: 1 },
+      { ...sample(40, "lipidC 01A (B0300)"), setup_id: 2 },
+      { ...sample(50, "water 01"), setup_id: 3 },
+    ];
+    state.exposures = [exposure(100, { sample_id: FIRST })];
+    state.trace = makeTrace(2);
+    state.compareTraces = new Map([[BUFFER, makeTrace(1)], [END_BUFFER, makeTrace(1)], [OTHER_BUFFER, makeTrace(1)], [40, makeTrace(1)]]);
+    setCompares({ compares: [], subtractions, backgrounds });
+  };
+  const open = (id: number) => renderAt(`/experiments/1/workspace/${id}`);
+  const plot = (): HTMLElement => screen.getByTestId("workspace-trace");
+  const tools = (): HTMLElement => screen.getByRole("complementary", { name: "Tools" });
+  const module = (): HTMLElement => tools().querySelector("[data-section='Background']") as HTMLElement;
+  const patches = (): unknown[] => calls.filter((c) => c.hook === "patchCompares").map((c) => c.arg);
+  const slotOrder = (): (string | null)[] => Array.from(tools().querySelectorAll("[data-section]")).map((n) => n.getAttribute("data-section"));
+
+  it("opens an autosampler sample as Minus the first buffer of its run, with the buffer named and no comparison line", () => {
+    seed();
+    open(FIRST);
+    expect(screen.getByRole("button", { name: "Minus lipidA 01A (B0100)" })).toHaveAttribute("aria-pressed", "true");
+    expect(plot().querySelector("[data-role='difference-line']")).not.toBeNull();
+    expect(plot().querySelector("[data-role='trace-line']")).toBeNull();
+    expect(within(module()).getByText("lipidA 01A (B0100)")).toBeInTheDocument();
+    expect(within(module()).getByText("The run's first buffer")).toBeInTheDocument();
+    expect(document.querySelector("[data-compare-chip]")).toBeNull();
+  });
+
+  it("switches to Raw and back, and draws no line for the background in Raw", () => {
+    seed();
+    open(FIRST);
+    fireEvent.click(screen.getByRole("button", { name: "Raw" }));
+    expect(plot().querySelector("[data-role='trace-line']")).not.toBeNull();
+    expect(plot().querySelector("[data-role='difference-line']")).toBeNull();
+    expect(screen.getByTestId("workspace-compares").querySelectorAll("[data-compare]")).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "Minus lipidA 01A (B0100)" }));
+    expect(plot().querySelector("[data-role='difference-line']")).not.toBeNull();
+  });
+
+  it("keeps the Raw view per sample: another sample still opens in Minus", () => {
+    seed();
+    const view = open(FIRST);
+    fireEvent.click(screen.getByRole("button", { name: "Raw" }));
+    view.unmount();
+    open(SECOND);
+    expect(screen.getByRole("button", { name: "Minus lipidA 01A (B0100)" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("None turns the background off: Raw with no toggle, and the default does not come back", () => {
+    seed();
+    open(FIRST);
+    fireEvent.click(within(module()).getByRole("button", { name: "None" }));
+    expect(patches()).toEqual([{ subtraction: null }]);
+    expect(screen.queryByTestId("workspace-subtraction-toggle")).toBeNull();
+    expect(plot().querySelector("[data-role='trace-line']")).not.toBeNull();
+    expect(within(module()).getByText("No background. Nothing is subtracted.")).toBeInTheDocument();
+    expect(within(module()).queryByRole("button", { name: "None" })).toBeNull();
+  });
+
+  it("Use the run's buffer goes back to the default and to Minus", () => {
+    seed();
+    open(FIRST);
+    fireEvent.click(within(module()).getByRole("button", { name: "None" }));
+    fireEvent.click(within(module()).getByRole("button", { name: "Use the run's buffer" }));
+    expect(patches()).toEqual([{ subtraction: null }, { subtraction: "default" }]);
+    expect(screen.getByRole("button", { name: "Minus lipidA 01A (B0100)" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(module()).getByText("The run's first buffer")).toBeInTheDocument();
+  });
+
+  it("B opens a picker with the run's other buffers first, then the setup's buffers, then everything else, and picking one sends it", () => {
+    seed();
+    open(FIRST);
+    fireEvent.keyDown(window, { key: "b" });
+    const dialog = screen.getByRole("dialog", { name: "Choose the background" });
+    const order = Array.from(dialog.querySelectorAll("[data-sample-id]")).map((n) => Number(n.getAttribute("data-sample-id")));
+    expect(order.slice(0, 2)).toEqual([END_BUFFER, OTHER_BUFFER]);
+    expect(order).toEqual(expect.arrayContaining([SECOND, OTHER_RUN, 40, 50]));
+    expect(order).not.toContain(FIRST);
+    expect(order).not.toContain(BUFFER);
+    fireEvent.click(within(dialog).getByRole("button", { name: /lipidA 01D \(B0103\)/ }));
+    expect(patches()).toEqual([{ subtraction: END_BUFFER }]);
+    expect(within(module()).getByText("lipidA 01D (B0103)")).toBeInTheDocument();
+    expect(within(module()).getByText("Your choice")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Choose the background" })).toBeNull();
+    expect(document.querySelector("[data-compare-chip]")).toBeNull();
+  });
+
+  it("Change opens the same picker, and Escape closes it without a change", () => {
+    seed();
+    open(FIRST);
+    fireEvent.click(within(module()).getByRole("button", { name: /Change/ }));
+    const field = screen.getByLabelText("Find a sample to subtract");
+    fireEvent.keyDown(field, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Choose the background" })).toBeNull();
+    expect(patches()).toEqual([]);
+  });
+
+  it("undoes a change of background by going back to the default", async () => {
+    seed();
+    open(FIRST);
+    fireEvent.click(within(module()).getByRole("button", { name: "None" }));
+    fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+    await waitFor(() => expect(patches().at(-1)).toEqual({ subtraction: "default" }));
+  });
+
+  it("shows only a plain sentence for a buffer, and Raw with no toggle", () => {
+    seed();
+    open(BUFFER);
+    expect(within(module()).getByText("This is a buffer, so nothing is subtracted from it.")).toBeInTheDocument();
+    expect(within(module()).queryByRole("button")).toBeNull();
+    expect(screen.queryByTestId("workspace-subtraction-toggle")).toBeNull();
+    expect(plot().querySelector("[data-role='trace-line']")).not.toBeNull();
+    fireEvent.keyDown(window, { key: "b" });
+    expect(screen.queryByRole("dialog", { name: "Choose the background" })).toBeNull();
+  });
+
+  it("says a run without a buffer has nothing to subtract yet, and offers to choose one", () => {
+    seed([entry(FIRST, { ref_sample_id: null, default_ref_sample_id: null, run_buffer_ids: [] })]);
+    open(FIRST);
+    expect(within(module()).getByText("No buffer in this run. Choose one to subtract.")).toBeInTheDocument();
+    expect(screen.queryByTestId("workspace-subtraction-toggle")).toBeNull();
+    expect(within(module()).getByRole("button", { name: /Change/ })).toBeEnabled();
+  });
+
+  it("makes the chip the background on a Ctrl-click, keeps it as a chip, and a second Ctrl-click turns the background off", () => {
+    seed();
+    open(FIRST);
+    runFromPalette("compare with a sample", "lipidA 01D");
+    const chip = (): HTMLElement => screen.getByRole("button", { name: /lipidA 01D \(B0103\)/ });
+    fireEvent.click(chip(), { ctrlKey: true });
+    expect(patches().at(-1)).toEqual({ subtraction: END_BUFFER });
+    expect(within(module()).getByText("Your choice")).toBeInTheDocument();
+    expect(chip()).toHaveAttribute("data-subtracted");
+    fireEvent.click(chip(), { ctrlKey: true });
+    expect(patches().at(-1)).toEqual({ subtraction: null });
+    expect(within(module()).getByText("No background. Nothing is subtracted.")).toBeInTheDocument();
+  });
+
+  it("removing a comparison leaves a background that is not one", () => {
+    seed();
+    open(FIRST);
+    runFromPalette("compare with a sample", "lipidA 01C");
+    fireEvent.click(screen.getByRole("button", { name: /Remove lipidA 01C/ }));
+    expect(within(module()).getByText("lipidA 01A (B0100)")).toBeInTheDocument();
+  });
+
+  it("says when the background has no trace, and stays Raw", () => {
+    seed();
+    state.compareTraces = new Map();
+    open(FIRST);
+    expect(within(module()).getByText("No trace for this background")).toBeInTheDocument();
+    expect(screen.queryByTestId("workspace-subtraction-toggle")).toBeNull();
+    expect(plot().querySelector("[data-role='trace-line']")).not.toBeNull();
+  });
+
+  it("holds the module's place while the background's trace loads", () => {
+    seed();
+    state.compareTraces = new Map();
+    state.traceLoading = new Set([BUFFER]);
+    open(FIRST);
+    expect(within(module()).getByText("Loading the trace")).toBeInTheDocument();
+  });
+
+  it("holds the module's place, disabled, while the comparisons have not loaded", () => {
+    seed([]);
+    open(FIRST);
+    expect(within(module()).getByRole("button", { name: /Change/ })).toBeDisabled();
+    expect(slotOrder()).toEqual(["Background", "Image"]);
+  });
+
+  it("reads a background in a hidden setup as hidden, and stays Raw", () => {
+    seed([entry(FIRST, { ref_sample_id: 40, source: "user" })]);
+    open(FIRST);
+    expect(within(module()).getByText("The setup of this background is hidden")).toBeInTheDocument();
+    expect(screen.queryByTestId("workspace-subtraction-toggle")).toBeNull();
+  });
+
+  it("shows how the background is scaled, in the chip's words", () => {
+    seed();
+    const monitors = { transmitted_counts: 1e6, exposure_time: 15, counting_time: 15.8, normalised_by: "i2" as const, mode: "autosampler" as const };
+    state.trace = { ...makeTrace(2), monitors };
+    state.compareTraces = new Map([[BUFFER, { ...makeTrace(1), monitors }]]);
+    open(FIRST);
+    expect(within(module()).getByText("Both already divided by the transmitted beam, so not rescaled")).toBeInTheDocument();
+  });
+
+  it("palette commands choose the background, turn it off and go back to the run's buffer", () => {
+    seed([entry(FIRST, { ref_sample_id: END_BUFFER, source: "user" })]);
+    open(FIRST);
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    const ids = Array.from(screen.getByRole("dialog").querySelectorAll("[data-palette-item]")).map((o) => o.getAttribute("data-palette-item"));
+    expect(ids).toEqual(expect.arrayContaining(["background", "background-off", "background-default"]));
+  });
+
+  it("lists B in the help for an autosampler sample only", () => {
+    seed();
+    const view = open(FIRST);
+    fireEvent.keyDown(window, { key: "?" });
+    expect(within(screen.getByRole("dialog")).getByText("Choose what is subtracted from this sample")).toBeInTheDocument();
+    view.unmount();
+    open(50);
+    fireEvent.keyDown(window, { key: "?" });
+    expect(within(screen.getByRole("dialog")).queryByText("Choose what is subtracted from this sample")).toBeNull();
+  });
+
+  it("leaves a capillary sample with no Background section, no B key and the chip-based subtraction", () => {
+    seed();
+    open(50);
+    expect(slotOrder()).toEqual(["Assignment", "Indexing", "Image"]);
+    fireEvent.keyDown(window, { key: "b" });
+    expect(screen.queryByRole("dialog", { name: "Choose the background" })).toBeNull();
+    expect(screen.queryByTestId("workspace-subtraction-toggle")).toBeNull();
   });
 });
