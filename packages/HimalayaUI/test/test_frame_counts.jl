@@ -193,9 +193,8 @@ end
     @testset "a scan request fills the counts of rows that were already stored" begin
         (; root, db, eid, sid) = _fc_scanned()
         _fc_write_log(root, "wat_01B_S101", _fc_sample_log(total = 10, rejected = 1))
-        with_test_server(db) do port, base
-            r = HTTP.post("$base/api/experiments/$eid/scan"; body = JSON3.write(Dict(:force => false)),
-                headers = ["Content-Type" => "application/json"], status_exception = false)
+        with_inproc_routes(db) do call
+            r = _as_json(call, "POST", "/api/experiments/$eid/scan", Dict(:force => false))
             @test r.status in (200, 202)
             @test timedwait(() -> _fc_counts(db, sid)["wat_01B_S101"] !== nothing, 30.0) === :ok
         end
