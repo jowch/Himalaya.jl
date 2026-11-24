@@ -2303,8 +2303,8 @@ describe("WorkspacePage", () => {
     expect(screen.getByRole("button", { name: "Remove A2" }).parentElement!).toHaveTextContent("×2.00");
   });
 
-  it("scales by the transmitted beam when both traces carry monitors, even where high-q matching would disagree", () => {
-    const monitors = (transmitted_counts: number) => ({ transmitted_counts, exposure_time: 15, counting_time: 15.8, normalised_by: "none" as const });
+  it("scales an autosampler comparison by the transmitted beam when both traces carry monitors, even where high-q matching would disagree", () => {
+    const monitors = (transmitted_counts: number) => ({ transmitted_counts, exposure_time: 15, counting_time: 15.8, normalised_by: "none" as const, mode: "autosampler" as const });
     state.corpus = state.corpus.map((s) => ({ ...s, setup_id: 1 }));
     state.trace = { ...makeTrace(1), monitors: monitors(6000) };
     state.compareTraces = new Map([[11, { ...makeTrace(2), monitors: monitors(8000) }]]);
@@ -2316,8 +2316,8 @@ describe("WorkspacePage", () => {
     expect(scale).toHaveTextContent(/^×0\.750$/);
   });
 
-  it("leaves a comparison at scale 1 when the setup already divides traces by the transmitted beam", () => {
-    const monitors = (transmitted_counts: number) => ({ transmitted_counts, exposure_time: 15, counting_time: 15.8, normalised_by: "i2" as const });
+  it("leaves a comparison at scale 1 when an autosampler setup already divides traces by the transmitted beam", () => {
+    const monitors = (transmitted_counts: number) => ({ transmitted_counts, exposure_time: 15, counting_time: 15.8, normalised_by: "i2" as const, mode: "autosampler" as const });
     state.corpus = state.corpus.map((s) => ({ ...s, setup_id: 1 }));
     state.trace = { ...makeTrace(1), monitors: monitors(6000) };
     state.compareTraces = new Map([[11, { ...makeTrace(2), monitors: monitors(8000) }]]);
@@ -2327,6 +2327,19 @@ describe("WorkspacePage", () => {
     const scale = screen.getByRole("button", { name: "Remove A2" }).parentElement!.querySelector("[data-scale-source]")!;
     expect(scale).toHaveAttribute("data-scale-source", "normalised");
     expect(scale).toHaveTextContent(/^×1\.00$/);
+  });
+
+  it("matches a capillary comparison at high q even when the setup divides traces by the transmitted beam", () => {
+    const monitors = (transmitted_counts: number) => ({ transmitted_counts, exposure_time: 15, counting_time: 15.8, normalised_by: "i2" as const, mode: "capillary" as const });
+    state.corpus = state.corpus.map((s) => ({ ...s, setup_id: 1 }));
+    state.trace = { ...makeTrace(1), monitors: monitors(6000) };
+    state.compareTraces = new Map([[11, { ...makeTrace(2), monitors: monitors(8000) }]]);
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "c" });
+    fireEvent.click(within(screen.getByRole("dialog")).getByText("A2"));
+    const scale = screen.getByRole("button", { name: "Remove A2" }).parentElement!.querySelector("[data-scale-source]")!;
+    expect(scale).toHaveAttribute("data-scale-source", "capillary");
+    expect(scale).toHaveTextContent("×0.500 matched");
   });
 
   it("matches a comparison from another setup at high q, even when both carry monitors", () => {
@@ -2355,7 +2368,7 @@ describe("WorkspacePage", () => {
   });
 
   it("says when a raw-count comparison had no monitors and was matched at high q instead", () => {
-    const noFlux = { transmitted_counts: null, exposure_time: 15, counting_time: 15.8, normalised_by: "none" as const };
+    const noFlux = { transmitted_counts: null, exposure_time: 15, counting_time: 15.8, normalised_by: "none" as const, mode: "autosampler" as const };
     state.corpus = state.corpus.map((s) => ({ ...s, setup_id: 1 }));
     state.trace = { ...makeTrace(1), monitors: noFlux };
     state.compareTraces = new Map([[11, { ...makeTrace(2), monitors: noFlux }]]);

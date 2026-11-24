@@ -437,6 +437,8 @@ export interface TraceMonitors {
   counting_time: number | null;
   normalised_by?: TraceNormalisation;
   beam_off?: boolean;
+  i2_collapsed?: boolean;
+  mode?: SetupMode | null;
 }
 
 export interface Trace {

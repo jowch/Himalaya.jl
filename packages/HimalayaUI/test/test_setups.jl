@@ -214,13 +214,18 @@ end
     @test HimalayaUI.parse_integ_normalisation(mpp("-i no\n")) == (by = "none", base = nothing)
     @test HimalayaUI.parse_integ_normalisation(mpp("-i yes ion3 1\n")).by == "unknown"
     @test HimalayaUI.parse_integ_normalisation(mpp("-i yes\n")).by == "unknown"
+    @test HimalayaUI.parse_integ_normalisation(mpp("# -i yes i1 9e5\n-i yes i2 2e6\n")) == (by = "i2", base = 2e6)
+    @test HimalayaUI.parse_integ_normalisation(mpp("#-i yes i2 2e6\n-o out\n")).by == "none"
 
     outside = mktempdir()
     root = joinpath(outside, "beamtime")
     analysis = joinpath(root, "setup1", "analysis", "automatic_analysis")
     mkpath(analysis)
     @test HimalayaUI.trace_normalisation(analysis; within = root).by == "unknown"
+    tot_files = joinpath(root, "setup1", "analysis", "automatic_analysis", "tot_files")
+    mkpath(tot_files)
     write(joinpath(root, "setup1", "analysis", "integ.mpp"), "-i yes i2 1e6\n")
+    @test HimalayaUI.trace_normalisation(tot_files; within = root) == (by = "i2", base = 1e6)
     @test HimalayaUI.trace_normalisation(analysis; within = root) == (by = "i2", base = 1e6)
 
     db = HimalayaUI.open_db(joinpath(mktempdir(), "h.db"))

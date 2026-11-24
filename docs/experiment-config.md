@@ -416,6 +416,9 @@ runs once per included setup (`_scan_setup!`), reading `data_dir`,
    (`setups.trace_normalisation`: `i2`, `i1`, `none` or `unknown`). It is re-read with the
    monitors on every scan and after new setups are added, and a changed `integ.mpp`
    updates the stored value. An unreachable analysis folder keeps the stored value.
+   SSRL writes it at `<setup>/analysis/integ.mpp`, two levels above `tot_files`, and
+   lines starting with `#` are skipped. Only autosampler setups use it for the buffer
+   scale (scale 1 on `i2`, the `I_2` flux ratio on `none`); capillary setups match at high q.
    `backfill_monitors!` reads them from the stored `prp_path` of every exposure
    still marked `monitors_read = 0`, on every scan request and at the start of
    every pass, so a finished beamtime ingested before the monitors

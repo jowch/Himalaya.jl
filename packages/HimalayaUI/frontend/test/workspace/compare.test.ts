@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { TraceNormalisation } from "../../src/api";
+import type { SetupMode, TraceNormalisation } from "../../src/api";
 import { compareScale, transmittedFlux, clampDomain, stripRange, interpolateAt, matchScale, robustRange, scaledTrace, subtractTrace } from "../../src/workspace/compare";
 
 const q = Array.from({ length: 101 }, (_, i) => 0.01 + i * 0.002);
@@ -108,7 +108,9 @@ describe("beam-monitor scaling", () => {
     counting_time: number | null = 15.8,
     normalised_by: TraceNormalisation = "none",
     beam_off = false,
-  ) => ({ transmitted_counts, exposure_time, counting_time, normalised_by, beam_off });
+    mode: SetupMode | null = "autosampler",
+    i2_collapsed = false,
+  ) => ({ transmitted_counts, exposure_time, counting_time, normalised_by, beam_off, mode, i2_collapsed });
   const withMonitors = <T extends object>(t: T, monitors: ReturnType<typeof mon>) => ({ ...t, monitors });
 
   it("measures the flux through the sample during the detector exposure, not the longer counting window", () => {
@@ -152,6 +154,25 @@ describe("beam-monitor scaling", () => {
       expect(r.source).toBe("unknown_normalisation");
       expect(r.scale).toBeCloseTo(3, 3);
     }
+  });
+
+  it("matches capillary setups at high q, whether their traces are divided by I_2 or raw", () => {
+    for (const by of ["i2", "none"] as const) {
+      for (const [a, b] of [["capillary", "capillary"], [null, null], ["autosampler", "capillary"]] as const) {
+        const sample = withMonitors({ q, I: q.map((x) => 3 * background(x)) }, mon(6000, 15, 15.8, by, false, a));
+        const buffer = withMonitors({ q, I: q.map(background) }, mon(10000, 15, 15.8, by, false, b));
+        const r = compareScale(sample, buffer, [], true);
+        expect(r.source).toBe("capillary");
+        expect(r.scale).toBeCloseTo(3, 3);
+      }
+    }
+  });
+
+  it("matches at high q when either image's I_2 collapsed, even in an autosampler setup divided by I_2", () => {
+    const sample = withMonitors({ q, I: q.map((x) => 3 * background(x)) }, mon(6000, 15, 15.8, "i2"));
+    const collapsed = withMonitors({ q, I: q.map(background) }, mon(200, 15, 15.8, "i2", false, "autosampler", true));
+    expect(compareScale(sample, collapsed, [], true)).toEqual({ scale: matchScale(sample, collapsed, []), source: "i2_collapsed" });
+    expect(compareScale(collapsed, sample, [], true).source).toBe("i2_collapsed");
   });
 
   it("matches at high q when either image was taken with the beam off, whatever its I_2 reads", () => {

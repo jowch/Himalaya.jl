@@ -17,6 +17,8 @@ each folder of .prp files (one per setup), it prints:
   - the spread of I_2 / I_0 against the folder median, with images more than
     STEP_FRACTION away listed: a jump there is a gain or attenuator step, or a
     blocked or moved beamstop
+  - images whose I_2 collapsed: I_2 / (I_0 × counting time) below COLLAPSE_FRACTION
+    of the folder median, the rule the app uses to fall back to the high-q match
   - I_2 per second of counting time for each counting time seen, which should agree
   - the log-log slope of each trace's mid-q σ²/I against its I_2: near −1 when the
     traces are divided by I_2, near 0 when they are raw counts
@@ -31,6 +33,8 @@ when the first is not.
 const HIGH_Q_FRACTION = 0.15
 
 const STEP_FRACTION = 0.2
+
+const COLLAPSE_FRACTION = 0.25
 
 number(line) = (m = match(r"=\s*([+-]?[0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?)", line); m === nothing ? nothing : parse(Float64, m[1]))
 
@@ -166,6 +170,19 @@ function report_incident_ratio(io, lit, outliers)
     end
 end
 
+function report_collapsed(io, lit, outliers)
+    per_flux = [(n, m.i2 / (m.i0 * m.counting)) for (n, m) in lit if usable(m.i2) && usable(m.i0) && usable(m.counting)]
+    isempty(per_flux) && return
+    mid = median(last.(per_flux))
+    collapsed = sort([(n, r / mid) for (n, r) in per_flux if r < COLLAPSE_FRACTION * mid]; by = last)
+    zero_i2 = count(((_, m),) -> usable(m.i0) && usable(m.counting) && m.i2 !== nothing && m.i2 <= 0, lit)
+    @printf(io, "   I_2 collapsed (below %d%% of the median I_2 / (I_0 × counting time)): %d, plus %d with I_2 ≤ 0\n",
+            round(Int, 100 * COLLAPSE_FRACTION), length(collapsed), zero_i2)
+    for (n, r) in first(collapsed, outliers)
+        @printf(io, "      %-48s %.3f\n", n, r)
+    end
+end
+
 function report_counting_time(io, lit)
     by_time = Dict{Float64,Vector{Float64}}()
     for (_, m) in lit
@@ -201,6 +218,7 @@ function report_folder(io, root, dir, paths, outliers, tots)
     end
     report_beam_off(io, [(n, m) for (n, m) in rows if m.i0 !== nothing && m.i0 <= 0])
     report_incident_ratio(io, lit, outliers)
+    report_collapsed(io, lit, outliers)
     report_counting_time(io, lit)
     report_variance_slope(io, lit, tots)
     report_signal_spread(io, lit)

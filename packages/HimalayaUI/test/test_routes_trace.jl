@@ -50,6 +50,13 @@ using Test, HTTP, JSON3, DBInterface
         @test HimalayaUI.read_trace_normalisations!(db) == 1
         @test JSON3.read(String(call("GET", "/api/exposures/$e_id/trace").body)).monitors.normalised_by == "i2"
 
+        @test body.monitors.i2_collapsed == false
+        DBInterface.execute(db, "UPDATE exposures SET incident_monitor = 1.5 WHERE id IN (?, ?)", [e_id, sib_id])
+        @test JSON3.read(String(call("GET", "/api/exposures/$sib_id/trace").body)).monitors.i2_collapsed == true
+        @test JSON3.read(String(call("GET", "/api/exposures/$e_id/trace").body)).monitors.i2_collapsed == false
+        DBInterface.execute(db, "UPDATE setups SET mode = 'autosampler'")
+        @test JSON3.read(String(call("GET", "/api/exposures/$e_id/trace").body)).monitors.mode == "autosampler"
+
         DBInterface.execute(db, "UPDATE exposures SET trace_median = 0.2 WHERE id = ?", [e_id])
         @test JSON3.read(String(call("GET", "/api/exposures/$e_id/trace").body)).monitors.beam_off == true
 
@@ -114,4 +121,13 @@ end
         @test sib.monitors.transmitted_counts ≈ 6000.0
         @test sib.I != body.I
     end
+end
+
+@testset "an image whose I_2 collapsed while I_0 stayed normal is flagged against its setup's median" begin
+    @test HimalayaUI.is_i2_collapsed(20.0, 1.5, 10.0, 100.0 / 15) == true
+    @test HimalayaUI.is_i2_collapsed(900.0, 1.5, 10.0, 100.0 / 15) == false
+    @test HimalayaUI.is_i2_collapsed(0.0, 1.5, 10.0, 100.0 / 15) == true
+    @test HimalayaUI.is_i2_collapsed(missing, 1.5, 10.0, 100.0 / 15) == false
+    @test HimalayaUI.is_i2_collapsed(20.0, -0.1, 10.0, 100.0 / 15) == false
+    @test HimalayaUI.is_i2_collapsed(20.0, 1.5, 10.0, nothing) == false
 end
