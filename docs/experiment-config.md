@@ -263,11 +263,15 @@ moves, so position would collapse every acquisition into a few samples.
   autosampler setup (`reuse_samples` in `_scan_setup!`): an acquisition whose
   stem is not stored yet always gets a new sample. Scan numbers are not unique
   in every beamtime (the counter can restart), so two acquisitions can share one.
-- Acquisitions with a well token are ordered by scan number. A load is one
-  autosampler run: a block of consecutive acquisitions with one label. A new
-  load starts when the label changes, or when the acquisition's scan number is
-  the start scan named by a `data/AT_SolSAXS_<label>_<scan>.txt` file. Without
-  such files the label alone decides.
+- Acquisitions with a well token are ordered by scan number. Samples are shot
+  as a series: a run has one series label, and each well's plate coordinate
+  (two digits and a letter, like a 96-well plate) is appended to it, so every
+  well has its own name. A load is one run: a block of consecutive acquisitions
+  with one series label. A new load starts when the series label changes, or
+  when the acquisition's scan number is the start scan named by a
+  `data/AT_SolSAXS_<label>_<scan>.txt` file. Without such files the label alone
+  decides. One such file can be followed by several series before the next file
+  appears (seen in a real folder), so the file does not mark one run.
 - Stems without a well token (calibration, empty and test shots) all go in load
   `0`, never in a run's load.
 - Indexes come from the files, not from counting, so a file that arrives late
