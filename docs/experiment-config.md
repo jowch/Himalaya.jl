@@ -318,6 +318,25 @@ their samples. A sample's shown image is its one exposure, so the image strip
 and the trace route work without analysis. Edits a user makes (peaks, a custom
 index, `POST /api/exposures/:id/analyze`) still analyze that exposure.
 
+**Images the average kept.** An autosampler exposure is the beamline's average
+of its acquisition's frames, minus the frames its software rejected, so it is not
+a single image. The beamline's `sastool/<filename><frame>.log` (under
+`<root>/analysis/automatic_analysis`, `<frame>` from the setup's image pattern)
+holds the counts. `exposures.frames_total` and `frames_rejected` (the last two
+columns, NULL when unknown) take them from the `Sample frames:N Rejected:M`
+line. The log of a run's first buffer has no summary, so its `frame #` lines are
+counted instead, once the log has been unchanged for a minute; that count is not
+revised afterwards. Only a log with a `Sample frames:` line, or with no summary
+lines at all, gives a count. A log with no readable counts, or no log
+(calibration shots), leaves both NULL. Capillary
+setups are never read, and a stored value is never overwritten. `backfill_frame_counts!`
+fills unset rows at the end of every `scan_and_group!`, on every
+`POST /api/experiments/:id/scan` and once at boot, so rows ingested earlier
+are filled without new files and a log that appears later is picked up on the
+next scan. The Image panel then reads `9 of 10 images, beamline average` (or
+`10 images, beamline average` when none were rejected) and an exposure of `9 × 1.0 s`; with
+NULL counts it reads `Single` and `1.0 s` as before.
+
 **Settling a setup.** At the start of every `_scan_setup!`:
 
 - A setup with mode `NULL` or mode `capillary` with source `detected` is

@@ -99,6 +99,7 @@ function build_fixture(path::AbstractString, analysis_dir::AbstractString)
         DBInterface.execute(db,
             "UPDATE setups SET energy_kev = 11.0, flight_path_m = 1.1, integration_pattern = '{name}_tot.dat', mode = 'capillary', mode_source = 'user' WHERE id = ?",
             [setup_id])
+        DBInterface.execute(db, "UPDATE exposures SET frames_total = 10, frames_rejected = 1 WHERE id = ?", [exposure_id])
         write(joinpath(analysis_dir, "integ.mpp"), "-i yes i2 2.5e7\n")
         HimalayaUI.read_trace_normalisations!(db; experiment_id)
 

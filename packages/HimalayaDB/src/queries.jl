@@ -52,7 +52,7 @@ end
 
 const _EXPOSURE_COLS = """id, experiment_id, setup_id, sample_id, filename, kind,
     status, image_path, timestamp, exposure_time, frame_no,
-    transmitted_counts, incident_monitor"""
+    transmitted_counts, incident_monitor, frames_total, frames_rejected"""
 
 """
     exposures(db; sample=nothing) -> Vector{<:NamedTuple}
