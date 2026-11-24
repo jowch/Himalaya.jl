@@ -27,12 +27,12 @@ When the mock-up changes, extract its behaviours again from the code and update 
 | list-prev-unreviewed | Shift with that key jumps to the previous unreviewed sample | planned | held small item from the 2026-11-23 mock-up audit (thread "Audit app against the mock-up") |
 | list-filter | / focuses the filter; it matches names; Enter opens the first match; Esc leaves it | built | test/workspace/WorkspacePage.test.tsx › / puts the cursor in the filter, where letters type, and ? opens the shortcuts only while the filter is empty |
 | list-no-match | An empty filter result says "No samples match." | built | test/workspace/WorkspacePage.test.tsx › says no samples match only when a filter is typed |
-| list-status | Each row shows its call, or an unreviewed mark | built | test/workspace/WorkspacePage.test.tsx › updates the list and the count when the corpus status changes |
+| list-status | Each row shows its call, or an unreviewed mark; a sample with no review state (autosampler) shows neither | built | test/workspace/WorkspacePage.test.tsx › updates the list and the count when the corpus status changes |
 | list-every-phase | A coexistence call lists every phase in the row | built | test/workspace/WorkspacePage.test.tsx › lists every phase of a coexistence call, as the mock-up does |
 | list-suspect-mark | A row with an undropped suspect image carries a warning mark | planned | thread "Show combined curve by default" |
 | list-follows-call | The row and the progress follow the call as it changes, without a reload | built | test/queue/peakPostStateAssignment.test.ts › a frame whose assignment changed the call refetches the sample list and the sample calls |
 | list-cursor | The current row is highlighted and scrolled into view | untested | SampleList scrolls the current row into view on every sample change |
-| header-progress | The header shows a progress bar and "k of N reviewed" | built | test/workspace/WorkspacePage.test.tsx › updates the list and the count when the corpus status changes |
+| header-progress | The header shows a progress bar and "k of N reviewed" over the samples that have a review state, and nothing when there are none | built | test/workspace/WorkspacePage.test.tsx › updates the list and the count when the corpus status changes |
 | header-help | The header's ? button opens the shortcut list | built | test/workspace/WorkspacePage.test.tsx › ? opens the shortcut list, the header button opens it too, and Escape closes it |
 | layout-narrow | Below 980 px the tools pane moves under the plot; below 640 px one column | planned | held small item from the 2026-11-23 mock-up audit (thread "Audit app against the mock-up") |
 

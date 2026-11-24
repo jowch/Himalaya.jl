@@ -302,6 +302,17 @@ their samples. A sample's shown image is its one exposure, so the image strip
 and the trace route work without analysis. Edits a user makes (peaks, a custom
 index, `POST /api/exposures/:id/analyze`) still analyze that exposure.
 
+**In the workspace.** The workspace picks its modules from the setup mode of
+the open sample (`workspace/modules.ts`). A `capillary` or undecided setup has
+all of them. An `autosampler` sample keeps the trace plot (zoom, plot view,
+comparisons, subtraction), the image strip with Drop and Restore, labels and
+bridges, and has no peak editing, no Assignment or Indexing section, no
+call keys or palette entries, no image selection, and no review state. It has
+no unreviewed mark or call in the sample list, is not counted in the header's
+"k of N reviewed" or on the home card (`review_progress`), and `Z` and the
+landing sample skip it. When no sample in the experiment has a review state,
+the header shows no progress and the card shows no review count.
+
 **Settling a setup.** At the start of every `_scan_setup!`:
 
 - A setup with mode `NULL` or mode `capillary` with source `detected` is

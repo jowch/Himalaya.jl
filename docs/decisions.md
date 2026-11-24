@@ -132,6 +132,7 @@ Every row also needs the date it was decided, as `YYYY-MM-DD`.
 |---|---|---|---|---|
 | autosampler-mode | Autosampler setups are a dedicated mode per setup: one sample per acquisition, read from its averaged `_tot.dat`. | 2026-11-23 | built | packages/HimalayaUI/test/test_setup_mode.jl › an undecided setup with the wrong patterns is put right on its first scan |
 | autosampler-no-analysis | Automatic analysis is off for autosampler setups. | 2026-11-23 | built | packages/HimalayaUI/test/test_setup_mode.jl › nothing is analyzed and nothing is reported as a problem |
+| workspace-modules-by-mode | The workspace is composed of modules shown in the existing panels depending on the setup mode; autosampler samples get the trace plot, comparisons and subtraction, and no peak editing, indexing, phase calls, image selection or review state. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › shows neither Assignment nor Indexing for an autosampler sample, and both for a capillary one |
 
 ## Images and combining them
 
@@ -171,7 +172,7 @@ Every row also needs the date it was decided, as `YYYY-MM-DD`.
 | beamtime-rescan-adds | A rescan adds a new setup folder to the beamtime. | 2026-11-21 | built | packages/HimalayaUI/test/test_beamtime.jl › a rescan adds a new setup folder to the beamtime |
 | beamtime-merge-cli | `himalaya merge` folds per-setup experiments into one beamtime, as a dry run unless --apply. | 2026-11-21 | built | packages/HimalayaUI/test/test_beamtime.jl › merge folds per-setup experiments into one beamtime |
 | home-collection-ribbon | Each experiment card shows a progress ribbon: its samples in measured order on clock time, reviewed ones in the success hue, images taken with the beam off marked, and gaps over ten minutes left empty. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/ExperimentsHomePage.test.tsx › shows when each beamtime collected its samples and how many are left to review |
-| home-ribbon-wording | The card counts samples "to review", not "to call", over every shown sample with the workspace's reviewed rule, so the two counts always agree. | 2026-11-23 | built | packages/HimalayaUI/test/test_routes_experiments.jl › the card's review count is the workspace's reviewed rule over every shown sample |
+| home-ribbon-wording | The card counts samples "to review", not "to call", over every shown sample that has a review state, with the workspace's reviewed rule, so the two counts always agree. Autosampler samples have none and are not counted. | 2026-11-23 | built | packages/HimalayaUI/test/test_routes_experiments.jl › the card's review count is the workspace's reviewed rule over every shown sample |
 | home-ribbon-beam-off | The ribbon marks every image taken with the beam off, dropped or not, because it records how the beamtime was collected. | 2026-11-23 | built | packages/HimalayaUI/test/test_routes_experiments.jl › the ribbon marks beam-off images even after they are dropped |
 | home-ribbon-height | The ribbon row keeps one height with or without image times, so cards never shift. | 2026-11-23 | built | packages/HimalayaUI/frontend/e2e/smoke.spec.ts › the collection ribbon takes the same height whether or not a beamtime has image times |
 
