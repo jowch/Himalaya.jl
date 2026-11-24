@@ -4756,13 +4756,41 @@ describe("WorkspacePage autosampler background", () => {
       expect(compareFetches.flat()).not.toContain(OTHER_BUFFER);
     });
 
-    it("hides and shows one curve on a click in an autosampler sample's Minus view, where a capillary sample returns to Raw", () => {
+    it("hides and then shows one curve on a plain chip click in an autosampler sample's Minus view, staying in Minus", () => {
       seedLevels();
       open(FIRST);
       compareWith("lipidA 01C");
+      const minus = (): HTMLElement => screen.getByRole("button", { name: "Minus lipidA 01A (B0100)" });
       fireEvent.click(chipOf(/^lipidA 01C/));
-      expect(screen.getByRole("button", { name: "Minus lipidA 01A (B0100)" })).toHaveAttribute("aria-pressed", "true");
       expect(curve(SECOND)).toBeNull();
+      expect(minus()).toHaveAttribute("aria-pressed", "true");
+      fireEvent.click(chipOf(/^lipidA 01C/));
+      expect(curve(SECOND)).not.toBeNull();
+      expect(minus()).toHaveAttribute("aria-pressed", "true");
+    });
+
+    it("returns a capillary sample's Minus view to Raw on a plain click on a comparison chip", () => {
+      seedLevels();
+      state.trace = makeTrace(2);
+      state.compareTraces.set(FIRST, makeTrace(1));
+      state.compareTraces.set(SECOND, makeTrace(3));
+      open(50);
+      compareWith("lipidA 01B");
+      compareWith("lipidA 01C");
+      fireEvent.click(chipOf(/^lipidA 01B/), { ctrlKey: true });
+      expect(screen.getByRole("button", { name: "Minus lipidA 01B (S0101)" })).toHaveAttribute("aria-pressed", "true");
+      fireEvent.click(chipOf(/^lipidA 01C/));
+      expect(screen.getByRole("button", { name: "Raw" })).toHaveAttribute("aria-pressed", "true");
+    });
+
+    it("scales a compared pair without masking the open sample's peaks", () => {
+      seedLevels();
+      state.peaks = [0.22, 0.23, 0.24, 0.25].map((q, i) => peak(i + 1, q, "auto"));
+      state.compareTraces.set(SECOND, level(12, { monitors: { ...monitors, beam_off: true } }));
+      open(FIRST);
+      compareWith("lipidA 01C");
+      const value = chipOf(/^lipidA 01C/).closest("[data-compare-chip]")!.querySelector("[data-scale-value]")!;
+      expect(value).toHaveTextContent("×6.00");
     });
 
     it("draws no comparison curve while the open sample's own background is loading", () => {
