@@ -64,6 +64,7 @@ import { useCorpusPalette } from "../hooks/useCorpusPalette";
 import { allFrames, frameGroups, frameOf } from "./frameGroups";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
+import { modulesFor, NO_MODULES, type WorkspaceModules } from "./modules";
 import { beamOffWarning, firstUnreviewed, i0BelowZero, imageUrl, nearestKeptExposure, nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
 import { samePeak, type PeakRef } from "../lib/peakRef";
 import { clampDomain, compareScale, COMPARES_FULL, MAX_COMPARES, scaledTrace, subtractTrace } from "./compare";
@@ -114,7 +115,8 @@ import { setupNames } from "../lib/sample/setupNames";
 import type { ExperimentPatch } from "../lib/queue/mutators/experiment";
 import type { SetupPatch } from "../lib/queue/mutators/setup";
 
-function helpSections(mod: string): HelpSection[] {
+function helpSections(mod: string, modules: WorkspaceModules, selectable: { strip: boolean; shown: boolean }): HelpSection[] {
+  const when = <T,>(on: boolean, ...list: T[]): T[] => (on ? list : []);
   return [
     {
       title: "Move",
@@ -130,20 +132,24 @@ function helpSections(mod: string): HelpSection[] {
       rows: [
         { keys: ["←", "→"], what: "Previous or next image" },
         { keys: ["X"], what: "Drop the image and show the nearest kept one, or restore a dropped one" },
-        { keys: ["Enter"], what: "Select the image to analyze, or take it out of the selection" },
-        { keys: ["⇧ click"], what: "Select a range of images to analyze" },
-        { keys: ["⌘ click"], what: "Add an image to the selection, or take it out" },
-        { keys: ["Space"], what: "Enlarge its detector image; ← →, X and Enter work inside it" },
+        ...when(selectable.strip,
+          { keys: ["Enter"], what: "Select the image to analyze, or take it out of the selection" },
+          { keys: ["⇧ click"], what: "Select a range of images to analyze" },
+          { keys: ["⌘ click"], what: "Add an image to the selection, or take it out" },
+        ),
+        { keys: ["Space"], what: selectable.shown ? "Enlarge its detector image; ← →, X and Enter work inside it" : "Enlarge its detector image; ← → and X work inside it" },
       ],
     },
     {
       title: "Assignment",
       rows: [
-        { keys: ["1–9"], what: "Tick or untick a phase candidate" },
-        { keys: ["0"], what: "Mark no phase (form factor), or clear it" },
-        { keys: ["Tab", "⇧ Tab"], what: "Step through the phase choices, wrapping at the ends. Press Enter to tick the one in focus." },
-        { keys: ["Esc"], what: "Leave the phase choices and let Tab reach every other control until you open another sample" },
-        { keys: ["I"], what: "Custom index: press Tab or Shift+Tab to change the symmetry, then drag the lattice, nudge it with ← →, or click a peak to snap to it. Press Enter to add it or Esc to cancel." },
+        ...when(modules.calls,
+          { keys: ["1–9"], what: "Tick or untick a phase candidate" },
+          { keys: ["0"], what: "Mark no phase (form factor), or clear it" },
+          { keys: ["Tab", "⇧ Tab"], what: "Step through the phase choices, wrapping at the ends. Press Enter to tick the one in focus." },
+          { keys: ["Esc"], what: "Leave the phase choices and let Tab reach every other control until you open another sample" },
+          { keys: ["I"], what: "Custom index: press Tab or Shift+Tab to change the symmetry, then drag the lattice, nudge it with ← →, or click a peak to snap to it. Press Enter to add it or Esc to cancel." },
+        ),
         { keys: ["L"], what: "Label the sample, e.g. Buffer. Press Enter to add it or Esc to close." },
         { keys: [mod, "K"], what: "Open the commands and choose Same sample as… to mark this as the same sample measured in another setup. Space after Tab or an arrow ticks several, and Enter marks them all." },
       ],
@@ -151,7 +157,7 @@ function helpSections(mod: string): HelpSection[] {
     {
       title: "Plot",
       rows: [
-        { gesture: "Click", what: "Turn a peak off or on, remove one you added, or add one" },
+        ...when(modules.peakEditing, { gesture: "Click", what: "Turn a peak off or on, remove one you added, or add one" }),
         { gesture: "Scroll", what: "Zoom q" },
         { keys: [`${mod} 0`], what: "Reset the zoom" },
         { keys: ["V"], what: "Next plot view: log, linear, log-log, q²I. ⇧ V goes back." },
@@ -172,8 +178,6 @@ function helpSections(mod: string): HelpSection[] {
     },
   ];
 }
-
-const HELP = helpSections(MOD_KEY);
 
 const RECENT_LABELS = "label";
 
@@ -280,8 +284,15 @@ export function WorkspacePage(): JSX.Element {
   );
 
   const requested = sampleParam === undefined ? undefined : Number(sampleParam);
-  const sample = requested === undefined ? firstUnreviewed(samples) : samples.find((s) => s.id === requested);
+  const modulesOf = useCallback((s: CorpusSample) => modulesFor(setups.find((st) => st.id === s.setup_id)?.mode), [setups]);
+  const reviewable = useCallback((s: CorpusSample) => modulesOf(s).review, [modulesOf]);
+  const sample = requested === undefined ? firstUnreviewed(samples, reviewable) : samples.find((s) => s.id === requested);
   const sampleId = sample?.id;
+  const modesPending = !setupsKnown || (corpus.data === undefined && !corpus.isError);
+  const modules = useMemo(
+    () => (sample ? modulesOf(sample) : modesPending ? NO_MODULES : modulesFor(null)),
+    [sample, modulesOf, modesPending],
+  );
   const goSample = useCallback(
     (sid: number) => navigate(`/experiments/${experimentId}/workspace/${sid}`, { replace: true }),
     [navigate, experimentId],
@@ -356,6 +367,7 @@ export function WorkspacePage(): JSX.Element {
     currentId: sample?.id,
     exposures: exposureList,
     shownId: exposure?.id,
+    reviewable,
     settled: [trace, peaks, indices, assignment].every((q) => q.fetchStatus === "idle"),
   });
   const candidates = useMemo(() => rankCandidates(indices.data), [indices.data]);
@@ -406,7 +418,7 @@ export function WorkspacePage(): JSX.Element {
   const isFormFactor = assignment.data?.state === "form_factor";
   const setStatus = useSetExposureStatus(sampleId ?? 0);
 
-  const canEditPeaks = Boolean(username && exposure);
+  const canEditPeaks = Boolean(username && exposure && modules.peakEditing);
   const addPeak = useAddPeak(exposure?.id ?? 0);
   const removePeak = useRemovePeak(exposure?.id ?? 0);
   const setExcluded = useSetPeakExcluded(exposure?.id ?? 0);
@@ -628,7 +640,7 @@ export function WorkspacePage(): JSX.Element {
   useEffect(() => { anchors.current = new Map(); }, [sampleId]);
   const groupSelections = useMemo(() => {
     if (sampleId === undefined) return new Map<number, ExposureSelection>();
-    return new Map(groups.map((g) => {
+    return new Map(groups.filter((g) => modulesOf(inExperiment.find((x) => x.id === g.sampleId) ?? sample!).imageSelection).map((g) => {
       const owner = g.sampleId;
       const ownerName = (owner === sampleId ? sample?.name : inExperiment.find((x) => x.id === owner)?.name) ?? "this sample";
       const kept = keptExposures(g.exposures).map((e) => e.id);
@@ -660,7 +672,7 @@ export function WorkspacePage(): JSX.Element {
       };
       return [owner, selection] as const;
     }));
-  }, [groups, sampleId, sample?.name, inExperiment, ops, history, frameName]);
+  }, [groups, sampleId, sample, inExperiment, ops, history, frameName, modulesOf]);
 
   const tileSelection = tile && username ? groupSelections.get(tile.sample_id) : undefined;
   const tileSelectable = tile !== undefined && (tileSelection?.selectableIds.has(tile.id) ?? false);
@@ -668,6 +680,12 @@ export function WorkspacePage(): JSX.Element {
   const toggleTileSelection = useCallback(() => {
     if (tile && tileSelectable) tileSelection?.onToggle(tile.id);
   }, [tile, tileSelectable, tileSelection]);
+
+  const stripSelectable = Boolean(username) && groupSelections.size > 0;
+  const help = useMemo(
+    () => helpSections(MOD_KEY, modules, { strip: stripSelectable, shown: tileSelectable }),
+    [modules, stripSelectable, tileSelectable],
+  );
 
   const draftQs = useMemo(() => (draft ? draftPrediction(draft) : []), [draft]);
   const combs: CombLine[] = useMemo(
@@ -797,9 +815,9 @@ export function WorkspacePage(): JSX.Element {
     return notes;
   }, [samples, labelList]);
   const bridgePickable = useMemo(() => {
-    const others = samples.filter((s) => s.id !== sampleId && !bridged.includes(s.id));
+    const others = samples.filter((s) => s.id !== sampleId && !bridged.includes(s.id) && modulesOf(s).calls === modules.calls);
     return sample ? rankBridgeMates(sample, others) : others;
-  }, [samples, sample, sampleId, bridged]);
+  }, [samples, sample, sampleId, bridged, modules.calls, modulesOf]);
   useEffect(() => {
     setLabeling(false);
     setColoringLabel(undefined);
@@ -894,14 +912,15 @@ export function WorkspacePage(): JSX.Element {
   const bridgeChoices = useCallback(
     (rid: number) => {
       const there = samples.find((s) => s.id === rid);
-      return sample && there ? keepChoices(sample, there, nameWithSetup) : undefined;
+      return sample && there && modules.calls && modulesOf(there).calls ? keepChoices(sample, there, nameWithSetup) : undefined;
     },
-    [sample, samples, nameWithSetup],
+    [sample, samples, nameWithSetup, modules.calls, modulesOf],
   );
   const unsettledMate = useMemo(() => {
     if (!sample) return undefined;
-    return bridged.map((id) => samples.find((s) => s.id === id)).find((m) => m !== undefined && callStatesSplit(sample, m));
-  }, [sample, samples, bridged]);
+    if (!modules.calls) return undefined;
+    return bridged.map((id) => samples.find((s) => s.id === id)).find((m) => m !== undefined && modulesOf(m).calls && callStatesSplit(sample, m));
+  }, [sample, samples, bridged, modules.calls, modulesOf]);
   const [paletteStart, setPaletteStart] = useState<PaletteForm | undefined>(undefined);
   const settlePrompted = useRef(new Set<number>());
   useEffect(() => {
@@ -1016,12 +1035,12 @@ export function WorkspacePage(): JSX.Element {
   );
 
   const activePeakQs = useMemo(() => (peaks.data ?? []).filter((p) => !p.excluded).map((p) => p.q), [peaks.data]);
-  const canCall = Boolean(username && exposure);
+  const canCall = Boolean(username && exposure && modules.calls);
   const draftBounds = draft ? latticeBounds(draft.phase, xExtent) : null;
   const shortWindow = useMediaQuery(SHORT_WINDOW);
   const [openPanel, setOpenPanel] = useState<"call" | "exposure">("call");
   const callOpen = !shortWindow || openPanel === "call" || draft !== null;
-  const exposureOpen = !shortWindow || (openPanel === "exposure" && draft === null);
+  const exposureOpen = !shortWindow || !modules.calls || (openPanel === "exposure" && draft === null);
   const tabFree = useRef(false);
   const [pendingTab, setPendingTab] = useState<"first" | "last" | null>(null);
   useEffect(() => {
@@ -1202,6 +1221,10 @@ export function WorkspacePage(): JSX.Element {
             handled = false;
             break;
           }
+          if (!modules.calls) {
+            handled = false;
+            break;
+          }
           const next = cycleChoice(callChoices(), ev.target, ev.shiftKey);
           if (next) next.focus();
           else if (!callOpen) {
@@ -1211,7 +1234,7 @@ export function WorkspacePage(): JSX.Element {
           break;
         }
         case "Escape":
-          if (inCallChoices(ev.target)) {
+          if (modules.calls && inCallChoices(ev.target)) {
             tabFree.current = true;
             (ev.target as HTMLElement).blur();
           } else handled = false;
@@ -1237,7 +1260,8 @@ export function WorkspacePage(): JSX.Element {
           break;
         case "i":
         case "I":
-          openCustom();
+          if (modules.calls) openCustom();
+          else handled = false;
           break;
         case "l":
         case "L":
@@ -1253,7 +1277,7 @@ export function WorkspacePage(): JSX.Element {
           break;
         case "z":
         case "Z": {
-          const nid = nextUnreviewed(visible, sampleId, 1);
+          const nid = nextUnreviewed(visible, sampleId, 1, reviewable);
           if (nid !== undefined) goSample(nid);
           break;
         }
@@ -1276,14 +1300,14 @@ export function WorkspacePage(): JSX.Element {
           break;
         }
         case "0":
-          if (username) {
+          if (username && modules.calls) {
             setOpenPanel("call");
             toggleFormFactor();
-          }
+          } else handled = false;
           break;
         default: {
           const n = Number(ev.key);
-          const row = Number.isInteger(n) && n >= 1 ? keyed[n - 1] : undefined;
+          const row = modules.calls && Number.isInteger(n) && n >= 1 ? keyed[n - 1] : undefined;
           if (row && username) {
             setOpenPanel("call");
             if (row.kind === "group") toggleGroup(row.members);
@@ -1295,11 +1319,12 @@ export function WorkspacePage(): JSX.Element {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [visible, sampleId, goSample, exposureList, tile, toggleDrop, tileSelectable, toggleTileSelection, keyed, toggleCandidate, toggleGroup, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor, view, setView, sample, openLabeling, applyHistory, callOpen, sampleListHidden, setSampleListHidden]);
+  }, [visible, sampleId, goSample, exposureList, tile, toggleDrop, tileSelectable, toggleTileSelection, keyed, toggleCandidate, toggleGroup, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor, view, setView, sample, openLabeling, applyHistory, callOpen, sampleListHidden, setSampleListHidden, modules.calls, reviewable]);
 
   const droppedCount = ownFrames.filter((e) => e.status === "rejected").length;
   const keptHint = droppedCount > 0 ? `${ownFrames.length - droppedCount} of ${ownFrames.length} kept` : undefined;
-  const reviewed = samples.filter((s) => sampleStatus(s).kind !== "unreviewed").length;
+  const reviewableSamples = samples.filter(reviewable);
+  const reviewed = reviewableSamples.filter((s) => sampleStatus(s).kind !== "unreviewed").length;
   const countOf = (at: typeof tileFrame): string | undefined => (at ? `Image ${at.index + 1} of ${at.group.exposures.length}` : undefined);
   const tileOwnerSample = tileFrame ? inExperiment.find((s) => s.id === tileFrame.group.sampleId) : undefined;
   const tileOwner = tileOwnerSample ? frameSetupName(tileOwnerSample) : undefined;
@@ -1351,8 +1376,9 @@ export function WorkspacePage(): JSX.Element {
     setupOf: (id) => sampleSetup.get(id),
     modKey: MOD_KEY,
     canEdit: Boolean(username && sample),
+    calls: modules.calls,
     nextUnreviewed: () => {
-      const nid = nextUnreviewed(visible, sampleId, 1);
+      const nid = nextUnreviewed(visible, sampleId, 1, reviewable);
       if (nid !== undefined) goSample(nid);
     },
     compare: {
@@ -1376,7 +1402,7 @@ export function WorkspacePage(): JSX.Element {
       names: (id) => nameWithSetup({ id, name: sampleNames.get(id) ?? `Sample ${id}` }),
       bridged: bridgedNames,
       leave: leaveBridges,
-      groupChoices: (ids) => (sample ? groupKeepChoices(sample, ids.flatMap((id) => samples.filter((s) => s.id === id)), nameWithSetup) : undefined),
+      groupChoices: (ids) => (sample && modules.calls ? groupKeepChoices(sample, ids.flatMap((id) => samples.filter((s) => s.id === id && modulesOf(s).calls)), nameWithSetup) : undefined),
       pickMany: (ids, keep) => void bridgeMany(ids, keep),
     },
     candidates: {
@@ -1441,14 +1467,14 @@ export function WorkspacePage(): JSX.Element {
   });
 
   const customIndexButton = <CustomIndexButton open={draft !== null} disabled={!canCall} onClick={draft ? () => setDraft(null) : openCustom} />;
-  const indexingSection = (
+  const indexingSection = modules.indexing ? (
     <Section
       title="Indexing"
       className="shrink-0"
     >
       <IndexingPlot series={indexSeries} />
     </Section>
-  );
+  ) : null;
 
   return (
     <WorkspaceLayout
@@ -1457,7 +1483,7 @@ export function WorkspacePage(): JSX.Element {
       onShowNav={() => setSampleListHidden(false)}
       overlay={
         <>
-          {helpOpen && <HelpOverlay sections={HELP} onClose={() => setHelpOpen(false)} />}
+          {helpOpen && <HelpOverlay sections={help} onClose={() => setHelpOpen(false)} />}
           {removeOpen && (
             <RemoveExperimentDialog
               name={experiment.data?.name ?? "this experiment"}
@@ -1498,11 +1524,11 @@ export function WorkspacePage(): JSX.Element {
         <WorkspaceHeader
           experimentName={experiment.data?.name ?? `Experiment ${experimentId}`}
           reviewed={reviewed}
-          total={samples.length}
+          total={reviewableSamples.length}
           onHelp={() => setHelpOpen(true)}
         />
       }
-      nav={<SampleList samples={visible} setupHeaders={setupHeaders} currentId={sampleId} filter={filter} onFilter={setFilter} onPick={goSample} onToggleCompare={toggleCompare} compareColors={compareColors} hiddenCompares={shownCompareSet} bridgeCounts={counts} listHidden={sampleListHidden} onToggleList={() => setSampleListHidden(!sampleListHidden)} notice={<ExperimentNotice progress={ingestProgress} ingestFailed={ingestFailed} waiting={waitingForTrace} failed={failedAnalyses} unrecognized={unrecognizedSetups} onDetails={() => setProblemsOpen(true)} />} />}
+      nav={<SampleList samples={visible} setupHeaders={setupHeaders} currentId={sampleId} filter={filter} onFilter={setFilter} onPick={goSample} onToggleCompare={toggleCompare} compareColors={compareColors} hiddenCompares={shownCompareSet} bridgeCounts={counts} reviewable={reviewable} listHidden={sampleListHidden} onToggleList={() => setSampleListHidden(!sampleListHidden)} notice={<ExperimentNotice progress={ingestProgress} ingestFailed={ingestFailed} waiting={waitingForTrace} failed={failedAnalyses} unrecognized={unrecognizedSetups} onDetails={() => setProblemsOpen(true)} />} />}
       main={
         sample ? (
           <>
@@ -1606,51 +1632,55 @@ export function WorkspacePage(): JSX.Element {
         )
       }
       tools={
-        <>
-          <div className={callOpen ? "flex min-h-24 flex-1 flex-col overflow-y-auto" : "shrink-0"} data-testid="workspace-tools-middle">
-            {draft && draftBounds ? (
-              <Section title="Assignment" aside={customIndexButton} pinAside collapsible={shortWindow ? { open: true } : undefined}>
-                <CustomIndexPanel
-                  panelRef={customPanel}
-                  draft={draft}
-                  min={draftBounds.min}
-                  max={draftBounds.max}
-                  landed={draftFit?.landed ?? 0}
-                  total={draftFit?.points.length ?? 0}
-                  disabled={!canCall}
-                  onChange={setDraftClamped}
-                  onAdd={addCustom}
-                  onCancel={() => setDraft(null)}
-                />
-              </Section>
-            ) : (
-              <Section title="Assignment" aside={customIndexButton} pinAside collapsible={shortWindow ? { open: callOpen, onOpen: () => setOpenPanel("call") } : undefined}>
-                <CandidateList
-                  rows={rows}
-                  assigned={assigned}
-                  unsupported={unsupportedIds}
-                  disabled={!username}
-                  formFactor={isFormFactor}
-                  onToggle={toggleCandidate}
-                  onToggleGroup={toggleGroup}
-                  onFormFactor={toggleFormFactor}
-                  onHover={hoverCandidates}
-                />
-              </Section>
+        modesPending ? null : (
+          <>
+            {modules.calls && (
+              <div className={callOpen ? "flex min-h-24 flex-1 flex-col overflow-y-auto" : "shrink-0"} data-testid="workspace-tools-middle">
+                {draft && draftBounds ? (
+                  <Section title="Assignment" aside={customIndexButton} pinAside collapsible={shortWindow ? { open: true } : undefined}>
+                    <CustomIndexPanel
+                      panelRef={customPanel}
+                      draft={draft}
+                      min={draftBounds.min}
+                      max={draftBounds.max}
+                      landed={draftFit?.landed ?? 0}
+                      total={draftFit?.points.length ?? 0}
+                      disabled={!canCall}
+                      onChange={setDraftClamped}
+                      onAdd={addCustom}
+                      onCancel={() => setDraft(null)}
+                    />
+                  </Section>
+                ) : (
+                  <Section title="Assignment" aside={customIndexButton} pinAside collapsible={shortWindow ? { open: callOpen, onOpen: () => setOpenPanel("call") } : undefined}>
+                    <CandidateList
+                      rows={rows}
+                      assigned={assigned}
+                      unsupported={unsupportedIds}
+                      disabled={!username}
+                      formFactor={isFormFactor}
+                      onToggle={toggleCandidate}
+                      onToggleGroup={toggleGroup}
+                      onFormFactor={toggleFormFactor}
+                      onHover={hoverCandidates}
+                    />
+                  </Section>
+                )}
+              </div>
             )}
-          </div>
-          {!shortWindow && indexingSection}
-          <Section
-            title="Image"
-            aside="← →"
-            folded={groups.length > 1 ? tileOwner : undefined}
-            className={shortWindow && exposureOpen ? "min-h-0 flex-1 overflow-y-auto" : exposureOpen ? "min-h-0 shrink overflow-y-auto" : "shrink-0"}
-            collapsible={shortWindow ? { open: exposureOpen, onOpen: draft === null ? () => setOpenPanel("exposure") : undefined } : undefined}
-          >
-            <MetaList rows={exposureRows(tile, tileOwner)} />
-          </Section>
-          {shortWindow && indexingSection}
-        </>
+            {!shortWindow && indexingSection}
+            <Section
+              title="Image"
+              aside="← →"
+              folded={groups.length > 1 ? tileOwner : undefined}
+              className={shortWindow && exposureOpen ? "min-h-0 flex-1 overflow-y-auto" : exposureOpen ? "min-h-0 shrink overflow-y-auto" : "shrink-0"}
+              collapsible={shortWindow && modules.calls ? { open: exposureOpen, onOpen: draft === null ? () => setOpenPanel("exposure") : undefined } : undefined}
+            >
+              <MetaList rows={exposureRows(tile, tileOwner)} />
+            </Section>
+            {shortWindow && indexingSection}
+          </>
+        )
       }
     />
   );

@@ -105,6 +105,12 @@ afterEach(() => {
 });
 
 describe("neighbourSamples", () => {
+  it("prefetches the sample Z opens, skipping samples that have no review state", () => {
+    const notTwo = (s: CorpusSample): boolean => s.id !== 2;
+    expect(neighbourSamples(list, 5).map((s) => s.id)).toEqual([2, 4]);
+    expect(neighbourSamples(list, 5, notTwo).map((s) => s.id)).toEqual([3, 4]);
+  });
+
   it("returns the previous, the next and the next unreviewed sample", () => {
     expect(neighbourSamples(list, 3).map((s) => s.id)).toEqual([2, 4, 5]);
   });

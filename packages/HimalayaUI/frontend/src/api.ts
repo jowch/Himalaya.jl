@@ -61,7 +61,7 @@ export interface ReviewProgress {
 
 export interface CollectionTimeline {
   start: string;
-  samples: [from: number, to: number, reviewed: 0 | 1][];
+  samples: [from: number, to: number, review: 0 | 1 | 2][];
   beam_off: number[];
 }
 

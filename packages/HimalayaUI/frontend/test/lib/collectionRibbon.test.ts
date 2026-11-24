@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeRibbon, reviewSummary, ribbonAt, ribbonLayout, toReview } from "../../src/lib/collectionRibbon";
+import { describeRibbon, reviewLine, reviewSummary, ribbonAt, ribbonLayout, toReview } from "../../src/lib/collectionRibbon";
 import type { CollectionTimeline } from "../../src/api";
 
 const TL: CollectionTimeline = {
@@ -23,7 +23,7 @@ describe("ribbonLayout", () => {
 
 describe("ribbonAt", () => {
   it("names the sample under the pointer and whether it is reviewed", () => {
-    expect(ribbonAt(TL, 100)).toEqual({ kind: "sample", from: 0, to: 300, reviewed: true, beamOff: 0 });
+    expect(ribbonAt(TL, 100)).toEqual({ kind: "sample", from: 0, to: 300, reviewed: true, reviewable: true, beamOff: 0 });
   });
 
   it("counts images taken with the beam off in that sample", () => {
@@ -49,5 +49,25 @@ describe("toReview", () => {
   it("says when every sample is reviewed", () => {
     expect(toReview({ reviewed: 3, total: 3 })).toBe("All reviewed");
     expect(reviewSummary({ reviewed: 1, total: 1 })).toBe("1 of 1 sample reviewed");
+  });
+});
+
+describe("a span with no review state", () => {
+  const TL3: CollectionTimeline = { start: "2026-04-25T10:00:00", samples: [[0, 300, 2], [320, 600, 1], [620, 900, 0]], beam_off: [] };
+
+  it("is neither reviewed nor reviewable, and does not change its neighbours", () => {
+    const { spans } = ribbonLayout(TL3);
+    expect(spans.map((s) => [s.reviewed, s.reviewable])).toEqual([[false, false], [true, true], [false, true]]);
+  });
+
+  it("is reported under the pointer as not reviewable", () => {
+    expect(ribbonAt(TL3, 100)).toMatchObject({ kind: "sample", reviewed: false, reviewable: false });
+  });
+
+  it("gets no review line in its tooltip, while the others say where they stand", () => {
+    const at = (t: number) => ribbonAt(TL3, t) as Extract<ReturnType<typeof ribbonAt>, { kind: "sample" }>;
+    expect(reviewLine(at(100))).toBeUndefined();
+    expect(reviewLine(at(400))).toBe("Reviewed");
+    expect(reviewLine(at(700))).toBe("Not reviewed yet");
   });
 });

@@ -70,6 +70,8 @@ function register_peaks_routes!()
 
     @post "/api/exposures/{id}/peaks" function(req::HTTP.Request, id::Int)
         db = current_db()
+        refusal = refuse_autosampler_exposure(db, id)
+        refusal === nothing || return refusal
         body = json(req)
         # Validate before with_idempotency so a malformed body returns 400
         # (validation toast on the frontend) rather than 500 (infrastructure
@@ -155,6 +157,8 @@ function register_peaks_routes!()
 
     @patch "/api/peaks/auto/{id}" function(req::HTTP.Request, id::Int)
         db = current_db()
+        refusal = refuse_autosampler_row(db, "auto_peaks", id)
+        refusal === nothing || return refusal
         return with_idempotency(db, req) do
             body = json(req)
 
@@ -265,6 +269,8 @@ function register_peaks_routes!()
 
     @delete "/api/peaks/manual/{id}" function(req::HTTP.Request, id::Int)
         db = current_db()
+        refusal = refuse_autosampler_row(db, "peak_curations", id)
+        refusal === nothing || return refusal
         return with_idempotency(db, req) do
             curation_rows = sqlrows(DBInterface.execute(db,
                 "SELECT exposure_id, q FROM peak_curations WHERE id = ? AND kind = 'add'",

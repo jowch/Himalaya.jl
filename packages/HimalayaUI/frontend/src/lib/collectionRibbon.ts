@@ -2,34 +2,39 @@ import type { CollectionTimeline, ReviewProgress } from "../api";
 
 export const JOIN_GAP_S = 600;
 
-export interface RibbonSpan { from: number; to: number; reviewed: boolean }
+export interface RibbonSpan { from: number; to: number; reviewed: boolean; reviewable: boolean }
 export interface RibbonGap { from: number; to: number }
 
 export type RibbonPoint =
-  | { kind: "sample"; from: number; to: number; reviewed: boolean; beamOff: number }
+  | { kind: "sample"; from: number; to: number; reviewed: boolean; reviewable: boolean; beamOff: number }
   | { kind: "gap"; from: number; to: number };
 
 export function ribbonLayout(tl: CollectionTimeline): { spans: RibbonSpan[]; gaps: RibbonGap[]; end: number } {
   const spans: RibbonSpan[] = [];
   const gaps: RibbonGap[] = [];
   let end = 0;
-  tl.samples.forEach(([from, to, reviewed], i) => {
+  tl.samples.forEach(([from, to, review], i) => {
     end = Math.max(end, to);
     const next = tl.samples[i + 1];
     const joined = next !== undefined && next[0] - end <= JOIN_GAP_S ? Math.max(to, next[0]) : to;
     if (next !== undefined && next[0] - end > JOIN_GAP_S) gaps.push({ from: end, to: next[0] });
-    spans.push({ from, to: joined, reviewed: reviewed === 1 });
+    spans.push({ from, to: joined, reviewed: review === 1, reviewable: review !== 2 });
   });
   return { spans, gaps, end };
+}
+
+export function reviewLine(p: Extract<RibbonPoint, { kind: "sample" }>): string | undefined {
+  if (!p.reviewable) return undefined;
+  return p.reviewed ? "Reviewed" : "Not reviewed yet";
 }
 
 export function ribbonAt(tl: CollectionTimeline, t: number): RibbonPoint | null {
   const { spans, gaps } = ribbonLayout(tl);
   const i = spans.findIndex((s) => t >= s.from && t <= s.to);
   if (i >= 0) {
-    const [from, to, reviewed] = tl.samples[i]!;
+    const [from, to, review] = tl.samples[i]!;
     const beamOff = tl.beam_off.filter((b) => b >= from && b <= to).length;
-    return { kind: "sample", from, to, reviewed: reviewed === 1, beamOff };
+    return { kind: "sample", from, to, reviewed: review === 1, reviewable: review !== 2, beamOff };
   }
   const gap = gaps.find((g) => t > g.from && t < g.to);
   return gap ? { kind: "gap", ...gap } : null;

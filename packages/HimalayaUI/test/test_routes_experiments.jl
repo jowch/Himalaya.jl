@@ -223,6 +223,39 @@ end
     end
 end
 
+@testset "the card's review count leaves out samples of an autosampler setup" begin
+    tmp = mktempdir()
+    db = open_prepared_clone(tmp)
+    eid = HimalayaUI.create_experiment!(db; path = tmp, data_dir = "data", analysis_dir = "analysis")
+    auto = HimalayaUI.create_setup!(db; experiment_id = eid, folder = "solution",
+        root_dir = tmp, data_dir = tmp, analysis_dir = tmp, mode = "autosampler")
+    cap = HimalayaUI.create_setup!(db; experiment_id = eid, folder = "capillary",
+        root_dir = tmp, data_dir = tmp, analysis_dir = tmp, mode = "capillary")
+    water = HimalayaUI.create_sample!(db; experiment_id = eid, name = "water 01A (B0101)", setup_id = auto)
+    lipid_a = HimalayaUI.create_sample!(db; experiment_id = eid, name = "lipidA 01B (S0102)", setup_id = auto)
+    lipid_b = HimalayaUI.create_sample!(db; experiment_id = eid, name = "lipidA 02B (S0103)", setup_id = cap)
+    lipid_c = HimalayaUI.create_sample!(db; experiment_id = eid, name = "lipidA 03B (S0104)", setup_id = cap)
+    for (sid, st) in ((water, auto), (lipid_a, auto), (lipid_b, cap), (lipid_c, cap))
+        HimalayaUI.create_exposure!(db; experiment_id = eid, sample_id = sid, setup_id = st,
+            filename = "f$(sid)", timestamp = "2026-04-25T10:$(10 + sid):00")
+    end
+    DBInterface.execute(db, "INSERT INTO sample_calls (sample_id, state) VALUES (?, 'form_factor')", [lipid_a])
+    DBInterface.execute(db, "INSERT INTO sample_calls (sample_id, state) VALUES (?, 'form_factor')", [lipid_b])
+
+    with_inproc_routes(db) do call
+        review = JSON3.read(String(call("GET", "/api/experiments/$eid").body)).stats.review
+        @test (review.reviewed, review.total) == (1, 2)
+        timeline = JSON3.read(String(call("GET", "/api/experiments/$eid").body)).stats.timeline
+        @test [Int(x[3]) for x in timeline.samples] == [2, 2, 1, 0]
+    end
+
+    DBInterface.execute(db, "UPDATE setups SET included = 0 WHERE id = ?", [cap])
+    with_inproc_routes(db) do call
+        review = JSON3.read(String(call("GET", "/api/experiments/$eid").body)).stats.review
+        @test (review.reviewed, review.total) == (0, 0)
+    end
+end
+
 @testset "the ribbon marks beam-off images even after they are dropped" begin
     tmp = mktempdir()
     db = open_prepared_clone(tmp)

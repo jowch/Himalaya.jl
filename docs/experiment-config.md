@@ -315,8 +315,40 @@ deselection. `pending_analysis_ids` never reports its exposures, and
 `ingest_has_work` still reports new images. The CLI `analyze` and the peak
 model pass skip these setups, and `refresh_selection!` makes no average for
 their samples. A sample's shown image is its one exposure, so the image strip
-and the trace route work without analysis. Edits a user makes (peaks, a custom
-index, `POST /api/exposures/:id/analyze`) still analyze that exposure.
+and the trace route work without analysis. The server refuses edits that would
+analyze it: adding, excluding or removing a peak, adding or removing an
+assignment member, a custom or speculative index, deleting an index,
+`POST /api/exposures/:id/analyze` and `PUT /api/samples/:id/selection` all
+answer 422 and write no event. Setting a call state is not refused: it cannot
+start an analysis, and undoing a bridge between two autosampler samples
+restores it. Labels, bridges within one mode, comparisons and drop or restore
+still work.
+
+**In the workspace.** The workspace picks its modules from the setup mode of
+the open sample (`workspace/modules.ts`). A `capillary` or undecided setup has
+all of them. An `autosampler` sample keeps the trace plot (zoom, plot view,
+comparisons, subtraction), the image strip with Drop and Restore, labels and
+bridges. It has no peak editing, no call keys or palette entries, no image
+selection, and no review state. A module the mode lacks is not shown and the
+rest move up: the tools column holds only the Image section, open, in both the
+tall and the short layout. The column stays empty until the setups load, so the
+first paint never shows modules the sample's mode then removes. The header's
+progress block keeps its place, hidden, when no sample has a review state, so
+it does not appear as data loads. A capillary sample and an autosampler sample cannot be bridged: the "Same sample as" page offers only samples of the open sample's mode (a setup with no mode counts as capillary), and `POST /api/samples/:id/bridge` answers 422 for a bridge, or a join of two groups, that would mix them. A mixed group stored before this rule is left as it is and stays listed. This arrangement is provisional: as modules are added to the autosampler mode, they go where they are sensible.
+
+The sample list shows no unreviewed mark or call for it (an analysis-gap mark
+such as "All dropped" still shows, without the word "Unreviewed"). It is not
+counted in the header's "k of N reviewed" or on the home card
+(`review_progress`), and `Z`, the landing sample and the prefetch of the `Z`
+target skip it. The previous and next samples in the list are still prefetched,
+whatever their mode. The home ribbon draws its span in a neutral shade and its
+tooltip says nothing about review (the timeline's third value is `2`, against
+`1` reviewed and `0` not). The selection controls follow the sample that owns
+each image, so a bridged capillary mate keeps its selection controls beside an
+autosampler sample, and the help lists the selection rows when any image in the
+strip can be selected. When no
+sample in the experiment has a review state, the header shows no progress and
+the card shows no review count.
 
 **Images the average kept.** An autosampler exposure is the beamline's average
 of its acquisition's frames, minus the frames its software rejected, so it is not
