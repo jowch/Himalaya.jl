@@ -18,7 +18,7 @@ const variantClass: Record<ButtonVariant, string> = {
     "bg-ink border border-ink text-paper hover:brightness-110 " +
     "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
   accent:
-    "bg-accent border border-accent text-paper hover:brightness-110 " +
+    "bg-accent-fill border border-accent-fill text-on-accent hover:brightness-110 " +
     "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
   success:
     "bg-success border border-success text-paper hover:brightness-110 " +
@@ -33,7 +33,7 @@ const variantClass: Record<ButtonVariant, string> = {
     "border border-hair-strong bg-plate text-ink hover:bg-paper-sunk " +
     "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
   outlineAccent:
-    "border border-accent-soft bg-transparent text-accent hover:bg-accent hover:text-paper hover:border-accent " +
+    "border border-accent-soft bg-transparent text-accent hover:bg-accent-fill hover:text-on-accent hover:border-accent-fill " +
     "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
   outlineSuccess:
     "border border-success-soft bg-transparent text-success hover:bg-success hover:text-paper hover:border-success " +
@@ -43,7 +43,7 @@ const variantClass: Record<ButtonVariant, string> = {
     "focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-0 focus-visible:outline-accent",
 };
 const armedClass =
-  "bg-accent border border-accent text-paper hover:brightness-110";
+  "bg-accent-fill border border-accent-fill text-on-accent hover:brightness-110";
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
   {
     variant = "ghost",

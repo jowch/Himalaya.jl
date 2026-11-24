@@ -13,12 +13,14 @@ export function WorkspaceHeader({ experimentName, reviewed, total, onHelp }: Pro
   const pct = (reviewed / Math.max(total, 1)) * 100;
   return (
     <>
-      <Tooltip content="All experiments">
-        <Link to="/experiments" className="text-lg font-semibold leading-none text-ink no-underline">
-          Himalaya
-        </Link>
-      </Tooltip>
-      <h1 className="min-w-0 truncate text-base font-normal text-ink-soft">{experimentName}</h1>
+      <span className="flex min-w-0 items-baseline gap-3.5">
+        <Tooltip content="All experiments">
+          <Link to="/experiments" className="text-lg font-semibold text-ink no-underline">
+            Himalaya
+          </Link>
+        </Tooltip>
+        <h1 className="min-w-0 truncate text-base font-normal text-ink-soft">{experimentName}</h1>
+      </span>
       <span className="ml-auto" aria-hidden="true" />
       <span
         className={"flex items-center gap-2 whitespace-nowrap text-base text-ink-soft" + (total > 0 ? "" : " invisible")}

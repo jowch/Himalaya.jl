@@ -59,6 +59,9 @@
    */
   --color-accent: oklch(0.555 0.150 38);      /* terracotta */
   --color-accent-wash: oklch(0.940 0.030 38); /* ~12% accent tint on paper */
+  --color-accent-fill: var(--color-accent);
+  --color-on-accent: var(--color-paper);
+  --color-row-selected: oklch(0.925 0.012 78);
   /* Roving-cursor row band (corpus sheet). The pages2 app-shell mockup mixes the
      accent 10% into paper-sunk, so the warm paper hue (≈84) dominates and the
      band reads YELLOWISH (≈ oklch 0.911 0.022 79), not the pinker accent-wash.
@@ -433,8 +436,11 @@
     --color-ink-faint:   oklch(0.600 0.007 280);
     --color-hair:        oklch(0.265 0.006 280);
     --color-hair-strong: oklch(0.345 0.007 280);
-    --color-accent:      oklch(0.700 0.130 42);
-    --color-print-accent: oklch(0.700 0.130 42);
+    --color-accent:      oklch(0.700 0.150 50);
+    --color-print-accent: oklch(0.700 0.150 50);
+    --color-accent-fill: oklch(0.555 0.150 38);
+    --color-on-accent:   oklch(1 0 0);
+    --color-row-selected: oklch(0.270 0.008 280);
     --color-accent-wash: oklch(0.270 0.022 38);
     --color-accent-soft: color-mix(in oklch, var(--color-accent) 40%, var(--color-paper));
     --color-success-soft: color-mix(in oklch, var(--color-success) 40%, var(--color-paper));
@@ -480,8 +486,11 @@
   --color-ink-faint:   oklch(0.600 0.007 280);
   --color-hair:        oklch(0.265 0.006 280);
   --color-hair-strong: oklch(0.345 0.007 280);
-  --color-accent:      oklch(0.700 0.130 42);
-  --color-print-accent: oklch(0.700 0.130 42);
+  --color-accent:      oklch(0.700 0.150 50);
+  --color-print-accent: oklch(0.700 0.150 50);
+  --color-accent-fill: oklch(0.555 0.150 38);
+  --color-on-accent:   oklch(1 0 0);
+  --color-row-selected: oklch(0.270 0.008 280);
   --color-accent-wash: oklch(0.270 0.022 38);
   --color-accent-soft: color-mix(in oklch, var(--color-accent) 40%, var(--color-paper));
   --color-success-soft: color-mix(in oklch, var(--color-success) 40%, var(--color-paper));
