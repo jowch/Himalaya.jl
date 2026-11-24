@@ -37,18 +37,23 @@ failed is re-run). `make demo-empty` wipes
 
 ## The synthetic data
 
-`packages/HimalayaUI/scripts/make_demo_data.jl` writes an SSRL-style tree that the
-funnel's layout auto-detect (`resolve_experiment_layout`, routes_fs.jl) recognises:
+`packages/HimalayaUI/scripts/make_demo_data.jl` writes an SSRL-style tree with two
+setup folders, which the funnel's layout auto-detect (`resolve_experiment_layout`,
+routes_fs.jl) recognises as one beamtime of two setups. The capillary setup has to
+live in `capillary/`: `setup_roots` stops at a folder that has its own `data/`, so a
+second setup beside root-level `data/` would never be found.
 
 ```
 scratch/demo-experiment/
-  data/<label>_S<scan>_0_001.tif     Pilatus 1M frame, signed Int32 counts, -1 in module gaps
-  data/<label>_S<scan>_0_001.prp     PRP sidecar (energy, pipe length, horizontal position, time, beam monitors…)
-  analysis/setup_info_*.txt          beam center + AgBe distance (geometry source)
-  analysis/automatic_analysis/tot_files/<label>_S<scan>_tot.dat   q  I  sigma
-  TRUTH.csv                          per sample: scans, generated phases + lattice, expected
-                                     auto call (`auto`), phase-tagged reflection q values,
-                                     scans to drop (`drop`)
+  capillary/data/<label>_S<scan>_0_001.tif     Pilatus 1M frame, signed Int32 counts, -1 in module gaps
+  capillary/data/<label>_S<scan>_0_001.prp     PRP sidecar (energy, pipe length, horizontal position, time, beam monitors…)
+  capillary/analysis/setup_info_*.txt          beam center + AgBe distance (geometry source)
+  capillary/analysis/automatic_analysis/tot_files/<label>_S<scan>_tot.dat   q  I  sigma
+  autosampler/                                 the solution SAXS setup, see "The autosampler setup"
+  TRUTH.csv                                    per capillary sample: scans, generated phases + lattice, expected
+                                               auto call (`auto`), phase-tagged reflection q values,
+                                               scans to drop (`drop`)
+  TRUTH_autosampler.csv                        per autosampler acquisition, see below
 ```
 
 - **Not real data, never committed.** It lives under gitignored `scratch/` (or
@@ -119,8 +124,9 @@ scratch/demo-experiment/
   `test/test_demo_data.jl` holds a regression floor on these calls over three
   seeds. If a change to peak finding, scoring or `phaseratios` moves them, fix
   the change or retune the sample deliberately.
-- Seeded (`--seed`, default 7) and deterministic within a Julia release; ~100 MB,
-  ~10 s. Traces and detector frames draw from separate random streams, so
+- Seeded (`--seed`, default 7) and deterministic within a Julia release; ~180 MB,
+  ~18 s (about 110 MB and 15 s of that is the capillary setup, which is byte-identical to
+  the single-setup demo). Traces and detector frames draw from separate random streams, so
   `--no-images` (empty `.tif` placeholders, ~1 MB) writes the same `.dat` files.
   `make demo` refuses such a tree; regenerate with `make demo-data`.
 - Safety: the generator refuses to write into a non-empty directory that has no
@@ -131,9 +137,78 @@ scratch/demo-experiment/
   the counts intact, and the generator's files read back in `tifffile` as int32.
 
 `make demo` ingests through `scripts/demo_ingest.jl`, which makes the same two
-calls the funnel does (`/api/fs/preview` → `POST /api/experiments`)
-and waits for the first scan. The first browser visit still shows the
+calls the funnel does (`/api/fs/preview` → `POST /api/experiments`, with both
+setups, capillary first so its sample ids stay 1–13) and waits for the first scan.
+On a cold backend the ingest takes about 40 s, against 30 s for the capillary setup alone. The first browser visit still shows the
 "Who are you?" onboarding; any name works.
+
+## The autosampler setup
+
+`autosampler/` is a solution SAXS setup in the format of a real autosampler
+folder (every value invented):
+
+```
+autosampler/
+  data/<label>_<PP><W>_<S|B><scan>_0_<frame>.tif   10 frames per acquisition, 001–010; frame 001 is rendered, 002–010 are hardlinks to it
+  data/<label>_<PP><W>_<S|B><scan>_0_<frame>.prp   one per frame; same horizontal position in every file, 1 s exposure
+  data/AT_SolSAXS_<label>_<scan>.txt               one per queue; only its name is read
+  data/agbe_S0100_0_001.{tif,prp}                  calibration shot, no well token, no averaged trace
+  analysis/integ.mpp                               `-i yes i2 2.5e7`, so traces are divided by I_2
+  analysis/setup_info_*.txt
+  analysis/automatic_analysis/tot_files/<stem>_tot.dat      the average of the kept frames: q  I  sigma
+  analysis/automatic_analysis/sastool/<stem>_0_001.log      the averaging log the app reads frame counts from
+```
+
+Three runs in two queues: `lysA` on plate 01 (first buffer A, samples B–F, closing
+buffer H), `micB` on plate 02 (first buffer A, samples B–E, no closing buffer) and
+`lysA` again after a second `AT_SolSAXS_lysA_0113.txt` (first buffer A, samples C
+and G, closing buffer H). That is 16 acquisitions, 160 frames and the calibration
+shot; the app ingests 17 samples with one image each, in loads 101, 108, 113 and 0.
+
+A buffer is a flat solvent level with a low-q upturn. A sample is the same buffer
+plus a polydisperse sphere form factor with its own radius and amplitude, so
+sample minus its run's first buffer has a minimum at 4.4934 / radius
+(`minimum_q`). Noise is Poisson-like for the kept frames and sigma matches it.
+Traces keep the capillary demo's scale (about 17 at high q).
+
+Cases kept on purpose, each flagged in `TRUTH_autosampler.csv`:
+
+| Flag | Where | What it exercises |
+|---|---|---|
+| `several_rejected` | `lysA 01D` | 4 of 10 frames rejected |
+| `one_frame_left` | `micB 02C` | 9 of 10 rejected; its trace is `sqrt(10)` noisier |
+| `i2_collapsed` | `lysA 01F` | `.prp` I_2 at 4% of normal; the trace is 25 times too high, as SASTool's division makes it |
+| `no_closing_buffer` | every acquisition of `micB` | a run with no buffer after its samples |
+| `repeated_well` | `lysA 01C (S0114)` | same label and well as `lysA 01C (S0103)`, new scan, in a later run |
+| `first_buffer` | the first buffer of each run | the default background of the run's samples; its log has no summary lines, so its frame count is read from the per-frame lines, which needs the log to be older than a minute (the generator backdates it by an hour) |
+| `calibration` | `agbe_S0100` | a shot with no well token: load 0, no default background, no frame counts |
+
+The autosampler streams are separate from the capillary ones, so adding or changing
+this setup never moves a capillary trace or `TRUTH.csv` row.
+
+`TRUTH_autosampler.csv` has one row per acquisition and one for the calibration shot:
+
+| Column | Meaning |
+|---|---|
+| `sample` | the sample name the app shows, `<label> <PP><W> (<S\|B><scan>)`; the calibration shot's is its stem |
+| `stem` | the exposure's filename, without the frame suffix |
+| `run` | series label (empty for the calibration shot) |
+| `load` | the run's load index: the scan of its first acquisition, `0` for the calibration shot |
+| `well` | plate row and well, like `01B` |
+| `kind` | `sample`, `buffer` or `calibration` |
+| `default_background` | `sample` of the run's first buffer; empty for a buffer and the calibration shot |
+| `frames_total`, `frames_rejected` | the counts the log holds; empty for the calibration shot |
+| `flags` | space-separated flags from the table above |
+| `repeat_of` | for `repeated_well`, the earlier sample's name |
+| `radius_A`, `amplitude`, `minimum_q` | the form factor that was put in (empty for buffers); `amplitude` is relative to the solvent level |
+| `note` | free text |
+
+`bin/verify check-truth` reads this file into its own `autosampler` block and leaves
+these samples out of everything else. The block gates only on ingestion: each row is
+one sample with one image whose filename is `stem`, in the autosampler setup, and no
+autosampler sample is unlisted. Frame counts, default backgrounds, the collapsed I_2
+and the form factors are in the file for a later check; `test/test_demo_autosampler.jl`
+already checks them against the ingested DB.
 
 ## Cloud sessions (claude.ai/code)
 
@@ -197,7 +272,7 @@ At SSRL the integration pipeline writes a `_tot.dat` some time after its image,
 so a pass can see an exposure before its trace (see docs/experiment-config.md,
 "Scan and grouping"). `make_demo_data.jl --late-trace` (`make demo-data
 DEMO_DATA_FLAGS=--late-trace`, or `bin/verify seed --reset --late-trace`) holds
-`MO_lowH2O`'s traces back in `<demo>/late/`, outside the analysis folder. The
+`MO_lowH2O`'s traces back in `<demo>/late/`, outside the setup folders. The
 workspace notice should then report them as waiting for a trace, and
 `check-truth` expects no auto call on those frames. `bin/verify deliver-late`
 moves them into `tot_files` with a fresh mtime. The next pass has to analyze
@@ -219,6 +294,10 @@ work. Override with `DEMO_LARGE_DIR` and `DEMO_LARGE_DB_DIR`. Directly:
 `make_demo_data.jl [out_dir] --large [--experiments N] [--samples M] [--seed S] [--no-images]`
 (defaults 10 experiments of 300 samples).
 
+- Large mode has no autosampler setup: it exists for scale and loading tests, each
+  `large_NN/` is a single capillary setup (its own `data/`), and the autosampler's
+  per-acquisition files and logs would not add to what it measures. The curated demo
+  is the one place to exercise the mode.
 - One complete beamtime tree per experiment, `out_dir/large_01/` onward, each with
   its own `TRUTH.csv` (same columns; `auto` is empty because nothing is pinned),
   start date and flight path (0.8 m or 1.7 m setups). Sample labels are `L01_N0001`.
