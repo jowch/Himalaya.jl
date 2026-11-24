@@ -14,3 +14,10 @@ test("a fallback from a spec's handler still reaches the catch-all", async ({ pa
   expect(unmockedRequests).toEqual(["DELETE /api/users"]);
   unmockedRequests.length = 0;
 });
+
+test("an error the page throws fails the test, even when every assertion passed", async ({ page }) => {
+  test.fail();
+  await page.goto("/favicon.svg");
+  await page.evaluate(() => { setTimeout(() => { throw new Error("thrown after the last assertion"); }, 0); });
+  await expect.poll(() => page.evaluate(() => new Promise((done) => setTimeout(() => done(true), 10)))).toBe(true);
+});

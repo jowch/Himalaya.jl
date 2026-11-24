@@ -6,6 +6,8 @@ The mocked suite: `page.route` intercepts `/api/...`. Run via `npm run e2e`; CI 
 
 Specs import `test` and `expect` from `./fixtures`, not `@playwright/test` (`test/e2e-fixtures.test.ts` enforces it). The fixture answers any `/api/` request the spec did not mock with a 501 and fails the test, listing the requests. Without it, unmocked requests went through the Vite proxy to whatever backend ran on :8080, or to nothing, and specs passed on error states. When a spec trips it, mock the request with data the page would really get.
 
+The same fixture fails any test whose page throws an uncaught error or falls into the app's `ErrorBoundary` ("Something went wrong"), even after its last assertion passed. Before it, a React render loop in the help dialog read as a flaky scroll assertion, and two new-experiment specs passed while the workspace they opened crashed on a mock with the wrong shape.
+
 In a cloud session the project's Playwright build differs from the preinstalled Chromium; point a throwaway config at it:
 
 ```ts
