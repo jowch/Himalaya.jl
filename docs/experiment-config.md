@@ -172,7 +172,7 @@ Everything else is a column on the experiment's `setups` rows.
 | `folder` | Create: the setup subfolder's name | No |
 | `display_name` | `PATCH /api/setups/:id` (`name`) | Yes: shown instead of `folder`; an empty name or the folder name clears it |
 | `included` | Create (the funnel's tick box), or `PATCH /api/setups/:id` | Yes: a hidden setup's samples leave the workspace and the scan skips it; showing a hidden setup starts a rescan, so frames that arrived while it was hidden come in. The last shown setup cannot be hidden |
-| `mode` | Create (the preview's detected mode, or the request's `mode`), or a scan that finds evidence | Not yet. `capillary`, `autosampler`, or `NULL` while undecided; see [Setup modes](#setup-modes) |
+| `mode`, `mode_source` | Create (the preview's detected mode, or the request's `mode`), or a scan that finds evidence | Not yet. `capillary`, `autosampler`, or `NULL` while undecided; a scan changes it only as described in [Setup modes](#setup-modes) |
 | `root_dir`, `data_dir`, `analysis_dir` | Create | No |
 | `image_pattern`, `metadata_pattern`, `integration_pattern` | Create | Not yet (see [Rescans](#rescans)) |
 | `energy_kev`, `flight_path_m`, `beam_center_x`, `beam_center_y`, `pixel_size_um` | Create, or the scan's fill-only step | Not yet |
@@ -209,7 +209,10 @@ before the first start of an upgraded build.
 Each setup has a `mode`: `capillary` (a fixed-position capillary holder, the
 default behaviour described in the rest of this document) or `autosampler`
 (SSRL BL 4-2 solution SAXS with the autosampler). `NULL` means not decided yet.
-`GET /api/experiments[/:id]` returns the stored value in each setup's `mode`.
+`mode_source` records who chose it: `default` (no mode), `detected` (a scan or
+create found it from the files), `user` (the request gave `mode`) or
+`migration` (set by the upgrade). `GET /api/experiments[/:id]` returns both in
+each setup.
 
 **Detection.** `detect_setup_mode(data_dir)` (`setup_mode.jl`) lists `data_dir`
 once. It answers `autosampler` when the folder holds at least one
@@ -221,43 +224,58 @@ look like an autosampler name and is detected as `capillary`.
 
 **Where the mode comes from.** `GET /api/fs/preview` reports `mode` for each
 setup (`null` for no evidence). `POST /api/experiments` and
-`POST /api/experiments/:id/setups` take an optional `mode`; an unknown value is
-a `400`, and an absent one is detected from `data_dir`. A detection with no
-evidence is stored as `NULL`. For an autosampler setup, `analysis_dir` and any
-pattern the request leaves out are filled from the autosampler layout. A setup
-found by a rescan (`add_new_setups!`) takes its detected mode.
+`POST /api/experiments/:id/setups` take an optional `mode` (source `user`); an
+unknown value is a `400`, and an absent one is detected from `data_dir` (source
+`detected`). A detection with no evidence is stored as `NULL`. For an
+autosampler setup, `analysis_dir` and any pattern the request leaves out are
+filled from the autosampler layout. A setup found by a rescan
+(`add_new_setups!`) takes its detected mode.
 
-**Migration.** `migrate_setups!` adds the column if the DB lacks it and, once
-(recorded as `setup_mode_v1`, after `setup_id` is backfilled on exposures), sets
-`capillary` on every setup that has exposures and no mode, in SQL, without
-reading the filesystem. This also covers a DB from before the `setups` table
-existed. Setups without exposures stay `NULL`.
+**Migration.** `migrate_setups!` adds the `mode` and `mode_source` columns if
+the DB lacks them and, once (recorded as `setup_mode_v1`, after `setup_id` is
+backfilled on exposures), sets `capillary` with source `migration` on every
+setup that has exposures and no mode, in SQL, without reading the filesystem.
+This also covers a DB from before the `setups` table existed. Setups without
+exposures stay `NULL`. The columns come last in `setups`, in a fresh DB too, so
+`SELECT *` returns the same fields in the same order everywhere.
 
 **Layout.** `resolve_experiment_layout` returns the mode. For an autosampler
-folder `analysis_dir` is `<root>/analysis/automatic_analysis/tot_files` (when it
-exists) and the patterns are `{name}_0_001.tif`, `{name}_0_001.prp` and
-`{name}_tot.dat`. The beamline writes 10 to 20 one-second frames per acquisition,
-and `_tot.dat` is the raw average of the acquisition's frames. Only frame
-`_0_001` is scanned, so an exposure is one acquisition, its `filename` is the
-stem without `_0_001` (`<label>_<well>_<S|B><scan>`), and
-`resolve_trace_path` finds `<filename>_tot.dat` by the exact name. The scan
-ignores the other trace folders (`sub_files`, `sastool`, `other_files`).
+folder `analysis_dir` is always
+`<root>/analysis/automatic_analysis/tot_files`, whether or not it exists yet (a
+setup can be created after the run file but before the first integration), and
+the patterns are `{name}<frame>.tif`, `{name}<frame>.prp` and `{name}_tot.dat`.
+`<frame>` is the suffix of the lowest frame number among the folder's `.tif`
+names ending `_<rep>_<frame>.tif`, for example `_0_001` or `_0_01` (beamtimes
+differ in the frame number's width), and `_0_001` while there are no frames. The
+beamline writes 10 to 20 one-second frames per acquisition, and `_tot.dat` is the
+raw average of the acquisition's frames. Only the first frame is scanned, so an
+exposure is one acquisition, its `filename` is the stem without the frame suffix
+(`<label>_<well>_<S|B><scan>`), and `resolve_trace_path` finds
+`<filename>_tot.dat` by the exact name. The scan ignores the other trace folders
+(`sub_files`, `sastool`, `other_files`).
 
 **Grouping.** An autosampler scan uses `group_autosampler`
 (`autosampler_grouping.jl`) instead of `group_into_samples`. The capillary never
 moves, so position would collapse every acquisition into a few samples.
 
-- One sample per acquisition, holding that acquisition's `_0_001` exposure.
-- Acquisitions are ordered by scan number. A new load (an autosampler run)
-  starts when the label changes, or when the acquisition's scan number is the
-  number in the name of a `data/AT_SolSAXS_<label>_<scan>.txt` file. Without
-  such files the label alone decides. A stem without a well token (a calibration
-  image) is its own load.
+- One sample per acquisition, holding that acquisition's first-frame exposure.
+  The persist step never attaches an exposure to an existing sample in an
+  autosampler setup (`reuse_samples` in `_scan_setup!`): an acquisition whose
+  stem is not stored yet always gets a new sample. Scan numbers are not unique
+  in every beamtime (the counter can restart), so two acquisitions can share one.
+- Acquisitions with a well token are ordered by scan number. A load is one
+  label's block within a run: it starts when the label changes, or when the
+  acquisition's scan number is the number in the name of a
+  `data/AT_SolSAXS_<label>_<scan>.txt` file. A run file can cover several plate
+  rows with different labels, each with its own buffer in well A, so a run can
+  hold several loads. Without run files the label alone decides.
+- Stems without a well token (calibration, empty and test shots) all go in load
+  `0`, never in a run's load.
 - Indexes come from the files, not from counting, so a file that arrives late
-  can never take another acquisition's place: a sample's `slot_index` is its
-  acquisition's scan number and a load's `load_index` is the scan number of its
-  first acquisition. A stem with no scan number goes in load `0` with a
-  `slot_index` that is a stable hash of the stem.
+  never shifts the others: a sample's `slot_index` is its acquisition's scan
+  number (a stable hash of the stem when it has none) and a load's `load_index`
+  is the scan number of its first acquisition. Loads are found or created by
+  `load_index`.
 - A sample is named `<label> <plate><well> (<S|B><scan>)`, for example
   `lipidA 01B (S0102)` or `water 01A (B0101)`. A stem without a well token keeps
   its stem as the name. This replaces the `(SNNPMM)` suffix of capillary samples.
@@ -277,23 +295,23 @@ their samples. A sample's shown image is its one exposure, so the image strip
 and the trace route work without analysis. Edits a user makes (peaks, a custom
 index, `POST /api/exposures/:id/analyze`) still analyze that exposure.
 
-**Settling a setup.** At the start of every `_scan_setup!`, a setup whose mode
-is not `autosampler` is detected again.
+**Settling a setup.** At the start of every `_scan_setup!`:
 
-- Stored `NULL` and detection says `capillary`: `capillary` is stored. With no
-  evidence the setup stays `NULL`, scans as capillary (there is nothing to scan)
-  and is detected again on the next scan.
-- Detection says `autosampler` and none of the setup's stored exposure
-  filenames carries the well token (nothing yet, or only calibration shots,
-  which are taken before the first run file exists): the setup is promoted. Its
-  mode becomes `autosampler` and its `analysis_dir` and three patterns are
-  rewritten to the autosampler layout, which also corrects a setup created with
-  a frame-suffix guess such as `{name}_0_009.tif`. The calibration exposure
-  already stored keeps its row; the new layout finds the same filename, so no
-  second one is made.
-- Detection says `autosampler` but well-token exposures were already ingested as
-  capillary: the setup stays `capillary`.
-- A `capillary` setup with no run file is never touched.
+- A setup with mode `NULL` or mode `capillary` with source `detected` is
+  promoted to `autosampler` (source `detected`) when the folder now has a run
+  file, no stored exposure filename carries a well token, and no stored exposure
+  is reviewed (`reviewed_at` set). Promotion rewrites `analysis_dir` and the
+  three patterns to the autosampler layout and renames the stored exposures
+  (calibration shots taken before the first run file) to their acquisition
+  stems, so the layout does not ingest them a second time.
+- Otherwise a setup with mode `NULL` and a detected `capillary` stores
+  `capillary` with source `detected`. With no evidence it stays `NULL`, scans as
+  capillary (there is nothing to scan) and is detected again on the next scan.
+- A setup with source `user` or `migration`, or a `capillary` setup with
+  exposures that carry well tokens or are reviewed, is never changed by a scan.
+- An `autosampler` setup that has no exposures yet gets its layout derived
+  again on every scan, which covers a run file that exists before any frame does
+  and a frame width that is only known once frames arrive.
 
 A hidden setup (`included = 0`) is not scanned, so it settles when it is shown.
 

@@ -84,7 +84,6 @@ CREATE TABLE IF NOT EXISTS setups (
     display_name         TEXT,
     position             INTEGER NOT NULL DEFAULT 0,
     included             INTEGER NOT NULL DEFAULT 1,
-    mode                 TEXT,
     root_dir             TEXT NOT NULL,
     data_dir             TEXT NOT NULL,
     analysis_dir         TEXT NOT NULL,
@@ -103,7 +102,9 @@ CREATE TABLE IF NOT EXISTS setups (
     pixel_size_um_source TEXT DEFAULT 'default',
     q_units              TEXT,
     q_units_source       TEXT DEFAULT 'default',
-    created_at           DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at           DATETIME DEFAULT CURRENT_TIMESTAMP,
+    mode                 TEXT,
+    mode_source          TEXT DEFAULT 'default'
 );
 
 CREATE TABLE IF NOT EXISTS loads (

@@ -152,16 +152,16 @@ end
         root = _as_write_folder!(mktempdir(), runs; at = [("wat", 100), ("pep", 103), ("pep", 105)])
         write(joinpath(root, "data", "agbe_S0099_0_001.tif"), "fake tif")
         res = _as_grouping(root)
-        @test [length(l.samples) for l in res.loads] == [1, 3, 2, 2]
-        @test [l.load_index for l in res.loads] == [99, 100, 103, 105]
-        @test [s.slot_index for l in res.loads for s in l.samples] == collect(99:106)
-        @test _as_names(res) == ["agbe_S0099", "wat 01A (B100)", "wat 01B (S101)", "wat 01C (S102)",
-            "pep 01A (B103)", "pep 01B (S104)", "pep 01A (B105)", "pep 01B (S106)"]
+        @test [length(l.samples) for l in res.loads] == [3, 2, 2, 1]
+        @test [l.load_index for l in res.loads] == [100, 103, 105, 0]
+        @test [s.slot_index for l in res.loads for s in l.samples] == vcat(collect(100:106), 99)
+        @test _as_names(res) == ["wat 01A (B100)", "wat 01B (S101)", "wat 01C (S102)",
+            "pep 01A (B103)", "pep 01B (S104)", "pep 01A (B105)", "pep 01B (S106)", "agbe_S0099"]
         @test all(s -> length(s.exposures) == 1, (s for l in res.loads for s in l.samples))
-        first_exposure = res.loads[2].samples[1].exposures[1]
+        first_exposure = res.loads[1].samples[1].exposures[1]
         @test first_exposure.stem == "wat_01A_B100"
         @test first_exposure.scan_id == 100
-        @test res.loads[2].samples[2].exposures[1].scan_id == 101
+        @test res.loads[1].samples[2].exposures[1].scan_id == 101
         @test all(s -> s.grouping_source == "auto_acquisition", (s for l in res.loads for s in l.samples))
     end
 
@@ -577,7 +577,7 @@ end
         @test (st.mode, st.mode_source) == ("capillary", "migration")
         @test st.analysis_dir == analysis
         @test ismissing(st.image_pattern)
-        @test _as_count(db, "SELECT COUNT(*) AS c FROM exposures WHERE setup_id = ? AND analysis_version IS NOT NULL", sid) == 3
+        @test _as_count(db, "SELECT COUNT(*) AS c FROM exposures WHERE setup_id = ? AND kind = 'file' AND analysis_version IS NOT NULL", sid) == 3
     end
 
     @testset "a detected capillary setup with a reviewed exposure is not promoted" begin

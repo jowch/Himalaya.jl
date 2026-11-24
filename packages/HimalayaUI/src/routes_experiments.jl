@@ -76,9 +76,10 @@ function _setup_spec(spec; default_analysis_dir, data_dir)
     given_mode = _body_get(spec, :mode)
     mode = given_mode === nothing ? detect_setup_mode(data_dir) : String(given_mode)
     out[:mode] = mode
+    out[:mode_source] = given_mode !== nothing ? "user" : (mode === nothing ? "default" : "detected")
     if mode == "autosampler"
-        layout = autosampler_layout(raw_root === nothing ? setup_root_dir(data_dir) : String(raw_root))
-        ad === nothing && layout.dir !== nothing && (out[:analysis_dir] = layout.dir)
+        layout = autosampler_layout(raw_root isa AbstractString ? String(raw_root) : setup_root_dir(data_dir))
+        ad === nothing && (out[:analysis_dir] = layout.dir)
         for (k, v) in ((:image_pattern, layout.image_pattern), (:metadata_pattern, layout.metadata_pattern),
                        (:integration_pattern, layout.integration_pattern))
             out[k] === nothing && (out[k] = v)

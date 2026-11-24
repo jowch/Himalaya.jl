@@ -7,7 +7,7 @@ geometry live on each setup: see [`setups`](@ref).
 experiments(db::SQLite.DB) = Tables.rowtable(DBInterface.execute(db,
     "SELECT id, name, path, description, created_at, last_scanned_at, ingest_status FROM experiments ORDER BY id"))
 
-const _SETUP_COLS = """id, experiment_id, folder, display_name, position, included, mode,
+const _SETUP_COLS = """id, experiment_id, folder, display_name, position, included, mode, mode_source,
     root_dir, data_dir, analysis_dir, image_pattern, metadata_pattern, integration_pattern,
     energy_kev, flight_path_m, beam_center_x, beam_center_y, pixel_size_um, q_units"""
 

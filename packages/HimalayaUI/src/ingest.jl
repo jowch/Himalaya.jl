@@ -107,6 +107,7 @@ function _scan_setup!(db::SQLite.DB, experiment_id::Int, setup;
     grouping = is_autosampler(setup) ? group_autosampler(metas, data_dir) : group_into_samples(metas)
 
     new_exposure_ids = Int[]
+    reuse_samples = !is_autosampler(setup)
 
     lock(_DB_WRITE_LOCK) do
         SQLite.transaction(db) do
@@ -135,9 +136,9 @@ function _scan_setup!(db::SQLite.DB, experiment_id::Int, setup;
 
                 for gs in gl.samples
                     any(ge -> !(ge.stem in existing_filenames), gs.exposures) || continue
-                    existing_sample = sqlrows(DBInterface.execute(db,
+                    existing_sample = reuse_samples ? sqlrows(DBInterface.execute(db,
                         "SELECT id FROM samples WHERE setup_id = ? AND load_id = ? AND slot_index = ?",
-                        [setup_id, load_id, gs.slot_index]))
+                        [setup_id, load_id, gs.slot_index])) : NamedTuple[]
                     if isempty(existing_sample)
                         sample_id = create_sample!(db;
                             experiment_id   = experiment_id,
@@ -325,8 +326,11 @@ _insertable_stems(db::SQLite.DB, experiment_id::Int) =
 
 function _insertable_setup_stems(db::SQLite.DB, r)
     data_dir = String(r.data_dir)
+    layout = is_autosampler(r) && !_setup_has_exposures(db, Int(r.id)) ? autosampler_layout(String(r.root_dir)) : nothing
+    image_pattern = layout === nothing ? coalesce(r.image_pattern, "{name}.tif") : layout.image_pattern
+    metadata_pattern = layout === nothing ? coalesce(r.metadata_pattern, "{name}.prp") : layout.metadata_pattern
     listing = try
-        tif_listing(data_dir, coalesce(r.image_pattern, "{name}.tif"))
+        tif_listing(data_dir, image_pattern)
     catch
         nothing
     end
@@ -335,7 +339,7 @@ function _insertable_setup_stems(db::SQLite.DB, r)
     stems = String[f[1:end-length(tif_suffix)] for f in tif_files]
     known = Set(String(x.filename) for x in sqlrows(DBInterface.execute(db,
         "SELECT filename FROM exposures WHERE setup_id = ? AND filename IS NOT NULL", [Int(r.id)])))
-    find_prp = _file_finder(data_dir, coalesce(r.metadata_pattern, "{name}.prp"))
+    find_prp = _file_finder(data_dir, metadata_pattern)
     has_prp(stem) = find_prp(stem) !== nothing
     any_prp = any(has_prp, stems)
     String[stem for stem in stems if !(stem in known) && (!any_prp || has_prp(stem))]

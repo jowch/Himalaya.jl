@@ -40,6 +40,7 @@ function create_setup!(db::SQLite.DB;
         position::Integer = 0,
         included::Bool = true,
         mode::Union{AbstractString,Nothing} = nothing,
+        mode_source::Union{AbstractString,Nothing} = nothing,
         image_pattern = nothing, metadata_pattern = nothing, integration_pattern = nothing,
         energy_kev = nothing, energy_kev_source = "default",
         flight_path_m = nothing, flight_path_m_source = "default",
@@ -49,20 +50,23 @@ function create_setup!(db::SQLite.DB;
         q_units = nothing, q_units_source = "default")
     mode === nothing || mode in SETUP_MODES ||
         throw(ArgumentError("mode must be one of $(join(SETUP_MODES, ", "))"))
+    source = mode === nothing ? "default" : something(mode_source, "user")
+    source in MODE_SOURCES ||
+        throw(ArgumentError("mode_source must be one of $(join(MODE_SOURCES, ", "))"))
     for (label, v) in (("image", image_pattern), ("metadata", metadata_pattern), ("integration", integration_pattern))
         bad = pattern_problem(label, v)
         bad === nothing || throw(ArgumentError(bad))
     end
     res = DBInterface.execute(db, """
         INSERT INTO setups
-            (experiment_id, folder, display_name, position, included, mode, root_dir, data_dir, analysis_dir,
+            (experiment_id, folder, display_name, position, included, mode, mode_source, root_dir, data_dir, analysis_dir,
              image_pattern, metadata_pattern, integration_pattern,
              energy_kev, energy_kev_source, flight_path_m, flight_path_m_source,
              beam_center_x, beam_center_x_source, beam_center_y, beam_center_y_source,
              pixel_size_um, pixel_size_um_source, q_units, q_units_source)
-        VALUES (?,?,?,?,?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?)
+        VALUES (?,?,?,?,?,?,?,?,?,?, ?,?,?, ?,?,?,?, ?,?,?,?, ?,?,?,?)
     """, [experiment_id, folder, display_name, position, Int(included),
-          mode === nothing ? missing : String(mode), String(root_dir),
+          mode === nothing ? missing : String(mode), source, String(root_dir),
           String(data_dir), String(analysis_dir),
           image_pattern, metadata_pattern, integration_pattern,
           energy_kev, energy_kev_source, flight_path_m, flight_path_m_source,
@@ -169,10 +173,12 @@ end
 function _add_setup_mode!(db::SQLite.DB)
     _table_exists(db, "setups") || return nothing
     _migrated(db, MIGRATION_SETUP_MODE) && return nothing
-    "mode" in cols_of(db, "setups") ||
-        DBInterface.execute(db, "ALTER TABLE setups ADD COLUMN mode TEXT")
+    existing = cols_of(db, "setups")
+    "mode" in existing || DBInterface.execute(db, "ALTER TABLE setups ADD COLUMN mode TEXT")
+    "mode_source" in existing ||
+        DBInterface.execute(db, "ALTER TABLE setups ADD COLUMN mode_source TEXT DEFAULT 'default'")
     DBInterface.execute(db, """
-        UPDATE setups SET mode = 'capillary'
+        UPDATE setups SET mode = 'capillary', mode_source = 'migration'
          WHERE mode IS NULL AND EXISTS (SELECT 1 FROM exposures e WHERE e.setup_id = setups.id)""")
     _record_migration!(db, MIGRATION_SETUP_MODE)
     nothing

@@ -1,5 +1,4 @@
 const AUTOSAMPLER_STEM = r"^(.+)_(\d{2}[A-Z])_[SB]\d+$"
-const AUTOSAMPLER_RUN_FILE = r"^AT_SolSAXS_.+_(\d+)\.txt$"
 
 function autosampler_run_starts(data_dir::AbstractString)::Set{Int}
     names = try
@@ -42,10 +41,8 @@ function _acquisition_runs(sorted::Vector{ExposureMeta}, run_starts::Set{Int})
     runs = Vector{ExposureMeta}[]
     previous_label = nothing
     for m in sorted
-        parsed = _acquisition_label(m.stem)
-        label = parsed === nothing ? nothing : parsed[1]
-        scan = _acquisition_scan(m.stem)
-        new_run = isempty(runs) || label === nothing || label != previous_label || scan in run_starts
+        label = _acquisition_label(m.stem)[1]
+        new_run = isempty(runs) || label != previous_label || _acquisition_scan(m.stem) in run_starts
         new_run ? push!(runs, [m]) : push!(last(runs), m)
         previous_label = label
     end
@@ -61,12 +58,12 @@ _acquisition_slot(m::ExposureMeta) = (s = _acquisition_scan(m.stem); ismissing(s
 
 function group_autosampler(metas::Vector{ExposureMeta}, data_dir::AbstractString)::GroupingResult
     isempty(metas) && return GroupingResult(GroupedLoad[], String[])
-    scanned = sort([m for m in metas if !ismissing(_acquisition_scan(m.stem))];
-                   by = m -> (_acquisition_scan(m.stem), m.stem))
-    scanless = sort([m for m in metas if ismissing(_acquisition_scan(m.stem))]; by = m -> m.stem)
-    runs = _acquisition_runs(scanned, autosampler_run_starts(data_dir))
+    in_run = [m for m in metas if _acquisition_label(m.stem) !== nothing && !ismissing(_acquisition_scan(m.stem))]
+    outside = [m for m in metas if !(m in in_run)]
+    scan_key(m) = (s = _acquisition_scan(m.stem); (ismissing(s) ? typemax(Int) : s, m.stem))
+    runs = _acquisition_runs(sort(in_run; by = scan_key), autosampler_run_starts(data_dir))
     indexed = Tuple{Int,Vector{ExposureMeta}}[(_acquisition_scan(first(run).stem), run) for run in runs]
-    isempty(scanless) || push!(indexed, (0, scanless))
+    isempty(outside) || push!(indexed, (0, sort(outside; by = scan_key)))
     stamps(run) = DateTime[m.prp.timestamp for m in run if m.prp !== nothing && !ismissing(m.prp.timestamp)]
     starts = [isempty(stamps(run)) ? missing : minimum(stamps(run)) for (_, run) in indexed]
     sessions = _assign_sessions(starts)

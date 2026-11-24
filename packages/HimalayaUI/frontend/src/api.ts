@@ -9,6 +9,7 @@ export type GeometrySource = "prp" | "setup" | "user" | "default" | "computed";
 export type IngestStatus = "idle" | "scanning" | "analyzing" | "complete" | "failed";
 
 export type SetupMode = "capillary" | "autosampler";
+export type SetupModeSource = "default" | "detected" | "user" | "migration";
 
 export interface Setup {
   id: number;
@@ -19,6 +20,7 @@ export interface Setup {
   position: number;
   included: boolean;
   mode: SetupMode | null;
+  mode_source: SetupModeSource;
   root_dir: string;
   data_dir: string;
   analysis_dir: string;
