@@ -126,11 +126,14 @@ export function locatorFor(page, flags) {
   return { loc, what };
 }
 
+export const TARGET_WAIT_MS = 5000;
+
 async function resolveOne(page, flags) {
   const { loc, what } = locatorFor(page, flags);
+  await loc.first().waitFor({ state: "attached", timeout: TARGET_WAIT_MS }).catch(() => undefined);
   const count = await loc.count();
   if (count === 0) {
-    throw new UsageError(`nothing matches ${what}`, "run `bin/verify snapshot` to see the roles and names on the page");
+    throw new UsageError(`nothing matches ${what} on ${page.url()} after ${TARGET_WAIT_MS} ms`, "run `bin/verify snapshot` to see the roles and names on the page");
   }
   if (flags.nth !== undefined) {
     const nth = intFlag(flags, "nth");

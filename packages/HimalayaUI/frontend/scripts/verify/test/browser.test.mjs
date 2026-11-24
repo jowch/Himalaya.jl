@@ -15,6 +15,7 @@ const PAGE = `<!doctype html><html><head><title>Stub</title></head><body>
   <button>Twin</button><button>Twin</button>
   <button onclick="document.getElementById('h').textContent = (event.ctrlKey ? 'ctrl' : '') + (event.shiftKey ? 'shift' : '') || 'plain'">Mod</button>
   <button onclick="setTimeout(() => history.pushState({}, '', '/done'), 800)">Later</button>
+  <button onclick="setTimeout(() => { const b = document.createElement('button'); b.id = 'arrived'; b.textContent = 'Arrived'; b.onclick = () => { document.getElementById('h').textContent = 'arrived'; }; document.body.append(b); }, 1200)">Deferred</button>
   <button onclick="fetch('/silent').then((r) => r.text()).then((t) => { document.getElementById('h').textContent = t; })">Silent</button>
   <button onclick="fetch('/hang')">Hang</button>
   <button onclick="fetch('/quick')">Quick</button>
@@ -238,6 +239,15 @@ test("open, snapshot, click, fill, press, wait-settle, screenshot, close", { ski
   assert.match(r.error, /GET \/api\/missing\.png returned 404/);
   ({ code } = await run("open", "/"));
   assert.equal(code, 0);
+
+  await run("click", "--role", "button", "--name", "Deferred", "--no-settle");
+  ({ code, r } = await run("click", "--selector", "#arrived", "--no-settle"));
+  assert.equal(code, 0, `a target that renders a moment later is waited for, not reported missing: ${JSON.stringify(r)}`);
+  ({ r } = await run("snapshot", "--selector", "h1"));
+  assert.match(r.snapshot, /arrived/);
+  ({ code, r } = await run("click", "--selector", "#never-there", "--no-settle"));
+  assert.equal(code, 1);
+  assert.match(r.error, /nothing matches selector=#never-there on http:\/\/127\.0\.0\.1:\d+\/\S* after 5000 ms/);
 
   ({ code, r } = await run("click", "--role", "button", "--name", "Twin"));
   assert.equal(code, 1);
