@@ -42,14 +42,13 @@ describe("Term", () => {
     act(() => {
       vi.advanceTimersByTime(TOOLTIP_OPEN_DELAY_MS);
     });
-    expect(term()).not.toHaveAttribute("aria-describedby");
+    expect(term().getAttribute("aria-describedby")?.split(" ")).toHaveLength(1);
     expect(term()).toHaveAccessibleDescription(EXPLAIN);
   });
 
-  it("marks itself as explained with a dotted underline and a help cursor", () => {
+  it("keeps its explanation out of view", () => {
     render(<Term explain={EXPLAIN}>×1.10</Term>);
-    expect(term().className).toMatch(/\bdecoration-dotted\b/);
-    expect(term().className).toMatch(/\bcursor-help\b/);
+    expect(screen.getByText(EXPLAIN)).not.toBeVisible();
   });
 
   it("carries no native title", () => {

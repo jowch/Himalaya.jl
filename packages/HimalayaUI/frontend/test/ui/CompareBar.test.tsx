@@ -48,7 +48,7 @@ describe("CompareBar chip tooltip", () => {
   it("leaves the scale to its own tooltip, which keyboard focus reaches", () => {
     bar([chip({ scale: { scale: 1, source: "monitor" } as CompareChip["scale"] })]);
     expect(hover("MO_PEG5")).not.toHaveTextContent("transmitted beam");
-    const term = document.querySelector("[data-scale-source]")!.parentElement!;
+    const term = screen.getByText("×1.00").closest("[tabindex]");
     expect(term).toHaveAttribute("tabindex", "0");
     expect(term).toHaveAccessibleDescription(explainScale({ scale: 1, source: "monitor" }));
   });
@@ -70,8 +70,8 @@ describe("CompareBar scale tooltip", () => {
 
   it("explains a high-q match on the scale, with no native title", () => {
     bar([chip({ scale: { scale: 1, source: "matched" } as CompareChip["scale"] })]);
-    const scale = document.querySelector("[data-scale-source]") as HTMLElement;
-    expect(scale).not.toHaveAttribute("title");
+    const scale = screen.getByText("×1.00");
+    expect(scale.closest("[tabindex]")).not.toHaveAttribute("title");
     fireEvent.mouseEnter(scale);
     act(() => {
       vi.advanceTimersByTime(TOOLTIP_OPEN_DELAY_MS);
@@ -83,7 +83,7 @@ describe("CompareBar scale tooltip", () => {
     for (const [source, note] of [["capillary", "Both change from capillary to capillary"], ["unknown_mode", "this setup isn't marked as one"]] as const) {
       resetTooltipWarmth();
       const { unmount } = render(<CompareBar chips={[chip({ scale: { scale: 1, source } })]} subtractId={undefined} hidden={false} modKey="⌘" onToggleShown={() => {}} onSubtract={() => {}} onRemove={() => {}} onAdd={() => {}} />);
-      fireEvent.mouseEnter(document.querySelector("[data-scale-source]") as HTMLElement);
+      fireEvent.mouseEnter(screen.getByText(/^×\d/));
       act(() => {
         vi.advanceTimersByTime(TOOLTIP_OPEN_DELAY_MS);
       });
@@ -92,19 +92,15 @@ describe("CompareBar scale tooltip", () => {
     }
   });
 
-  it("tells a screen reader why a chip was matched at high q, and says nothing extra for a monitor-scaled one", () => {
-    bar([
-      chip({ scale: { scale: 1, source: "other_setup" } as CompareChip["scale"] }),
-      chip({ id: 3, name: "MO_PEG6", scale: { scale: 1, source: "monitor" } as CompareChip["scale"] }),
-    ]);
-    expect(screen.getByRole("button", { name: "MO_PEG5" })).toHaveAccessibleDescription(explainScale({ scale: 1, source: "other_setup" }));
-    expect(screen.getByRole("button", { name: "MO_PEG6" })).toHaveAccessibleDescription("");
+  it("explains the scale to a screen reader once, on the scale, not again on the chip button", () => {
+    bar([chip({ scale: { scale: 1, source: "other_setup" } as CompareChip["scale"] })]);
+    expect(screen.getByRole("button", { name: "MO_PEG5" })).toHaveAccessibleDescription("");
+    expect(screen.getByText("×1.00").closest("[tabindex]")).toHaveAccessibleDescription(explainScale({ scale: 1, source: "other_setup" }));
   });
 
   it("shows only the factor on a chip from another setup, and says in its tooltip that it was matched at high q", () => {
     bar([chip({ scale: { scale: 1, source: "other_setup" } as CompareChip["scale"] })]);
-    const scale = document.querySelector("[data-scale-source]") as HTMLElement;
-    expect(scale.textContent).toBe("×1.00");
+    const scale = screen.getByText("×1.00");
     fireEvent.mouseEnter(scale);
     act(() => {
       vi.advanceTimersByTime(TOOLTIP_OPEN_DELAY_MS);
@@ -131,7 +127,7 @@ describe("CompareBar in Minus view", () => {
 
   it("says in the scale's tooltip that a pair was matched at high q, and shows only its factor", () => {
     bar([chip({ minus: { kind: "drawn", background: "buf" }, scale: { scale: 0.9, source: "beam_off" } })]);
-    fireEvent.mouseEnter(document.querySelector("[data-scale-source]") as HTMLElement);
+    fireEvent.mouseEnter(screen.getByText(/^×\d/));
     act(() => {
       vi.advanceTimersByTime(TOOLTIP_OPEN_DELAY_MS);
     });

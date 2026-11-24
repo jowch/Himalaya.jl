@@ -107,7 +107,7 @@ describe("BackgroundModule", () => {
       vi.useRealTimers();
     });
 
-    it.each(["monitor", ...Object.keys(SCALE_REASONS)] as CompareScale["source"][])("explains %s in the chip's words on hover", (source) => {
+    it.each(["monitor", "beam_off", ...Object.keys(SCALE_REASONS)] as CompareScale["source"][])("explains %s in the chip's words on hover", (source) => {
       show(set({ scale: { scale: 1.5, source } }));
       fireEvent.mouseEnter(screen.getByText(SHORT[source]));
       act(() => {
@@ -126,7 +126,7 @@ describe("BackgroundModule", () => {
     });
   });
 
-  it.each(["normalised", "monitor", ...Object.keys(SCALE_REASONS)] as CompareScale["source"][])("shows %s as a short label and gives the whole sentence as its description", (source) => {
+  it.each(["normalised", "monitor", "beam_off", ...Object.keys(SCALE_REASONS)] as CompareScale["source"][])("shows %s as a short label and gives the whole sentence as its description", (source) => {
     show(set({ scale: { scale: source === "normalised" ? 1 : 1.5, source } }));
     const note = screen.getByTestId("background-note");
     if (source === "normalised") {
@@ -134,7 +134,7 @@ describe("BackgroundModule", () => {
       return;
     }
     expect(note).toHaveTextContent(SHORT[source]);
-    expect(screen.queryByText(explainScale({ scale: 1.5, source }, "The background"))).toBeNull();
+    expect(screen.getByText(explainScale({ scale: 1.5, source }, "The background"))).not.toBeVisible();
     expect(screen.getByText(SHORT[source])).toHaveAccessibleDescription(explainScale({ scale: 1.5, source }, "The background"));
   });
 
