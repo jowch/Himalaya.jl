@@ -3273,7 +3273,37 @@ describe("WorkspacePage", () => {
     expect(add).toHaveTextContent(`Add Pn3m ${((2 * Math.PI * Math.SQRT2) / 0.2).toFixed(1)} Å`);
     clickPlotAt(0.1);
     expect(add).toHaveTextContent(`Add Pn3m ${((2 * Math.PI * Math.SQRT2) / 0.1).toFixed(1)} Å`);
+    fireEvent.keyDown(window, { key: "Tab", shiftKey: true });
+    expect(add).toHaveTextContent(`Add Square ${((2 * Math.PI) / 0.1).toFixed(1)} Å`);
     expect(calls).toEqual([]);
+  });
+
+  it("changing the custom index's symmetry keeps the first order on the peak a click snapped to, until the lattice is moved by hand", () => {
+    state.trace = makeTrace(1);
+    state.peaks = [peak(7, 0.1, "auto"), peak(7, 0.15, "manual")];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "i" });
+    const panel = screen.getByTestId("workspace-custom-index");
+    const add = within(panel).getByRole("button", { name: /^Add/ });
+    const symmetry = (name: string): HTMLElement => within(within(panel).getByRole("group", { name: "Symmetry" })).getByRole("button", { name });
+    clickPlotAt(0.15);
+    expect(add).toHaveTextContent(`Add Pn3m ${((2 * Math.PI * Math.SQRT2) / 0.15).toFixed(1)} Å`);
+    fireEvent.click(symmetry("Hexagonal"));
+    expect(add).toHaveTextContent(`Add Hexagonal ${((4 * Math.PI) / (Math.sqrt(3) * 0.15)).toFixed(1)} Å`);
+    fireEvent.click(symmetry("Lamellar"));
+    expect(add).toHaveTextContent(`Add Lamellar ${((2 * Math.PI) / 0.15).toFixed(1)} Å`);
+    fireEvent.click(symmetry("Pn3m"));
+    fireEvent.keyDown(window, { key: "Tab" });
+    fireEvent.keyDown(window, { key: "Tab" });
+    expect(add).toHaveTextContent(`Add Ia3d ${((2 * Math.PI * Math.sqrt(6)) / 0.15).toFixed(1)} Å`);
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    const nudged = `${((2 * Math.PI * Math.sqrt(6)) / 0.15 + 0.5).toFixed(1)} Å`;
+    expect(add).toHaveTextContent(`Add Ia3d ${nudged}`);
+    fireEvent.click(symmetry("Hexagonal"));
+    expect(add).toHaveTextContent(`Add Hexagonal ${nudged}`);
+    fireEvent.keyDown(window, { key: "Enter" });
+    const arg = calls[0]!.arg as { phase: string; basis: number };
+    expect(arg.phase).toBe("Hexagonal");
   });
 
   it("looking at another image keeps the custom index open", () => {
