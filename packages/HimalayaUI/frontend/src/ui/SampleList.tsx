@@ -66,6 +66,12 @@ function StatusMark({ s, reviewable }: { s: CorpusSample; reviewable: boolean })
   );
 }
 
+function runLength(samples: readonly CorpusSample[], start: number): number {
+  let n = 0;
+  while (start + n < samples.length && samples[start + n]!.setup_id === samples[start]!.setup_id) n++;
+  return n;
+}
+
 export function SampleList({ samples, setupHeaders, currentId, filter, onFilter, onPick, onToggleCompare, compareColors, hiddenCompares, bridgeCounts, reviewable, notice, progress, listHidden = false, onToggleList }: Props): JSX.Element {
   const currentRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
@@ -135,8 +141,12 @@ export function SampleList({ samples, setupHeaders, currentId, filter, onFilter,
           return (
             <Fragment key={s.id}>
             {header !== undefined && (
-              <li data-testid="setup-header" className="sticky top-0 z-[1] border-b border-hair bg-paper px-3.5 pb-1 pt-2 text-xs font-semibold text-ink-soft">
-                {header}
+              <li data-testid="setup-header" className="sticky top-0 z-[1] flex items-center gap-2.5 bg-paper px-3.5 pb-1 pt-2 text-xs">
+                <span data-setup-name="" className="min-w-0 truncate font-semibold text-ink-soft">{header}</span>
+                <span aria-hidden="true" className="flex-1 border-t border-hair" />
+                <span data-setup-count="" role="img" aria-label={`${runLength(samples, i)} ${runLength(samples, i) === 1 ? "sample" : "samples"}`} className="text-ink-faint">
+                  {runLength(samples, i)}
+                </span>
               </li>
             )}
             <li>
@@ -160,7 +170,7 @@ export function SampleList({ samples, setupHeaders, currentId, filter, onFilter,
                   onPick(s.id);
                 }}
                 className={
-                  "flex w-full items-center justify-between gap-2 px-3.5 py-[5px] text-left text-base text-ink " +
+                  "flex w-full items-center justify-between gap-2 px-3.5 py-1 text-left text-base text-ink " +
                   (cur ? "font-semibold " + SELECTED_ROW : s.id === highlightedId ? "bg-paper-sunk" : "hover:bg-paper-sunk")
                 }
               >
