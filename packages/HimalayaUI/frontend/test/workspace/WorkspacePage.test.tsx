@@ -4556,6 +4556,159 @@ describe("WorkspacePage autosampler background", () => {
     expect(within(screen.getByRole("dialog")).queryByText("Choose what is subtracted from this sample")).toBeNull();
   });
 
+  describe("Minus view with comparisons", () => {
+    const monitors = { transmitted_counts: 1e6, exposure_time: 15, counting_time: 15.8, normalised_by: "i2" as const, mode: "autosampler" as const };
+    const level = (n: number, extra: Partial<Trace> = {}): Trace => ({ ...makeTrace(n), monitors, ...extra });
+    const bar = (): HTMLElement => screen.getByTestId("workspace-compare-bar");
+    const chipOf = (name: RegExp): HTMLElement => within(bar()).getByRole("button", { name });
+    const compareWith = (name: string): void => runFromPalette("compare with a sample", name);
+    const firstY = (el: Element): number => Number(el.getAttribute("d")!.split(/[ML]/).filter(Boolean)[0]!.split(",")[1]);
+    const curve = (id: number): Element => plot().querySelector(`[data-compare="${id}"]`)!;
+    const open0 = (): Element => plot().querySelector("[data-role='difference-line'] path")!;
+    const entries = (over: Record<number, Partial<SampleBackground>> = {}): SampleBackground[] =>
+      [BUFFER, FIRST, SECOND, END_BUFFER, OTHER_BUFFER, OTHER_RUN].map((id) => entry(id, over[id]));
+
+    const seedLevels = (backgrounds: SampleBackground[] = entries()): void => {
+      seed(backgrounds);
+      window.localStorage.setItem("himalaya-ui:workspace-plot-view", "linear");
+      state.trace = level(10);
+      state.compareTraces = new Map([
+        [BUFFER, level(2)], [END_BUFFER, level(1)], [SECOND, level(8)], [OTHER_BUFFER, level(9)], [OTHER_RUN, level(12)], [40, level(1)],
+      ]);
+    };
+
+    it("draws each comparison minus its own buffer, under the open sample's curve", () => {
+      seedLevels();
+      open(FIRST);
+      compareWith("lipidA 01C");
+      compareWith("lipidB 01B");
+      expect(plot().querySelectorAll("[data-compare]")).toHaveLength(2);
+      const own = firstY(open0());
+      const sameRun = firstY(curve(SECOND));
+      const otherRun = firstY(curve(OTHER_RUN));
+      expect(own).toBeLessThan(sameRun);
+      expect(sameRun).toBeLessThan(otherRun);
+      expect(curve(SECOND).getAttribute("stroke")).toBe(chipOf(/^lipidA 01C/).closest("[data-compare-chip]")!.getAttribute("style")!.match(/color: ([^;]+)/)![1]);
+    });
+
+    it("shows the scale of each pair on its chip", () => {
+      seedLevels();
+      open(FIRST);
+      compareWith("lipidA 01C");
+      expect(bar().querySelector("[data-compare-chip] [data-scale-source='normalised']")).not.toBeNull();
+    });
+
+    it("fetches each background of a shown chip once, and nothing for a hidden chip", () => {
+      seedLevels();
+      open(FIRST);
+      compareWith("lipidA 01C");
+      compareWith("lipidB 01B");
+      const shown = compareFetches.at(-1)!;
+      expect(shown.filter((id) => id === BUFFER)).toHaveLength(1);
+      expect(shown.filter((id) => id === OTHER_BUFFER)).toHaveLength(1);
+      fireEvent.click(chipOf(/^lipidB 01B/));
+      const after = compareFetches.at(-1)!;
+      expect(after).not.toContain(OTHER_BUFFER);
+      expect(after).not.toContain(OTHER_RUN);
+      expect(after).toContain(SECOND);
+      expect(curve(OTHER_RUN)).toBeNull();
+      expect(curve(SECOND)).not.toBeNull();
+    });
+
+    it("hides one curve on a click and stays in Minus", () => {
+      seedLevels();
+      open(FIRST);
+      compareWith("lipidA 01C");
+      fireEvent.click(chipOf(/^lipidA 01C/));
+      expect(curve(SECOND)).toBeNull();
+      expect(open0()).not.toBeNull();
+      expect(screen.getByRole("button", { name: "Minus lipidA 01A (B0100)" })).toHaveAttribute("aria-pressed", "true");
+    });
+
+    it("does not draw a buffer comparison and says why on its chip", () => {
+      seedLevels();
+      open(FIRST);
+      compareWith("lipidA 01D");
+      expect(plot().querySelectorAll("[data-compare]")).toHaveLength(0);
+      expect(bar().querySelector("[data-minus-note='buffer']")).toHaveTextContent("not subtracted");
+    });
+
+    it("draws the buffer itself as a comparison in Raw, as before", () => {
+      seedLevels();
+      open(FIRST);
+      compareWith("lipidA 01D");
+      fireEvent.click(screen.getByRole("button", { name: "Raw" }));
+      expect(plot().querySelectorAll("[data-compare]")).toHaveLength(1);
+      expect(bar().querySelector("[data-minus-note]")).toBeNull();
+    });
+
+    it("leaves Raw as it was: the open trace and each comparison scaled to it", () => {
+      seedLevels();
+      open(FIRST);
+      compareWith("lipidA 01C");
+      compareWith("lipidB 01B");
+      fireEvent.click(screen.getByRole("button", { name: "Raw" }));
+      expect(plot().querySelector("[data-role='trace-line']")).not.toBeNull();
+      expect(plot().querySelectorAll("[data-compare]")).toHaveLength(2);
+      expect(bar().querySelector("[data-minus-note]")).toBeNull();
+    });
+
+    it.each([
+      ["the compared sample has no background module", () => entries(), "water 01", "no-module"],
+      ["its background is none", () => entries({ [SECOND]: { ref_sample_id: null, source: "user" } }), "lipidA 01C", "none"],
+      ["it has no default and no choice", () => entries({ [SECOND]: { ref_sample_id: null, default_ref_sample_id: null, run_buffer_ids: [] } }), "lipidA 01C", "no-default"],
+      ["its background's setup is hidden", () => entries({ [SECOND]: { ref_sample_id: 40, source: "user" } }), "lipidA 01C", "hidden"],
+    ] as const)("does not draw when %s", (_name, backgrounds, name, reason) => {
+      seedLevels(backgrounds());
+      open(FIRST);
+      compareWith(name);
+      expect(plot().querySelectorAll("[data-compare]")).toHaveLength(0);
+      expect(bar().querySelector(`[data-minus-note='${reason}']`)).not.toBeNull();
+    });
+
+    it("reads a background trace that is still loading as loading, and one that is absent as missing", () => {
+      seedLevels(entries({ [SECOND]: { ref_sample_id: END_BUFFER, source: "user" } }));
+      state.compareTraces.delete(END_BUFFER);
+      state.traceLoading = new Set([END_BUFFER]);
+      open(FIRST);
+      compareWith("lipidA 01C");
+      expect(bar().querySelector("[data-minus-note='loading']")).toHaveTextContent("loading");
+      expect(plot().querySelectorAll("[data-compare]")).toHaveLength(0);
+      expect(open0()).not.toBeNull();
+    });
+
+    it("says a background without a trace is missing", () => {
+      seedLevels(entries({ [SECOND]: { ref_sample_id: END_BUFFER, source: "user" } }));
+      state.compareTraces.delete(END_BUFFER);
+      open(FIRST);
+      compareWith("lipidA 01C");
+      expect(bar().querySelector("[data-minus-note='missing']")).toHaveTextContent("not subtracted");
+    });
+
+    it("flags a pair that was matched at high q on that chip only", () => {
+      seedLevels();
+      state.compareTraces.set(OTHER_RUN, level(12, { monitors: { ...monitors, beam_off: true } }));
+      open(FIRST);
+      compareWith("lipidA 01C");
+      compareWith("lipidB 01B");
+      const scaleOf = (name: RegExp): string | null => chipOf(name).closest("[data-compare-chip]")!.querySelector("[data-scale-source]")!.getAttribute("data-scale-source");
+      expect(scaleOf(/^lipidA 01C/)).toBe("normalised");
+      expect(scaleOf(/^lipidB 01B/)).toBe("beam_off");
+    });
+
+    it("keeps a capillary open sample's Minus as one residual with the comparisons hidden", () => {
+      seedLevels();
+      state.trace = makeTrace(2);
+      state.compareTraces.set(FIRST, makeTrace(1));
+      open(50);
+      compareWith("lipidA 01B");
+      fireEvent.click(chipOf(/^lipidA 01B/), { ctrlKey: true });
+      expect(plot().querySelector("[data-role='zero-line']")).not.toBeNull();
+      expect(plot().querySelectorAll("[data-compare]")).toHaveLength(0);
+      expect(bar().querySelector("[data-minus-note]")).toBeNull();
+    });
+  });
+
   it("leaves a capillary sample with no Background section, no B key and the chip-based subtraction", () => {
     seed();
     open(50);
