@@ -44,6 +44,7 @@ import { detectorGeometry, ringCircles } from "../lib/detectorRings";
 import type { DetectorRingsView } from "../ui/DetectorRings";
 import { comparesOf, EMPTY_COMPARES } from "../lib/compares";
 import { byRecent, recentRank, recordRecent } from "../lib/recents";
+import { backgroundOrder, compareOrder } from "./choiceOrder";
 import { helpKeyFromEmptyField, inDialog, isEditable, suppressGlobalKeys } from "../lib/keys";
 import { useUndoHistory, type UndoEntry, type UndoStep } from "./undo";
 import {
@@ -56,7 +57,7 @@ import { useMediaQuery } from "./useMediaQuery";
 import { isIngestStage, stageLabel } from "../lib/ingestStages";
 import { applyBridge, bridgeCounts, bridgedWith, rankBridgeMates } from "../lib/bridges";
 import { bridgeSteps, callStatesSplit, groupKeepChoices, keepChoices, type KeepCall } from "../lib/bridgeCall";
-import { bufferRole, buffersFirst, displayLabel, firstUnusedColor, labelColor, labelColorIsDefault, labelsFor, sameLabel, sampleMatchesFilter, labelVocabulary, labelKey } from "../lib/labels";
+import { bufferRole, displayLabel, firstUnusedColor, labelColor, labelColorIsDefault, labelsFor, sameLabel, sampleMatchesFilter, labelVocabulary, labelKey } from "../lib/labels";
 import { analysisOf, imageFrames, keptExposures, MIN_COMBINED, newestKeptFrame, selectedFrames } from "../lib/exposure";
 import { useMemberTraces } from "./useMemberTraces";
 import { unsupportedCalls } from "./unsupportedCalls";
@@ -860,7 +861,7 @@ export function WorkspacePage(): JSX.Element {
   const recentKind = `comparison:${experimentId}`;
   const [recentCompares, setRecentCompares] = useState<string[]>(() => recentRank(recentKind));
   const pickable = useMemo(
-    () => byRecent(buffersFirst(samples.filter((s) => s.id !== sampleId && !shownRefs.includes(s.id)), labelList), (s) => String(s.id), recentCompares),
+    () => compareOrder(samples.filter((s) => s.id !== sampleId && !shownRefs.includes(s.id)), labelList, recentCompares),
     [samples, sampleId, shownRefs, labelList, recentCompares],
   );
   const bufferNotes = useMemo(() => {
@@ -879,22 +880,20 @@ export function WorkspacePage(): JSX.Element {
     for (const id of bgEntry?.run_buffer_ids ?? []) notes.set(id, "Buffer of this run");
     return notes;
   }, [bufferNotes, comparesQuery.data, bgEntry]);
+  const recentBackgroundKind = `background:${experimentId}`;
+  const [recentBackgrounds, setRecentBackgrounds] = useState<string[]>(() => recentRank(recentBackgroundKind));
   const backgroundChoices = useMemo(() => {
     if (!bgEntry || sampleId === undefined) return [];
-    const byId = new Map(samples.map((s) => [s.id, s]));
-    const taken = new Set<number>([sampleId, ...(bgEntry.ref_sample_id === null ? [] : [bgEntry.ref_sample_id])]);
-    const out: CorpusSample[] = [];
-    const add = (id: number): void => {
-      const s = byId.get(id);
-      if (!s || taken.has(id)) return;
-      taken.add(id);
-      out.push(s);
-    };
-    bgEntry.run_buffer_ids.forEach(add);
-    for (const b of comparesQuery.data?.backgrounds ?? []) if (b.is_buffer && byId.get(b.sample_id)?.setup_id === sample?.setup_id) add(b.sample_id);
-    samples.forEach((s) => add(s.id));
-    return out;
-  }, [bgEntry, sampleId, samples, comparesQuery.data, sample?.setup_id]);
+    const setupOf = new Map(samples.map((s) => [s.id, s.setup_id]));
+    return backgroundOrder({
+      samples,
+      open: sampleId,
+      current: bgEntry.ref_sample_id,
+      runBuffers: bgEntry.run_buffer_ids,
+      setupBuffers: (comparesQuery.data?.backgrounds ?? []).filter((b) => b.is_buffer && setupOf.get(b.sample_id) === sample?.setup_id).map((b) => b.sample_id),
+      recent: recentBackgrounds,
+    });
+  }, [bgEntry, sampleId, samples, comparesQuery.data, sample?.setup_id, recentBackgrounds]);
   const bridgePickable = useMemo(() => {
     const others = samples.filter((s) => s.id !== sampleId && !bridged.includes(s.id) && modulesOf(s).calls === modules.calls);
     return sample ? rankBridgeMates(sample, others) : others;
@@ -1459,6 +1458,10 @@ export function WorkspacePage(): JSX.Element {
     const name = sample?.name ?? "this sample";
     patchCompares.mutate({ sampleId, change: { subtraction: to } });
     if (to !== null) setMinus(true);
+    if (typeof to === "number") {
+      recordRecent(recentBackgroundKind, String(to));
+      setRecentBackgrounds(recentRank(recentBackgroundKind));
+    }
     history.record(compareEntry(ops, {
       label: to === null
         ? `turned off the background of ${name}`
