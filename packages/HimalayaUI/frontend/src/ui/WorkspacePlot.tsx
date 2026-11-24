@@ -174,7 +174,7 @@ export function WorkspacePlot({
   const shownX = xDomain ?? xExtent;
   const lineQ = difference ? difference.q : trace.q;
   const viewed = (difference ? difference.d : trace.I).map((v, i) => viewIntensity(view, lineQ[i]!, v));
-  const diffAxis = residual && difference ? differenceAxis(view, lineQ, viewed, shownX, peaks.filter((p) => !p.excluded).map((p) => p.q)) : null;
+  const diffAxis = residual && difference ? differenceAxis(view, lineQ, viewed, shownX) : null;
   const curve = difference && !residual ? subtractedSeries(view, lineQ, difference.d, shownX, compares.map((c) => ({ q: c.q, d: c.I }))) : null;
   const I = diffAxis ? viewed.map(diffAxis.to) : curve ? curve.I : viewed;
   const shownCompares = residual

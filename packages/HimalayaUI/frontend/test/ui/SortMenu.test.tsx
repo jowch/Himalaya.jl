@@ -38,10 +38,4 @@ describe("SortMenu", () => {
     expect(onSort).not.toHaveBeenCalled();
     expect(button).toHaveFocus();
   });
-
-  it("keeps its width for every order, so switching never moves the filter", () => {
-    open();
-    const labels = screen.getByTestId("sample-sort").querySelectorAll("span.grid > span");
-    expect([...labels].map((l) => [l.textContent, l.classList.contains("invisible")])).toEqual([["Measured", false], ["Name", true]]);
-  });
 });

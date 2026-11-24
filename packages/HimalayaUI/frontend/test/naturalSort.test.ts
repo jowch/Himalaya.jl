@@ -18,3 +18,15 @@ describe("natural sort", () => {
     expect(items.map((s) => s.name)).toEqual(["s10", "s9"]);
   });
 });
+
+describe("natural sort of decimal numbers", () => {
+  it("reads a number with a decimal point by its value, so concentrations sort in order", () => {
+    expect(naturalSortBy(["PEG_0.5", "PEG_0.25", "PEG_1", "PEG_0.125"], (s) => s)).toEqual(["PEG_0.125", "PEG_0.25", "PEG_0.5", "PEG_1"]);
+    expect(naturalSortBy(["X_1.10", "X_1.5", "X_2"], (s) => s)).toEqual(["X_1.10", "X_1.5", "X_2"]);
+    expect(naturalSortBy(["0.5M NaCl", "0.25M NaCl"], (s) => s)).toEqual(["0.25M NaCl", "0.5M NaCl"]);
+  });
+
+  it("keeps a dot that follows no digit as text", () => {
+    expect(naturalSortBy(["run.10", "run.9"], (s) => s)).toEqual(["run.9", "run.10"]);
+  });
+});

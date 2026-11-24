@@ -880,8 +880,12 @@ export function WorkspacePage(): JSX.Element {
     for (const id of bgEntry?.run_buffer_ids ?? []) notes.set(id, "Buffer of this run");
     return notes;
   }, [bufferNotes, comparesQuery.data, bgEntry]);
-  const recentBackgroundKind = `background:${experimentId}`;
-  const [recentBackgrounds, setRecentBackgrounds] = useState<string[]>(() => recentRank(recentBackgroundKind));
+  const recentBackgroundKind = `background:${experimentId}:${sample?.setup_id ?? "none"}`;
+  const [pickedBackgrounds, setPickedBackgrounds] = useState(() => ({ kind: recentBackgroundKind, list: recentRank(recentBackgroundKind) }));
+  const recentBackgrounds = useMemo(
+    () => (pickedBackgrounds.kind === recentBackgroundKind ? pickedBackgrounds.list : recentRank(recentBackgroundKind)),
+    [pickedBackgrounds, recentBackgroundKind],
+  );
   const backgroundChoices = useMemo(() => {
     if (!bgEntry || sampleId === undefined) return [];
     const setupOf = new Map(samples.map((s) => [s.id, s.setup_id]));
@@ -1460,7 +1464,7 @@ export function WorkspacePage(): JSX.Element {
     if (to !== null) setMinus(true);
     if (typeof to === "number") {
       recordRecent(recentBackgroundKind, String(to));
-      setRecentBackgrounds(recentRank(recentBackgroundKind));
+      setPickedBackgrounds({ kind: recentBackgroundKind, list: recentRank(recentBackgroundKind) });
     }
     history.record(compareEntry(ops, {
       label: to === null

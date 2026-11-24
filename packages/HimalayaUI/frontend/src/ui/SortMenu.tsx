@@ -75,7 +75,7 @@ export function SortMenu<T extends string>({ what, current, choices, onSort }: P
           className="flex h-[30px] items-center gap-1 rounded-sm border border-hair bg-plate px-2 text-xs text-ink-soft hover:text-ink"
         >
           <SortGlyph />
-          <span className="grid">
+          <span className="grid justify-items-start">
             {choices.map((c) => (
               <span key={c.sort} aria-hidden="true" className={"col-start-1 row-start-1 whitespace-nowrap" + (c.sort === shown?.sort ? "" : " invisible")}>
                 {c.name}
