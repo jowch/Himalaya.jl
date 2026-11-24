@@ -96,7 +96,7 @@ _count(db, sql, args...) = Int(only(Tables.rowtable(DBInterface.execute(db, sql,
         DBInterface.execute(legacy, """INSERT INTO experiments
             (id, name, path, data_dir, analysis_dir, integration_pattern, flight_path_m, flight_path_m_source, q_units)
             VALUES (7, '20261103/setup1', '/bt/setup1/data', '/bt/setup1/data', '/bt/setup1/analysis',
-                    '{name}_tot.dat', 1.8095, 'setup', 'nm^-1')""")
+                    '{name}_tot.dat', 1.81, 'setup', 'nm^-1')""")
         DBInterface.execute(legacy, """INSERT INTO experiments (id, name, path, data_dir, analysis_dir)
             VALUES (8, 'other', '/x', '/x', '/x/analysis')""")
         DBInterface.execute(legacy, "INSERT INTO loads (id, experiment_id, load_index) VALUES (70, 7, 1)")
@@ -112,7 +112,7 @@ _count(db, sql, args...) = Int(only(Tables.rowtable(DBInterface.execute(db, sql,
         @test st7.root_dir == "/bt/setup1"
         @test st7.data_dir == "/bt/setup1/data"
         @test st7.integration_pattern == "{name}_tot.dat"
-        @test st7.flight_path_m == 1.8095 && st7.flight_path_m_source == "setup"
+        @test st7.flight_path_m == 1.81 && st7.flight_path_m_source == "setup"
         @test st7.q_units == "nm^-1"
         @test only(HimalayaUI.setups_of(db, 8)).folder == "x"
         for (t, id) in (("loads", 70), ("samples", 700), ("exposures", 7000))

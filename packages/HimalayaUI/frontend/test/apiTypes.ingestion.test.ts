@@ -13,7 +13,7 @@ describe("ingestion api types (Phase E1)", () => {
         data_dir: "/d/setup1/data", analysis_dir: "/d/setup1/analysis",
         image_pattern: "*.tif", metadata_pattern: null, integration_pattern: null,
         q_units: "A^-1", beam_center_x: 421.4, beam_center_y: 836.9, pixel_size_um: 172,
-        energy_kev: 9, flight_path_m: 1.8095,
+        energy_kev: 9, flight_path_m: 1.81,
         energy_kev_source: "prp", flight_path_m_source: "setup",
         beam_center_x_source: "setup", beam_center_y_source: "setup",
         pixel_size_um_source: "prp", q_units_source: "prp",

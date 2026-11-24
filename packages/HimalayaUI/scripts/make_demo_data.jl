@@ -35,11 +35,11 @@ using ImageCore.FixedPointNumbers: Q0f31
 using Dates, Printf, Random
 
 # ---- instrument (matches the SSRL 2026-04 defaults used in the test fixtures) ----
-const ENERGY_EV        = 9000.027604502573
+const ENERGY_EV        = 9000.0
 const WAVELENGTH_A     = 12398.42 / ENERGY_EV   # ~1.3776 Å
 const PIPE_LENGTH_MM   = 1700
-const MEAN_DISTANCE_MM = 1809.5                 # AgBe-calibrated sample-detector distance
-const BEAM_X, BEAM_Y   = 421.409, 836.946       # detector px, origin bottom-left, y-up
+const MEAN_DISTANCE_MM = 1810.0                 # AgBe-calibrated sample-detector distance
+const BEAM_X, BEAM_Y   = 420.5, 835.5       # detector px, origin bottom-left, y-up
 const PIXEL_UM         = 172.0
 const DET_W, DET_H     = 981, 1043              # Pilatus 1M: 2 x 5 modules of 487 x 195
 const PILATUS_MAX_COUNTS = 1_000_000
@@ -187,12 +187,12 @@ end
 # physics: top-ups) times the sample's transmission, and the beamstop APD downstream
 # physics: records it as I_signal. Dividing a trace by its I_signal puts every
 # physics: exposure on one scale; a high-q match cannot, when the sample scatters there.
-# physics: The constants follow the real SSRL 2026 .prp: I_0 ≈ 1.50 V and
-# physics: I_signal ≈ 7365 counts for 15 s on a lipid sample, with the APD's dark rate
-# physics: (18320 /s) included in raw I_1 and removed from I_signal.
-const I0_VOLTS     = 1.5007
-const APD_PER_VOLT = 7365.0 / (1.5007 * 0.86)
-const APD_DARK_RATE = 18320.0
+# physics: The constants are round numbers of the size an SSRL .prp shows: I_0 about
+# physics: 1.5 V and I_signal about 7000 counts for 15 s on a lipid sample, with the
+# physics: APD's dark rate included in raw I_1 and removed from I_signal.
+const I0_VOLTS     = 1.5
+const APD_PER_VOLT = 7000.0 / (1.5 * 0.86)
+const APD_DARK_RATE = 18000.0
 # physics: I_signal is a small difference of two large numbers: raw I_1 minus the
 # physics: nominal dark rate × counting time, about 97% of I_1 in the real file. The
 # physics: dark rate drifts between its calibration and each exposure, so a 0.1% drift
@@ -356,10 +356,10 @@ end
 
 function write_setup_info(path; distance_mm = MEAN_DISTANCE_MM)
     open(path, "w") do io
-        print(io, "File used for calibration:\n../data/agbe_1p7m_S1958_0_001.tif\n\n")
+        print(io, "File used for calibration:\n../data/agbe_1p7m_S1000_0_001.tif\n\n")
         print(io, "Beam center is at ($BEAM_X, $BEAM_Y)\n\n")
         println(io, "Calculated detector distances are:")
-        for (i, d) in enumerate([1806.0, 1811.1, 1811.5])
+        for (i, d) in enumerate([1807.0, 1810.5, 1812.5])
             @printf(io, "Ring %d:\t pixel %.2f:\t %s mm\n", i, 247.82 * i, d)
         end
         println(io, "-"^58)
@@ -490,7 +490,7 @@ function main_curated(o)
     rng_beam = Xoshiro(seed + 2)
     data, analysis, tot = prepare_tree(out)
     dirs = (data = data, tot = tot)
-    write_setup_info(joinpath(analysis, "setup_info_20260425_181705.txt"))
+    write_setup_info(joinpath(analysis, "setup_info_20260301_120000.txt"))
 
     qm, dx, dy = images ? q_map() : (nothing, nothing, nothing)
     gaps = gap_mask()
