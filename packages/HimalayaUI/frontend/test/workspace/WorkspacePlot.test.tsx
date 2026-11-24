@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { act, render, fireEvent, screen } from "@testing-library/react";
-import { COMPARE_COLORS, PLOT_HEIGHT, WorkspacePlot } from "../../src/ui/WorkspacePlot";
+import { COMPARE_COLORS, COMPARE_DASH, PLOT_HEIGHT, WorkspacePlot } from "../../src/ui/WorkspacePlot";
 import { PLOT_MARGINS } from "../../src/workspace/plotScale";
 
 const trace = { q: [0.05, 0.1, 0.15, 0.2, 0.25], I: [10, 50, 8, 6, 5], sigma: [0, 0, 0, 0, 0] };
@@ -214,6 +214,62 @@ describe("WorkspacePlot", () => {
       rerender(<WorkspacePlot trace={own} peaks={[]} combs={[]} difference={curve} view="kratky" />);
       expect(Math.min(...ys())).toBeGreaterThanOrEqual(0);
       expect(Math.max(...ys())).toBeLessThanOrEqual(plotHeight);
+    });
+
+    describe("with other subtracted curves", () => {
+      const bigger = q.map((v) => 5e4 * Math.exp(-v * 30) + 2);
+      const gappy = q.map((v, i) => (i === 10 || i === 20 ? 0 : 3e3 * Math.exp(-v * 20) + 1));
+      const lineFor = (id: number, I: number[], color: string) => ({ id, name: `s${id}`, q, I, color, emphasis: false });
+      const first = lineFor(3, bigger, COMPARE_COLORS[0]!);
+      const second = lineFor(4, gappy, COMPARE_COLORS[1]!);
+      const compareByKey = (id: number): Element => screen.getByTestId("workspace-compares").querySelector(`[data-compare="${id}"]`)!;
+      const compareYs = (id: number): number[] =>
+        compareByKey(id).getAttribute("d")!.split(/[ML]/).filter(Boolean).map((p) => Number(p.split(",")[1]));
+
+      it("draws each one in its own colour with the comparison line style, under the open sample's curve", () => {
+        render(<WorkspacePlot trace={own} peaks={[]} combs={[]} difference={curve} compares={[first, second]} view="linear" />);
+        expect(compareByKey(3).getAttribute("stroke")).toBe(COMPARE_COLORS[0]);
+        expect(compareByKey(4).getAttribute("stroke")).toBe(COMPARE_COLORS[1]);
+        expect(compareByKey(3).getAttribute("stroke-dasharray")).toBe(COMPARE_DASH);
+        expect(screen.getByTestId("workspace-trace").querySelector('[data-role="difference-line"] path')!.getAttribute("stroke")).toBe("var(--color-accent)");
+        const open = screen.getByTestId("workspace-trace").querySelector('[data-role="difference-line"]')!;
+        const group = screen.getByTestId("workspace-compares");
+        expect(group.compareDocumentPosition(open) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      });
+
+      it("shares the axes: the y range reaches the highest curve in every view", () => {
+        const { rerender } = render(<WorkspacePlot trace={own} peaks={[]} combs={[]} difference={curve} compares={[first]} view="log" />);
+        for (const view of ["log", "loglog", "linear", "kratky"] as const) {
+          rerender(<WorkspacePlot trace={own} peaks={[]} combs={[]} difference={curve} compares={[first]} view={view} />);
+          expect(Math.min(...compareYs(3))).toBeGreaterThanOrEqual(0);
+          expect(Math.max(...compareYs(3))).toBeLessThanOrEqual(plotHeight);
+        }
+      });
+
+      it("covers a curve far above the open sample's: the open sample's line sits low", () => {
+        const { rerender } = render(<WorkspacePlot trace={own} peaks={[]} combs={[]} difference={curve} view="linear" />);
+        const alone = Math.min(...ys());
+        rerender(<WorkspacePlot trace={own} peaks={[]} combs={[]} difference={curve} compares={[first]} view="linear" />);
+        expect(Math.min(...ys())).toBeGreaterThan(alone);
+      });
+
+      it("breaks each curve at its own non-positive values on a log axis", () => {
+        render(<WorkspacePlot trace={own} peaks={[]} combs={[]} difference={curve} compares={[first, second]} view="log" />);
+        expect(compareByKey(4).getAttribute("d")!.match(/M/g)).toHaveLength(3);
+        expect(compareByKey(3).getAttribute("d")!.match(/M/g)).toHaveLength(1);
+      });
+
+      it("applies q² to each curve in the q²I view", () => {
+        const flat = lineFor(5, q.map(() => 1), COMPARE_COLORS[2]!);
+        render(<WorkspacePlot trace={own} peaks={[]} combs={[]} difference={curve} compares={[flat]} view="kratky" />);
+        const y = compareYs(5);
+        expect(y[0]!).toBeGreaterThan(y.at(-1)!);
+      });
+
+      it("still draws no comparison next to a capillary difference", () => {
+        render(<WorkspacePlot trace={own} peaks={[]} combs={[]} difference={{ q, d }} compares={[first]} view="log" />);
+        expect(screen.getByTestId("workspace-compares").querySelector("path")).toBeNull();
+      });
     });
 
     it("leaves a capillary difference on its own axis, clipped around zero", () => {
