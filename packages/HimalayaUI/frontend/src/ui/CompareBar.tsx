@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Kbd } from "./Kbd";
 import { Tooltip } from "./Tooltip";
-import { isMatchedScale, type CompareScale } from "../workspace/compare";
+import type { CompareScale } from "../workspace/compare";
 import { SKIP_NOTES, type SkipReason } from "../workspace/minusCompares";
 import { COMPARE_DASH } from "./WorkspacePlot";
 
@@ -115,12 +115,8 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
               )}
               {c.scale !== undefined && (
                 <Tooltip content={SCALE_NOTES[c.scale.source]}>
-                  <span
-                    className={"grid min-w-min grid-cols-[auto_minmax(0,1fr)] items-baseline whitespace-nowrap text-ink-faint" + dim}
-                    data-scale-source={c.scale.source}
-                  >
-                    <span data-scale-value className="shrink-0">×{c.scale.scale.toPrecision(3)}</span>
-                    {isMatchedScale(c.scale) && <span data-chip-truncates className="min-w-0 truncate">{"\u00a0matched"}</span>}
+                  <span className={"shrink-0 whitespace-nowrap text-ink-faint" + dim} data-scale-source={c.scale.source} data-scale-value>
+                    ×{c.scale.scale.toPrecision(3)}
                   </span>
                 </Tooltip>
               )}

@@ -79,7 +79,6 @@ export interface CompareScale {
   source: "normalised" | "monitor" | "matched" | "other_setup" | "beam_off" | "i2_collapsed" | "unknown_normalisation" | "capillary" | "unknown_mode";
 }
 
-export const isMatchedScale = (s: CompareScale): boolean => s.source !== "normalised" && s.source !== "monitor";
 
 type ScaledTrace = Pick<Trace, "q" | "I" | "monitors">;
 
