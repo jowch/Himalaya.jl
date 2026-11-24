@@ -27,14 +27,14 @@ interface Props {
   onDefault: () => void;
 }
 
-const LINE = "min-h-5 text-caption";
+const LINE = "min-h-9 text-caption";
 const ACTION = "shrink-0 whitespace-nowrap rounded-sm border border-hair-strong bg-plate px-2 py-0.5 text-caption text-ink hover:bg-paper-sunk disabled:text-ink-faint disabled:hover:bg-plate";
 
 function nameLine(view: BackgroundView): ReactNode {
   if (view.kind === "set") {
     return (
       <>
-        <span className="min-w-0 truncate text-body text-ink">{view.name}</span>
+        <Tooltip content={view.name} overflowOnly><span className="min-w-0 truncate text-body text-ink">{view.name}</span></Tooltip>
         <span className="shrink-0 text-caption text-ink-faint">{view.source === "default" ? "The run's first buffer" : "Your choice"}</span>
       </>
     );
@@ -53,12 +53,11 @@ function traceLine(view: BackgroundView): ReactNode {
   if (view.trace === "hidden") return "The setup of this background is hidden";
   if (!view.scale) return null;
   return (
-    <Tooltip content={SCALE_NOTES[view.scale.source]} overflowOnly>
-      <span className="flex min-w-0 items-baseline gap-1.5">
-        <span data-scale-source={view.scale.source} className="min-w-0 truncate">{SCALE_NOTES[view.scale.source]}</span>
-        <span data-scale-value className="shrink-0 text-ink-faint">{`×${view.scale.scale.toPrecision(3)}`}</span>
-      </span>
-    </Tooltip>
+    <span>
+      <span data-scale-source={view.scale.source}>{SCALE_NOTES[view.scale.source]}</span>
+      {" "}
+      <span data-scale-value className="whitespace-nowrap text-ink-faint">{`×${view.scale.scale.toPrecision(3)}`}</span>
+    </span>
   );
 }
 
@@ -67,25 +66,26 @@ export function BackgroundModule({ view, editable, picker, onChange, onNone, onD
   const idle = loading || !editable;
   const hasControls = view.kind !== "buffer";
   const offerDefault = (view.kind === "set" || view.kind === "off") && view.canUseRunBuffer;
-  const canTurnOff = view.kind !== "off" || view.reason !== "chosen";
+  const canTurnOff = view.kind !== "off";
   return (
     <Section title="Background" className="relative shrink-0">
-      <div className="flex min-h-6 items-baseline justify-between gap-2" data-testid="background-name">{nameLine(view)}</div>
-      <div className={LINE + " flex items-baseline overflow-hidden whitespace-nowrap text-ink-soft"}>{traceLine(view)}</div>
-      {!hasControls && <div className="mt-1 min-h-6" aria-hidden="true" />}
-      {hasControls && (
-        <div className="mt-1 flex min-h-6 items-center gap-1.5 overflow-hidden">
-          <button type="button" className={ACTION} disabled={idle} onClick={onChange}>
-            Change <Kbd>B</Kbd>
-          </button>
-          {canTurnOff && (
-            <button type="button" className={ACTION} disabled={idle} onClick={onNone}>None</button>
-          )}
-          {offerDefault && (
-            <button type="button" className={ACTION} disabled={idle} onClick={onDefault}>Use the run's buffer</button>
-          )}
-        </div>
-      )}
+      <div className="flex h-6 items-baseline justify-between gap-2" data-testid="background-name">{nameLine(view)}</div>
+      <p className={LINE + " text-ink-soft"}>{traceLine(view)}</p>
+      <div className="mt-1 flex h-7 items-center gap-1.5 overflow-hidden" data-testid="background-controls">
+        {hasControls && (
+          <>
+            <button type="button" className={ACTION} disabled={idle} onClick={onChange}>
+              Change <Kbd>B</Kbd>
+            </button>
+            {canTurnOff && (
+              <button type="button" className={ACTION} disabled={idle} onClick={onNone}>None</button>
+            )}
+            {offerDefault && (
+              <button type="button" className={ACTION + " min-w-0 truncate"} disabled={idle} onClick={onDefault}>Use the run's buffer</button>
+            )}
+          </>
+        )}
+      </div>
       {picker}
     </Section>
   );

@@ -117,7 +117,7 @@ import { setupNames } from "../lib/sample/setupNames";
 import type { ExperimentPatch } from "../lib/queue/mutators/experiment";
 import type { SetupPatch } from "../lib/queue/mutators/setup";
 
-function helpSections(mod: string, modules: WorkspaceModules, selectable: { strip: boolean; shown: boolean }): HelpSection[] {
+function helpSections(mod: string, modules: WorkspaceModules, selectable: { strip: boolean; shown: boolean }, canChooseBackground: boolean): HelpSection[] {
   const when = <T,>(on: boolean, ...list: T[]): T[] => (on ? list : []);
   return [
     {
@@ -164,7 +164,7 @@ function helpSections(mod: string, modules: WorkspaceModules, selectable: { stri
         { keys: [`${mod} 0`], what: "Reset the zoom" },
         { keys: ["V"], what: "Next plot view: log, linear, log-log, q²I. ⇧ V goes back." },
         { keys: ["C"], what: "Compare with another sample" },
-        ...when(modules.background, { keys: ["B"], what: "Choose what is subtracted from this sample" }),
+        ...when(canChooseBackground, { keys: ["B"], what: "Choose what is subtracted from this sample" }),
         { gesture: `${mod}-click a sample in the list`, what: "Compare with it, or stop comparing" },
         { gesture: "Click a comparison", what: "Hide or show its trace" },
         { gesture: `${mod}-click a comparison`, what: "Plot the current trace minus it, or stop" },
@@ -523,6 +523,7 @@ export function WorkspacePage(): JSX.Element {
     [bgRef, bgHidden, minusChips, minusBackgrounds],
   );
   const traceStatuses = useTraceStatuses(statusIds);
+  const backgroundLoading = managed && subRef !== undefined && trace.data !== undefined && !compareTraces.has(subRef) && traceStatuses.get(subRef) === "loading";
 
   const callOnFrame = useCallback(
     (eid: number): PhaseIdentity[] => {
@@ -710,8 +711,8 @@ export function WorkspacePage(): JSX.Element {
 
   const stripSelectable = Boolean(username) && groupSelections.size > 0;
   const help = useMemo(
-    () => helpSections(MOD_KEY, modules, { strip: stripSelectable, shown: tileSelectable }),
-    [modules, stripSelectable, tileSelectable],
+    () => helpSections(MOD_KEY, modules, { strip: stripSelectable, shown: tileSelectable }, canChooseBackground),
+    [modules, stripSelectable, tileSelectable, canChooseBackground],
   );
 
   const draftQs = useMemo(() => (draft ? draftPrediction(draft) : []), [draft]);
@@ -1464,7 +1465,7 @@ export function WorkspacePage(): JSX.Element {
   const backgroundView: BackgroundView = useMemo(() => {
     if (!bgEntry) return { kind: "loading" };
     if (bgEntry.is_buffer) return { kind: "buffer" };
-    const canUseRunBuffer = bgEntry.source === "user" && bgEntry.default_ref_sample_id !== null && bgEntry.ref_sample_id !== bgEntry.default_ref_sample_id;
+    const canUseRunBuffer = bgEntry.source === "user" && bgEntry.default_ref_sample_id !== null;
     if (bgEntry.ref_sample_id === null) {
       return { kind: "off", reason: bgEntry.source === "user" ? "chosen" : "no-buffer", canUseRunBuffer };
     }
@@ -1542,7 +1543,7 @@ export function WorkspacePage(): JSX.Element {
           background: {
             choose: () => setPickingBackground(true),
             ...(bgEntry.ref_sample_id !== null ? { off: () => changeBackground(null) } : {}),
-            ...(bgEntry.source === "user" && bgEntry.default_ref_sample_id !== null && bgEntry.ref_sample_id !== bgEntry.default_ref_sample_id
+            ...(bgEntry.source === "user" && bgEntry.default_ref_sample_id !== null
               ? { useRunBuffer: () => changeBackground("default") }
               : {}),
           },
@@ -1700,7 +1701,7 @@ export function WorkspacePage(): JSX.Element {
                 onAdd={() => setPicking(true)}
                 full={comparesFull}
                 canSubtract={!bgEntry?.is_buffer}
-                trailing={difference && subRef !== undefined ? <SubtractToggle name={subName} on={minusOn} onChange={setMinus} /> : undefined}
+                trailing={difference && subRef !== undefined ? <SubtractToggle name={subName} on={minusOn} onChange={setMinus} /> : backgroundLoading ? <SubtractToggle name="" on onChange={setMinus} reserved /> : undefined}
               />
               {picking && (
                 <ComparePicker
@@ -1716,8 +1717,10 @@ export function WorkspacePage(): JSX.Element {
             <div className="mx-3.5">
               <PlotCard {...(darkNotice ? { notice: darkNotice } : {})} corner={<PlotViewToggle options={PLOT_VIEWS} view={view} onChange={setView} />}>
                 <WorkspacePlot
-                  trace={trace.data}
-                  {...(noTraceMessage
+                  trace={backgroundLoading ? undefined : trace.data}
+                  {...(backgroundLoading
+                    ? { emptyMessage: "Loading the background's trace" }
+                    : noTraceMessage
                     ? { emptyMessage: noTraceMessage }
                     : trace.isError
                       ? { onRetry: () => void trace.refetch(), retrying: trace.isFetching }

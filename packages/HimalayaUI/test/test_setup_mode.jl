@@ -755,3 +755,32 @@ end
         @test r.status < 500
     end
 end
+
+@testset "a rescan changes the default background only for a buffer that lands inside the run's load" begin
+    run = [("wat", "01A", "S", 101), ("wat", "01B", "S", 102), ("wat", "01C", "B", 104)]
+    defaults(db, eid) = HimalayaUI.default_backgrounds(db, eid)
+    function names(db)
+        Dict(Int(r.id) => String(r.name) for r in Tables.rowtable(DBInterface.execute(db, "SELECT id, name FROM samples")))
+    end
+    @testset "a lower-scan buffer inside the run replaces the default of the whole run" begin
+        root = _as_write_folder!(mktempdir(), run; at = [("wat", 100)])
+        db, eid, sid = _as_live_row_db(root)
+        HimalayaUI.scan_and_group!(db, eid)
+        first_default = defaults(db, eid)[1]
+        @test names(db)[first_default] == "wat 01C (B104)"
+        _as_add_acquisition!(root, ("wat", "01Z", "B", 103); minute = 0)
+        HimalayaUI.scan_and_group!(db, eid)
+        @test names(db)[defaults(db, eid)[1]] == "wat 01Z (B103)"
+    end
+    @testset "a buffer scanned before the run's first file starts its own load and changes nothing" begin
+        root = _as_write_folder!(mktempdir(), run; at = [("wat", 100)])
+        db, eid, sid = _as_live_row_db(root)
+        HimalayaUI.scan_and_group!(db, eid)
+        before = defaults(db, eid)
+        _as_add_acquisition!(root, ("wat", "01Z", "B", 100); minute = 0)
+        HimalayaUI.scan_and_group!(db, eid)
+        after = defaults(db, eid)
+        @test all(after[id] == before[id] for id in keys(before))
+        @test only(setdiff(keys(after), keys(before))) |> id -> after[id] === nothing
+    end
+end

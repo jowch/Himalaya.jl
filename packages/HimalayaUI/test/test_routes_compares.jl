@@ -85,6 +85,20 @@ end
         end
     end
 
+    @testset "a file without a well token is never a buffer of its run" begin
+        (db, exp_id, ((b1, s1),)) = _seed_autosampler([("B", 100), ("S", 101)])
+        DBInterface.execute(db, "UPDATE exposures SET filename = 'lipidA_B0100' WHERE sample_id = ?", [b1])
+        @test HimalayaUI.default_background(db, s1) === nothing
+    end
+
+    @testset "samples in the catch-all load 0 neither get a default nor are anyone's default" begin
+        (db, exp_id, ((b1, s1), (z1, z2))) = _seed_autosampler([("B", 100), ("S", 101)], [("B", 5), ("S", 6)])
+        DBInterface.execute(db, "UPDATE loads SET load_index = 0 WHERE id = (SELECT load_id FROM samples WHERE id = ?)", [z1])
+        defaults = HimalayaUI.default_backgrounds(db, exp_id)
+        @test defaults[z2] === nothing
+        @test defaults[s1] == b1
+    end
+
     @testset "the defaults of a whole experiment come from one pass" begin
         (db, exp_id, ((b1, s1, s2, b2), (c1, c2))) = _seed_autosampler(run, [("B", 200), ("S", 201)])
         @test HimalayaUI.default_backgrounds(db, exp_id) ==
@@ -221,6 +235,43 @@ _stored(db, sid) = [(r.ref_sample_id,) for r in Tables.rowtable(DBInterface.exec
             r = _patch(call, s1; subtraction="default")
             @test r.status == 200
             @test _sub(JSON3.read(String(r.body)), s1) === nothing
+        end
+    end
+
+    @testset "a none change broadcasts one SSE frame naming the experiment" begin
+        (db, exp_id, ((b1, s1, s2, b2),)) = _seed_autosampler(run)
+        sub = (pending = Channel{String}(64),)
+        with_inproc_routes(db) do call
+            lock(HimalayaUI.SSE_LOCK) do
+                push!(HimalayaUI.SSE_SUBSCRIBERS[], sub)
+            end
+            call("PATCH", "/api/samples/$s1/compares"; headers=_compare_headers(), body=_null_subtraction())
+        end
+        frames = String[]
+        while isready(sub.pending)
+            push!(frames, take!(sub.pending))
+        end
+        changed = filter(f -> occursin("compares_changed", f), frames)
+        @test length(changed) == 1
+        @test occursin("\"experiment_id\":$exp_id", only(changed))
+    end
+
+    @testset "a retried none or default change with the same operation id is applied once" begin
+        (db, exp_id, ((b1, s1, s2, b2),)) = _seed_autosampler(run)
+        headers(op) = ["Content-Type" => "application/json", "X-Username" => "alice", "X-Client-Id" => "tab-1", "X-Client-Op-Id" => op]
+        count() = Int(first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS n FROM user_actions WHERE action = 'compares_changed'"))).n)
+        with_inproc_routes(db) do call
+            for _ in 1:2
+                call("PATCH", "/api/samples/$s1/compares"; headers=headers("op-none"), body=_null_subtraction())
+            end
+            @test count() == 1
+            @test ismissing(only(_stored(db, s1))[1])
+            for _ in 1:2
+                call("PATCH", "/api/samples/$s1/compares"; headers=headers("op-default"), body=_compare_body(subtraction="default"))
+            end
+            @test count() == 2
+            @test _stored(db, s1) == []
         end
     end
 

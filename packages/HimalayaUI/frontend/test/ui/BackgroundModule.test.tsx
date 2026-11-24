@@ -1,6 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { BackgroundModule, type BackgroundView } from "../../src/ui/BackgroundModule";
+import { SCALE_NOTES } from "../../src/ui/CompareBar";
+import type { CompareScale } from "../../src/workspace/compare";
 
 const set = (over: Partial<Extract<BackgroundView, { kind: "set" }>> = {}): BackgroundView => ({
   kind: "set", name: "lipidA 01A (B0100)", source: "default", trace: "ready", scale: { scale: 1, source: "normalised" }, canUseRunBuffer: false, ...over,
@@ -70,9 +72,18 @@ describe("BackgroundModule", () => {
     expect(on.onDefault).toHaveBeenCalled();
   });
 
-  it("says when the run has no buffer to use", () => {
+  it("says when the run has no buffer to use, and does not offer None, which would stop a later buffer being the default", () => {
     show({ kind: "off", reason: "no-buffer", canUseRunBuffer: false });
     expect(screen.getByText("No buffer in this run. Choose one to subtract.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "None" })).toBeNull();
+    expect(screen.getByRole("button", { name: /Change/ })).toBeInTheDocument();
+  });
+
+  it.each(Object.keys(SCALE_NOTES) as CompareScale["source"][])("shows the whole %s note on the page, not only in a tooltip", (source) => {
+    show(set({ scale: { scale: 1.5, source } }));
+    expect(screen.getByText(SCALE_NOTES[source])).toBeVisible();
+    expect(screen.getByText("×1.50")).toBeVisible();
+    expect(screen.queryByRole("tooltip")).toBeNull();
   });
 
   it("says a buffer has nothing subtracted and offers no controls", () => {
@@ -97,5 +108,22 @@ describe("BackgroundModule", () => {
   it("holds the picker the page passes in", () => {
     show(set(), { picker: <div role="dialog" aria-label="Subtract a sample" /> });
     expect(screen.getByRole("dialog", { name: "Subtract a sample" })).toBeInTheDocument();
+  });
+
+  it("renders one name row and one controls row in every state, so the module's height does not depend on the sample", () => {
+    const states: BackgroundView[] = [
+      { kind: "loading" },
+      { kind: "buffer" },
+      { kind: "off", reason: "chosen", canUseRunBuffer: true },
+      { kind: "off", reason: "no-buffer", canUseRunBuffer: false },
+      set(),
+      set({ source: "user", canUseRunBuffer: true, trace: "missing", scale: undefined }),
+    ];
+    for (const view of states) {
+      const { unmount } = render(<BackgroundModule view={view} editable picker={undefined} onChange={vi.fn()} onNone={vi.fn()} onDefault={vi.fn()} />);
+      expect(screen.getAllByTestId("background-controls")).toHaveLength(1);
+      expect(screen.getAllByTestId("background-name")).toHaveLength(1);
+      unmount();
+    }
   });
 });
