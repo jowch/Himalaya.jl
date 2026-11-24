@@ -18,7 +18,7 @@ const waiting = (filename) => ({ exposure_id: 1, filename, problem: "no_trace", 
 
 function demoTree({ held = [] } = {}) {
   const demoDir = fs.mkdtempSync(path.join(os.tmpdir(), "verify-late-"));
-  fs.mkdirSync(path.join(demoDir, "analysis", "automatic_analysis", "tot_files"), { recursive: true });
+  fs.mkdirSync(path.join(demoDir, "capillary", "analysis", "automatic_analysis", "tot_files"), { recursive: true });
   if (held.length) {
     fs.mkdirSync(path.join(demoDir, "late"));
     for (const b of held) fs.writeFileSync(path.join(demoDir, "late", `${b}_tot.dat`), "0.1 1 0.1\n");
@@ -67,7 +67,7 @@ test("deliver-late moves the held traces into tot_files with a fresh mtime, then
   const out = sink();
   assert.equal(await main(["deliver-late"], { cfg, out }), 0);
   assert.deepEqual(out.json().delivered, ["B_S1_tot.dat"]);
-  const moved = path.join(demoDir, "analysis", "automatic_analysis", "tot_files", "B_S1_tot.dat");
+  const moved = path.join(demoDir, "capillary", "analysis", "automatic_analysis", "tot_files", "B_S1_tot.dat");
   assert.ok(fs.statSync(moved).mtimeMs > old.getTime());
   assert.equal(fs.existsSync(path.join(demoDir, "late")), false);
   const again = sink();
