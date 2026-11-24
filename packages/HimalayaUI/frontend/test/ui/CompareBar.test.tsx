@@ -140,6 +140,17 @@ describe("CompareBar in Minus view", () => {
     expect(hover("MO_PEG5")).toHaveTextContent("Loading the background trace");
   });
 
+  it("gives a chip that is not drawn its full reason as an accessible description, without hover", () => {
+    bar([chip({ minus: { kind: "skipped", reason: "buffer" } })]);
+    expect(screen.getByRole("button", { name: "MO_PEG5" })).toHaveAccessibleDescription("Not subtracted: this is a buffer");
+  });
+
+  it("gives a loading chip the loading note, and a drawn chip what is subtracted", () => {
+    bar([chip({ minus: { kind: "skipped", reason: "loading" } }), chip({ id: 3, name: "MO_PEG6", minus: { kind: "drawn", background: "buf" } })]);
+    expect(screen.getByRole("button", { name: "MO_PEG5" })).toHaveAccessibleDescription("Loading the background trace");
+    expect(screen.getByRole("button", { name: "MO_PEG6" })).toHaveAccessibleDescription("Minus buf");
+  });
+
   it("still says how to hide and subtract on a chip that is not drawn", () => {
     bar([chip({ minus: { kind: "skipped", reason: "buffer" } })]);
     expect(hover("MO_PEG5")).toHaveTextContent("Click to hide. ⌘-click to subtract it from the current trace.");

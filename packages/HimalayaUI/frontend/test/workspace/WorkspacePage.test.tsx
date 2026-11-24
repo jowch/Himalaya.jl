@@ -4719,6 +4719,17 @@ describe("WorkspacePage autosampler background", () => {
       expect(open0()).not.toBeNull();
     });
 
+    it("draws no comparison curve while the open sample's own background is loading", () => {
+      seedLevels();
+      state.compareTraces.delete(BUFFER);
+      state.traceLoading = new Set([BUFFER]);
+      open(FIRST);
+      compareWith("lipidA 01C");
+      expect(screen.getByTestId("workspace-trace-empty")).toHaveTextContent("Loading the background's trace");
+      expect(document.querySelector("[data-compare]")).toBeNull();
+      expect(bar().querySelector("[data-minus-note]")).toBeNull();
+    });
+
     it("says a background without a trace is missing", () => {
       seedLevels(entries({ [SECOND]: { ref_sample_id: END_BUFFER, source: "user" } }));
       state.compareTraces.delete(END_BUFFER);
