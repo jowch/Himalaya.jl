@@ -23,6 +23,7 @@ function setup(root: string, overrides: Partial<api.SetupPreview> = {}): api.Set
   return {
     root,
     name: `20261103/${root.split("/").pop()}`,
+    mode: "capillary",
     data_dir: `${root}/data`,
     analysis_dir: `${root}/analysis/automatic_analysis/tot_files`,
     setup_file: `${root}/analysis/setup_info_20261103_090000.txt`,

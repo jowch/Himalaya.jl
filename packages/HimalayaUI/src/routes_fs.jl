@@ -85,8 +85,10 @@ function resolve_experiment_layout(root::AbstractString)
     data_dir = isdir(data_candidate) ? data_candidate : root
 
     analysis_candidate = joinpath(root, "analysis")
-    detected = _detect_integration_layout(data_dir, analysis_candidate)
-    analysis_dir = detected !== nothing ? detected.dir :
+    mode = detect_setup_mode(data_dir)
+    detected = mode == "autosampler" ? autosampler_layout(root) :
+               _detect_integration_layout(data_dir, analysis_candidate)
+    analysis_dir = detected !== nothing && detected.dir !== nothing ? detected.dir :
                    (isdir(analysis_candidate) ? analysis_candidate : nothing)
     image_pattern       = detected !== nothing ? detected.image_pattern       : nothing
     metadata_pattern    = detected !== nothing ? detected.metadata_pattern    : nothing
@@ -96,7 +98,7 @@ function resolve_experiment_layout(root::AbstractString)
     setup_file = isempty(setup_files) ? nothing : last(setup_files)
     setup_ambiguous = isempty(setup_files) || length(unique(dirname.(setup_files))) > 1
 
-    return (; name, data_dir, analysis_dir, setup_file, setup_ambiguous,
+    return (; name, mode, data_dir, analysis_dir, setup_file, setup_ambiguous,
               image_pattern, metadata_pattern, integration_pattern)
 end
 
@@ -282,6 +284,7 @@ function _setup_preview(db, path, root)
     dup = experiment_using_dir(db, r.data_dir)
     Dict(:root => root,
          :name => _setup_name(path, root),
+         :mode => r.mode,
          :data_dir => r.data_dir,
          :analysis_dir => r.analysis_dir,
          :setup_file => r.setup_file,

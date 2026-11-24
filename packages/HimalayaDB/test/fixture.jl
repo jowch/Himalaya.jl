@@ -97,7 +97,7 @@ function build_fixture(path::AbstractString, analysis_dir::AbstractString)
         setup_id = Int(first(Tables.rowtable(DBInterface.execute(db,
             "SELECT id FROM setups WHERE experiment_id = ?", [experiment_id]))).id)
         DBInterface.execute(db,
-            "UPDATE setups SET energy_kev = 11.0, flight_path_m = 1.1, integration_pattern = '{name}_tot.dat' WHERE id = ?",
+            "UPDATE setups SET energy_kev = 11.0, flight_path_m = 1.1, integration_pattern = '{name}_tot.dat', mode = 'capillary', mode_source = 'user' WHERE id = ?",
             [setup_id])
 
         sample2_id = HimalayaUI.create_sample!(db; experiment_id=experiment_id, name="Buffer 1")

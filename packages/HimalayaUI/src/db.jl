@@ -102,7 +102,9 @@ CREATE TABLE IF NOT EXISTS setups (
     pixel_size_um_source TEXT DEFAULT 'default',
     q_units              TEXT,
     q_units_source       TEXT DEFAULT 'default',
-    created_at           DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at           DATETIME DEFAULT CURRENT_TIMESTAMP,
+    mode                 TEXT,
+    mode_source          TEXT DEFAULT 'default'
 );
 
 CREATE TABLE IF NOT EXISTS loads (

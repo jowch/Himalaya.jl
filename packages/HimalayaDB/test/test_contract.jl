@@ -48,6 +48,8 @@ using DBInterface
     @test sort([(l.id, l.label, l.state, l.source) for l in db_labels]) ==
           sort([(l[:id], l[:label], l[:state], l[:source]) for l in ui_labels])
     @test db_setup.analysis_dir == ui_setup.analysis_dir
+    @test db_setup.mode == ui_setup.mode == "capillary"
+    @test db_setup.mode_source == ui_setup.mode_source == "user"
     @test HimalayaDB.integration_pattern_for(db_setup.integration_pattern) == ui_pattern
 
     @test sort([(sid, ref) for (sid, ref) in db_subs if ref !== nothing]) ==
