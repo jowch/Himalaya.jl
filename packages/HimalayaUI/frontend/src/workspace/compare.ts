@@ -79,8 +79,6 @@ export interface CompareScale {
   source: "normalised" | "monitor" | "matched" | "other_setup" | "beam_off" | "i2_collapsed" | "unknown_normalisation" | "capillary" | "unknown_mode";
 }
 
-export const isMatchedScale = (s: CompareScale): boolean => s.source !== "normalised" && s.source !== "monitor";
-
 type ScaledTrace = Pick<Trace, "q" | "I" | "monitors">;
 
 // physics: counts per pixel also depend on the sample-to-detector distance and on
@@ -122,38 +120,6 @@ export function subtractTrace(
     }
   });
   return { q, d };
-}
-
-export function robustRange(values: readonly number[], lowFrac = 0.01, highFrac = 0.99): [number, number] {
-  const finite = values.filter(Number.isFinite).sort((a, b) => a - b);
-  if (finite.length === 0) return [-1, 1];
-  const at = (f: number): number => finite[Math.min(finite.length - 1, Math.max(0, Math.round(f * (finite.length - 1))))]!;
-  const lo = Math.min(0, at(lowFrac));
-  const hi = Math.max(0, at(highFrac));
-  return hi > lo ? [lo, hi] : [lo - 1, hi + 1];
-}
-
-// physics: below the first Bragg peak the difference is dominated by the
-// physics: beamstop and low-q upturn, which rarely subtracts cleanly and swings far
-// physics: past the peaks. The strip's y range therefore starts just below the
-// physics: first peak in view; with no peak in view it uses the upper half of the
-// physics: visible q span, where that residual has died away.
-export const LOW_Q_SKIP = 0.5;
-
-export function stripRange(
-  q: readonly number[],
-  d: readonly number[],
-  domain: [number, number],
-  peakQs: readonly number[],
-): [number, number] {
-  const firstPeak = Math.min(...peakQs.filter((p) => p >= domain[0] && p <= domain[1]));
-  const from = Number.isFinite(firstPeak)
-    ? Math.max(domain[0], firstPeak - 2 * PEAK_MASK)
-    : domain[0] + (domain[1] - domain[0]) * LOW_Q_SKIP;
-  const inView = d.filter((_, i) => q[i]! >= from && q[i]! <= domain[1]);
-  const [lo, hi] = robustRange(inView);
-  const top = Math.max(hi, ...inView.filter(Number.isFinite));
-  return [lo, top];
 }
 
 export function clampDomain(

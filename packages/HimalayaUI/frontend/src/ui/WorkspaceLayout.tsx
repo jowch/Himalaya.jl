@@ -71,8 +71,8 @@ export function WorkspaceLayout({ header, nav, main, tools, theme = "system", ov
         >
           {nav}
         </nav>
-        <main className="flex min-h-0 min-w-0 flex-col overflow-y-auto">{main}</main>
-        <aside aria-label="Tools" className="flex min-h-0 flex-col overflow-y-auto border-l border-hair">{tools}</aside>
+        <main className="isolate flex min-h-0 min-w-0 flex-col overflow-y-auto">{main}</main>
+        <aside aria-label="Tools" className="isolate flex min-h-0 flex-col overflow-y-auto border-l border-hair">{tools}</aside>
       </div>
       {overlay}
     </div>

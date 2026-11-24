@@ -15,26 +15,41 @@ describe("difference axis", () => {
 
   it("is linear in Linear and q²I, and pseudolog in the log views", () => {
     const d = q.map((x) => (x > 0.1 && x < 0.102 ? 1000 : Math.sin(x * 900)));
-    expect(differenceAxis("linear", q, d, [0.02, 0.22], []).kind).toBe("linear");
-    expect(differenceAxis("kratky", q, d, [0.02, 0.22], []).kind).toBe("linear");
-    const ps = differenceAxis("log", q, d, [0.02, 0.22], [0.101]);
+    expect(differenceAxis("linear", q, d, [0.02, 0.22]).kind).toBe("linear");
+    expect(differenceAxis("kratky", q, d, [0.02, 0.22]).kind).toBe("linear");
+    const ps = differenceAxis("log", q, d, [0.02, 0.22]);
     expect(ps.kind).toBe("pseudolog");
-    expect(differenceAxis("loglog", q, d, [0.02, 0.22], [0.101]).kind).toBe("pseudolog");
+    expect(differenceAxis("loglog", q, d, [0.02, 0.22]).kind).toBe("pseudolog");
     expect(ps.to(0)).toBe(0);
     expect(ps.to(-5)).toBeCloseTo(-ps.to(5));
     expect(ps.to(1000) / ps.to(100)).toBeLessThan(2);
   });
 
-  it("keeps a peak far above the noise inside the range and cuts the low-q swing below the first peak", () => {
+  it("holds the whole difference in view, the low-q swing below the first peak included", () => {
     const d = q.map((x) => (x < 0.04 ? -1e5 : x > 0.1 && x < 0.102 ? 1000 : Math.sin(x * 900)));
-    const ax = differenceAxis("log", q, d, [0.02, 0.22], [0.101]);
-    expect(ax.domain[1]).toBeGreaterThanOrEqual(ax.to(1000));
-    expect(ax.domain[0]).toBeGreaterThan(ax.to(-1e5));
+    for (const view of ["log", "loglog", "linear", "kratky"] as const) {
+      const ax = differenceAxis(view, q, d, [0.02, 0.22]);
+      expect(ax.domain[1]).toBeGreaterThanOrEqual(ax.to(1000));
+      expect(ax.domain[0]).toBeLessThanOrEqual(ax.to(-1e5));
+    }
+  });
+
+  it("holds a lone dip that is under 1% of the points", () => {
+    const d = q.map((x) => (x > 0.1495 && x < 0.1505 ? -400 : Math.sin(x * 900)));
+    const ax = differenceAxis("linear", q, d, [0.02, 0.22]);
+    expect(ax.domain[0]).toBeLessThanOrEqual(-400);
+  });
+
+  it("fits only the q range in view, so a zoom past the low-q swing gives the peaks the height", () => {
+    const d = q.map((x) => (x < 0.04 ? -1e5 : x > 0.1 && x < 0.102 ? 1000 : Math.sin(x * 900)));
+    const ax = differenceAxis("linear", q, d, [0.05, 0.22]);
+    expect(ax.domain[0]).toBeGreaterThan(-200);
+    expect(ax.domain[1]).toBeGreaterThanOrEqual(1000);
   });
 
   it("labels pseudolog ticks with real intensities, zero and powers of ten on both sides", () => {
     const d = q.map((x) => (x > 0.1 && x < 0.102 ? 1000 : x > 0.15 && x < 0.165 ? -300 : Math.sin(x * 900)));
-    const ax = differenceAxis("log", q, d, [0.02, 0.22], [0.101]);
+    const ax = differenceAxis("log", q, d, [0.02, 0.22]);
     const labels = ax.ticks.map((t) => t.label);
     expect(labels).toContain("0");
     expect(labels).toContain("1000");
