@@ -12,6 +12,8 @@ using DBInterface
     ui_calls = Dict(sid => HimalayaUI._sample_call_body(uidb, sid) for sid in (ids.sample_id, ids.sample2_id))
     ui_labels = HimalayaUI.labels_for_experiment(uidb, ids.experiment_id)
     ui_setup = HimalayaUI.exposure_setup(uidb, ids.exposure_id)
+    ui_frames = first(HimalayaUI.sqlrows(DBInterface.execute(uidb,
+        "SELECT frames_total, frames_rejected FROM exposures WHERE id = ?", [ids.exposure_id])))
     ui_pattern = HimalayaUI.integration_pattern_for(ui_setup)
     ui_subs = HimalayaUI.compares_for_experiment(uidb, ids.experiment_id)[:subtractions]
     ui_bridges = HimalayaUI.bridge_groups_for_experiment(uidb, ids.experiment_id)
@@ -52,6 +54,8 @@ using DBInterface
           (ui_setup.trace_normalisation, ui_setup.normalisation_base)
     @test db_setup.mode == ui_setup.mode == "capillary"
     @test db_setup.mode_source == ui_setup.mode_source == "user"
+    db_exposure = only(filter(e -> e.id == ids.exposure_id, exposures(db; sample=ids.sample_id)))
+    @test (db_exposure.frames_total, db_exposure.frames_rejected) == (ui_frames.frames_total, ui_frames.frames_rejected) == (10, 1)
     @test HimalayaDB.integration_pattern_for(db_setup.integration_pattern) == ui_pattern
 
     @test sort([(sid, ref) for (sid, ref) in db_subs if ref !== nothing]) ==

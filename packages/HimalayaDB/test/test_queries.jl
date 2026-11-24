@@ -36,6 +36,8 @@
     @test exs[1].filename == "s1"
     @test exs[1].setup_id == ids.setup_id
     @test exs[1].experiment_id == ids.experiment_id
+    @test (exs[1].frames_total, exs[1].frames_rejected) == (10, 1)
+    @test ismissing(exs[2].frames_total) && ismissing(exs[2].frames_rejected)
 
     close(db)
 end
