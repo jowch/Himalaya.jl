@@ -9,7 +9,7 @@ import type { Exposure } from "../../src/api";
 const exp = (id: number) => ({ id, status: "kept", image_path: `/x/${id}.tif`, image_version: "v1", filename: `f${id}` } as unknown as Exposure);
 
 function referencedFilter(img: HTMLImageElement): Element | null {
-  const id = /^url\(#([^)]+)\)$/.exec(img.style.filter)?.[1];
+  const id = /^url\(["']?#([^"')]+)["']?\)$/.exec(img.style.filter)?.[1];
   return id ? document.getElementById(id) : null;
 }
 

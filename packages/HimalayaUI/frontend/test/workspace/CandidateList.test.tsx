@@ -34,6 +34,17 @@ describe("CandidateList", () => {
     expect(onToggle).toHaveBeenCalledWith(candidates[11]);
   });
 
+  it("keeps a blank keycap on a choice past the ninth, so its tick still shows", () => {
+    const candidates = Array.from({ length: 11 }, (_, i) => candidate(i + 1));
+    render(
+      <CandidateList rows={candidates.map(one)} assigned={new Set([11])} disabled={false} formFactor={false}
+        onToggle={() => {}} onToggleGroup={() => {}} onFormFactor={() => {}} onHover={() => {}} />,
+    );
+    const rows = within(screen.getByTestId("workspace-candidates")).getAllByRole("button");
+    expect(rows[10]!.querySelector("[data-blank-key] kbd")).toHaveAttribute("data-pressed", "true");
+    expect(rows[9]!.querySelector("[data-blank-key] kbd")).not.toHaveAttribute("data-pressed");
+  });
+
   it("shows a Bonnet group as one numbered header over numbered members", async () => {
     const onToggle = vi.fn();
     const onToggleGroup = vi.fn();
@@ -57,29 +68,26 @@ describe("CandidateList", () => {
     expect(onToggle).toHaveBeenCalledWith(b);
   });
 
-  it("marks a group pressed only when every member is in the call, and tints it lighter while only some are", () => {
+  it("marks a group pressed only when every member is in the call, and outlines its keycap while only some are", () => {
     const [a, b] = [candidate(1), candidate(2)];
-    const { rerender } = render(
-      <CandidateList rows={[{ kind: "group", members: [a!, b!], peaks: 8 }]} assigned={new Set()} disabled={false} formFactor={false}
-        onToggle={() => {}} onToggleGroup={() => {}} onFormFactor={() => {}} onHover={() => {}} />,
-    );
-    expect(screen.getByTestId("workspace-bonnet-group")).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByTestId("workspace-bonnet-group").className).not.toMatch(/(^| )bg-accent\//);
-    rerender(
-      <CandidateList rows={[{ kind: "group", members: [a!, b!], peaks: 8 }]} assigned={new Set([a!.id])} disabled={false} formFactor={false}
-        onToggle={() => {}} onToggleGroup={() => {}} onFormFactor={() => {}} onHover={() => {}} />,
-    );
-    expect(screen.getByTestId("workspace-bonnet-group")).toHaveAttribute("aria-pressed", "mixed");
-    expect(screen.getByTestId("workspace-bonnet-group").className).toMatch(/(^| )bg-accent\/10( |$)/);
-    rerender(
-      <CandidateList rows={[{ kind: "group", members: [a!, b!], peaks: 8 }]} assigned={new Set([a!.id, b!.id])} disabled={false} formFactor={false}
-        onToggle={() => {}} onToggleGroup={() => {}} onFormFactor={() => {}} onHover={() => {}} />,
-    );
-    expect(screen.getByTestId("workspace-bonnet-group")).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByTestId("workspace-bonnet-group").className).toMatch(/(^| )bg-accent\/25( |$)/);
+    const props = { rows: [{ kind: "group" as const, members: [a!, b!], peaks: 8 }], disabled: false, formFactor: false,
+      onToggle: () => {}, onToggleGroup: () => {}, onFormFactor: () => {}, onHover: () => {} };
+    const header = () => screen.getByTestId("workspace-bonnet-group");
+    const keycap = () => header().querySelector("kbd")!;
+    const { rerender } = render(<CandidateList {...props} assigned={new Set()} />);
+    expect(header()).toHaveAttribute("aria-pressed", "false");
+    expect(keycap()).not.toHaveAttribute("data-pressed");
+    rerender(<CandidateList {...props} assigned={new Set([a!.id])} />);
+    expect(header()).toHaveAttribute("aria-pressed", "mixed");
+    expect(keycap()).toHaveAttribute("data-pressed", "mixed");
+    expect(keycap().className).toMatch(/(^| )border-accent( |$)/);
+    expect(keycap().className).not.toContain("bg-accent-fill");
+    rerender(<CandidateList {...props} assigned={new Set([a!.id, b!.id])} />);
+    expect(header()).toHaveAttribute("aria-pressed", "true");
+    expect(keycap()).toHaveAttribute("data-pressed", "true");
   });
 
-  it("fills a ticked row instead of outlining it, so selection never reads as keyboard focus", () => {
+  it("shows a ticked choice by filling its keycap, leaving the row untinted so selection never reads as keyboard focus", () => {
     const [a, b] = [candidate(1), candidate(2)];
     render(
       <CandidateList rows={[a!, b!].map(one)} assigned={new Set([a!.id])} disabled={false} formFactor
@@ -87,14 +95,41 @@ describe("CandidateList", () => {
     );
     const [on, off] = within(screen.getByTestId("workspace-candidates")).getAllByRole("button");
     const ff = screen.getByTestId("workspace-form-factor");
-    for (const el of [on!, ff]) {
-      expect(el.className).toContain("bg-accent/25");
+    for (const el of [on!, ff, off!]) {
+      expect(el.className).not.toContain("bg-row-selected");
       expect(el.className).not.toContain("shadow-");
-      expect(el.className).toContain("border-transparent");
       expect(el.className).not.toMatch(/border-ink/);
     }
-    expect(off!.className).not.toContain("bg-accent/");
-    expect(off!.className).not.toMatch(/hover:border-/);
+    for (const el of [on!, ff]) {
+      expect(el.querySelector("kbd")).toHaveAttribute("data-pressed", "true");
+      expect(el.querySelector("kbd")!.className).toMatch(/(^| )bg-accent-fill( |$)/);
+      expect(el.querySelector("kbd")!.className).toMatch(/(^| )text-on-accent( |$)/);
+    }
+    expect(off!.querySelector("kbd")).not.toHaveAttribute("data-pressed");
+  });
+
+  it("names its phase with a tinted chip, so the chosen keycap is the only fill in the row", () => {
+    render(
+      <CandidateList rows={[one(candidate(1, "Pn3m"))]} assigned={new Set([1])} disabled={false} formFactor={false}
+        onToggle={() => {}} onToggleGroup={() => {}} onFormFactor={() => {}} onHover={() => {}} />,
+    );
+    const chip = within(screen.getByTestId("workspace-candidates")).getByTestId("phase-chip");
+    expect(chip.style.background).not.toBe("");
+    expect(chip.style.color).not.toBe("var(--color-paper)");
+  });
+
+  it("keeps a ticked, a partly ticked and a hovered choice apart by the keycap alone, since a row tint for ticks reads like hover", () => {
+    const [a, b, c] = [candidate(1), candidate(2), candidate(3)];
+    render(
+      <CandidateList rows={[{ kind: "group", members: [a!, b!], peaks: 8 }, one(c!)]} assigned={new Set([a!.id])} disabled={false} formFactor={false}
+        onToggle={() => {}} onToggleGroup={() => {}} onFormFactor={() => {}} onHover={() => {}} />,
+    );
+    const [group, ticked, , unticked] = within(screen.getByTestId("workspace-candidates")).getAllByRole("button");
+    const rowLook = (el: HTMLElement) => el.className.split(" ").filter((c) => c.startsWith("bg-") || c.startsWith("hover:bg-")).sort();
+    expect(rowLook(ticked!)).toEqual(rowLook(unticked!));
+    expect(rowLook(group!)).toEqual(rowLook(unticked!));
+    const keys = [group, ticked, unticked].map((el) => el!.querySelector("kbd")!.getAttribute("data-pressed"));
+    expect(keys).toEqual(["mixed", "true", null]);
   });
 
   it("reports hover on pointer movement, so a row that appears under a resting pointer previews as soon as the pointer moves", () => {

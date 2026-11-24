@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { useExperiments } from "../queries";
 import { PageFrame } from "../components/PageFrame";
 import { Card } from "../ui/Card";

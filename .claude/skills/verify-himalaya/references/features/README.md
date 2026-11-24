@@ -95,14 +95,14 @@ Keys are global unless noted; `?` opens the shortcut overlay on any page.
 
 - **Needs an autosampler sample.** `make demo` has one: the `autosampler` setup, 17 samples named like `lysA 01B (S0102)`, with buffers `lysA 01A (B0101)`, `micB 02A (B0108)` and `lysA 01A (B0113)`; `docs/demo.md` ("The autosampler setup") lists them and the cases built in, and `TRUTH_autosampler.csv` has each one's expected background and frame counts. A capillary sample (`MO_H2O`, …) has no Background section, `B` does nothing and the Raw/Minus toggle appears only after a comparison is subtracted. Find a sample's id with `bin/verify api GET "/api/samples?experiment_id=1"`; the capillary samples keep ids 1–13.
 - **Route:** `/experiments/<id>/workspace/<sampleId>` on a sample of an autosampler setup. The tools column holds `region "Tools"` with a `Background` section above `Image`.
-- **Shows:** the background's name and "The run's first buffer" or "Your choice", the scale note ("Both already divided by the transmitted beam, so not rescaled", "…so matched at high q") with `×scale`, and the buttons "Change B", "None" and "Use the run's buffer". A buffer sample reads "This is a buffer, so nothing is subtracted from it." with no buttons. A run with no buffer reads "No buffer in this run. Choose one to subtract." with no None.
+- **Shows:** three fixed rows. The background's name with a tag, `run's buffer` or `chosen`; one note row that is empty when both traces are already normalised and otherwise reads `scaled ×0.970`, `matched at high q ×0.970`, `no integ settings, matched ×0.970`, `other setup, matched ×0.970`, `beam off, matched ×0.970` or `I₂ low, matched ×0.970`, or `loading`, `no trace` or `setup hidden` (hovering the note shows the full sentence); and the buttons "Change B", "None" and "Run's buffer". A buffer sample reads "This is a buffer" with no buttons. A run with no buffer reads "No buffer in this run" with no None. A background turned off reads "None".
 - **Opens in Minus:** a sample with a background opens as the difference (`[data-role="difference-line"]`), with `group "Subtraction"` switching to Raw. While the background's trace loads the plot says "Loading the background's trace" and the toggle's place is held. The subtracted curve follows the selected view (V steps the views), over the whole curve.
 - **Drive:**
   ```bash
   bin/verify open /experiments/1/workspace/<sampleId>
   bin/verify press b                                  # dialog "Choose the background": the run's other buffers first, then the setup's buffers, then every sample; type, Tab/Shift+Tab or ↑/↓ move, Enter picks (writes to the DB), Esc closes
   bin/verify click --role button --name "None"        # turn the background off: Raw, no toggle, the default does not come back (writes to the DB)
-  bin/verify click --role button --name "Use the run's buffer"   # follow the default again (writes to the DB)
+  bin/verify click --role button --name "Run's buffer"   # follow the default again (writes to the DB)
   bin/verify click --role button --name "Raw"         # the view is per sample and local
   bin/verify press Control+z                          # undo the change of background
   ```

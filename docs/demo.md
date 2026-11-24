@@ -212,7 +212,7 @@ already checks them against the ingested DB.
 
 ## Cloud sessions (claude.ai/code)
 
-The app needs Julia (compat says ≥ 1.9; tested on 1.13), Node ≥ 20 and npm. A cloud environment that runs it needs:
+The app needs Julia (compat says ≥ 1.9; tested on 1.13), Node 22 (22.22.2+), 24 (24.15+) or 26+ and npm. A cloud environment that runs it needs:
 
 1. **Network:** unrestricted, or at least `julialang.org`, `*.julialang.org`
    (installer, package server, registry), `github.com` and the npm registry.

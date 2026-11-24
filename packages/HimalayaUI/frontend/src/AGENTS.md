@@ -6,7 +6,7 @@ React 18 + Vite + TypeScript strict + TailwindCSS 4. TanStack Query for server s
 
 | Task | Location | Notes |
 |------|----------|-------|
-| App entry | `main.tsx` | `index.html → main.tsx`; `StrictMode > ErrorBoundary > QueryClientProvider > BrowserRouter > App`; mounts `#app` |
+| App entry | `main.tsx` | `index.html → main.tsx`; `StrictMode > ErrorBoundary > QueryClientProvider > BrowserRouter useTransitions={false} > App`; mounts `#app`. Keep `useTransitions={false}`: React Router 7's default transitions let an arrow key pressed right after a click act on the previous sample (`e2e/workspace-focus.spec.ts`, intermittent) |
 | App shell | `App.tsx` (`App`) | Composition root: `AppRoutes` + SSE + mutation-queue effects + shell siblings |
 | Server state | `queries.ts` | TanStack Query hooks; `authOpts(username, clientId, clientOpId)` helper lives in `lib/authOpts.ts` |
 | API layer | `api.ts` | Fetch wrappers; AuthOpts per-call for mutations |
@@ -117,3 +117,7 @@ Every reconciliation contract has six layers (route emit → SSE payload → `ap
 - Mint `client_op_id` inside `mutationFn`, not at hook creation time.
 - Don't assert on Tailwind class strings in tests — use `data-testid` / `data-*` attributes.
 - Don't inline appearance utilities (`text-[…]`, `rounded-[…]`, raw colours, side-stripes) in a consumer — `lint:design` fails the build. Put appearance in a `ui/` primitive; `className` is placement-only (see "Design system").
+
+## Dependency pins
+
+`package.json` `overrides` pins `@joshwooding/vite-plugin-react-docgen-typescript` to `^0.9.1` (no vulnerable glob). Storybook 10.6 still asks for `^0.7`, and the plugin only loads with `reactDocgen: "react-docgen-typescript"`, which `.storybook/main.ts` does not set. Drop the override once `@storybook/react-vite` depends on `^0.9` or later.

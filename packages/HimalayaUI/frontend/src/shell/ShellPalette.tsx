@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router";
 import { useAppState } from "../state";
 import { useAppTheme } from "../lib/theme";
 import { Palette } from "../ui/palette/Palette";
