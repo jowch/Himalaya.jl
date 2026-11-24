@@ -53,7 +53,7 @@ end
 
 """
 Write a synthetic setup_info file to `path`.
-Defaults match the real setup_info_20260301_120000.txt from SSRL 2026-04.
+Defaults are invented values of the size an SSRL setup_info file holds.
 """
 function write_setup_info(path::AbstractString;
         beam_center_x = 420.5,

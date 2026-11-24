@@ -8,7 +8,7 @@ const trace = { q, I: q.map((x) => 1 / (x * x) + bump(x, 0.1) + bump(x, 0.1414))
 const peak = (id: number, at: number) => ({ id, exposure_id: 410, q: at, intensity: 50, prominence: null, sharpness: null, source: "auto", excluded: false });
 
 const exposure = {
-  id: 410, sample_id: 41, filename: "JC_S41_0_001", kind: "file", status: null,
+  id: 410, sample_id: 41, filename: "SY_S41_0_001", kind: "file", status: null,
   image_path: null, image_version: "", sources: [], trace_hash: null, analysis_inputs_hash: null,
   exposure_time: null, counting_time: null, transmitted_counts: null, incident_monitor: null,
   timestamp: null, beam_energy_ev: null, pipe_length_m: null, detector: null,
