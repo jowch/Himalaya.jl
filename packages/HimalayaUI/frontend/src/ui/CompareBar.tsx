@@ -70,7 +70,7 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
               data-compare-chip={c.id}
               style={{ color: c.color, flexBasis: basis }}
               className={
-                "inline-flex h-(--compare-row) min-w-min max-w-max items-center gap-1.5 rounded-sm border bg-plate py-0.5 pl-2 pr-1 text-caption text-ink " +
+                "inline-flex h-(--compare-row) min-w-min max-w-max items-center gap-1.5 rounded-sm border bg-plate pt-0.5 pb-[3px] pl-2 pr-1 text-caption text-ink " +
                 (sub ? "border-accent" : "border-hair")
               }
             >
@@ -135,7 +135,7 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
           );
         })}
         {!full && (
-          <button type="button" onClick={onAdd} className="inline-flex h-(--compare-row) shrink-0 items-center gap-1 whitespace-nowrap rounded-sm border border-dashed border-hair-strong px-2 py-0.5 text-caption text-ink-soft hover:text-ink">
+          <button type="button" onClick={onAdd} className="inline-flex h-(--compare-row) shrink-0 items-center gap-1 whitespace-nowrap rounded-sm border border-dashed border-hair-strong px-2 pt-0.5 pb-[3px] text-caption text-ink-soft hover:text-ink">
             + Compare <Kbd>C</Kbd>
           </button>
         )}
