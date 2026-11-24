@@ -6,13 +6,15 @@ export interface WorkspaceModules {
   indexing: boolean;
   imageSelection: boolean;
   review: boolean;
+  background: boolean;
 }
 
-const ALL: WorkspaceModules = { peakEditing: true, calls: true, indexing: true, imageSelection: true, review: true };
-const NONE: WorkspaceModules = { peakEditing: false, calls: false, indexing: false, imageSelection: false, review: false };
+const ALL: WorkspaceModules = { peakEditing: true, calls: true, indexing: true, imageSelection: true, review: true, background: false };
+const NONE: WorkspaceModules = { peakEditing: false, calls: false, indexing: false, imageSelection: false, review: false, background: false };
+const AUTOSAMPLER: WorkspaceModules = { ...NONE, background: true };
 
 export const NO_MODULES: WorkspaceModules = NONE;
 
 export function modulesFor(mode: SetupMode | null | undefined): WorkspaceModules {
-  return mode === "autosampler" ? NONE : ALL;
+  return mode === "autosampler" ? AUTOSAMPLER : ALL;
 }

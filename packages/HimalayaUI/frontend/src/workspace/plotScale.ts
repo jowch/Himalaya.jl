@@ -22,32 +22,33 @@ function finite(v: number): boolean {
   return Number.isFinite(v);
 }
 
-function edgeValue(series: Series, at: number, log: boolean): number | null {
+function edgeValue(series: Series, at: number, log: boolean, ok: (v: number) => boolean): number | null {
   for (let i = 1; i < series.q.length; i++) {
     const q0 = series.q[i - 1]!;
     const q1 = series.q[i]!;
     if (!finite(q0) || !finite(q1) || (q0 - at) * (q1 - at) > 0) continue;
     const a = series.I[i - 1]!;
     const b = series.I[i]!;
-    if (!usable(a) || !usable(b) || q1 === q0) return null;
+    if (!ok(a) || !ok(b) || q1 === q0) return null;
     const t = (at - q0) / (q1 - q0);
     return log ? 10 ** (Math.log10(a) + t * (Math.log10(b) - Math.log10(a))) : a + t * (b - a);
   }
   return null;
 }
 
-function windowValues(series: Series, lo: number, hi: number, log: boolean): number[] {
-  const inside = series.I.filter((v, i) => series.q[i]! >= lo && series.q[i]! <= hi && usable(v));
-  const edges = [edgeValue(series, lo, log), edgeValue(series, hi, log)].filter((v): v is number => v !== null);
+function windowValues(series: Series, lo: number, hi: number, log: boolean, ok: (v: number) => boolean): number[] {
+  const inside = series.I.filter((v, i) => series.q[i]! >= lo && series.q[i]! <= hi && ok(v));
+  const edges = [edgeValue(series, lo, log, ok), edgeValue(series, hi, log, ok)].filter((v): v is number => v !== null);
   return [...inside, ...edges];
 }
 
-export function fitYDomain(main: Series, extra: readonly Series[], xDomain: [number, number], type: ScaleType): [number, number] {
+export function fitYDomain(main: Series, extra: readonly Series[], xDomain: [number, number], type: ScaleType, signed = false): [number, number] {
   const lo = Math.min(xDomain[0], xDomain[1]);
   const hi = Math.max(xDomain[0], xDomain[1]);
   const log = type === "log";
-  const own = windowValues(main, lo, hi, log);
-  const values = own.length < 2 ? main.I.filter(usable) : [...own, ...extra.flatMap((s) => windowValues(s, lo, hi, log))];
+  const ok = signed && !log ? finite : usable;
+  const own = windowValues(main, lo, hi, log, ok);
+  const values = own.length < 2 ? main.I.filter(ok) : [...own, ...extra.flatMap((s) => windowValues(s, lo, hi, log, ok))];
   if (values.length === 0) return type === "log" ? [1, 10] : [0, 1];
   const min = Math.min(...values);
   const max = Math.max(...values);

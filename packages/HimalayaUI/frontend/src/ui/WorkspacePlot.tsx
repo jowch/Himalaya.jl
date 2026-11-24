@@ -6,7 +6,7 @@ import { makeAxis, positiveExtent, type Axis1D, type ScaleType } from "../plot/p
 import { hitTestPeaks, zoomXDomain, PEAK_HIT_PX } from "../plot/interaction";
 import { viewAxes, viewIntensity, viewLabel, type PlotView } from "../workspace/plotView";
 import { fitYDomain, PLOT_MARGINS, ticksFor } from "../workspace/plotScale";
-import { differenceAxis } from "../workspace/difference";
+import { differenceAxis, subtractedSeries } from "../workspace/difference";
 
 export interface CombLine {
   id: number;
@@ -33,6 +33,7 @@ export interface MemberLine {
 export interface DifferenceLine {
   q: readonly number[];
   d: readonly number[];
+  kind?: "residual" | "curve";
 }
 
 export const COMPARE_DASH = "5 4";
@@ -127,7 +128,8 @@ export function WorkspacePlot({
   const [hoverQ, setHoverQ] = useState<number | null>(null);
   const [focusedPeak, setFocusedPeak] = useState<string | null>(null);
   const { xType, yType: viewYType } = viewAxes(view);
-  const yType = difference ? "linear" : viewYType;
+  const residual = difference !== undefined && difference.kind !== "curve";
+  const yType = residual ? "linear" : viewYType;
 
   const plotX = (px: number): number | null => {
     const g = geometry.current;
@@ -172,11 +174,12 @@ export function WorkspacePlot({
   const shownX = xDomain ?? xExtent;
   const lineQ = difference ? difference.q : trace.q;
   const viewed = (difference ? difference.d : trace.I).map((v, i) => viewIntensity(view, lineQ[i]!, v));
-  const diffAxis = difference ? differenceAxis(view, lineQ, viewed, shownX, peaks.filter((p) => !p.excluded).map((p) => p.q)) : null;
-  const I = diffAxis ? viewed.map(diffAxis.to) : viewed;
+  const diffAxis = residual && difference ? differenceAxis(view, lineQ, viewed, shownX, peaks.filter((p) => !p.excluded).map((p) => p.q)) : null;
+  const curve = difference && !residual ? subtractedSeries(view, lineQ, difference.d, shownX) : null;
+  const I = diffAxis ? viewed.map(diffAxis.to) : curve ? curve.I : viewed;
   const shownCompares = difference ? [] : compares.map((c) => ({ ...c, I: c.I.map((v, i) => viewIntensity(view, c.q[i]!, v)) }));
   const shownMembers = difference ? [] : members.map((m) => ({ ...m, I: m.I.map((v, i) => viewIntensity(view, m.q[i]!, v)) }));
-  const yDomain = diffAxis ? diffAxis.domain : fitYDomain({ q: trace.q, I }, [...shownCompares, ...shownMembers], shownX, yType);
+  const yDomain = diffAxis ? diffAxis.domain : curve ? curve.domain : fitYDomain({ q: trace.q, I }, [...shownCompares, ...shownMembers], shownX, yType);
   const yLabel = viewLabel(view);
 
   const lowX = Math.min(...shownX);
@@ -277,7 +280,7 @@ export function WorkspacePlot({
                   <path key={m.id} data-member={m.id} d={linePath(m.q, m.I, x, y)} />
                 ))}
               </g>
-              {difference && (
+              {residual && (
                 <line data-role="zero-line" x1={0} x2={dims.plotWidth} y1={y.to(0)} y2={y.to(0)} stroke="var(--color-hair-strong)" strokeDasharray="3 3" />
               )}
               <g data-role={difference ? "difference-line" : "trace-line"}>

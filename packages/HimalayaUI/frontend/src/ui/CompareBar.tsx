@@ -23,10 +23,11 @@ interface Props {
   onRemove: (id: number) => void;
   onAdd: () => void;
   full?: boolean;
+  canSubtract?: boolean;
   trailing?: ReactNode;
 }
 
-const SCALE_NOTES: Record<CompareScale["source"], string> = {
+export const SCALE_NOTES: Record<CompareScale["source"], string> = {
   normalised: "Both already divided by the transmitted beam, so not rescaled",
   monitor: "Scaled by the transmitted beam",
   matched: "No transmitted-beam reading, so matched at high q",
@@ -38,7 +39,7 @@ const SCALE_NOTES: Record<CompareScale["source"], string> = {
   unknown_normalisation: "Integration settings not found, so matched at high q",
 };
 
-export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, onSubtract, onRemove, onAdd, full = false, trailing }: Props): JSX.Element {
+export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, onSubtract, onRemove, onAdd, full = false, canSubtract = true, trailing }: Props): JSX.Element {
   const perRow = Math.max(1, Math.ceil((chips.length + (full ? 0 : 1) + 1) / 2));
   const basis = `calc((100% - ${perRow - 1} * 0.5rem) / ${perRow})`;
   return (
@@ -65,7 +66,7 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
                 content={
                   <>
                     <span className="block font-semibold">{c.setup ? `${c.name} · ${c.setup}` : c.name}</span>
-                    <span className="block">{`Click to ${off ? "show" : "hide"}. ${modKey}-click to ${sub ? "stop subtracting" : "subtract it from the current trace"}.`}</span>
+                    <span className="block">{`Click to ${off ? "show" : "hide"}.`}{canSubtract && ` ${modKey}-click to ${sub ? "stop subtracting" : "subtract it from the current trace"}.`}</span>
                     {c.scale !== undefined && <span className="block">{SCALE_NOTES[c.scale.source]}</span>}
                   </>
                 }

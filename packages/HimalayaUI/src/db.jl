@@ -45,6 +45,7 @@ const MIGRATION_LABEL_SUGGESTIONS = "label_suggestions_v1"
 const MIGRATION_BRIDGED_LABELS = "bridged_labels_shared_v1"
 const MIGRATION_BRIDGED_CALLS = "bridged_calls_shared_v1"
 const MIGRATION_PEAK_PROVENANCE = "peak_provenance_v1"
+const MIGRATION_SUBTRACTION_NONE = "sample_subtractions_nullable_v1"
 
 # Sentinel helpers (ingestion redesign): gate-read and marker-write for the
 # `schema_migrations` table.
@@ -683,8 +684,33 @@ function migrate_sample_compares!(db::SQLite.DB)
     DBInterface.execute(db, """
         CREATE TABLE IF NOT EXISTS sample_subtractions (
             sample_id     INTEGER PRIMARY KEY REFERENCES samples(id) ON DELETE CASCADE,
-            ref_sample_id INTEGER NOT NULL REFERENCES samples(id) ON DELETE CASCADE
+            ref_sample_id INTEGER REFERENCES samples(id) ON DELETE CASCADE
         )""")
+    migrate_subtraction_none!(db)
+    nothing
+end
+
+function migrate_subtraction_none!(db::SQLite.DB)
+    _migrated(db, MIGRATION_SUBTRACTION_NONE) && return nothing
+    already = any(r -> r.name == "ref_sample_id" && r.notnull == 0, sqlrows(DBInterface.execute(db, "PRAGMA table_info(sample_subtractions)")))
+    if already
+        _record_migration!(db, MIGRATION_SUBTRACTION_NONE)
+        return nothing
+    end
+    SQLite.transaction(db) do
+        kept = sqlrows(DBInterface.execute(db, "SELECT sample_id, ref_sample_id FROM sample_subtractions"))
+        DBInterface.execute(db, "DROP TABLE sample_subtractions")
+        DBInterface.execute(db, """
+            CREATE TABLE sample_subtractions (
+                sample_id     INTEGER PRIMARY KEY REFERENCES samples(id) ON DELETE CASCADE,
+                ref_sample_id INTEGER REFERENCES samples(id) ON DELETE CASCADE
+            )""")
+        for r in kept
+            DBInterface.execute(db, "INSERT INTO sample_subtractions (sample_id, ref_sample_id) VALUES (?, ?)",
+                                [Int(r.sample_id), Int(r.ref_sample_id)])
+        end
+        _record_migration!(db, MIGRATION_SUBTRACTION_NONE)
+    end
     nothing
 end
 

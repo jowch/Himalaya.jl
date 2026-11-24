@@ -4,9 +4,10 @@ interface Props {
   name: string;
   on: boolean;
   onChange: (on: boolean) => void;
+  reserved?: boolean;
 }
 
-export function SubtractToggle({ name, on, onChange }: Props): JSX.Element {
+export function SubtractToggle({ name, on, onChange, reserved = false }: Props): JSX.Element {
   const option = (pressed: boolean, label: string, value: boolean, full = label): JSX.Element => (
     <Tooltip content={full === label ? undefined : full}>
       <button
@@ -25,7 +26,8 @@ export function SubtractToggle({ name, on, onChange }: Props): JSX.Element {
       role="group"
       aria-label="Subtraction"
       data-testid="workspace-subtraction-toggle"
-      className="flex items-center rounded-sm border border-hair bg-paper text-caption"
+      {...(reserved ? { "aria-hidden": true } : {})}
+      className={"flex items-center rounded-sm border border-hair bg-paper text-caption" + (reserved ? " invisible" : "")}
     >
       {option(!on, "Raw", false)}
       {option(on, "Minus", true, `Minus ${name}`)}

@@ -91,6 +91,24 @@ Keys are global unless noted; `?` opens the shortcut overlay on any page.
   - On a dropped frame the candidates are disabled and number keys do nothing; restore the frame (x) first.
   - Keys do nothing before a username is set, or while focus is in a dialog or a text field.
 
+## Autosampler background (Background module)
+
+- **Needs an autosampler setup, and `make demo` has none yet.** The demo's setup is a capillary one, so none of this shows there: a capillary sample has no Background section, `B` does nothing and the Raw/Minus toggle appears only after a comparison is subtracted. To drive it, point a second instance at a folder of autosampler files (`AT_SolSAXS_<label>_<scan>.txt` in `data/`, stems `<label>_<well>_S<scan>` and `_B<scan>`, `_tot.dat` traces under `analysis/automatic_analysis/tot_files/`). Until the demo grows one, say in the PR that this was not driven in the browser.
+- **Route:** `/experiments/<id>/workspace/<sampleId>` on a sample of an autosampler setup. The tools column holds `region "Tools"` with a `Background` section above `Image`.
+- **Shows:** the background's name and "The run's first buffer" or "Your choice", the scale note ("Both already divided by the transmitted beam, so not rescaled", "…so matched at high q") with `×scale`, and the buttons "Change B", "None" and "Use the run's buffer". A buffer sample reads "This is a buffer, so nothing is subtracted from it." with no buttons. A run with no buffer reads "No buffer in this run. Choose one to subtract." with no None.
+- **Opens in Minus:** a sample with a background opens as the difference (`[data-role="difference-line"]`), with `group "Subtraction"` switching to Raw. While the background's trace loads the plot says "Loading the background's trace" and the toggle's place is held. The subtracted curve follows the selected view (V steps the views), over the whole curve.
+- **Drive:**
+  ```bash
+  bin/verify open /experiments/1/workspace/<sampleId>
+  bin/verify press b                                  # dialog "Choose the background": the run's other buffers first, then the setup's buffers, then every sample; type, Tab/Shift+Tab or ↑/↓ move, Enter picks (writes to the DB), Esc closes
+  bin/verify click --role button --name "None"        # turn the background off: Raw, no toggle, the default does not come back (writes to the DB)
+  bin/verify click --role button --name "Use the run's buffer"   # follow the default again (writes to the DB)
+  bin/verify click --role button --name "Raw"         # the view is per sample and local
+  bin/verify press Control+z                          # undo the change of background
+  ```
+- **Check:** `bin/verify api GET /api/experiments/<id>/compares` lists `backgrounds` for every autosampler sample (`ref_sample_id`, `source` `default` or `user`, `is_buffer`, `run_buffer_ids`). A comparison chip's Ctrl/⌘-click also sets the background to that chip.
+- **Gotchas:** keys do nothing before a username is set, and `B` does nothing on a buffer sample. A sample that appears during an ingest shows the module disabled until the ingest completes.
+
 ## Old links
 
 Every URL outside the experiments home, the new-experiment funnel, `/experiments/<id>` and the workspace goes to `/experiments` with a "That page no longer exists." toast. That includes the deleted Loupe, Focus, Series, corpus and `/index/<exp>/<sample>` links. `check-truth --ui` reads only the workspace.

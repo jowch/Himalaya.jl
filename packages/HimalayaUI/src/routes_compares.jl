@@ -17,8 +17,28 @@ function compares_for_experiment(db, exp_id::Int)
     Dict(
         :compares => [Dict(:sample_id => Int(r.sample_id), :ref_sample_id => Int(r.ref_sample_id),
                            :added_by => ismissing(r.username) ? nothing : String(r.username)) for r in compares],
-        :subtractions => [Dict(:sample_id => Int(r.sample_id), :ref_sample_id => Int(r.ref_sample_id)) for r in subs],
+        :subtractions => [Dict(:sample_id => Int(r.sample_id), :ref_sample_id => Int(r.ref_sample_id))
+                          for r in subs if !ismissing(r.ref_sample_id)],
+        :backgrounds => backgrounds_for_experiment(db, exp_id, subs),
     )
+end
+
+function backgrounds_for_experiment(db, exp_id::Int, subs)
+    stored = Dict(Int(r.sample_id) => (ismissing(r.ref_sample_id) ? nothing : Int(r.ref_sample_id)) for r in subs)
+    runs = autosampler_runs(db, exp_id)
+    defaults = default_backgrounds(runs)
+    out = Dict{Symbol,Any}[]
+    for id in sort!(collect(keys(runs)))
+        entry = Dict{Symbol,Any}()
+        entry[:sample_id] = id
+        entry[:ref_sample_id] = haskey(stored, id) ? stored[id] : defaults[id]
+        entry[:source] = haskey(stored, id) ? "user" : "default"
+        entry[:default_ref_sample_id] = defaults[id]
+        entry[:is_buffer] = runs[id].is_buffer
+        entry[:run_buffer_ids] = runs[id].run_buffers
+        push!(out, entry)
+    end
+    out
 end
 
 _int_list(raw) = raw === nothing ? Int[] :
@@ -30,20 +50,30 @@ _current_compares(db, sample_id::Int) = Set(Int(r.ref_sample_id) for r in sqlrow
 function _current_subtraction(db, sample_id::Int)
     rows = sqlrows(DBInterface.execute(db,
         "SELECT ref_sample_id FROM sample_subtractions WHERE sample_id = ?", [sample_id]))
-    isempty(rows) ? nothing : Int(rows[1].ref_sample_id)
+    isempty(rows) ? nothing : ismissing(rows[1].ref_sample_id) ? :none : Int(rows[1].ref_sample_id)
 end
 
 const MAX_COMPARES = 5
 
-function compare_changes(current::Set{Int}, subtraction::Union{Int, Nothing},
-                         add::Vector{Int}, remove::Vector{Int}, sub_given::Bool, sub)
+function compare_changes(current::Set{Int}, subtraction::Union{Int, Symbol, Nothing},
+                         add::Vector{Int}, remove::Vector{Int}, sub_given::Bool, sub;
+                         managed::Bool = false)
     adding = unique(filter(r -> r ∉ current && r ∉ remove, add))
     removing = unique(filter(r -> r ∈ current, remove))
     payload = Dict{Symbol, Any}()
     isempty(adding) || (payload[:add] = adding)
     isempty(removing) || (payload[:remove] = removing)
+    if managed
+        if sub_given
+            wanted = sub == "default" ? nothing : sub === nothing ? :none : sub
+            wanted == subtraction || (payload[:subtraction] = wanted === :none ? "none" : wanted)
+        end
+        return payload
+    end
+    subtraction = subtraction === :none ? nothing : subtraction
     if sub_given
-        sub != subtraction && (payload[:subtraction] = sub)
+        wanted = sub == "default" ? nothing : sub
+        wanted != subtraction && (payload[:subtraction] = wanted)
     elseif subtraction !== nothing && (subtraction ∈ removing ||
                                        (subtraction ∉ current && !(isempty(adding) && isempty(removing))))
         payload[:subtraction] = nothing
@@ -69,9 +99,10 @@ function register_compare_routes!()
         (add === nothing || remove === nothing) && return _json_error(400, "add and remove must be lists of sample ids")
         sub_given = haskey(body, "subtraction")
         sub = sub_given ? body["subtraction"] : nothing
-        (sub === nothing || sub isa Integer) || return _json_error(400, "subtraction must be a sample id or null")
-        sub = sub === nothing ? nothing : Int(sub)
-        refs = unique(vcat(add, sub === nothing ? Int[] : [sub]))
+        (sub === nothing || sub isa Integer || sub == "default") ||
+            return _json_error(400, "subtraction must be a sample id, null or \"default\"")
+        sub = sub isa Integer ? Int(sub) : sub
+        refs = unique(vcat(add, sub isa Int ? [sub] : Int[]))
         id ∈ refs && return _json_error(400, "a sample cannot be compared with itself")
         ids = unique(vcat(id, refs))
         marks = join(fill("?", length(ids)), ", ")
@@ -85,7 +116,8 @@ function register_compare_routes!()
         return with_idempotency(db, req) do
             current = _current_compares(db, id)
             payload = compare_changes(current, _current_subtraction(db, id),
-                                      add, remove, sub_given, sub)
+                                      add, remove, sub_given, sub;
+                                      managed = id in autosampler_samples(db, [id]))
             length(current) + length(get(payload, :add, Int[])) - length(get(payload, :remove, Int[])) > MAX_COMPARES &&
                 return _json_error(422, "a sample has at most $(MAX_COMPARES) comparisons")
             if !isempty(payload)

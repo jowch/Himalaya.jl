@@ -183,6 +183,46 @@ describe("WorkspacePlot", () => {
     expect(yTicks()).not.toEqual(pseudo);
   });
 
+  describe("a subtracted curve drawn as a trace", () => {
+    const q = Array.from({ length: 60 }, (_, i) => 0.02 + i * 0.004);
+    const d = q.map((v, i) => (i === 40 ? -2 : 1e4 * Math.exp(-v * 30) + (i % 2 ? 0.4 : 0.3)));
+    const own = { q, I: q.map(() => 1), sigma: q.map(() => 0) };
+    const curve = { q, d, kind: "curve" as const };
+    const plotHeight = 330 - 22 - 26;
+    const ys = (): number[] =>
+      diffPoints().map((p) => p[1]);
+
+    it("keeps its largest low-q value inside the plot, on logarithmic x and y in Log-log", () => {
+      render(<WorkspacePlot trace={own} peaks={[]} combs={[]} difference={curve} view="loglog" />);
+      expect(Math.min(...ys())).toBeGreaterThanOrEqual(0);
+      expect(Math.max(...ys())).toBeLessThanOrEqual(plotHeight);
+      expect(yLabels().some((t) => t.startsWith("10"))).toBe(true);
+      expect(screen.getByTestId("workspace-trace").querySelector('[data-role="zero-line"]')).toBeNull();
+    });
+
+    it("breaks the line at a value that is not positive on a log axis, and does not draw to the floor", () => {
+      render(<WorkspacePlot trace={own} peaks={[]} combs={[]} difference={curve} view="log" />);
+      const path = screen.getByTestId("workspace-trace").querySelector('[data-role="difference-line"] path')!.getAttribute("d")!;
+      expect(path.match(/M/g)).toHaveLength(2);
+      expect(Math.max(...ys())).toBeLessThanOrEqual(plotHeight);
+    });
+
+    it("spans the full range in Linear and in q²I", () => {
+      const { rerender } = render(<WorkspacePlot trace={own} peaks={[]} combs={[]} difference={curve} view="linear" />);
+      expect(Math.min(...ys())).toBeGreaterThanOrEqual(0);
+      expect(Math.max(...ys())).toBeLessThanOrEqual(plotHeight);
+      rerender(<WorkspacePlot trace={own} peaks={[]} combs={[]} difference={curve} view="kratky" />);
+      expect(Math.min(...ys())).toBeGreaterThanOrEqual(0);
+      expect(Math.max(...ys())).toBeLessThanOrEqual(plotHeight);
+    });
+
+    it("leaves a capillary difference on its own axis, clipped around zero", () => {
+      render(<WorkspacePlot trace={own} peaks={[]} combs={[]} difference={{ q, d }} view="log" />);
+      expect(screen.getByTestId("workspace-trace").querySelector('[data-role="zero-line"]')).not.toBeNull();
+      expect(yTicks()).toContain(0);
+    });
+  });
+
   it("draws the trace multiplied by q² in the q²I view and keeps the peak markers in a row above the plot", () => {
     const steep = { q: [0.05, 0.1, 0.15, 0.2, 0.25], I: [100, 40, 15, 8, 5], sigma: [0, 0, 0, 0, 0] };
     const peaks = [

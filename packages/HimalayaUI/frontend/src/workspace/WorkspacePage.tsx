@@ -69,11 +69,12 @@ import { beamOffWarning, firstUnreviewed, i0BelowZero, imageUrl, nearestKeptExpo
 import { samePeak, type PeakRef } from "../lib/peakRef";
 import { clampDomain, compareScale, COMPARES_FULL, MAX_COMPARES, scaledTrace, subtractTrace } from "./compare";
 import type { CompareScale } from "./compare";
-import { useCompareTraces } from "./useCompareTraces";
+import { useCompareTraces, useTraceStatuses } from "./useCompareTraces";
 import { usePrefetchNeighbours } from "./prefetch";
 import { CompareBar } from "../ui/CompareBar";
 import { ComparePicker } from "../ui/ComparePicker";
 import { SubtractToggle } from "../ui/SubtractToggle";
+import { BackgroundModule, type BackgroundView } from "../ui/BackgroundModule";
 import { PlotViewToggle } from "../ui/PlotViewToggle";
 import { PlotCard } from "../ui/PlotCard";
 import { BridgeMenu } from "../ui/BridgeMenu";
@@ -115,7 +116,7 @@ import { setupNames } from "../lib/sample/setupNames";
 import type { ExperimentPatch } from "../lib/queue/mutators/experiment";
 import type { SetupPatch } from "../lib/queue/mutators/setup";
 
-function helpSections(mod: string, modules: WorkspaceModules, selectable: { strip: boolean; shown: boolean }): HelpSection[] {
+function helpSections(mod: string, modules: WorkspaceModules, selectable: { strip: boolean; shown: boolean }, canChooseBackground: boolean): HelpSection[] {
   const when = <T,>(on: boolean, ...list: T[]): T[] => (on ? list : []);
   return [
     {
@@ -162,6 +163,7 @@ function helpSections(mod: string, modules: WorkspaceModules, selectable: { stri
         { keys: [`${mod} 0`], what: "Reset the zoom" },
         { keys: ["V"], what: "Next plot view: log, linear, log-log, q²I. ⇧ V goes back." },
         { keys: ["C"], what: "Compare with another sample" },
+        ...when(canChooseBackground, { keys: ["B"], what: "Choose what is subtracted from this sample" }),
         { gesture: `${mod}-click a sample in the list`, what: "Compare with it, or stop comparing" },
         { gesture: "Click a comparison", what: "Hide or show its trace" },
         { gesture: `${mod}-click a comparison`, what: "Plot the current trace minus it, or stop" },
@@ -442,6 +444,9 @@ export function WorkspacePage(): JSX.Element {
   const saved = useMemo(() => comparesOf(comparesQuery.data ?? EMPTY_COMPARES, sampleId ?? -1), [comparesQuery.data, sampleId]);
   const refs = saved.refs;
   const subChoice = saved.subtraction;
+  const bgEntry = modules.background ? saved.background : undefined;
+  const managed = bgEntry !== undefined;
+  const canChooseBackground = Boolean(username) && bgEntry !== undefined && !bgEntry.is_buffer;
   const [refsOn, setRefsOn] = useState(true);
   const [shownOverride, setShownOverride] = useState<ReadonlyMap<string, boolean>>(() => new Map());
   const [picking, setPicking] = useState(false);
@@ -477,7 +482,11 @@ export function WorkspacePage(): JSX.Element {
   const bridgeSamples = useBridgeSamples(experimentId);
   const unbridgeSample = useUnbridgeSample(experimentId);
   const shownRefs = useMemo(() => refs.filter((r) => !hiddenSamples.has(r)), [refs, hiddenSamples]);
-  const subRef = subChoice !== undefined && shownRefs.includes(subChoice) ? subChoice : undefined;
+  const bgRef = bgEntry && !bgEntry.is_buffer && bgEntry.ref_sample_id !== null && bgEntry.ref_sample_id !== sampleId ? bgEntry.ref_sample_id : undefined;
+  const bgHidden = bgRef !== undefined && hiddenSamples.has(bgRef);
+  const subRef = managed
+    ? (bgHidden ? undefined : bgRef)
+    : subChoice !== undefined && shownRefs.includes(subChoice) ? subChoice : undefined;
   const hiddenRefs = useMemo<ReadonlySet<number>>(
     () =>
       new Set(
@@ -494,8 +503,13 @@ export function WorkspacePage(): JSX.Element {
     (rid: number, shown: boolean) => setShownOverride((m) => new Map(m).set(`${sampleId}:${rid}`, shown)),
     [sampleId],
   );
-  const fetchRefs = useMemo(() => shownRefs.filter((r) => !hiddenRefs.has(r) || r === subRef), [shownRefs, hiddenRefs, subRef]);
+  const fetchRefs = useMemo(() => {
+    const base = shownRefs.filter((r) => !hiddenRefs.has(r) || r === subRef);
+    return subRef !== undefined && !base.includes(subRef) ? [...base, subRef] : base;
+  }, [shownRefs, hiddenRefs, subRef]);
   const compareTraces = useCompareTraces(fetchRefs);
+  const traceStatuses = useTraceStatuses(useMemo(() => (bgRef !== undefined && !bgHidden ? [bgRef] : []), [bgRef, bgHidden]));
+  const backgroundLoading = managed && subRef !== undefined && trace.data !== undefined && !compareTraces.has(subRef) && traceStatuses.get(subRef) === "loading";
 
   const callOnFrame = useCallback(
     (eid: number): PhaseIdentity[] => {
@@ -683,8 +697,8 @@ export function WorkspacePage(): JSX.Element {
 
   const stripSelectable = Boolean(username) && groupSelections.size > 0;
   const help = useMemo(
-    () => helpSections(MOD_KEY, modules, { strip: stripSelectable, shown: tileSelectable }),
-    [modules, stripSelectable, tileSelectable],
+    () => helpSections(MOD_KEY, modules, { strip: stripSelectable, shown: tileSelectable }, canChooseBackground),
+    [modules, stripSelectable, tileSelectable, canChooseBackground],
   );
 
   const draftQs = useMemo(() => (draft ? draftPrediction(draft) : []), [draft]);
@@ -738,10 +752,10 @@ export function WorkspacePage(): JSX.Element {
       patchCompares.mutate({ sampleId, change: { remove: [rid] } });
       history.record(compareEntry(ops, {
         label: `stopped comparing ${sample?.name ?? "this sample"} with ${nameOf(rid)}`, sampleId, exposureId: undefined,
-        edit: { kind: "remove", ref: rid, subtracted: subChoice === rid },
+        edit: { kind: "remove", ref: rid, subtracted: !managed && subChoice === rid },
       }));
     },
-    [sampleId, patchCompares, history, ops, sample?.name, nameOf, subChoice],
+    [sampleId, patchCompares, history, ops, sample?.name, nameOf, subChoice, managed],
   );
   const activeRefs = useMemo(() => shownRefs.filter((r) => r !== sampleId), [shownRefs, sampleId]);
   const comparesFull = activeRefs.length >= MAX_COMPARES;
@@ -770,26 +784,21 @@ export function WorkspacePage(): JSX.Element {
       return [{ id: rid, name: sampleNames.get(rid) ?? `Sample ${rid}`, q: sc.q, I: sc.I, color: COMPARE_COLORS[i % COMPARE_COLORS.length]!, emphasis: rid === subRef }];
     });
   }, [mainTrace, refsOn, activeRefs, hiddenRefs, compareTraces, scales, sampleId, sampleNames, subRef]);
-  const subTrace = subRef !== undefined && subRef !== sampleId && refsOn ? compareTraces.get(subRef) : undefined;
+  const subTrace = subRef !== undefined && subRef !== sampleId && (refsOn || managed) ? compareTraces.get(subRef) : undefined;
   const subScale = subRef !== undefined ? scales.get(subRef)?.scale : undefined;
   const difference = useMemo(
     () => (mainTrace && subTrace && subScale !== undefined ? subtractTrace(mainTrace, subTrace, subScale) : null),
     [mainTrace, subTrace, subScale],
   );
-  const [minusSamples, setMinusSamples] = useState<ReadonlySet<number>>(() => new Set());
+  const [minusChoice, setMinusChoice] = useState<ReadonlyMap<number, boolean>>(() => new Map());
   const setMinus = useCallback(
     (on: boolean) => {
       if (sampleId === undefined) return;
-      setMinusSamples((prev) => {
-        const next = new Set(prev);
-        if (on) next.add(sampleId);
-        else next.delete(sampleId);
-        return next;
-      });
+      setMinusChoice((prev) => new Map(prev).set(sampleId, on));
     },
     [sampleId],
   );
-  const minusOn = difference !== null && subRef !== undefined && sampleId !== undefined && minusSamples.has(sampleId);
+  const minusOn = difference !== null && subRef !== undefined && sampleId !== undefined && (minusChoice.get(sampleId) ?? managed);
   const subName = subRef !== undefined ? (sampleNames.get(subRef) ?? `Sample ${subRef}`) : "";
   const shownCompareSet = useMemo<ReadonlySet<number>>(
     () => (!refsOn ? new Set(shownRefs) : minusOn ? new Set(shownRefs.filter((r) => r !== subRef)) : hiddenRefs),
@@ -814,6 +823,30 @@ export function WorkspacePage(): JSX.Element {
     }
     return notes;
   }, [samples, labelList]);
+  const [pickingBackground, setPickingBackground] = useState(false);
+  useEffect(() => setPickingBackground(false), [sampleId]);
+  const backgroundNotes = useMemo(() => {
+    const notes = new Map(bufferNotes);
+    for (const b of comparesQuery.data?.backgrounds ?? []) if (b.is_buffer) notes.set(b.sample_id, "Buffer");
+    for (const id of bgEntry?.run_buffer_ids ?? []) notes.set(id, "Buffer of this run");
+    return notes;
+  }, [bufferNotes, comparesQuery.data, bgEntry]);
+  const backgroundChoices = useMemo(() => {
+    if (!bgEntry || sampleId === undefined) return [];
+    const byId = new Map(samples.map((s) => [s.id, s]));
+    const taken = new Set<number>([sampleId, ...(bgEntry.ref_sample_id === null ? [] : [bgEntry.ref_sample_id])]);
+    const out: CorpusSample[] = [];
+    const add = (id: number): void => {
+      const s = byId.get(id);
+      if (!s || taken.has(id)) return;
+      taken.add(id);
+      out.push(s);
+    };
+    bgEntry.run_buffer_ids.forEach(add);
+    for (const b of comparesQuery.data?.backgrounds ?? []) if (b.is_buffer && byId.get(b.sample_id)?.setup_id === sample?.setup_id) add(b.sample_id);
+    samples.forEach((s) => add(s.id));
+    return out;
+  }, [bgEntry, sampleId, samples, comparesQuery.data, sample?.setup_id]);
   const bridgePickable = useMemo(() => {
     const others = samples.filter((s) => s.id !== sampleId && !bridged.includes(s.id) && modulesOf(s).calls === modules.calls);
     return sample ? rankBridgeMates(sample, others) : others;
@@ -1254,6 +1287,11 @@ export function WorkspacePage(): JSX.Element {
         case "[":
           setSampleListHidden(!sampleListHidden);
           break;
+        case "b":
+        case "B":
+          if (canChooseBackground) setPickingBackground(true);
+          else handled = false;
+          break;
         case "c":
         case "C":
           setPicking(true);
@@ -1319,7 +1357,7 @@ export function WorkspacePage(): JSX.Element {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [visible, sampleId, goSample, exposureList, tile, toggleDrop, tileSelectable, toggleTileSelection, keyed, toggleCandidate, toggleGroup, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor, view, setView, sample, openLabeling, applyHistory, callOpen, sampleListHidden, setSampleListHidden, modules.calls, reviewable]);
+  }, [canChooseBackground, visible, sampleId, goSample, exposureList, tile, toggleDrop, tileSelectable, toggleTileSelection, keyed, toggleCandidate, toggleGroup, username, draft, addCustom, setDraftClamped, openCustom, toggleFormFactor, view, setView, sample, openLabeling, applyHistory, callOpen, sampleListHidden, setSampleListHidden, modules.calls, reviewable]);
 
   const droppedCount = ownFrames.filter((e) => e.status === "rejected").length;
   const keptHint = droppedCount > 0 ? `${ownFrames.length - droppedCount} of ${ownFrames.length} kept` : undefined;
@@ -1357,16 +1395,44 @@ export function WorkspacePage(): JSX.Element {
     setRefsOn(true);
   };
   const toggleSubtract = (rid: number): void => {
-    if (sampleId === undefined) return;
+    if (sampleId === undefined || (modules.background && !bgEntry)) return;
+    if (bgEntry?.is_buffer) return;
     setRefsOn(true);
     setMinus(subRef !== rid);
-    const to = subRef === rid ? undefined : rid;
+    const stopping = subRef === rid;
+    const to = stopping ? (managed ? null : undefined) : rid;
     patchCompares.mutate({ sampleId, change: { subtraction: to ?? null } });
     history.record(compareEntry(ops, {
-      label: to === undefined ? `stopped subtracting ${nameOf(rid)} from ${sample?.name ?? "this sample"}` : `subtracted ${nameOf(rid)} from ${sample?.name ?? "this sample"}`,
-      sampleId, exposureId: undefined, edit: { kind: "subtract", from: subChoice, to },
+      label: stopping ? `stopped subtracting ${nameOf(rid)} from ${sample?.name ?? "this sample"}` : `subtracted ${nameOf(rid)} from ${sample?.name ?? "this sample"}`,
+      sampleId, exposureId: undefined, edit: { kind: "subtract", from: saved.chosen, to },
     }));
   };
+  const changeBackground = (to: number | null | "default"): void => {
+    if (sampleId === undefined || !bgEntry || bgEntry.is_buffer || !username) return;
+    const name = sample?.name ?? "this sample";
+    patchCompares.mutate({ sampleId, change: { subtraction: to } });
+    if (to !== null) setMinus(true);
+    history.record(compareEntry(ops, {
+      label: to === null
+        ? `turned off the background of ${name}`
+        : to === "default"
+          ? `went back to the run's buffer as the background of ${name}`
+          : `chose ${nameOf(to)} as the background of ${name}`,
+      sampleId, exposureId: undefined, edit: { kind: "subtract", from: saved.chosen, to: to === "default" ? undefined : to },
+    }));
+    setPickingBackground(false);
+  };
+  const backgroundView: BackgroundView = useMemo(() => {
+    if (!bgEntry) return { kind: "loading" };
+    if (bgEntry.is_buffer) return { kind: "buffer" };
+    const canUseRunBuffer = bgEntry.source === "user" && bgEntry.default_ref_sample_id !== null;
+    if (bgEntry.ref_sample_id === null) {
+      return { kind: "off", reason: bgEntry.source === "user" ? "chosen" : "no-buffer", canUseRunBuffer };
+    }
+    const ref = bgEntry.ref_sample_id;
+    const trace = hiddenSamples.has(ref) ? "hidden" : compareTraces.has(ref) ? "ready" : (traceStatuses.get(ref) ?? "missing");
+    return { kind: "set", name: sampleNames.get(ref) ?? `Sample ${ref}`, source: bgEntry.source, trace, scale: scales.get(ref), canUseRunBuffer };
+  }, [bgEntry, hiddenSamples, compareTraces, traceStatuses, sampleNames, scales]);
   const toggleCompare = (rid: number): void => {
     if (rid === sampleId) return;
     if (refs.includes(rid)) removeCompare(rid);
@@ -1388,7 +1454,7 @@ export function WorkspacePage(): JSX.Element {
       full: comparesFull ? COMPARES_FULL : undefined,
       compared: refs.filter((r) => r !== sampleId).flatMap((r) => samples.filter((x) => x.id === r)),
       remove: removeCompare,
-      subtractable: activeRefs.flatMap((r) => samples.filter((x) => x.id === r)),
+      subtractable: bgEntry?.is_buffer ? [] : activeRefs.flatMap((r) => samples.filter((x) => x.id === r)),
       subtracted: subRef,
       subtract: toggleSubtract,
     },
@@ -1432,6 +1498,17 @@ export function WorkspacePage(): JSX.Element {
     views: { options: PLOT_VIEWS, current: view, set: setView },
     resetZoom: () => setXDomain(null),
     comparisons: { shown: refsOn, toggle: () => setRefsOn((v) => !v) },
+    ...(canChooseBackground && bgEntry
+      ? {
+          background: {
+            choose: () => setPickingBackground(true),
+            ...(bgEntry.ref_sample_id !== null ? { off: () => changeBackground(null) } : {}),
+            ...(bgEntry.source === "user" && bgEntry.default_ref_sample_id !== null
+              ? { useRunBuffer: () => changeBackground("default") }
+              : {}),
+          },
+        }
+      : {}),
     ...(difference && subRef !== undefined ? { difference: { on: minusOn, name: subName, toggle: () => setMinus(!minusOn) } } : {}),
     settings:
       username && experiment.data
@@ -1582,7 +1659,8 @@ export function WorkspacePage(): JSX.Element {
                 onRemove={removeCompare}
                 onAdd={() => setPicking(true)}
                 full={comparesFull}
-                trailing={difference && subRef !== undefined ? <SubtractToggle name={subName} on={minusOn} onChange={setMinus} /> : undefined}
+                canSubtract={!bgEntry?.is_buffer}
+                trailing={difference && subRef !== undefined ? <SubtractToggle name={subName} on={minusOn} onChange={setMinus} /> : backgroundLoading ? <SubtractToggle name="" on onChange={setMinus} reserved /> : undefined}
               />
               {picking && (
                 <ComparePicker
@@ -1598,8 +1676,10 @@ export function WorkspacePage(): JSX.Element {
             <div className="mx-3.5">
               <PlotCard {...(darkNotice ? { notice: darkNotice } : {})} corner={<PlotViewToggle options={PLOT_VIEWS} view={view} onChange={setView} />}>
                 <WorkspacePlot
-                  trace={trace.data}
-                  {...(noTraceMessage
+                  trace={backgroundLoading ? undefined : trace.data}
+                  {...(backgroundLoading
+                    ? { emptyMessage: "Loading the background's trace" }
+                    : noTraceMessage
                     ? { emptyMessage: noTraceMessage }
                     : trace.isError
                       ? { onRetry: () => void trace.refetch(), retrying: trace.isFetching }
@@ -1609,7 +1689,7 @@ export function WorkspacePage(): JSX.Element {
                   highlight={highlight}
                   compares={compares}
                   members={members}
-                  {...(minusOn && difference ? { difference } : {})}
+                  {...(minusOn && difference ? { difference: managed ? { ...difference, kind: "curve" as const } : difference } : {})}
                   xDomain={shownDomain}
                   view={view}
                   onXDomain={setXDomain}
@@ -1634,6 +1714,29 @@ export function WorkspacePage(): JSX.Element {
       tools={
         modesPending ? null : (
           <>
+            {modules.background && (
+              <BackgroundModule
+                view={backgroundView}
+                editable={canChooseBackground}
+                onChange={() => setPickingBackground(true)}
+                onNone={() => changeBackground(null)}
+                onDefault={() => changeBackground("default")}
+                picker={
+                  pickingBackground && canChooseBackground && (
+                    <ComparePicker
+                      fill
+                      title="Choose the background"
+                      findLabel="Find a sample to subtract"
+                      samples={backgroundChoices}
+                      notes={backgroundNotes}
+                      setups={sampleSetup}
+                      onPick={(rid) => changeBackground(rid)}
+                      onClose={() => setPickingBackground(false)}
+                    />
+                  )
+                }
+              />
+            )}
             {modules.calls && (
               <div className={callOpen ? "flex min-h-24 flex-1 flex-col overflow-y-auto" : "shrink-0"} data-testid="workspace-tools-middle">
                 {draft && draftBounds ? (

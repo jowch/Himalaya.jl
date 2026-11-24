@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { differenceAxis, noiseScale } from "../../src/workspace/difference";
+import { differenceAxis, noiseScale, subtractedSeries } from "../../src/workspace/difference";
 
 const q = Array.from({ length: 201 }, (_, i) => 0.02 + i * 0.001);
 
@@ -40,5 +40,36 @@ describe("difference axis", () => {
     expect(labels).toContain("1000");
     expect(labels.some((l) => l.startsWith("-"))).toBe(true);
     for (const t of ax.ticks) expect(t.value).toBeGreaterThanOrEqual(ax.domain[0]);
+  });
+});
+
+describe("subtracted curve series", () => {
+  const sq = [0.02, 0.05, 0.1, 0.15, 0.2];
+  const sd = [5000, 300, 20, -3, 0.5];
+
+  it("is on a logarithmic y in Log and Log-log and a linear y in Linear and Kratky", () => {
+    expect(subtractedSeries("log", sq, sd, [0.02, 0.2]).yType).toBe("log");
+    expect(subtractedSeries("loglog", sq, sd, [0.02, 0.2]).yType).toBe("log");
+    expect(subtractedSeries("linear", sq, sd, [0.02, 0.2]).yType).toBe("linear");
+    expect(subtractedSeries("kratky", sq, sd, [0.02, 0.2]).yType).toBe("linear");
+  });
+
+  it("holds the whole curve in range, choosing the log floor from the positive values", () => {
+    const [lo, hi] = subtractedSeries("log", sq, sd, [0.02, 0.2]).domain;
+    expect(lo).toBeGreaterThan(0);
+    expect(lo).toBeLessThanOrEqual(0.5);
+    expect(lo).toBeGreaterThan(0.01);
+    expect(hi).toBeGreaterThanOrEqual(5000);
+  });
+
+  it("holds the whole curve in a linear view, from the lowest value to the largest", () => {
+    const [lo, hi] = subtractedSeries("linear", sq, sd, [0.02, 0.2]).domain;
+    expect(lo).toBeLessThanOrEqual(-3);
+    expect(hi).toBeGreaterThanOrEqual(5000);
+  });
+
+  it("multiplies by q² in Kratky and leaves the values alone otherwise", () => {
+    expect(subtractedSeries("kratky", sq, sd, [0.02, 0.2]).I[2]).toBeCloseTo(0.1 * 0.1 * 20);
+    expect(subtractedSeries("log", sq, sd, [0.02, 0.2]).I).toEqual(sd);
   });
 });

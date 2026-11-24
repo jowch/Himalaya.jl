@@ -32,6 +32,13 @@ describe("CompareBar chip tooltip", () => {
     expect(hover("MO_PEG5, setup2")).toHaveTextContent("MO_PEG5 · setup2Click to hide. ⌘-click to subtract it from the current trace.");
   });
 
+  it("says only how to hide when the open sample cannot be subtracted from", () => {
+    const noop = vi.fn();
+    render(<CompareBar chips={[chip()]} subtractId={undefined} hidden={false} modKey="⌘" canSubtract={false} onToggleShown={noop} onSubtract={noop} onRemove={noop} onAdd={noop} />);
+    expect(hover("MO_PEG5")).toHaveTextContent("MO_PEG5Click to hide.");
+    expect(screen.getByRole("tooltip")).not.toHaveTextContent("subtract");
+  });
+
   it("says how to stop subtracting on the subtracted chip, with no setup when it is the current one", () => {
     bar([chip()], 2);
     expect(hover("MO_PEG5")).toHaveTextContent("MO_PEG5Click to hide. ⌘-click to stop subtracting.");

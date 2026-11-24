@@ -1105,3 +1105,43 @@ end
         @test t ∉ tables
     end
 end
+
+@testset "sample_subtractions can hold an explicit none, and an older database gains that without losing rows" begin
+    q(db, sql) = Tables.rowtable(DBInterface.execute(db, sql))
+    info(db) = [(r.name, r.type, r.notnull, r.pk) for r in q(db, "PRAGMA table_info(sample_subtractions)")]
+    fresh = HimalayaUI.open_db(joinpath(mktempdir(), "fresh.db"))
+    path = joinpath(mktempdir(), "old.db")
+    db = HimalayaUI.open_db(path)
+    exp_id = create_experiment!(db; path = "/d", data_dir = "/d", analysis_dir = "/a")
+    a = create_sample!(db; experiment_id = exp_id, name = "lipidA 01A (S0101)")
+    b = create_sample!(db; experiment_id = exp_id, name = "lipidA 01B (B0100)")
+    DBInterface.execute(db, "DROP TABLE sample_subtractions")
+    DBInterface.execute(db, """
+        CREATE TABLE sample_subtractions (
+            sample_id     INTEGER PRIMARY KEY REFERENCES samples(id) ON DELETE CASCADE,
+            ref_sample_id INTEGER NOT NULL REFERENCES samples(id) ON DELETE CASCADE
+        )""")
+    DBInterface.execute(db, "INSERT INTO sample_subtractions (sample_id, ref_sample_id) VALUES (?, ?)", [a, b])
+    DBInterface.execute(db, "DELETE FROM schema_migrations WHERE name = ?", [HimalayaUI.MIGRATION_SUBTRACTION_NONE])
+    SQLite.close(db)
+    migrated = HimalayaUI.open_db(path)
+    @test info(migrated) == info(fresh)
+    @test [(Int(r.sample_id), Int(r.ref_sample_id)) for r in q(migrated, "SELECT * FROM sample_subtractions")] == [(a, b)]
+    DBInterface.execute(migrated, "INSERT INTO sample_subtractions (sample_id, ref_sample_id) VALUES (?, NULL)", [b])
+    @test ismissing(only(q(migrated, "SELECT ref_sample_id FROM sample_subtractions WHERE sample_id = $b")).ref_sample_id)
+    DBInterface.execute(migrated, "DELETE FROM samples WHERE id = ?", [a])
+    @test [Int(r.sample_id) for r in q(migrated, "SELECT * FROM sample_subtractions")] == [b]
+end
+
+@testset "reopening a database that already holds a none row leaves it alone" begin
+    path = joinpath(mktempdir(), "none.db")
+    db = HimalayaUI.open_db(path)
+    exp_id = create_experiment!(db; path = "/d", data_dir = "/d", analysis_dir = "/a")
+    a = create_sample!(db; experiment_id = exp_id, name = "lipidA 01A (S0101)")
+    DBInterface.execute(db, "INSERT INTO sample_subtractions (sample_id, ref_sample_id) VALUES (?, NULL)", [a])
+    DBInterface.execute(db, "DELETE FROM schema_migrations WHERE name = ?", [HimalayaUI.MIGRATION_SUBTRACTION_NONE])
+    SQLite.close(db)
+    reopened = HimalayaUI.open_db(path)
+    rows = Tables.rowtable(DBInterface.execute(reopened, "SELECT sample_id, ref_sample_id FROM sample_subtractions"))
+    @test [(Int(r.sample_id), ismissing(r.ref_sample_id)) for r in rows] == [(a, true)]
+end

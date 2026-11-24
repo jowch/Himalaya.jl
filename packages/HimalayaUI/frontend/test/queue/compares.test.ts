@@ -6,7 +6,7 @@ import { patchComparesMutator } from "../../src/lib/queue/mutators/compares";
 import { applyCompareChange, comparesOf, EMPTY_COMPARES } from "../../src/lib/compares";
 import { queryKeys } from "../../src/queries";
 import type { SseEvent } from "../../src/lib/queue/types";
-import type { CompareState } from "../../src/api";
+import type { CompareState, SampleBackground } from "../../src/api";
 
 const scope = { username: "jc", clientId: "c", clientOpId: "op", kind: "patch_compares", payload: {}, experimentId: 7 } as const;
 const base: CompareState = {
@@ -43,12 +43,82 @@ describe("compare changes", () => {
   });
 });
 
+describe("autosampler backgrounds", () => {
+  const run = (over: Partial<SampleBackground> = {}): SampleBackground => ({
+    sample_id: 1, ref_sample_id: 8, source: "default", default_ref_sample_id: 8, is_buffer: false, run_buffer_ids: [8, 9], ...over,
+  });
+  const state = (bg: SampleBackground, subs: CompareState["subtractions"] = []): CompareState => ({
+    compares: [{ sample_id: 1, ref_sample_id: 2, added_by: "jc" }],
+    subtractions: subs,
+    backgrounds: [bg, { sample_id: 8, ref_sample_id: null, source: "default", default_ref_sample_id: null, is_buffer: true, run_buffer_ids: [8, 9] }],
+  });
+
+  it("reads the effective background and where it came from, apart from the saved subtraction", () => {
+    expect(comparesOf(state(run()), 1).background).toMatchObject({ ref_sample_id: 8, source: "default" });
+    expect(comparesOf(state(run()), 1).subtraction).toBeUndefined();
+    expect(comparesOf(base, 1).background).toBeUndefined();
+  });
+
+  it("choosing a sample makes it the user's choice, whether or not it is a comparison", () => {
+    const next = applyCompareChange(state(run()), 1, { subtraction: 9 }, "jc");
+    expect(comparesOf(next, 1).background).toMatchObject({ ref_sample_id: 9, source: "user", default_ref_sample_id: 8 });
+    expect(comparesOf(next, 1)).toMatchObject({ refs: [2], subtraction: 9 });
+  });
+
+  it("null turns the background off and the default does not come back", () => {
+    const next = applyCompareChange(state(run({ ref_sample_id: 9, source: "user" }), [{ sample_id: 1, ref_sample_id: 9 }]), 1, { subtraction: null }, "jc");
+    expect(comparesOf(next, 1).background).toMatchObject({ ref_sample_id: null, source: "user" });
+    expect(comparesOf(next, 1).subtraction).toBeUndefined();
+  });
+
+  it("default goes back to the run's first buffer", () => {
+    const off = state(run({ ref_sample_id: null, source: "user" }));
+    expect(comparesOf(applyCompareChange(off, 1, { subtraction: "default" }, "jc"), 1).background).toMatchObject({ ref_sample_id: 8, source: "default" });
+  });
+
+  it("adding or removing a comparison leaves the background alone, even one that is not a comparison", () => {
+    const chosen = state(run({ ref_sample_id: 9, source: "user" }), [{ sample_id: 1, ref_sample_id: 9 }]);
+    expect(comparesOf(applyCompareChange(chosen, 1, { add: [3] }, "jc"), 1)).toMatchObject({ refs: [2, 3], subtraction: 9, background: { ref_sample_id: 9, source: "user" } });
+    expect(comparesOf(applyCompareChange(chosen, 1, { remove: [2] }, "jc"), 1)).toMatchObject({ refs: [], subtraction: 9 });
+  });
+
+  it("default clears the subtraction of a sample that has no default", () => {
+    expect(comparesOf(applyCompareChange(base, 1, { subtraction: "default" }, "jc"), 1).subtraction).toBeUndefined();
+  });
+});
+
 describe("compare mutations", () => {
   it("a remote change refetches that experiment's comparisons only", () => {
     const qc = new QueryClient();
     const spy = vi.spyOn(qc, "invalidateQueries");
     applyRemoteToCache({ kind: "compares_changed", entity_id: 1, entity_type: "sample", payload: { add: [2], experiment_id: 7 } } as unknown as SseEvent, qc);
     expect(spy.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey))).toEqual([JSON.stringify(queryKeys.compares(7))]);
+  });
+
+  it("a remote none or default change refetches that experiment's comparisons, backgrounds included", () => {
+    const qc = new QueryClient();
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    for (const subtraction of ["none", null, 9]) {
+      applyRemoteToCache({ kind: "compares_changed", entity_id: 1, entity_type: "sample", payload: { subtraction, experiment_id: 7 } } as unknown as SseEvent, qc);
+    }
+    expect(spy.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey))).toEqual(Array(3).fill(JSON.stringify(queryKeys.compares(7))));
+  });
+
+  it("shows an autosampler background change at once, rolls it back, and takes the server's backgrounds", () => {
+    const qc = new QueryClient();
+    const withBackground: CompareState = {
+      compares: [],
+      subtractions: [],
+      backgrounds: [{ sample_id: 1, ref_sample_id: 8, source: "default", default_ref_sample_id: 8, is_buffer: false, run_buffer_ids: [8] }],
+    };
+    qc.setQueryData(queryKeys.compares(7), withBackground);
+    const ctx = patchComparesMutator.onMutate({ ...scope, sampleId: 1, change: { subtraction: null } }, qc);
+    expect(comparesOf(qc.getQueryData<CompareState>(queryKeys.compares(7))!, 1).background).toMatchObject({ ref_sample_id: null, source: "user" });
+    ctx.restore();
+    expect(qc.getQueryData(queryKeys.compares(7))).toEqual(withBackground);
+    const server: CompareState = { ...withBackground, backgrounds: [{ ...withBackground.backgrounds![0]!, ref_sample_id: null, source: "user" }] };
+    patchComparesMutator.onSuccess({ ...scope, sampleId: 1, change: { subtraction: null } }, server, qc);
+    expect(qc.getQueryData(queryKeys.compares(7))).toEqual(server);
   });
 
   it("routes the outbound op and its echo to the compare mutator", () => {

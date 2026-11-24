@@ -332,15 +332,25 @@ export interface SampleSubtraction {
   ref_sample_id: number;
 }
 
+export interface SampleBackground {
+  sample_id: number;
+  ref_sample_id: number | null;
+  source: "default" | "user";
+  default_ref_sample_id: number | null;
+  is_buffer: boolean;
+  run_buffer_ids: number[];
+}
+
 export interface CompareState {
   compares: SampleCompare[];
   subtractions: SampleSubtraction[];
+  backgrounds?: SampleBackground[];
 }
 
 export interface CompareChange {
   add?: number[];
   remove?: number[];
-  subtraction?: number | null;
+  subtraction?: number | null | "default";
 }
 
 export const listCompares = (experimentId: number): Promise<CompareState> =>

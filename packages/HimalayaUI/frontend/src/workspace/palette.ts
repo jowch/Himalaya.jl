@@ -65,6 +65,7 @@ export interface WorkspacePaletteInput extends AppActions {
   resetZoom: () => void;
   comparisons: { shown: boolean; toggle: () => void };
   difference?: { on: boolean; name: string; toggle: () => void };
+  background?: { choose: () => void; off?: () => void; useRunBuffer?: () => void };
   settings:
     | {
         name: string;
@@ -375,6 +376,9 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
     { id: "next-unreviewed", label: "Next unreviewed sample", shortcut: "Z", run: p.nextUnreviewed },
     ...(p.canEdit ? [{ id: "label", label: "Label", page: "label" }] : []),
     { id: "compare", label: "Compare with a sample", shortcut: "C", page: "compare" },
+    ...(p.background ? [{ id: "background", label: "Choose the background", shortcut: "B", run: p.background.choose }] : []),
+    ...(p.background?.off ? [{ id: "background-off", label: "Turn the background off", run: p.background.off }] : []),
+    ...(p.background?.useRunBuffer ? [{ id: "background-default", label: "Use the run's buffer as the background", run: p.background.useRunBuffer }] : []),
     ...(pages.subtract ? [{ id: "subtract", label: "Subtract a comparison", page: "subtract" }] : []),
     ...(pages.uncompare ? [{ id: "uncompare", label: "Stop comparing with a sample", page: "uncompare" }] : []),
     ...(p.canEdit ? [{ id: "bridge", label: "Same sample as…", keywords: SAME_SAMPLE_WORDS, page: "bridge" }] : []),

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import type { Assignment, CompareState, IndexEntry, Peak, SampleBridge, SampleCall, SampleLabel } from "../../src/api";
+import type { Assignment, CompareState, IndexEntry, Peak, SampleBackground, SampleBridge, SampleCall, SampleLabel } from "../../src/api";
 import { queryKeys, useAddPeak, useEditOps } from "../../src/queries";
 import { useUndoHistory, type UndoEntry } from "../../src/workspace/undo";
 import { bridgeEntry, compareEntry, combinedEntry, customIndexEntry, droppedByEdit, excludeEntry, labelEntry, peakEntry, tickEntry, unbridgeEntry } from "../../src/workspace/undoEntries";
@@ -526,6 +526,52 @@ describe("undo against the server", () => {
     server.compares = { compares: [], subtractions: [{ sample_id: 1, ref_sample_id: 4 }] };
     await act(async () => { await result.current.history.undo()!.done; });
     expect(api.patchCompares).not.toHaveBeenCalled();
+  });
+
+  describe("an autosampler background", () => {
+    const bg = (over: Partial<SampleBackground>): SampleBackground =>
+      ({ sample_id: 1, ref_sample_id: 8, source: "default", default_ref_sample_id: 8, is_buffer: false, run_buffer_ids: [8], ...over });
+    const at = { label: "changed the background", sampleId: 1, exposureId: undefined };
+
+    it("undoes a choice by going back to the default, and redoes it by choosing again", async () => {
+      const { result } = setup();
+      act(() => result.current.history.record(compareEntry(result.current.ops, { ...at, edit: { kind: "subtract", from: undefined, to: 9 } })));
+      server.compares = { compares: [], subtractions: [{ sample_id: 1, ref_sample_id: 9 }], backgrounds: [bg({ ref_sample_id: 9, source: "user" })] };
+      await act(async () => { await result.current.history.undo()!.done; });
+      expect(firstArgs(api.patchCompares)).toEqual([[1, { subtraction: "default" }]]);
+      mocked(api.patchCompares).mockClear();
+      server.compares = { compares: [], subtractions: [], backgrounds: [bg({})] };
+      await act(async () => { await result.current.history.redo()!.done; });
+      expect(firstArgs(api.patchCompares)).toEqual([[1, { subtraction: 9 }]]);
+    });
+
+    it("undoes turning the background off by choosing the sample again, and redoes it with null", async () => {
+      const { result } = setup();
+      act(() => result.current.history.record(compareEntry(result.current.ops, { ...at, edit: { kind: "subtract", from: 9, to: null } })));
+      server.compares = { compares: [], subtractions: [], backgrounds: [bg({ ref_sample_id: null, source: "user" })] };
+      await act(async () => { await result.current.history.undo()!.done; });
+      expect(firstArgs(api.patchCompares)).toEqual([[1, { subtraction: 9 }]]);
+      mocked(api.patchCompares).mockClear();
+      server.compares = { compares: [], subtractions: [{ sample_id: 1, ref_sample_id: 9 }], backgrounds: [bg({ ref_sample_id: 9, source: "user" })] };
+      await act(async () => { await result.current.history.redo()!.done; });
+      expect(firstArgs(api.patchCompares)).toEqual([[1, { subtraction: null }]]);
+    });
+
+    it("undoes turning the background off from the default by returning to the default", async () => {
+      const { result } = setup();
+      act(() => result.current.history.record(compareEntry(result.current.ops, { ...at, edit: { kind: "subtract", from: undefined, to: null } })));
+      server.compares = { compares: [], subtractions: [], backgrounds: [bg({ ref_sample_id: null, source: "user" })] };
+      await act(async () => { await result.current.history.undo()!.done; });
+      expect(firstArgs(api.patchCompares)).toEqual([[1, { subtraction: "default" }]]);
+    });
+
+    it("sends nothing when someone else changed the background since", async () => {
+      const { result } = setup();
+      act(() => result.current.history.record(compareEntry(result.current.ops, { ...at, edit: { kind: "subtract", from: undefined, to: 9 } })));
+      server.compares = { compares: [], subtractions: [{ sample_id: 1, ref_sample_id: 7 }], backgrounds: [bg({ ref_sample_id: 7, source: "user" })] };
+      await act(async () => { await result.current.history.undo()!.done; });
+      expect(api.patchCompares).not.toHaveBeenCalled();
+    });
   });
 
   it("rejoins an unbridged sample to the group it left", async () => {
