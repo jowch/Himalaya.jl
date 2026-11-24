@@ -468,7 +468,7 @@ export function unbridgeEntry(
 export type CompareEdit =
   | { kind: "add"; ref: number }
   | { kind: "remove"; ref: number; subtracted: boolean }
-  | { kind: "subtract"; from: number | undefined; to: number | undefined };
+  | { kind: "subtract"; from: number | null | undefined; to: number | null | undefined };
 
 export function compareEntry(ops: EditOps, at: Where & { edit: CompareEdit }): UndoEntry {
   const now = async () => comparesOf(await ops.read.compares(), at.sampleId);
@@ -478,8 +478,11 @@ export function compareEntry(ops: EditOps, at: Where & { edit: CompareEdit }): U
     return 1;
   };
   if (e.kind === "subtract") {
-    const flip = async (expect: number | undefined, next: number | undefined): Promise<number> =>
-      (await now()).subtraction === expect ? send({ subtraction: next ?? null }) : 0;
+    const flip = async (expect: number | null | undefined, next: number | null | undefined): Promise<number> => {
+      const state = await now();
+      if (state.chosen !== expect) return 0;
+      return send({ subtraction: next === undefined ? (state.background ? "default" : null) : next });
+    };
     return { ...at, undo: () => flip(e.to, e.from), redo: () => flip(e.from, e.to) };
   }
   const put = async (): Promise<number> => {

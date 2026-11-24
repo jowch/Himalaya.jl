@@ -37,12 +37,15 @@ export function applyCompareChange(state: CompareState, sampleId: number, change
   };
 }
 
-export function comparesOf(state: CompareState, sampleId: number): { refs: number[]; addedBy: ReadonlyMap<number, string | null>; subtraction: number | undefined; background: SampleBackground | undefined } {
+export function comparesOf(state: CompareState, sampleId: number): { refs: number[]; addedBy: ReadonlyMap<number, string | null>; subtraction: number | undefined; background: SampleBackground | undefined; chosen: number | null | undefined } {
   const mine = state.compares.filter((c) => c.sample_id === sampleId);
+  const background = state.backgrounds?.find((b) => b.sample_id === sampleId);
+  const subtraction = state.subtractions.find((t) => t.sample_id === sampleId)?.ref_sample_id;
   return {
     refs: mine.map((c) => c.ref_sample_id),
     addedBy: new Map(mine.map((c) => [c.ref_sample_id, c.added_by])),
-    subtraction: state.subtractions.find((t) => t.sample_id === sampleId)?.ref_sample_id,
-    background: state.backgrounds?.find((b) => b.sample_id === sampleId),
+    subtraction,
+    background,
+    chosen: background ? (background.source === "default" ? undefined : background.ref_sample_id) : subtraction,
   };
 }
