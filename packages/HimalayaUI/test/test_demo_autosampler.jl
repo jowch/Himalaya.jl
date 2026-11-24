@@ -5,6 +5,11 @@ module DemoGenAS
     include(joinpath(@__DIR__, "..", "scripts", "make_demo_data.jl"))
 end
 
+module DemoGenWithout
+    include(joinpath(@__DIR__, "..", "scripts", "make_demo_data.jl"))
+    write_autosampler!(out, seed, images) = (acquisitions = 0, runs = 0, calibration = 0)
+end
+
 const _DAS = DemoGenAS
 
 function _das_generate(; seed = 7)
@@ -101,9 +106,19 @@ const _DAS_ROWS = """
     end
 
     @testset "the capillary setup does not depend on the autosampler" begin
-        rows = readlines(joinpath(root, "TRUTH.csv"))
-        @test length(rows) == 1 + length(_DAS.SAMPLES)
-        @test !any(occursin("lysA", r) for r in rows)
+        bare = mktempdir()
+        redirect_stdout(devnull) do
+            DemoGenWithout.main([bare, "--no-images", "--seed", "7"])
+        end
+        files(dir) = sort([relpath(joinpath(d, f), dir) for (d, _, fs) in walkdir(dir) for f in fs])
+        capillary = joinpath(root, _DAS.CAPILLARY_DIR)
+        @test files(joinpath(bare, _DAS.CAPILLARY_DIR)) == files(capillary)
+        @test length(files(capillary)) > 3 * length(_DAS.SAMPLES)
+        for f in files(capillary)
+            @test read(joinpath(bare, _DAS.CAPILLARY_DIR, f)) == read(joinpath(capillary, f))
+        end
+        @test read(joinpath(bare, "TRUTH.csv")) == read(joinpath(root, "TRUTH.csv"))
+        @test !ispath(joinpath(bare, _DAS.AUTOSAMPLER_TRUTH_FILE))
     end
 
     @testset "the special cases TRUTH records are in the files" begin

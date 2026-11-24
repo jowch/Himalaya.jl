@@ -77,7 +77,7 @@ function _workload_wait_ingested(send, experiment::Integer)
     deadline = time() + 120
     while time() < deadline
         status = _workload_call(send, "GET", "/api/experiments/$experiment").ingest_status
-        status == "complete" && return nothing
+        status == "complete" && !ingest_running(Int(experiment)) && return nothing
         status == "failed" && error("precompile workload: the beamtime ingest failed")
         sleep(0.05)
     end
