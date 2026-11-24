@@ -67,7 +67,8 @@ end
 
 function measure(db_path)
     trace = Base.JLOptions().trace_compile
-    trace == C_NULL && error("run with --trace-compile=<file> --trace-compile-timing, so a failure can name what compiled")
+    (trace == C_NULL || Base.JLOptions().trace_compile_timing == 0) &&
+        error("run with --trace-compile=<file> --trace-compile-timing, so a failure can name what compiled and the one-method rule has timings to read")
     db = H.open_db(db_path)
     rm(dirname(H.thumb_cache_dir(db)); recursive = true, force = true)
     TRACE[] = unsafe_string(trace)
