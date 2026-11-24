@@ -36,4 +36,11 @@ describe("CollectionRibbon", () => {
     expect(screen.getByText("No image times yet")).toBeInTheDocument();
     expect(screen.getByText("2 to review")).toBeInTheDocument();
   });
+
+  it("says nothing about review when no sample can be reviewed", () => {
+    render(<CollectionRibbon timeline={TL} review={{ reviewed: 0, total: 0 }} />);
+    expect(screen.queryByText("All reviewed")).toBeNull();
+    expect(screen.queryByText(/to review/)).toBeNull();
+    expect(screen.getByRole("img")).not.toHaveAccessibleName(/reviewed/);
+  });
 });

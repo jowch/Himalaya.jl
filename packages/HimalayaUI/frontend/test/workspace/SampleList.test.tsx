@@ -198,3 +198,36 @@ describe("SampleList phase names", () => {
     expect(await screen.findByRole("tooltip")).toHaveTextContent("Pn3m + Lamellar");
   });
 });
+
+describe("SampleList review marks", () => {
+  const unreviewed = (id: number, name: string, over: Partial<CorpusSample> = {}) => ({ id, name, experiment_id: 1, notes: null, q_units: "A^-1", ...over } as CorpusSample);
+  const marks = (): string[] => screen.queryAllByTestId("workspace-status").map((m) => m.getAttribute("aria-label") ?? m.textContent ?? "");
+
+  it("shows no unreviewed mark and no call for a sample that has no review state", () => {
+    render(
+      <SampleList
+        samples={[unreviewed(1, "lipidA 01B (S0102)"), unreviewed(2, "water 01A (B0101)", { assignment_state: "indexed", phase: "Pn3m" })]}
+        currentId={undefined}
+        filter=""
+        onFilter={() => {}}
+        onPick={() => {}}
+        reviewable={(s) => s.id === 1}
+      />,
+    );
+    expect(marks()).toEqual(["Unreviewed"]);
+  });
+
+  it("still shows an analysis gap for a sample that has no review state", () => {
+    render(
+      <SampleList
+        samples={[unreviewed(2, "water 01A (B0101)", { analysis_gap: "all_dropped" })]}
+        currentId={undefined}
+        filter=""
+        onFilter={() => {}}
+        onPick={() => {}}
+        reviewable={() => false}
+      />,
+    );
+    expect(screen.getByTestId("workspace-status")).toHaveTextContent("All dropped");
+  });
+});

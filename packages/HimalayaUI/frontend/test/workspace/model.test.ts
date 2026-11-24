@@ -59,6 +59,30 @@ describe("firstUnreviewed", () => {
   });
 });
 
+describe("a reviewable predicate", () => {
+  const list = [sample(1, { name: "water 01A (B0101)" }), sample(2), sample(3, { name: "lipidA 01B (S0102)" })];
+  const notWater = (s: CorpusSample): boolean => !s.name.startsWith("water");
+
+  it("makes firstUnreviewed skip samples that have no review state", () => {
+    expect(firstUnreviewed(list, notWater)?.id).toBe(2);
+  });
+
+  it("makes firstUnreviewed fall back to the first sample when nothing is reviewable", () => {
+    expect(firstUnreviewed(list, () => false)?.id).toBe(1);
+  });
+
+  it("makes nextUnreviewed skip samples that have no review state, forwards and backwards", () => {
+    expect(nextUnreviewed(list, 2, 1, notWater)).toBe(3);
+    expect(nextUnreviewed(list, 3, 1, notWater)).toBe(2);
+    expect(nextUnreviewed(list, 2, -1, notWater)).toBe(3);
+    expect(nextUnreviewed(list, 1, 1, notWater)).toBe(2);
+  });
+
+  it("makes nextUnreviewed find nothing when no sample is reviewable", () => {
+    expect(nextUnreviewed(list, 1, 1, () => false)).toBeUndefined();
+  });
+});
+
 describe("nextUnreviewed", () => {
   const list = [
     sample(1, { assignment_state: "indexed", phase: "Pn3m" }),

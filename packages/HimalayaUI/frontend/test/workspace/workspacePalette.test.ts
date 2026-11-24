@@ -17,6 +17,7 @@ function input(over: Partial<WorkspacePaletteInput> = {}): WorkspacePaletteInput
   return {
     modKey: "Ctrl",
     canEdit: true,
+    calls: true,
     nextUnreviewed: noop,
     compare: { samples: [], notes: new Map(), pick: noop, compared: [], remove: noop, subtractable: [], subtracted: undefined, subtract: noop },
     bridge: { samples: [], pick: noop, choices: () => undefined, names: (id) => `Sample ${id}`, bridged: [], leave: noop, groupChoices: () => undefined, pickMany: noop },
@@ -42,6 +43,23 @@ function input(over: Partial<WorkspacePaletteInput> = {}): WorkspacePaletteInput
     ...over,
   };
 }
+
+describe("workspacePalette without the calls module", () => {
+  it("offers no candidate, custom index or form factor entry", () => {
+    const { pages, groups } = workspacePalette(input({ calls: false, candidates: { list: [candidate(1, 100)], ticked: new Set(), tick: vi.fn() } }));
+    const ids = groups.flatMap((g) => g.items.map((i) => i.id));
+    expect(ids).not.toContain("tick");
+    expect(ids).not.toContain("custom");
+    expect(ids).not.toContain("form-factor");
+    expect(pages.tick).toBeUndefined();
+  });
+
+  it("keeps the entries with the calls module", () => {
+    const { groups } = workspacePalette(input({ candidates: { list: [candidate(1, 100)], ticked: new Set(), tick: vi.fn() } }));
+    const ids = groups.flatMap((g) => g.items.map((i) => i.id));
+    expect(ids).toEqual(expect.arrayContaining(["tick", "custom", "form-factor"]));
+  });
+});
 
 describe("workspacePalette", () => {
   it("names each sample's setup on the compare, subtract, stop, same-sample and go-to rows", () => {
