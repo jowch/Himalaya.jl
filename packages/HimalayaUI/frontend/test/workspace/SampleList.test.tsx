@@ -83,11 +83,11 @@ describe("SampleList selection", () => {
     );
     const cur = screen.getByRole("button", { name: /JC002/ }).className;
     const other = screen.getByRole("button", { name: /JC001/ }).className;
-    expect(cur).toMatch(/\bbg-accent\/25\b/);
+    expect(cur).toMatch(/\bbg-row-selected\b/);
     expect(cur).not.toMatch(/shadow-|border-l|ring-/);
-    expect(other).not.toMatch(/\bbg-accent\/25\b/);
-    expect(cur.replace(/\b(font-semibold|bg-accent\/25|hover:\S+)\b/g, "").split(/\s+/).sort()).toEqual(
-      other.replace(/\b(font-semibold|bg-accent\/25|hover:\S+)\b/g, "").split(/\s+/).sort(),
+    expect(other).not.toMatch(/\bbg-row-selected\b/);
+    expect(cur.replace(/\b(font-semibold|bg-row-selected|hover:\S+)\b/g, "").split(/\s+/).sort()).toEqual(
+      other.replace(/\b(font-semibold|bg-row-selected|hover:\S+)\b/g, "").split(/\s+/).sort(),
     );
   });
 });

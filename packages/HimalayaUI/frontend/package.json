@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "npm run lint:design && npm run lint:ratchet && npm run lint:contracts && npm run lint && tsc --noEmit -p tsconfig.build.json && vite build",
@@ -27,7 +30,7 @@
     "d3-shape": "^3.2.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
-    "react-router-dom": "^6.30.3",
+    "react-router": "^7.18.7",
     "zustand": "^4.5.0"
   },
   "devDependencies": {
@@ -44,15 +47,18 @@
     "@types/node": "^25.6.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
-    "@vitejs/plugin-react": "^4.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
     "eslint": "^10.14.0",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "jsdom": "^25.0.0",
+    "jsdom": "^31.0.1",
     "storybook": "^10.4.1",
     "tailwindcss": "^4.2.4",
     "typescript": "^5.6.0",
     "typescript-eslint": "^8.72.1",
-    "vite": "^5.4.0",
-    "vitest": "^2.1.0"
+    "vite": "^8.3.8",
+    "vitest": "^5.1.1"
+  },
+  "overrides": {
+    "@joshwooding/vite-plugin-react-docgen-typescript": "^0.9.1"
   }
 }

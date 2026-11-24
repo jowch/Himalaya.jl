@@ -5,7 +5,6 @@ import type { CallRow } from "../workspace/bonnetGroups";
 import { formatCurvature, gaussianCurvature } from "../workspace/curvature";
 import { Kbd } from "./Kbd";
 import { Note } from "./Note";
-import { SELECTED_ROW } from "./selectedRow";
 import { Tooltip } from "./Tooltip";
 
 interface Props {
@@ -24,8 +23,7 @@ const NONE: ReadonlySet<number> = new Set();
 const NOT_FOUND = "Not found in the selected images. The call stays, with lines drawn from its own lattice.";
 
 const ROW = "grid w-full items-center rounded-sm border px-2 text-left text-base disabled:opacity-50 ";
-const look = (on: boolean | "mixed") =>
-  "border-transparent " + (on === true ? SELECTED_ROW : on === "mixed" ? "bg-accent/10 hover:bg-accent/15" : "hover:bg-ink/6");
+const ROW_LOOK = "border-transparent hover:bg-ink/6";
 
 export function CandidateList({ rows, assigned, unsupported = NONE, disabled, formFactor, onToggle, onToggleGroup, onFormFactor, onHover }: Props): JSX.Element {
   const [pointerFocus, setPointerFocus] = useState(false);
@@ -66,17 +64,17 @@ export function CandidateList({ rows, assigned, unsupported = NONE, disabled, fo
         onClick={onFormFactor}
         onFocus={() => onHover(undefined)}
         data-testid="workspace-form-factor"
-        className={ROW + "grid-cols-[auto_1fr] gap-2 py-[5px] " + look(formFactor)}
+        className={ROW + "grid-cols-[auto_1fr] gap-2 py-[5px] " + ROW_LOOK}
       >
-        <Kbd>0</Kbd>
+        <Kbd pressed={formFactor}>0</Kbd>
         <span>No phase (form factor)</span>
       </button>
     </div>
   );
 }
 
-function Key({ n }: { n: number }): JSX.Element {
-  return n <= 9 ? <Kbd>{n}</Kbd> : <span aria-hidden="true" className="invisible"><Kbd>9</Kbd></span>;
+function Key({ n, pressed }: { n: number; pressed: boolean | "mixed" }): JSX.Element {
+  return n <= 9 ? <Kbd pressed={pressed}>{n}</Kbd> : <span aria-hidden="true" data-blank-key=""><Kbd pressed={pressed}>{"\u00a0"}</Kbd></span>;
 }
 
 function Rows({ rows, assigned, unsupported, disabled, onToggle, onToggleGroup, onHover }: Omit<Props, "formFactor" | "onFormFactor" | "unsupported"> & { unsupported: ReadonlySet<number> }): JSX.Element {
@@ -97,10 +95,10 @@ function Rows({ rows, assigned, unsupported, disabled, onToggle, onToggleGroup, 
           onMouseMove={() => onHover([c.id])}
           onFocus={() => onHover([c.id])}
           data-unsupported={missing ? "" : undefined}
-          className={ROW + "grid-cols-[auto_auto_1fr_auto] py-[5px] " + (inGroup ? "gap-1 " : "gap-1.5 ") + look(on)}
+          className={ROW + "grid-cols-[auto_auto_1fr_auto] py-[5px] " + (inGroup ? "gap-1 " : "gap-1.5 ") + ROW_LOOK}
         >
-          <Key n={key} />
-          <PhaseChip phase={c.phase} variant="solid" />
+          <Key n={key} pressed={on} />
+          <PhaseChip phase={c.phase} />
           <Tooltip content={lattice} overflowOnly>
             <span className="min-w-0 truncate whitespace-nowrap text-ink-soft">{lattice}</span>
           </Tooltip>
@@ -136,9 +134,9 @@ function Rows({ rows, assigned, unsupported, disabled, onToggle, onToggleGroup, 
               onMouseMove={() => onHover(ids)}
               onFocus={() => onHover(ids)}
               data-testid="workspace-bonnet-group"
-              className={ROW + "grid-cols-[auto_1fr_auto] gap-1.5 py-[6px] " + look(pressed)}
+              className={ROW + "grid-cols-[auto_1fr_auto] gap-1.5 py-[6px] " + ROW_LOOK}
             >
-              <Key n={key} />
+              <Key n={key} pressed={pressed} />
               <span className="min-w-0 truncate whitespace-nowrap">
                 Bonnet group
                 {shared !== null && <span className="ml-1.5 text-xs text-ink-soft" data-testid="workspace-bonnet-curvature">{formatCurvature(shared)}</span>}

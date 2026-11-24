@@ -211,7 +211,7 @@ export function Palette({ groups, pages, onClose, onType, start }: Props): JSX.E
                               e.stopPropagation();
                               tick(item);
                             }}
-                            className={"inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[3px] border text-[10px] leading-none " + (ticked.includes(item.id) ? "border-accent bg-accent text-paper" : "border-hair-strong")}
+                            className={"inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[3px] border text-[10px] leading-none " + (ticked.includes(item.id) ? "border-accent-fill bg-accent-fill text-on-accent" : "border-hair-strong")}
                           >
                             {ticked.includes(item.id) ? "✓" : null}
                           </span>

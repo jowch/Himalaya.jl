@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, render, screen, fireEvent, within, waitFor } from "@testing-library/react";
-import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
+import { MemoryRouter, Routes, Route, useLocation } from "react-router";
 import type { CorpusSample, SampleBackground, Exposure, IndexEntry, Assignment, Peak, ProblemExposure, SampleBridge, SampleCall, SampleCallMember, SampleLabel, LabelColorEntry, LabelColor, Trace } from "../../src/api";
 import { ApiError } from "../../src/api";
 import { WorkspacePage } from "../../src/workspace/WorkspacePage";
@@ -3124,7 +3124,7 @@ describe("WorkspacePage", () => {
     state.exposures = [exposure(100), exposure(101, { exposure_time: 1, frames_total: 10, frames_rejected: 1 })];
     renderAt("/experiments/1/workspace/10");
     const text = screen.getByRole("heading", { name: "Image" }).closest("section")!.textContent ?? "";
-    expect(text).toContain("Kind9 of 10 images, beamline average");
+    expect(text).toContain("Kind9 of 10 averaged");
     expect(text).toContain("Exposure9 × 1.0 s");
   });
 
@@ -4344,7 +4344,7 @@ describe("WorkspacePage autosampler background", () => {
     expect(plot().querySelector("[data-role='difference-line']")).not.toBeNull();
     expect(plot().querySelector("[data-role='trace-line']")).toBeNull();
     expect(within(module()).getByText("lipidA 01A (B0100)")).toBeInTheDocument();
-    expect(within(module()).getByText("The run's first buffer")).toBeInTheDocument();
+    expect(within(module()).getByText("run's buffer")).toBeInTheDocument();
     expect(document.querySelector("[data-compare-chip]")).toBeNull();
   });
 
@@ -4375,18 +4375,18 @@ describe("WorkspacePage autosampler background", () => {
     expect(patches()).toEqual([{ subtraction: null }]);
     expect(screen.queryByTestId("workspace-subtraction-toggle")).toBeNull();
     expect(plot().querySelector("[data-role='trace-line']")).not.toBeNull();
-    expect(within(module()).getByText("No background. Nothing is subtracted.")).toBeInTheDocument();
+    expect(within(module()).getByTestId("background-name")).toHaveTextContent("None");
     expect(within(module()).queryByRole("button", { name: "None" })).toBeNull();
   });
 
-  it("Use the run's buffer goes back to the default and to Minus", () => {
+  it("the Run's buffer button goes back to the default and to Minus", () => {
     seed();
     open(FIRST);
     fireEvent.click(within(module()).getByRole("button", { name: "None" }));
-    fireEvent.click(within(module()).getByRole("button", { name: "Use the run's buffer" }));
+    fireEvent.click(within(module()).getByRole("button", { name: "Run's buffer" }));
     expect(patches()).toEqual([{ subtraction: null }, { subtraction: "default" }]);
     expect(screen.getByRole("button", { name: "Minus lipidA 01A (B0100)" })).toHaveAttribute("aria-pressed", "true");
-    expect(within(module()).getByText("The run's first buffer")).toBeInTheDocument();
+    expect(within(module()).getByText("run's buffer")).toBeInTheDocument();
   });
 
   it("B opens a picker with the run's other buffers first, then the setup's buffers, then everything else, and picking one sends it", () => {
@@ -4403,7 +4403,7 @@ describe("WorkspacePage autosampler background", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: /lipidA 01D \(B0103\)/ }));
     expect(patches()).toEqual([{ subtraction: END_BUFFER }]);
     expect(within(module()).getByText("lipidA 01D (B0103)")).toBeInTheDocument();
-    expect(within(module()).getByText("Your choice")).toBeInTheDocument();
+    expect(within(module()).getByText("chosen")).toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "Choose the background" })).toBeNull();
     expect(document.querySelector("[data-compare-chip]")).toBeNull();
   });
@@ -4426,10 +4426,10 @@ describe("WorkspacePage autosampler background", () => {
     expect(calls.filter((c) => c.hook === "op:patchCompares").map((c) => c.arg)).toEqual([[FIRST, { subtraction: "default" }]]);
   });
 
-  it("shows only a plain sentence for a buffer, and Raw with no toggle", () => {
+  it("tags a buffer as a buffer with no controls, and shows Raw with no toggle", () => {
     seed();
     open(BUFFER);
-    expect(within(module()).getByText("This is a buffer, so nothing is subtracted from it.")).toBeInTheDocument();
+    expect(within(module()).getByTestId("background-name")).toHaveTextContent("This is a buffer");
     expect(within(module()).queryByRole("button")).toBeNull();
     expect(screen.queryByTestId("workspace-subtraction-toggle")).toBeNull();
     expect(plot().querySelector("[data-role='trace-line']")).not.toBeNull();
@@ -4440,7 +4440,7 @@ describe("WorkspacePage autosampler background", () => {
   it("says a run without a buffer has nothing to subtract yet, and offers to choose one", () => {
     seed([entry(FIRST, { ref_sample_id: null, default_ref_sample_id: null, run_buffer_ids: [] })]);
     open(FIRST);
-    expect(within(module()).getByText("No buffer in this run. Choose one to subtract.")).toBeInTheDocument();
+    expect(within(module()).getByTestId("background-name")).toHaveTextContent("No buffer in this run");
     expect(screen.queryByTestId("workspace-subtraction-toggle")).toBeNull();
     expect(within(module()).getByRole("button", { name: /Change/ })).toBeEnabled();
   });
@@ -4451,8 +4451,8 @@ describe("WorkspacePage autosampler background", () => {
     fireEvent.click(within(module()).getByRole("button", { name: "None" }));
     fireEvent.click(within(module()).getByRole("button", { name: /Change/ }));
     fireEvent.click(within(screen.getByRole("dialog", { name: "Choose the background" })).getByRole("button", { name: /lipidA 01A \(B0100\)/ }));
-    expect(within(module()).getByText("Your choice")).toBeInTheDocument();
-    fireEvent.click(within(module()).getByRole("button", { name: "Use the run's buffer" }));
+    expect(within(module()).getByText("chosen")).toBeInTheDocument();
+    fireEvent.click(within(module()).getByRole("button", { name: "Run's buffer" }));
     expect(patches().at(-1)).toEqual({ subtraction: "default" });
   });
 
@@ -4487,15 +4487,15 @@ describe("WorkspacePage autosampler background", () => {
     expect(screen.getByTestId("workspace-subtraction-toggle")).toHaveAttribute("aria-hidden", "true");
   });
 
-  it("sits above the Image section's beamline average without sharing its text", () => {
+  it("sits above the Image section without sharing its text", () => {
     seed();
     state.exposures = [exposure(100, { sample_id: FIRST, exposure_time: 1, frames_total: 10, frames_rejected: 1 })];
     open(FIRST);
     expect(slotOrder()).toEqual(["Background", "Image"]);
     const image = tools().querySelector("[data-section='Image']")!.textContent ?? "";
-    expect(image).toContain("9 of 10 images, beamline average");
+    expect(image).toContain("9 of 10 averaged");
     expect(image).not.toContain("lipidA 01A (B0100)");
-    expect(module().textContent).not.toContain("beamline average");
+    expect(module().textContent).not.toContain("9 of 10 averaged");
     expect(module().nextElementSibling).toBe(tools().querySelector("[data-section='Image']"));
   });
 
@@ -4524,11 +4524,11 @@ describe("WorkspacePage autosampler background", () => {
     const chip = (): HTMLElement => within(screen.getByTestId("workspace-compare-bar")).getByRole("button", { name: /^lipidA 01D \(B0103\)/ });
     fireEvent.click(chip(), { ctrlKey: true });
     expect(patches().at(-1)).toEqual({ subtraction: END_BUFFER });
-    expect(within(module()).getByText("Your choice")).toBeInTheDocument();
+    expect(within(module()).getByText("chosen")).toBeInTheDocument();
     expect(chip()).toHaveAttribute("data-subtracted");
     fireEvent.click(chip(), { ctrlKey: true });
     expect(patches().at(-1)).toEqual({ subtraction: null });
-    expect(within(module()).getByText("No background. Nothing is subtracted.")).toBeInTheDocument();
+    expect(within(module()).getByTestId("background-name")).toHaveTextContent("None");
   });
 
   it("removing a comparison leaves a background that is not one", () => {
@@ -4543,7 +4543,7 @@ describe("WorkspacePage autosampler background", () => {
     seed();
     state.compareTraces = new Map();
     open(FIRST);
-    expect(within(module()).getByText("No trace for this background")).toBeInTheDocument();
+    expect(within(module()).getByTestId("background-note")).toHaveTextContent("no trace");
     expect(screen.queryByTestId("workspace-subtraction-toggle")).toBeNull();
     expect(plot().querySelector("[data-role='trace-line']")).not.toBeNull();
   });
@@ -4553,7 +4553,7 @@ describe("WorkspacePage autosampler background", () => {
     state.compareTraces = new Map();
     state.traceLoading = new Set([BUFFER]);
     open(FIRST);
-    expect(within(module()).getByText("Loading the trace")).toBeInTheDocument();
+    expect(within(module()).getByTestId("background-note")).toHaveTextContent("loading");
   });
 
   it("holds the module's place, disabled, while the comparisons have not loaded", () => {
@@ -4566,17 +4566,17 @@ describe("WorkspacePage autosampler background", () => {
   it("reads a background in a hidden setup as hidden, and stays Raw", () => {
     seed([entry(FIRST, { ref_sample_id: 40, source: "user" })]);
     open(FIRST);
-    expect(within(module()).getByText("The setup of this background is hidden")).toBeInTheDocument();
+    expect(within(module()).getByTestId("background-note")).toHaveTextContent("setup hidden");
     expect(screen.queryByTestId("workspace-subtraction-toggle")).toBeNull();
   });
 
-  it("shows how the background is scaled, in the chip's words", () => {
+  it("leaves the note row empty when both traces are already normalised", () => {
     seed();
     const monitors = { transmitted_counts: 1e6, exposure_time: 15, counting_time: 15.8, normalised_by: "i2" as const, mode: "autosampler" as const };
     state.trace = { ...makeTrace(2), monitors };
     state.compareTraces = new Map([[BUFFER, { ...makeTrace(1), monitors }]]);
     open(FIRST);
-    expect(within(module()).getByText("Both already divided by the transmitted beam, so not rescaled")).toBeInTheDocument();
+    expect(within(module()).getByTestId("background-note")).toBeEmptyDOMElement();
   });
 
   it("palette commands choose the background, turn it off and go back to the run's buffer", () => {

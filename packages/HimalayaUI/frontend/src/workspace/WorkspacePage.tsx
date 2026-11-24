@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router";
 import type { AssignmentState, CorpusSample, Exposure, IndexEntry, LabelColor, SampleBridge, SampleCallMember, SampleLabel } from "../api";
 import { ApiError } from "../api";
 import {

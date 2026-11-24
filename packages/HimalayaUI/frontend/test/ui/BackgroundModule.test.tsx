@@ -1,7 +1,8 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BackgroundModule, type BackgroundView } from "../../src/ui/BackgroundModule";
 import { SCALE_NOTES } from "../../src/ui/CompareBar";
+import { resetTooltipWarmth, TOOLTIP_OPEN_DELAY_MS } from "../../src/ui/Tooltip";
 import type { CompareScale } from "../../src/workspace/compare";
 
 const set = (over: Partial<Extract<BackgroundView, { kind: "set" }>> = {}): BackgroundView => ({
@@ -15,18 +16,18 @@ function show(view: BackgroundView, over: { editable?: boolean; picker?: JSX.Ele
 }
 
 describe("BackgroundModule", () => {
-  it("names the background and says it is the run's buffer", () => {
+  it("names the background and tags it as the run's buffer", () => {
     show(set());
     expect(screen.getByRole("heading", { name: "Background" })).toBeInTheDocument();
     expect(screen.getByText("lipidA 01A (B0100)")).toBeInTheDocument();
-    expect(screen.getByText("The run's first buffer")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Use the run's buffer" })).toBeNull();
+    expect(screen.getByText("run's buffer")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Run's buffer" })).toBeNull();
   });
 
-  it("says when the background is the user's choice and offers the run's buffer back", () => {
+  it("tags the background as chosen and offers the run's buffer back", () => {
     const on = show(set({ source: "user", canUseRunBuffer: true }));
-    expect(screen.getByText("Your choice")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Use the run's buffer" }));
+    expect(screen.getByText("chosen")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Run's buffer" }));
     expect(on.onDefault).toHaveBeenCalledTimes(1);
   });
 
@@ -38,57 +39,108 @@ describe("BackgroundModule", () => {
     expect(on.onNone).toHaveBeenCalledTimes(1);
   });
 
-  it("shows how the background is scaled, in the chip's words", () => {
+  it("says nothing on the note row when both traces are already normalised", () => {
+    show(set());
+    expect(screen.getByTestId("background-note")).toBeEmptyDOMElement();
+  });
+
+  it("shows a matched scale as a short label with its value", () => {
     show(set({ scale: { scale: 1.234, source: "matched" } }));
-    expect(screen.getByText("No transmitted-beam reading, so matched at high q")).toBeInTheDocument();
-    expect(screen.getByText("×1.23")).toBeInTheDocument();
+    expect(screen.getByTestId("background-note")).toHaveTextContent("matched at high q ×1.23");
   });
 
   it("shows a collapsed transmitted beam", () => {
     show(set({ scale: { scale: 2, source: "i2_collapsed" } }));
-    expect(screen.getByText("Transmitted beam dropped on this image, so matched at high q")).toBeInTheDocument();
+    expect(screen.getByTestId("background-note")).toHaveTextContent("I₂ low, matched ×2.00");
   });
 
   it("says when the background has no trace", () => {
     show(set({ trace: "missing", scale: undefined }));
-    expect(screen.getByText("No trace for this background")).toBeInTheDocument();
+    expect(screen.getByTestId("background-note")).toHaveTextContent("no trace");
   });
 
   it("says while the background's trace loads", () => {
     show(set({ trace: "loading", scale: undefined }));
-    expect(screen.getByText("Loading the trace")).toBeInTheDocument();
+    expect(screen.getByTestId("background-note")).toHaveTextContent("loading");
   });
 
   it("says when the setup of the background is hidden", () => {
     show(set({ trace: "hidden", scale: undefined }));
-    expect(screen.getByText("The setup of this background is hidden")).toBeInTheDocument();
+    expect(screen.getByTestId("background-note")).toHaveTextContent("setup hidden");
   });
 
   it("reads no background when turned off, and does not offer None again", () => {
     const on = show({ kind: "off", reason: "chosen", canUseRunBuffer: true });
-    expect(screen.getByText("No background. Nothing is subtracted.")).toBeInTheDocument();
+    expect(screen.getByTestId("background-name")).toHaveTextContent("None");
+    expect(screen.getByTestId("background-note")).toBeEmptyDOMElement();
     expect(screen.queryByRole("button", { name: "None" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Use the run's buffer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Run's buffer" }));
     expect(on.onDefault).toHaveBeenCalled();
   });
 
   it("says when the run has no buffer to use, and does not offer None, which would stop a later buffer being the default", () => {
     show({ kind: "off", reason: "no-buffer", canUseRunBuffer: false });
-    expect(screen.getByText("No buffer in this run. Choose one to subtract.")).toBeInTheDocument();
+    expect(screen.getByTestId("background-name")).toHaveTextContent("No buffer in this run");
+    expect(screen.getByTestId("background-note")).toBeEmptyDOMElement();
     expect(screen.queryByRole("button", { name: "None" })).toBeNull();
     expect(screen.getByRole("button", { name: /Change/ })).toBeInTheDocument();
   });
 
-  it.each(Object.keys(SCALE_NOTES) as CompareScale["source"][])("shows the whole %s note on the page, not only in a tooltip", (source) => {
-    show(set({ scale: { scale: 1.5, source } }));
-    expect(screen.getByText(SCALE_NOTES[source])).toBeVisible();
-    expect(screen.getByText("×1.50")).toBeVisible();
-    expect(screen.queryByRole("tooltip")).toBeNull();
+  const SHORT: Record<CompareScale["source"], string> = {
+    normalised: "",
+    monitor: "scaled ×1.50",
+    matched: "matched at high q ×1.50",
+    unknown_normalisation: "no integ settings, matched ×1.50",
+    unknown_mode: "matched at high q ×1.50",
+    other_setup: "other setup, matched ×1.50",
+    beam_off: "beam off, matched ×1.50",
+    i2_collapsed: "I₂ low, matched ×1.50",
+    capillary: "matched at high q ×1.50",
+  };
+
+  describe("note tooltip", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      resetTooltipWarmth();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it.each(Object.keys(SCALE_NOTES).filter((k) => k !== "normalised") as CompareScale["source"][])("explains %s in the chip's words on hover", (source) => {
+      show(set({ scale: { scale: 1.5, source } }));
+      fireEvent.mouseEnter(screen.getByTestId("background-note"));
+      act(() => {
+        vi.advanceTimersByTime(TOOLTIP_OPEN_DELAY_MS);
+      });
+      expect(screen.getByRole("tooltip")).toHaveTextContent(SCALE_NOTES[source]);
+    });
+
+    it("has no tooltip when the note is empty", () => {
+      show(set());
+      fireEvent.mouseEnter(screen.getByTestId("background-note"));
+      act(() => {
+        vi.advanceTimersByTime(TOOLTIP_OPEN_DELAY_MS);
+      });
+      expect(screen.queryByRole("tooltip")).toBeNull();
+    });
   });
 
-  it("says a buffer has nothing subtracted and offers no controls", () => {
+  it.each(Object.keys(SCALE_NOTES) as CompareScale["source"][])("shows %s as a short label and gives the whole sentence as its description", (source) => {
+    show(set({ scale: { scale: source === "normalised" ? 1 : 1.5, source } }));
+    const note = screen.getByTestId("background-note");
+    if (source === "normalised") {
+      expect(note).toBeEmptyDOMElement();
+      return;
+    }
+    expect(note).toHaveTextContent(SHORT[source]);
+    expect(screen.queryByText(SCALE_NOTES[source])).toBeNull();
+  });
+
+  it("tags a buffer and offers no controls", () => {
     show({ kind: "buffer" });
-    expect(screen.getByText("This is a buffer, so nothing is subtracted from it.")).toBeInTheDocument();
+    expect(screen.getByTestId("background-name")).toHaveTextContent("This is a buffer");
+    expect(screen.getByTestId("background-note")).toBeEmptyDOMElement();
     expect(screen.queryByRole("button")).toBeNull();
   });
 
@@ -110,7 +162,7 @@ describe("BackgroundModule", () => {
     expect(screen.getByRole("dialog", { name: "Subtract a sample" })).toBeInTheDocument();
   });
 
-  it("renders one name row and one controls row in every state, so the module's height does not depend on the sample", () => {
+  it("renders one name row, one note row and one controls row in every state, so the module's height does not depend on the sample", () => {
     const states: BackgroundView[] = [
       { kind: "loading" },
       { kind: "buffer" },
@@ -123,6 +175,7 @@ describe("BackgroundModule", () => {
       const { unmount } = render(<BackgroundModule view={view} editable picker={undefined} onChange={vi.fn()} onNone={vi.fn()} onDefault={vi.fn()} />);
       expect(screen.getAllByTestId("background-controls")).toHaveLength(1);
       expect(screen.getAllByTestId("background-name")).toHaveLength(1);
+      expect(screen.getAllByTestId("background-note")).toHaveLength(1);
       unmount();
     }
   });
