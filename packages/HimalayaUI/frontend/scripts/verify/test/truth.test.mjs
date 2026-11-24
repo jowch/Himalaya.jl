@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checkTruth, bridgeCallDrift, bridgeLabelDrift, compareTruth, selectedFrames, normalizeCall, railMismatch, shownStatus } from "../truth.mjs";
+import { checkTruth, bridgeCallDrift, bridgeLabelDrift, compareTruth, selectedFrames, normalizeCall, railMismatch, shownStatus, withBridgedCallEvidence } from "../truth.mjs";
 
 const TRUTH = [
   { sample: "MO_H2O", bases: "MO_H2O_S1 MO_H2O_S2", phases: "Pn3m", auto: "Pn3m", drop: "", note: "" },
@@ -404,6 +404,19 @@ test("bridged_calls_match is unchecked without a bridge and fails on a sample wh
   drifted[0].callDrift = [{ mate: "B", mine: { state: "indexed", phases: ["Pn3m"] }, theirs: { state: "form_factor", phases: [] } }];
   const r = compareTruth(TRUTH, drifted);
   assert.deepEqual(r.summary.invariants_failed, ["bridged_calls_match"]);
+});
+
+test("status_matches_assignment reads a bridged sample's call from every sample in its bridge, even with nothing selected", () => {
+  const assigned = { state: "indexed", phases: ["Pn3m"] };
+  const h2o = [frame("MO_H2O_S1", ["Pn3m"], { assignment: assigned }), frame("MO_H2O_S2", ["Pn3m"])];
+  const peg = [frame("MO_PEG5_S3", ["Im3m"], { selected: false })];
+  const apps = app({ h2o, h2oShown: { phase: "Pn3m" }, peg, pegShown: { phase: "Pn3m", analyzed_id: null } });
+  const alone = compareTruth(TRUTH, apps);
+  assert.deepEqual(alone.invariants.status_matches_assignment.violations, [{ sample: "MO_PEG5", shown: "Pn3m", confirmed: null }]);
+  const bridged = compareTruth(TRUTH, withBridgedCallEvidence(apps, [{ sample_id: 1, group_id: 3 }, { sample_id: 2, group_id: 3 }]));
+  assert.equal(bridged.invariants.status_matches_assignment.ok, true);
+  const unbridged = compareTruth(TRUTH, withBridgedCallEvidence(apps, [{ sample_id: 1, group_id: 3 }]));
+  assert.equal(unbridged.invariants.status_matches_assignment.ok, false, "a group of one shares nothing");
 });
 
 test("plot_shows_selection: two selected images need their average, and the status describes it", () => {

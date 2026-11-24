@@ -137,13 +137,14 @@ export function dropEntry(
 
 export function selectionEntry(
   ops: EditOps,
-  at: Where & { exposureId: number | undefined; prev: readonly number[]; next: readonly number[] },
+  at: Where & { exposureId: number | undefined; owner?: number; prev: readonly number[]; next: readonly number[] },
 ): UndoEntry {
+  const owner = at.owner ?? at.sampleId;
   const key = (ids: readonly number[]): string => [...ids].sort((a, b) => a - b).join(",");
   const set = async (from: readonly number[], to: readonly number[]): Promise<number> => {
-    const now = selectedFrames(await ops.read.exposures(at.sampleId)).map((e) => e.id);
+    const now = selectedFrames(await ops.read.exposures(owner)).map((e) => e.id);
     if (key(now) !== key(from)) return 0;
-    ops.setSelection(at.sampleId, [...to]);
+    ops.setSelection(owner, [...to]);
     return 1;
   };
   return {
@@ -351,6 +352,14 @@ function bridgeGains(members: readonly number[], labels: readonly SampleLabel[])
   }));
 }
 
+export function sharedAfterBridge(labels: readonly SampleLabel[], members: readonly number[]): SampleLabel[] {
+  const gains = bridgeGains(members, labels);
+  const out = labels.filter((l) => !(gains.get(l.sample_id)?.has(labelKey(l.label)) ?? false));
+  const named = new Map(labels.filter((l) => members.includes(l.sample_id) && l.state === "confirmed").map((l) => [labelKey(l.label), l.label] as const));
+  for (const [sid, keys] of gains) for (const key of keys.keys()) out.push({ id: -1, sample_id: sid, label: named.get(key) ?? key, state: "confirmed", source: "bridge" });
+  return out;
+}
+
 export function bridgeEntry(
   ops: EditOps,
   at: Where & {
@@ -370,6 +379,7 @@ export function bridgeEntry(
   return {
     ...at,
     undo: async () => {
+      await ops.whenSaved();
       if (!together(await ops.read.bridges(), at.from, at.to)) return 0;
       const now = await ops.read.labels();
       const call = await ops.read.call(at.from);

@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "./fixtures";
+import { expectDialogFitsAndScrolls } from "./dialogScroll";
 
 const LONG = "a_sample_with_a_long_descriptive_name_S24";
 const SAMPLES = [
@@ -484,8 +485,6 @@ for (const width of [1024, 1280]) {
         await page.goto(`/experiments/17/workspace/${id}`);
         const title = page.getByRole("heading", { level: 2, name });
         await expect(page.locator("[data-testid=workspace-exposures] li").first()).toBeVisible();
-        const meta = page.getByText("Image 1 of 1", { exact: true });
-        if (width === 1280) await expect(meta).toBeVisible();
         expect(await title.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
         const add = page.getByRole("button", { name: "+ Label L" });
         await expect(add).toBeVisible();
@@ -750,58 +749,78 @@ test("a subscripted phase name in the sample list leaves every row the same heig
 });
 
 for (const viewport of [...VIEWPORTS, { width: 1024, height: 600 }, { width: 800, height: 480 }, { width: 480, height: 800 }]) {
-  test(`the ? shortcut list fits the window, scrolls by keyboard to its last row, and keeps its header in view at ${viewport.width}×${viewport.height}`, async ({ page }) => {
+  test(`the ? shortcut list fits the window and scrolls by keyboard and wheel to its last row at ${viewport.width}×${viewport.height}`, async ({ page }) => {
     await page.setViewportSize(viewport);
     await page.goto("/experiments/17/workspace/40");
     await openSample(page, 40);
     await page.keyboard.press("?");
     const help = page.getByRole("dialog", { name: "Keyboard shortcuts" });
-    await expect(help).toBeVisible();
-    const panel = (await help.boundingBox())!;
-    expect(panel.y + panel.height, "the list ends inside the window").toBeLessThanOrEqual(viewport.height);
-    expect(panel.x + panel.width, "the list fits the window's width").toBeLessThanOrEqual(viewport.width);
-    const body = help.getByTestId("help-body");
-    const header = help.getByTestId("help-header");
+    const body = help.getByTestId("overlay-body");
+    const rows = help.getByTestId("help-list").locator(":scope > span");
     await expect(body).toBeFocused();
-    const headerBefore = (await header.boundingBox())!;
-    const rows = body.locator(":scope > span");
-    const last = rows.last();
     await page.keyboard.press("End");
     await expect.poll(async () => {
-      const [b, r] = await Promise.all([body.boundingBox(), last.boundingBox()]);
-      return r!.y + r!.height <= b!.y + b!.height + 0.5 && r!.y >= b!.y - 0.5;
-    }, { message: "End brings the last row fully into view" }).toBe(true);
-    expect(await header.boundingBox(), "the header stays put while the list scrolls").toEqual(headerBefore);
+      const [b, r] = await Promise.all([body.boundingBox(), rows.last().boundingBox()]);
+      return r!.y + r!.height <= b!.y + b!.height + 0.5;
+    }, { message: "End brings the last row into view" }).toBe(true);
     await page.keyboard.press("Home");
-    await expect.poll(async () => {
-      const [b, r] = await Promise.all([body.boundingBox(), rows.first().boundingBox()]);
-      return r!.y >= b!.y - 0.5;
-    }, { message: "Home brings the first row back" }).toBe(true);
+    await expect.poll(() => body.evaluate((el) => el.scrollTop)).toBe(0);
+    await expectDialogFitsAndScrolls(page, help, rows.last());
     await page.keyboard.press("Escape");
     await expect(help).toHaveCount(0);
   });
 }
 
-test("on a short window the ? shortcut list really scrolls, so the fit test above is not vacuous", async ({ page }) => {
+test("on a short window the ? shortcut list really overflows, so the fit tests are not vacuous", async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 650 });
   await page.goto("/experiments/17/workspace/40");
   await openSample(page, 40);
   await page.keyboard.press("?");
-  const body = page.getByTestId("help-body");
+  const body = page.getByTestId("overlay-body");
   await expect(body).toBeVisible();
-  const { scrollHeight, clientHeight } = await body.evaluate((el) => ({ scrollHeight: el.scrollHeight, clientHeight: el.clientHeight }));
-  expect(scrollHeight).toBeGreaterThan(clientHeight);
-  await body.hover();
-  await page.mouse.wheel(0, 400);
-  await expect.poll(() => body.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  expect(await body.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
 });
 
-test("the ? shortcut list's close button closes it", async ({ page }) => {
+test("the ? shortcut list's name is said once, and Tab moves between the list and Close", async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 650 });
   await page.goto("/experiments/17/workspace/40");
   await openSample(page, 40);
   await page.keyboard.press("?");
   const help = page.getByRole("dialog", { name: "Keyboard shortcuts" });
-  await help.getByRole("button", { name: "Close" }).click();
+  await expect(help.getByText("Keyboard shortcuts", { exact: true })).toHaveCount(1);
+  await expect(help.locator("[aria-label='Keyboard shortcuts']")).toHaveCount(0);
+  const body = help.getByRole("region", { name: "Keyboard shortcuts" });
+  await expect(body).toHaveAttribute("aria-labelledby", /.+/);
+  const close = help.getByRole("button", { name: "Close" });
+  await expect(body).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(close).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(body).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(close).toBeFocused();
+  await page.keyboard.press("Enter");
   await expect(help).toHaveCount(0);
+});
+
+test("the enlarged detector image fits a window shrunk under it, and scrolls", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 650 });
+  await page.route(/\/api\/samples\/44\/exposures/, (r) => r.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify(Array.from({ length: 7 }, (_, f) => ({ ...exposureOf(44, true, f), image_path: `/img/${f}.tif`, selected: f === 0 }))),
+  }));
+  await page.route(/\/api\/exposures\/\d+\/image/, (r) => r.fulfill({
+    status: 200, contentType: "image/png",
+    body: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAwS2OUAAAAABJRU5ErkJggg==", "base64"),
+  }));
+  await page.goto("/experiments/17/workspace/44");
+  await openSample(page, 44);
+  await page.locator("[data-testid=workspace-exposures] li").first().click();
+  await page.keyboard.press("Space");
+  const big = page.getByTestId("workspace-detector-big");
+  await expect(big).toBeVisible();
+  await page.setViewportSize({ width: 800, height: 420 });
+  await expectDialogFitsAndScrolls(page, big, big.getByTestId("overlay-body").locator("p").last());
+  await page.keyboard.press("ArrowRight");
+  await expect(big).toContainText("Image 2 of");
 });

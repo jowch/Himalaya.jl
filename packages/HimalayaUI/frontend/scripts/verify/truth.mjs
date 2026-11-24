@@ -90,6 +90,19 @@ function shownLabel(shown) {
   return shown.status === "phase" ? shown.call : shown.status;
 }
 
+function callEvidenceOf(app) {
+  return [...app.frames, ...(app.combined ? [app.combined] : []), ...(app.earlierAverages ?? [])];
+}
+
+export function withBridgedCallEvidence(apps, bridges) {
+  const groupOf = new Map(bridges.map((b) => [b.sample_id, b.group_id]));
+  return apps.map((app) => {
+    const group = groupOf.get(app.id);
+    const members = group === undefined ? [] : apps.filter((m) => groupOf.get(m.id) === group);
+    return members.length > 1 ? { ...app, callEvidence: members.flatMap(callEvidenceOf) } : app;
+  });
+}
+
 export function sampleCall(frames) {
   const states = new Set(frames.map((f) => f.assignment?.state).filter(Boolean));
   if (states.has("form_factor")) return "none";
@@ -179,9 +192,10 @@ function sampleInvariants(app, frames, held = new Set()) {
   const shown = shownStatus(app.shown);
   const repId = app.shown.analyzed_id ?? null;
   const rep = frames.find((f) => f.id === repId) ?? null;
-  const confirmed = sampleCall([...frames, ...(app.combined ? [app.combined] : []), ...(app.earlierAverages ?? [])]);
+  const confirmed = sampleCall(app.callEvidence ?? callEvidenceOf(app));
   const selected = selectedFrames(frames);
   const pending = selected.length >= 2 && selected.some((f) => held.has(f.filename));
+  const noneSelected = kept.length > 0 && selected.length === 0;
   const opened = { corpus_api: app.combined && app.combined.id === repId ? COMBINED : rep?.filename ?? null, ...(app.views ?? {}) };
   const onDropped = Object.entries(opened)
     .map(([view, name]) => ({ view, frame: frames.find((f) => f.filename === name) }))
@@ -190,12 +204,12 @@ function sampleInvariants(app, frames, held = new Set()) {
   const allRead = app.views && unreadViews(app).length === 0;
   const workspaceRead = app.views ? statusFromText(app.workspaceText) : null;
   return {
-    plot_matches_trace: app.views && app.workspacePlot !== undefined ? ((m) => (m ? [m] : null))(plotMismatch(app.views.workspace, app.workspacePlot, held, pending)) : null,
+    plot_matches_trace: app.views && app.workspacePlot !== undefined ? ((m) => (m ? [m] : null))(plotMismatch(app.views.workspace, app.workspacePlot, held, pending, noneSelected)) : null,
     workspace_status_matches: app.views && (workspaceRead !== shown.status || (shown.status === "phase" && callFromText(app.workspaceText) !== shown.call)) ? [{ shown: shownLabel(shown), workspace: app.workspaceText ?? null }] : null,
     status_matches_assignment: statusMatches(shown, confirmed) ? null : [{ shown: shownLabel(shown), confirmed }],
     rail_matches_call: railViolation(app, kept, confirmed),
     analyzed_kept: onDropped.length ? onDropped : null,
-    views_agree: allRead && kept.length && !pending && new Set(Object.values(opened)).size > 1 ? [opened] : null,
+    views_agree: allRead && kept.length && !pending && !noneSelected && new Set(Object.values(opened)).size > 1 ? [opened] : null,
     bridged_labels_match: app.labelDrift?.length ? app.labelDrift : null,
     bridged_calls_match: app.callDrift?.length ? app.callDrift : null,
     plot_shows_selection: selectionMismatch(app, frames, held),
@@ -203,15 +217,15 @@ function sampleInvariants(app, frames, held = new Set()) {
 }
 
 export const INVARIANTS = {
-  status_matches_assignment: "A sample's confirmed call is the phases assigned on any of its frames, kept or dropped, or the sample's form-factor state. A sample with none is shown as unreviewed; a sample with one is shown with that call.",
+  status_matches_assignment: "A sample's confirmed call is the phases assigned on any of its frames, kept or dropped, or the sample's form-factor state; a bridged sample's is read from the frames of every sample in its bridge. A sample with none is shown as unreviewed; a sample with one is shown with that call.",
   rail_matches_call: "The workspace's Assignment list ticks every one of the sample's called phases, marks as not found exactly the ticked phases the analyzed curve doesn't offer as candidates, and marks form factor only for a form-factor call (needs --ui).",
   analyzed_kept: "The image the sample status describes (corpus_api) or the workspace plots (--ui) is never a dropped image while the sample has a kept one.",
-  views_agree: "The sample status (corpus_api) and the workspace describe the same curve of a sample: the average of its selected images, or its one selected image (needs --ui).",
+  views_agree: "The sample status (corpus_api) and the workspace describe the same curve of a sample: the average of its selected images, or its one selected image. Unchecked for a sample with kept images and none selected, which analyzes nothing (needs --ui).",
   workspace_status_matches: "The workspace sample list shows the same status as GET /api/samples (needs --ui).",
   bridged_labels_match: "Samples bridged as the same sample carry the same confirmed labels, apart from flight-path labels such as \"1.7 m\", which stay with each setup. Unchecked while the experiment has no bridge.",
   bridged_calls_match: "Samples bridged as the same sample show one call: the same call state and the same called phases. Unchecked while the experiment has no bridge.",
   plot_shows_selection: "A sample analyzes exactly its selected images, and a dropped image is never selected. With one selected, the sample status describes that image. With two or more, each with a trace, an average of exactly those images exists and the status describes it, and the workspace draws one faint line per selected image under it (with --ui).",
-  plot_matches_trace: "The workspace plot of the opened frame says \"Waiting for this image's trace.\" when its trace is held back in late/, or \"Waiting for the selected images' traces.\" when it averages images one of which is held back, and shows the trace otherwise (needs --ui).",
+  plot_matches_trace: "The workspace plot of the opened frame says \"Waiting for this image's trace.\" when its trace is held back in late/, or \"Waiting for the selected images' traces.\" when it averages images one of which is held back, \"Select an image to analyze.\" when the sample has kept images and none selected, and shows the trace otherwise (needs --ui).",
 };
 
 const NEEDS_VIEWS = new Set(["analyzed_kept", "views_agree", "workspace_status_matches", "rail_matches_call", "plot_matches_trace"]);
@@ -249,8 +263,11 @@ export const WAITING_PLOT = "Waiting for this image's trace.";
 
 export const WAITING_AVERAGE = "Waiting for the selected images' traces.";
 
-export function plotMismatch(frame, plot, held, pending = false) {
+export const NONE_SELECTED_PLOT = "Select an image to analyze.";
+
+export function plotMismatch(frame, plot, held, pending = false, noneSelected = false) {
   if (pending) return plot === WAITING_AVERAGE ? null : { frame, plot, expected: WAITING_AVERAGE };
+  if (noneSelected) return plot === NONE_SELECTED_PLOT ? null : { frame, plot, expected: NONE_SELECTED_PLOT };
   if (!frame) return null;
   if (held.has(frame)) return plot === WAITING_PLOT ? null : { frame, plot, expected: WAITING_PLOT };
   return plot === null || plot === undefined ? null : { frame, plot, expected: "the trace" };
@@ -440,7 +457,7 @@ export async function collectApp(cfg, experimentId) {
     if (e.kind === COMBINED) autoByCombination.set([...(e.sources ?? [])].sort().join(" "), e.auto_phases);
     else autoByFrame.set(e.filename, e.auto_phases);
   }
-  return Promise.all(
+  const apps = await Promise.all(
     samples.map(async (s) => {
       const all = await getJson(api, `/api/samples/${s.id}/exposures`);
       const exposures = all.filter((e) => e.kind !== COMBINED);
@@ -471,6 +488,7 @@ export async function collectApp(cfg, experimentId) {
       };
     }),
   );
+  return withBridgedCallEvidence(apps, bridges);
 }
 
 async function resolveExperiment(cfg, flags) {

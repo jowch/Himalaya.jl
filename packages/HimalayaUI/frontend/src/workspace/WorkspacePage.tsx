@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import type { CorpusSample, Exposure, IndexEntry, LabelColor, SampleCallMember } from "../api";
+import type { AssignmentState, CorpusSample, Exposure, IndexEntry, LabelColor, SampleBridge, SampleCallMember, SampleLabel } from "../api";
 import { ApiError } from "../api";
 import {
   useAddAssignmentPhase,
@@ -47,17 +47,17 @@ import { byRecent, recentRank, recordRecent } from "../lib/recents";
 import { helpKeyFromEmptyField, inDialog, isEditable, suppressGlobalKeys } from "../lib/keys";
 import { useUndoHistory, type UndoEntry, type UndoStep } from "./undo";
 import {
-  bridgeEntry, combinedEntry, selectionEntry, settleCallEntry, customIndexEntry, dropEntry, excludeEntry, identify, labelEntry, noPhaseEntry, peakEntry,
+  bridgeEntry, sharedAfterBridge, combinedEntry, selectionEntry, settleCallEntry, customIndexEntry, dropEntry, excludeEntry, identify, labelEntry, noPhaseEntry, peakEntry,
   experimentEntry, setupEntry, labelColorEntry, tickEntry, unbridgeEntry, untickEntry, compareEntry, droppedByEdit, type PhaseIdentity,
 } from "./undoEntries";
 import { showToast } from "../lib/toast";
 import { useScanState } from "../hooks/useScanState";
 import { useMediaQuery } from "./useMediaQuery";
 import { isIngestStage, stageLabel } from "../lib/ingestStages";
-import { bridgeCounts, bridgedWith, rankBridgeMates } from "../lib/bridges";
-import { callStatesSplit, keepChoices, type KeepCall } from "../lib/bridgeCall";
+import { applyBridge, bridgeCounts, bridgedWith, rankBridgeMates } from "../lib/bridges";
+import { bridgeSteps, callStatesSplit, groupKeepChoices, keepChoices, type KeepCall } from "../lib/bridgeCall";
 import { bufferRole, buffersFirst, displayLabel, firstUnusedColor, labelColor, labelColorIsDefault, labelsFor, sameLabel, sampleMatchesFilter, labelVocabulary, labelKey } from "../lib/labels";
-import { analysisOf, imageFrames, keptExposures, MIN_COMBINED, newestKeptFrame } from "../lib/exposure";
+import { analysisOf, imageFrames, keptExposures, MIN_COMBINED, newestKeptFrame, selectedFrames } from "../lib/exposure";
 import { useMemberTraces } from "./useMemberTraces";
 import { unsupportedCalls } from "./unsupportedCalls";
 import { useCorpusPalette } from "../hooks/useCorpusPalette";
@@ -75,6 +75,7 @@ import { ComparePicker } from "../ui/ComparePicker";
 import { SubtractToggle } from "../ui/SubtractToggle";
 import { PlotViewToggle } from "../ui/PlotViewToggle";
 import { PlotCard } from "../ui/PlotCard";
+import { BridgeMenu } from "../ui/BridgeMenu";
 import { HelpOverlay, type HelpSection } from "../ui/HelpOverlay";
 import { MOD_KEY } from "../lib/modKey";
 import { DetectorOverlay } from "../ui/DetectorOverlay";
@@ -98,7 +99,7 @@ import { ExperimentNotice } from "../ui/ExperimentNotice";
 import { ProblemList } from "../ui/ProblemList";
 import { RemoveExperimentDialog } from "../ui/RemoveExperimentDialog";
 import { COMPARE_COLORS, WorkspacePlot, type CombLine, type CompareLine } from "../ui/WorkspacePlot";
-import { ExposureStrip } from "../ui/ExposureStrip";
+import { ExposureStrip, type ExposureSelection } from "../ui/ExposureStrip";
 import { CandidateList } from "../ui/CandidateList";
 import { callChoices, cycleChoice, inCallChoices } from "./callTab";
 import { callRows, keyedRows } from "./bonnetGroups";
@@ -142,7 +143,7 @@ function helpSections(mod: string): HelpSection[] {
         { keys: ["Esc"], what: "Leave the phase choices and let Tab reach every other control until you open another sample" },
         { keys: ["I"], what: "Custom index: press Tab or Shift+Tab to change the symmetry, then drag the lattice, nudge it with ← →, or click a peak to snap to it. Press Enter to add it or Esc to cancel." },
         { keys: ["L"], what: "Label the sample, e.g. Buffer. Press Enter to add it or Esc to close." },
-        { keys: [mod, "K"], what: "Open the commands and choose Same sample as… to mark this as the same sample measured in another setup" },
+        { keys: [mod, "K"], what: "Open the commands and choose Same sample as… to mark this as the same sample measured in another setup. Space after Tab or an arrow ticks several, and Enter marks them all." },
       ],
     },
     {
@@ -299,8 +300,6 @@ export function WorkspacePage(): JSX.Element {
   useEffect(() => setExposureId(linkedExposure), [sampleId, linkedExposure]);
   const ownFrames: Exposure[] = useMemo(() => imageFrames(exposures.data), [exposures.data]);
   const analysis = useMemo(() => analysisOf(exposures.data), [exposures.data]);
-  const selectedIds = useMemo(() => new Set(analysis.selected.map((e) => e.id)), [analysis.selected]);
-  const selectableIds = useMemo(() => new Set(keptExposures(ownFrames).map((e) => e.id)), [ownFrames]);
   const frameSetupName = useCallback(
     (s: CorpusSample): string => {
       const st = setups.length > 1 && s.setup_id != null ? setups.find((x) => x.id === s.setup_id)?.name : undefined;
@@ -322,7 +321,6 @@ export function WorkspacePage(): JSX.Element {
   const averaging = analysis.selected.length >= MIN_COMBINED;
   const memberIds = useMemo(() => (averaging ? analysis.selected.map((m) => m.id) : []), [averaging, analysis.selected]);
   const members = useMemberTraces(memberIds);
-  const shownFrame = frameOf(groups, exposure?.id);
   const tileFrame = frameOf(groups, tile?.id);
 
   const trace = useTrace(exposure?.id);
@@ -454,10 +452,10 @@ export function WorkspacePage(): JSX.Element {
     const names = new Map(inExperiment.map((s) => [s.id, s.name]));
     return bridged.map((r) => names.get(r) ?? `Sample ${r}`);
   }, [bridged, inExperiment]);
-  const bridgedTitles = useMemo(
+  const bridgeMates = useMemo(
     () => bridged.map((r) => {
       const s = inExperiment.find((x) => x.id === r);
-      return s ? frameSetupName(s) : `Sample ${r}`;
+      return { id: r, title: s ? frameSetupName(s) : `Sample ${r}` };
     }),
     [bridged, inExperiment, frameSetupName],
   );
@@ -624,46 +622,43 @@ export function WorkspacePage(): JSX.Element {
     },
     [setStatus, sampleId, history, ops, frameName, exposureList, tile],
   );
-  const anchor = useRef<number | undefined>(undefined);
-  useEffect(() => { anchor.current = undefined; }, [sampleId]);
-  const applySelection = useCallback(
-    (next: number[], label: string) => {
-      if (sampleId === undefined) return;
-      const prev = analysis.selected.map((e) => e.id);
-      ops.setSelection(sampleId, next);
-      history.record(selectionEntry(ops, { label, sampleId, exposureId: undefined, prev, next }));
-    },
-    [sampleId, analysis.selected, ops, history],
-  );
-  const toggleSelect = useCallback(
-    (eid: number) => {
-      anchor.current = eid;
-      const on = selectedIds.has(eid);
-      const next = on ? [...selectedIds].filter((id) => id !== eid) : [...selectedIds, eid];
-      applySelection(next, `${on ? "deselected" : "selected"} ${frameName(eid)}`);
-    },
-    [selectedIds, applySelection, frameName],
-  );
-  const selectRange = useCallback(
-    (eid: number) => {
-      const order = keptExposures(ownFrames).map((e) => e.id);
-      const from = order.indexOf(anchor.current ?? analysis.selected[0]?.id ?? eid);
-      const to = order.indexOf(eid);
-      if (to < 0) return;
-      const span = order.slice(Math.min(from < 0 ? to : from, to), Math.max(from, to) + 1);
-      anchor.current = eid;
-      applySelection([...new Set([...selectedIds, ...span])], `selected ${span.length} images of ${sample?.name ?? "this sample"}`);
-    },
-    [ownFrames, analysis.selected, selectedIds, applySelection, sample?.name],
-  );
-  const selectAll = useCallback(
-    () => applySelection([...selectableIds], `selected every image of ${sample?.name ?? "this sample"}`),
-    [selectableIds, applySelection, sample?.name],
-  );
-  const selectNone = useCallback(
-    () => applySelection([], `cleared the selection of ${sample?.name ?? "this sample"}`),
-    [applySelection, sample?.name],
-  );
+  const anchors = useRef(new Map<number, number>());
+  useEffect(() => { anchors.current = new Map(); }, [sampleId]);
+  const groupSelections = useMemo(() => {
+    if (sampleId === undefined) return new Map<number, ExposureSelection>();
+    return new Map(groups.map((g) => {
+      const owner = g.sampleId;
+      const ownerName = (owner === sampleId ? sample?.name : inExperiment.find((x) => x.id === owner)?.name) ?? "this sample";
+      const kept = keptExposures(g.exposures).map((e) => e.id);
+      const prev = selectedFrames(g.exposures).map((e) => e.id);
+      const selectedIds = new Set(prev);
+      const apply = (next: number[], label: string): void => {
+        ops.setSelection(owner, next);
+        history.record(selectionEntry(ops, { label, sampleId, owner, exposureId: undefined, prev, next }));
+      };
+      const selection: ExposureSelection = {
+        selectedIds,
+        selectableIds: new Set(kept),
+        onToggle: (eid) => {
+          anchors.current.set(owner, eid);
+          const on = selectedIds.has(eid);
+          apply(on ? prev.filter((id) => id !== eid) : [...prev, eid], `${on ? "deselected" : "selected"} ${frameName(eid)}`);
+        },
+        onRange: (eid) => {
+          const to = kept.indexOf(eid);
+          if (to < 0) return;
+          const at = kept.indexOf(anchors.current.get(owner) ?? prev[0] ?? eid);
+          const from = at < 0 ? to : at;
+          const span = kept.slice(Math.min(from, to), Math.max(from, to) + 1);
+          anchors.current.set(owner, eid);
+          apply([...new Set([...prev, ...span])], `selected ${span.length} images of ${ownerName}`);
+        },
+        onAll: () => apply(kept, `selected every image of ${ownerName}`),
+        onNone: () => apply([], `cleared the selection of ${ownerName}`),
+      };
+      return [owner, selection] as const;
+    }));
+  }, [groups, sampleId, sample?.name, inExperiment, ops, history, frameName]);
 
   const draftQs = useMemo(() => (draft ? draftPrediction(draft) : []), [draft]);
   const combs: CombLine[] = useMemo(
@@ -848,6 +843,34 @@ export function WorkspacePage(): JSX.Element {
       ops.read.call(keep === sampleId ? rid : sampleId).then((c) => send(c.members), () => send([]));
     },
     [sampleId, sample?.name, sample?.assignment_state, samples, bridgeSamples, history, ops, sampleNames, bridgeList, labelList],
+  );
+  const bridgeMany = useCallback(
+    async (ids: readonly number[], keep?: KeepCall) => {
+      if (sampleId === undefined || !sample) return;
+      const mates = ids.flatMap((id) => samples.filter((s) => s.id === id));
+      let bridges: SampleBridge[] = [...bridgeList];
+      let labels: SampleLabel[] = [...labelList];
+      let groupState: AssignmentState = sample.assignment_state ?? "indexed";
+      const parts = [];
+      for (const step of bridgeSteps(sample, mates, keep)) {
+        if (bridgedWith(bridges, sampleId).includes(step.to)) continue;
+        const mate = mates.find((m) => m.id === step.to)!;
+        const states = { from: groupState, to: mate.assignment_state ?? "indexed" };
+        if (typeof step.keep === "number" && parts.length > 0) await ops.whenSaved();
+        const lost = typeof step.keep === "number"
+          ? await ops.read.call(step.keep === sampleId ? step.to : sampleId).then((c) => c.members, () => [])
+          : [];
+        bridgeSamples.mutate(step.keep === undefined ? { sampleId, toSampleId: step.to } : { sampleId, toSampleId: step.to, keepCall: step.keep });
+        parts.push(bridgeEntry(ops, { label: "", sampleId, exposureId: undefined, from: sampleId, to: step.to, bridges, labels, keep: step.keep, states, lost }));
+        bridges = applyBridge(bridges, sampleId, step.to);
+        labels = sharedAfterBridge(labels, [sampleId, ...bridgedWith(bridges, sampleId)]);
+        if (step.keep === step.to || (groupState === "null" && states.to !== "null")) groupState = states.to;
+      }
+      history.record(combinedEntry({
+        label: `marked ${sample.name} as the same sample as ${mates.map((m) => sampleNames.get(m.id) ?? m.name).join(", ")}`, sampleId, exposureId: undefined,
+      }, parts));
+    },
+    [sampleId, sample, samples, bridgeList, labelList, ops, bridgeSamples, history, sampleNames],
   );
   const nameWithSetup = useCallback(
     (s: Pick<CorpusSample, "id" | "name">): string => {
@@ -1257,8 +1280,7 @@ export function WorkspacePage(): JSX.Element {
   const droppedCount = ownFrames.filter((e) => e.status === "rejected").length;
   const keptHint = droppedCount > 0 ? `${ownFrames.length - droppedCount} of ${ownFrames.length} kept` : undefined;
   const reviewed = samples.filter((s) => sampleStatus(s).kind !== "unreviewed").length;
-  const countOf = (at: typeof shownFrame): string | undefined => (at ? `Image ${at.index + 1} of ${at.group.exposures.length}` : undefined);
-  const frameCount = averaging ? `Average of ${analysis.selected.length} images` : countOf(shownFrame);
+  const countOf = (at: typeof tileFrame): string | undefined => (at ? `Image ${at.index + 1} of ${at.group.exposures.length}` : undefined);
   const tileOwnerSample = tileFrame ? inExperiment.find((s) => s.id === tileFrame.group.sampleId) : undefined;
   const tileOwner = tileOwnerSample ? frameSetupName(tileOwnerSample) : undefined;
   const tileCount = countOf(tileFrame);
@@ -1334,6 +1356,8 @@ export function WorkspacePage(): JSX.Element {
       names: (id) => nameWithSetup({ id, name: sampleNames.get(id) ?? `Sample ${id}` }),
       bridged: bridgedNames,
       leave: leaveBridges,
+      groupChoices: (ids) => (sample ? groupKeepChoices(sample, ids.flatMap((id) => samples.filter((s) => s.id === id)), nameWithSetup) : undefined),
+      pickMany: (ids, keep) => void bridgeMany(ids, keep),
     },
     candidates: {
       list: choices,
@@ -1462,10 +1486,9 @@ export function WorkspacePage(): JSX.Element {
           <>
             <SampleHeading
               name={sample.name}
-              meta={exposure ? frameCount : undefined}
+              badge={bridgeMates.length > 0 ? <BridgeMenu key={sampleId} mates={bridgeMates} editable={Boolean(username)} onGo={goSample} onRemove={unbridgeOne} /> : undefined}
               aside={
                 <LabelRow
-                  note={bridgedTitles.length > 0 ? `Same as ${bridgedTitles.join(", ")}` : undefined}
                   labels={sampleLabels}
                   vocabulary={vocabulary}
                   editable={Boolean(username)}
@@ -1551,7 +1574,7 @@ export function WorkspacePage(): JSX.Element {
               </PlotCard>
             </div>
             <MainSection title="Images" hint={keptHint}>
-              <ExposureStrip groups={groups.map((g) => ({ key: g.sampleId, title: g.title, exposures: g.exposures }))} currentId={tile?.id} selection={username ? { selectedIds, selectableIds, onToggle: toggleSelect, onRange: selectRange, onAll: selectAll, onNone: selectNone } : undefined} onPick={setExposureId} onToggleDrop={toggleDrop} warningOf={beamOffWarning} />
+              <ExposureStrip groups={groups.map((g) => ({ key: g.sampleId, title: g.title, exposures: g.exposures, selection: username ? groupSelections.get(g.sampleId) : undefined }))} currentId={tile?.id} onPick={setExposureId} onToggleDrop={toggleDrop} warningOf={beamOffWarning} />
             </MainSection>
           </>
         ) : (

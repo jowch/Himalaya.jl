@@ -17,9 +17,14 @@ function corpusStale(): boolean {
   return qc.getQueryState(queryKeys.corpusSamples)?.isInvalidated ?? false;
 }
 
+function experimentsStale(): boolean {
+  return qc.getQueryState(queryKeys.experiments)?.isInvalidated ?? false;
+}
+
 beforeEach(() => {
   qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   qc.setQueryData<CorpusSample[]>(queryKeys.corpusSamples, []);
+  qc.setQueryData(queryKeys.experiments, []);
   expect(corpusStale()).toBe(false);
 });
 
@@ -52,6 +57,33 @@ describe("corpus sample status follows the calls that derive it", () => {
     it.each(frames.map((f) => [f.kind, f] as const))("%s invalidates the corpus samples", (_kind, frame) => {
       applyRemoteToCache(frame, qc);
       expect(corpusStale()).toBe(true);
+    });
+  });
+
+  describe("the experiment cards' review count follows the same calls", () => {
+    const own: [string, () => void][] = [
+      ["assignment_add", () => addAssignmentPhaseMutator.onSuccess({ ...scope, kind: "assignment_add", indexId: 42 }, assignmentRow as never, qc)],
+      ["assignment_remove", () => removeAssignmentPhaseMutator.onSuccess({ ...scope, kind: "assignment_remove", indexId: 42 }, assignmentRow as never, qc)],
+      ["sample_call_set_state", () => setSampleCallStateMutator.onSuccess({ ...scope, kind: "sample_call_set_state", state: "form_factor" }, { sample_id: 1, state: "form_factor", members: [] } as never, qc)],
+    ];
+    it.each(own)("own %s marks the experiments list stale", (_kind, run) => {
+      run();
+      expect(experimentsStale()).toBe(true);
+    });
+
+    const remote: SseEvent[] = [
+      { id: 9, kind: "assignment_add", entity_type: "exposure", entity_id: 5, payload: { index_id: 42 },
+        post_state: { assignment: { state: "indexed", members: [42] } } },
+      { id: 9, kind: "assignment_set_state", entity_type: "exposure", entity_id: 5, payload: { state: "null" },
+        post_state: { assignment: { state: "null", members: [] } } },
+      { id: 9, kind: "sample_call_set_state", entity_type: "sample", entity_id: 1, payload: { state: "form_factor" },
+        post_state: { call: { state: "form_factor", members: [] } } },
+      { id: 9, kind: "sample_bridged", entity_type: "sample", entity_id: 1, payload: { experiment_id: 3 } },
+      { id: 9, kind: "sample_unbridged", entity_type: "sample", entity_id: 1, payload: { experiment_id: 3 } },
+    ];
+    it.each(remote.map((f) => [f.kind, f] as const))("someone else's %s marks the experiments list stale", (_kind, frame) => {
+      applyRemoteToCache(frame, qc);
+      expect(experimentsStale()).toBe(true);
     });
   });
 });

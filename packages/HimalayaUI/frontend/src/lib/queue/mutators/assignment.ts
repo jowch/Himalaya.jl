@@ -7,7 +7,7 @@ import { authOpts } from "../../authOpts";
 import type {
   Mutator, RollbackContext, SseEvent, QueueResponseMeta, AssignmentPostState, SampleCallPostState,
 } from "../types";
-import { sampleFrameIds, writeSampleCall, invalidateAssignmentsExcept, invalidateSampleCalls } from "../sampleCall";
+import { sampleFrameIds, writeSampleCall, invalidateAssignmentsExcept, invalidateSampleCalls, invalidateReviewProgress } from "../sampleCall";
 import { stripQueueMetadata } from "../queueMeta";
 
 type AssignmentScope = {
@@ -60,7 +60,7 @@ export const addAssignmentPhaseMutator: Mutator<AddPhaseInput, AssignmentScope, 
     const { payload: row } = stripQueueMetadata(response);
     qc.setQueryData<Assignment>(queryKeys.assignment(p.exposureId), row as Assignment);
     invalidateAssignmentsExcept(qc, [p.exposureId]);
-    qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
+    invalidateReviewProgress(qc, "own");
     invalidateSampleCalls(qc);
   },
   synthesizeFromSse: synthAssignment,
@@ -86,7 +86,7 @@ export const removeAssignmentPhaseMutator: Mutator<RemovePhaseInput, AssignmentS
   onSuccess: (p, response, qc) => {
     const { payload: row } = stripQueueMetadata(response);
     qc.setQueryData<Assignment>(queryKeys.assignment(p.exposureId), row as Assignment);
-    qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
+    invalidateReviewProgress(qc, "own");
     invalidateSampleCalls(qc);
   },
   synthesizeFromSse: synthAssignment,
@@ -133,7 +133,7 @@ export const setSampleCallStateMutator: Mutator<SetStateInput, SampleCallScope, 
     const { payload: call } = stripQueueMetadata(response);
     writeSampleCall(qc, p.sampleId, call as SampleCall);
     invalidateAssignmentsExcept(qc, [...sampleFrameIds(qc, p.sampleId), ...(call as SampleCall).members.map((m) => m.exposure_id)]);
-    qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
+    invalidateReviewProgress(qc, "own");
     invalidateSampleCalls(qc);
   },
   synthesizeFromSse: synthSampleCall,

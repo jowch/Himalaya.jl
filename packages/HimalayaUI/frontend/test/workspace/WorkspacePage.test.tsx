@@ -130,7 +130,7 @@ const editOps = {
     labels: async () => state.labels,
     bridges: async () => state.bridges,
     call: async (sid: number) => ({ sample_id: sid, state: "indexed" as const, phase: null, call_phases: [], members: server.callMembers.get(sid) ?? (sid === 10 ? [{ index_id: 2, exposure_id: 101, phase: "Pn3m" }] : []) }),
-    exposures: async () => state.exposures.map((e) => (server.status.has(e.id) ? { ...e, status: server.status.get(e.id)! } : e)),
+    exposures: async (sampleId: number) => (state.mateExposures.get(sampleId) ?? state.exposures).map((e) => (server.status.has(e.id) ? { ...e, status: server.status.get(e.id)! } : e)),
     labelColors: async () => {
       const merged = new Map(state.labelColors.map((e) => [e.label.toLowerCase(), e]));
       for (const [k, color] of server.colors) {
@@ -964,7 +964,7 @@ describe("WorkspacePage", () => {
     renderAt("/experiments/1/workspace/10");
     expect(memberFetches.at(-1)).toEqual([100, 101]);
     expect([...screen.getByTestId("workspace-members").querySelectorAll("[data-member]")].map((p) => p.getAttribute("data-member"))).toEqual(["100", "101"]);
-    expect(screen.getAllByText("Average of 2 images")).toHaveLength(2);
+    expect(screen.getAllByText("Average of 2 images")).toHaveLength(1);
     expect(screen.getByTestId("exposure-selection-caption")).toHaveTextContent("Average of 2 images");
     fireEvent.keyDown(window, { key: "2" });
     expect(calls).toEqual([{ hook: "add", boundTo: 900, arg: 1 }]);
@@ -1504,6 +1504,97 @@ describe("WorkspacePage", () => {
       await undo();
       expect(ops()).toEqual([]);
       expect(toasts.at(-1)).toBe("Nothing to undo.");
+    });
+
+    it("ticks several samples on the same-sample page, bridges them with one Enter, and undoes them in one step", async () => {
+      renderAt("/experiments/1/workspace/10");
+      runFromPalette("same sample as…");
+      const input = screen.getByRole("combobox", { name: "Sample" });
+      fireEvent.change(input, { target: { value: "a2" } });
+      fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+      fireEvent.change(input, { target: { value: "a4" } });
+      fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+      fireEvent.keyDown(input, { key: "Enter" });
+      await settle();
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(calls.filter((c) => c.hook === "bridge").map((c) => c.arg)).toEqual([{ sampleId: 10, toSampleId: 11 }, { sampleId: 10, toSampleId: 13 }]);
+      state.bridges = [{ sample_id: 10, group_id: 1 }, { sample_id: 11, group_id: 1 }, { sample_id: 13, group_id: 1 }];
+      calls.length = 0;
+      await undo();
+      expect(ops().filter((o) => o[0] === "unbridge")).toEqual([["unbridge", 13], ["unbridge", 10]]);
+      expect(toasts.at(-1)).toBe("Undone: marked A1 as the same sample as A2, A4");
+    });
+
+    it("asks once which call to keep for the whole group, and keeps it through every step", async () => {
+      state.corpus = state.corpus.map((s) => (s.id === 13 ? { ...s, assignment_state: "indexed", phase: "Im3m", call_phases: ["Im3m"] } : s));
+      renderAt("/experiments/1/workspace/10");
+      runFromPalette("same sample as…");
+      const input = screen.getByRole("combobox", { name: "Sample" });
+      for (const name of ["a2", "a4"]) {
+        fireEvent.change(input, { target: { value: name } });
+        fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+      }
+      fireEvent.keyDown(input, { key: "Enter" });
+      const form = screen.getByRole("dialog", { name: "Same sample as A2, A4" });
+      const keep = within(form).getByRole("combobox", { name: "Keep the call of" });
+      expect(keep).toHaveTextContent("A1: Pn3m");
+      fireEvent.keyDown(keep, { key: "ArrowDown" });
+      fireEvent.keyDown(keep, { key: "Enter" });
+      await settle();
+      await waitFor(() => expect(calls.filter((c) => c.hook === "bridge").map((c) => c.arg)).toEqual([
+        { sampleId: 10, toSampleId: 11 },
+        { sampleId: 10, toSampleId: 13, keepCall: 13 },
+      ]));
+    });
+
+    it("reads what a kept call drops only after the earlier bridge has saved, so undo restores the first mate's call", async () => {
+      state.corpus = state.corpus.map((s) =>
+        s.id === 10 ? { ...s, assignment_state: "null", phase: null, call_phases: [] }
+        : s.id === 11 ? { ...s, assignment_state: "indexed", phase: "Pn3m", call_phases: ["Pn3m"] }
+        : s.id === 13 ? { ...s, assignment_state: "indexed", phase: "Im3m", call_phases: ["Im3m"] }
+        : s);
+      server.callMembers.set(10, []);
+      server.saving = true;
+      renderAt("/experiments/1/workspace/10");
+      runFromPalette("same sample as…");
+      const input = screen.getByRole("combobox", { name: "Sample" });
+      for (const name of ["a2", "a4"]) {
+        fireEvent.change(input, { target: { value: name } });
+        fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+      }
+      fireEvent.keyDown(input, { key: "Enter" });
+      const keep = within(screen.getByRole("dialog", { name: "Same sample as A2, A4" })).getByRole("combobox", { name: "Keep the call of" });
+      fireEvent.keyDown(keep, { key: "ArrowDown" });
+      expect(keep).toHaveTextContent("A4: Im3m");
+      fireEvent.keyDown(keep, { key: "Enter" });
+      await settle();
+      expect(calls.filter((c) => c.hook === "bridge")).toHaveLength(1);
+      server.callMembers.set(10, [{ index_id: 5, exposure_id: 300, phase: "Pn3m" }]);
+      server.saving = false;
+      act(() => server.saved?.());
+      await waitFor(() => expect(calls.filter((c) => c.hook === "bridge").map((c) => c.arg)).toEqual([
+        { sampleId: 10, toSampleId: 11 },
+        { sampleId: 10, toSampleId: 13, keepCall: 13 },
+      ]));
+      state.bridges = [{ sample_id: 10, group_id: 1 }, { sample_id: 11, group_id: 1 }, { sample_id: 13, group_id: 1 }];
+      server.callMembers.set(10, [{ index_id: 6, exposure_id: 301, phase: "Im3m" }]);
+      calls.length = 0;
+      await undo();
+      expect(ops().filter((o) => o[0] === "addPhase")).toEqual([["addPhase", 300, 5]]);
+    });
+
+    it("skips a ticked sample the earlier steps already brought into the group", async () => {
+      state.bridges = [{ sample_id: 11, group_id: 2 }, { sample_id: 13, group_id: 2 }];
+      renderAt("/experiments/1/workspace/12");
+      runFromPalette("same sample as…");
+      const input = screen.getByRole("combobox", { name: "Sample" });
+      for (const name of ["a2", "a4"]) {
+        fireEvent.change(input, { target: { value: name } });
+        fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+      }
+      fireEvent.keyDown(input, { key: "Enter" });
+      await settle();
+      expect(calls.filter((c) => c.hook === "bridge").map((c) => c.arg)).toEqual([{ sampleId: 12, toSampleId: 11 }]);
     });
 
     it("undoes saying a sample is not the same sample after all", async () => {
@@ -3460,13 +3551,12 @@ describe("WorkspacePage", () => {
     expect(within(frames).getAllByRole("button", { name: /^Image \d/ }).map((b) => b.getAttribute("aria-label"))).toEqual([
       "Image 1", "Image 2", "Image 1 of A3 in Long pipe", "Image 2 of A3 in Long pipe", "Image 3 of A3 in Long pipe",
     ]);
-    expect(screen.getByText("Image 2 of 2")).toBeInTheDocument();
+    expect(screen.queryByText(/^Image \d+ of \d+$/)).toBeNull();
     expect(screen.getByRole("heading", { name: "Image" }).closest("section")!.textContent).toContain("SampleA1 in Short pipe");
     fireEvent.click(screen.getByRole("button", { name: "Image 2 of A3 in Long pipe" }));
     expect(screen.getByRole("button", { name: "Image 2 of A3 in Long pipe" })).toHaveAttribute("aria-current", "true");
-    expect(screen.getByText("Image 2 of 2")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Image" }).closest("section")!.textContent).toContain("SampleA3 in Long pipe");
-    expect(screen.getByText("Same as A3 in Long pipe")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Same as A3 in Long pipe" })).toBeInTheDocument();
     fireEvent.keyDown(window, { key: " " });
     expect(screen.getByTestId("workspace-detector-caption")).toHaveTextContent("Image 2 of 3, A3 in Long pipe");
     fireEvent.keyDown(window, { key: " " });
@@ -3481,13 +3571,13 @@ describe("WorkspacePage", () => {
     const frames = screen.getByTestId("workspace-exposures");
     expect(within(frames).queryByTestId("frame-group-header")).toBeNull();
     expect(within(frames).queryByRole("button", { name: /^Image 1 of A3/ })).toBeNull();
-    expect(screen.queryByText(/^Same as A3/)).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Same as A3/ })).toBeNull();
     expect(screen.getByTestId("workspace-samples").querySelector("[data-bridged]")).toBeNull();
 
     state.setups = state.setups.map((st) => ({ ...st, included: true }));
     rerender(page("/experiments/1/workspace/10"));
     expect(within(screen.getByTestId("workspace-exposures")).getAllByTestId("frame-group-header")).toHaveLength(2);
-    expect(screen.getByText("Same as A3 in Long pipe")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Same as A3 in Long pipe" })).toBeInTheDocument();
     expect(screen.getByTestId("workspace-samples").querySelector("[data-sample-id='10'] [data-bridged]")).not.toBeNull();
   });
 
@@ -3526,6 +3616,35 @@ describe("WorkspacePage", () => {
     expect(calls.filter((c) => c.hook === "op:setStatus").map((c) => c.arg)).toEqual([[12, 200, "rejected"], [12, 200, null, true]]);
   });
 
+  it("selects a same sample's images as that sample's own selection, never mixed with this sample's", async () => {
+    state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
+    state.corpus = state.corpus.map((s) => (s.id === 12 ? { ...s, assignment_state: "indexed" } : s));
+    const mate = [exposure(200, { sample_id: 12, selected: true }), exposure(201, { sample_id: 12, selected: false }), exposure(202, { sample_id: 12, selected: false })];
+    state.mateExposures = new Map([[12, mate]]);
+    state.exposures = [exposure(100, { selected: false }), exposure(101, { selected: true })];
+    renderAt("/experiments/1/workspace/10");
+    const strip = screen.getByTestId("workspace-exposures");
+    expect(within(strip).getAllByRole("checkbox").map((c) => c.getAttribute("aria-label"))).toEqual([
+      "Analyze image 1", "Analyze image 2", "Analyze image 1 of A3", "Analyze image 2 of A3", "Analyze image 3 of A3",
+    ]);
+    expect(within(strip).getAllByTestId("exposure-selection-caption").map((c) => c.textContent)).toEqual(["1 image selected", "1 image selected"]);
+    fireEvent.click(within(strip).getByRole("checkbox", { name: "Analyze image 2 of A3" }));
+    fireEvent.click(screen.getByRole("button", { name: "Image 3 of A3" }), { metaKey: true });
+    fireEvent.click(screen.getByRole("button", { name: "Image 1 of A3" }), { shiftKey: true });
+    fireEvent.click(screen.getByRole("button", { name: "Select all of A3" }));
+    fireEvent.click(screen.getByRole("button", { name: "Select none of A3" }));
+    expect(calls.filter((c) => c.hook === "op:setSelection").map((c) => c.arg)).toEqual([
+      [12, [200, 201]], [12, [200, 202]], [12, [200, 201, 202]], [12, [200, 201, 202]], [12, []],
+    ]);
+    state.mateExposures = new Map([[12, mate.map((e) => ({ ...e, selected: false }))]]);
+    await act(async () => { fireEvent.keyDown(window, { key: "z", ctrlKey: true }); for (let i = 0; i < 10; i++) await Promise.resolve(); });
+    expect(calls.filter((c) => c.hook === "op:setSelection").map((c) => c.arg).at(-1)).toEqual([12, [200]]);
+    fireEvent.click(screen.getByRole("button", { name: "Image 1" }), { metaKey: true });
+    expect(calls.filter((c) => c.hook === "op:setSelection").map((c) => c.arg).at(-1)).toEqual([10, [101, 100]]);
+    fireEvent.click(screen.getByRole("button", { name: "Image 3 of A3" }), { shiftKey: true });
+    expect(calls.filter((c) => c.hook === "op:setSelection").map((c) => c.arg).at(-1)).toEqual([12, [200, 201, 202]]);
+  });
+
   it("an unbridged sample's frames have no group heading", () => {
     renderAt("/experiments/1/workspace/10");
     expect(within(screen.getByTestId("workspace-exposures")).queryByTestId("frame-group-header")).toBeNull();
@@ -3536,7 +3655,7 @@ describe("WorkspacePage", () => {
     state.compareTraces = new Map([[12, makeTrace(3)]]);
     state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByText("Same as A3")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Same as A3" })).toHaveTextContent("⇄1");
     expect(screen.getByTestId("workspace-compares").querySelector("[data-compare='12']")).toBeNull();
     expect(screen.getByTestId("workspace-compare-bar").querySelector("[data-compare-chip]")).toBeNull();
     const list = screen.getByTestId("workspace-samples");
@@ -3544,6 +3663,30 @@ describe("WorkspacePage", () => {
     expect(list.querySelector("[data-sample-id='12'] [data-bridged]")).not.toBeNull();
     expect(list.querySelector("[data-sample-id='11'] [data-bridged]")).toBeNull();
     expect(screen.queryByRole("button", { name: /^Minus / })).toBeNull();
+  });
+
+  it("the bridge icon by the name lists the same samples: a pick goes there, and × takes that one out", () => {
+    state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 11, group_id: 4 }, { sample_id: 13, group_id: 4 }];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.click(screen.getByRole("button", { name: "Same as A2, A4" }));
+    const list = screen.getByRole("dialog", { name: "Same sample as" });
+    fireEvent.click(within(list).getByRole("button", { name: "Not the same sample as A4" }));
+    expect(calls).toContainEqual({ hook: "unbridge", boundTo: 1, arg: { sampleId: 13 } });
+    fireEvent.click(within(list).getByRole("button", { name: "Go to A2" }));
+    expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/11");
+  });
+
+  it("the bridge list does not carry over to the next sample, and taking out the last same sample moves focus to the heading", () => {
+    state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 11, group_id: 4 }, { sample_id: 12, group_id: 5 }, { sample_id: 13, group_id: 5 }];
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.click(screen.getByRole("button", { name: "Same as A2" }));
+    expect(screen.getByRole("dialog", { name: "Same sample as" })).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("workspace-samples").querySelector("[data-sample-id='12']")!);
+    expect(screen.getByRole("button", { name: "Same as A4" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Same sample as" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Same as A4" }));
+    fireEvent.click(screen.getByRole("button", { name: "Not the same sample as A4" }));
+    expect(screen.getByRole("heading", { level: 2, name: "A3" })).toHaveFocus();
   });
 
   it("the palette's same-sample page leaves out this sample and its group, and Enter links the pick", () => {
@@ -3661,7 +3804,7 @@ describe("WorkspacePage", () => {
     state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 11, group_id: 4 }];
     act(() => setCompares({ compares: [{ sample_id: 10, ref_sample_id: 12, added_by: "jc" }], subtractions: [] }));
     renderAt("/experiments/1/workspace/10");
-    expect(screen.getByText("Same as MO_H2O in setup2")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Same as MO_H2O in setup2" })).toBeInTheDocument();
     expect(within(screen.getByTestId("workspace-compare-bar")).getByRole("button", { name: "MO_PEG5, setup2" })).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "c" });
     const picker = screen.getByRole("dialog", { name: "Compare with a sample" });
@@ -3678,7 +3821,7 @@ describe("WorkspacePage", () => {
     state.corpus = [{ ...sample(10, "B1"), setup_id: 2 }, { ...sample(12, "A1"), setup_id: 1 }];
     state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
     renderAt("/experiments/1/workspace/10");
-    expect(screen.queryByText(/^Same as A1/)).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Same as A1/ })).toBeNull();
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     fireEvent.change(screen.getByLabelText("Command or sample"), { target: { value: "not the same" } });
     expect(screen.queryByRole("option", { name: /^Not the same sample as/ })).toBeNull();

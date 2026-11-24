@@ -16,6 +16,10 @@ interface Props {
   start?: PaletteForm | undefined;
 }
 
+function joinHint(a: string | undefined, b: string | undefined): string | undefined {
+  return [a, b].filter(Boolean).join(" · ") || undefined;
+}
+
 export function keepFocusInField(e: MouseEvent): void {
   if (!(e.target instanceof HTMLInputElement)) e.preventDefault();
 }
@@ -23,6 +27,8 @@ export function keepFocusInField(e: MouseEvent): void {
 export function Palette({ groups, pages, onClose, onType, start }: Props): JSX.Element {
   const [stack, setStack] = useState<Level[]>(() => (start ? [{ form: start, query: "", cursor: 0 }] : []));
   const [query, setQuery] = useState("");
+  const [ticked, setTicked] = useState<readonly string[]>([]);
+  const spaceTicks = useRef(false);
   const listId = useId();
   const list = useRef<HTMLDivElement | null>(null);
   const input = useRef<HTMLInputElement | null>(null);
@@ -38,17 +44,29 @@ export function Palette({ groups, pages, onClose, onType, start }: Props): JSX.E
     const prev = stack[stack.length - 1];
     if (!prev || (start && stack.length === 1)) return onClose();
     heldBack.current = true;
+    if (prev.page !== undefined) setTicked([]);
     setStack(stack.slice(0, -1));
     setQuery(prev.query);
     highlight.setAt(prev.cursor);
   };
   const open = (next: { page: string } | { form: PaletteForm }): void => {
+    if ("page" in next) setTicked([]);
     setStack([...stack, { ...next, query, cursor: highlight.at }]);
     setQuery("");
     highlight.setAt(0);
   };
+  const multi = page?.multi;
+  const tick = (item: PaletteItem): void => setTicked((t) => (t.includes(item.id) ? t.filter((x) => x !== item.id) : [...t, item.id]));
+  const commitTicked = (): void => {
+    if (!multi) return;
+    const next = multi.commit(ticked);
+    setTicked([]);
+    if (next) return open({ form: next });
+    onClose();
+  };
   const choose = (item: PaletteItem | undefined): void => {
     if (!item) return;
+    if (multi && ticked.length > 0) return commitTicked();
     if (item.page && pages[item.page]) return open({ page: item.page });
     if (item.form) return open({ form: item.form() });
     if (!item.run) return;
@@ -73,6 +91,20 @@ export function Palette({ groups, pages, onClose, onType, start }: Props): JSX.E
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
     if (e.key === "Backspace" && e.repeat && heldBack.current) return e.preventDefault();
+    const plain = !e.metaKey && !e.ctrlKey && !e.altKey && !e.nativeEvent.isComposing;
+    if (multi && plain && ((e.key === "Enter" && e.shiftKey) || (e.key === " " && (query === "" || spaceTicks.current)))) {
+      e.preventDefault();
+      spaceTicks.current = true;
+      const item = picks[highlight.at]?.item;
+      if (item && !e.repeat) tick(item);
+      return;
+    }
+    if (multi && plain && e.key === "Enter" && ticked.length > 0) {
+      e.preventDefault();
+      if (!e.repeat) commitTicked();
+      return;
+    }
+    if (multi && (e.key === "Tab" || e.key === "ArrowDown" || e.key === "ArrowUp")) spaceTicks.current = true;
     if (highlight.onKeyDown(e)) return;
     if (e.key === "Backspace" && query === "" && page && !e.metaKey && !e.ctrlKey && !e.altKey) {
       e.preventDefault();
@@ -105,6 +137,7 @@ export function Palette({ groups, pages, onClose, onType, start }: Props): JSX.E
       value={query}
       onChange={(e) => {
         setQuery(e.target.value);
+        spaceTicks.current = false;
         onType?.(e.target.value);
         highlight.setAt(0);
       }}
@@ -138,7 +171,7 @@ export function Palette({ groups, pages, onClose, onType, start }: Props): JSX.E
           )}
         </div>
         <div ref={list} className="max-h-[50vh] overflow-y-auto p-1">
-          <div id={listId} role="listbox" aria-label={page ? page.title : "Matching commands"}>
+          <div id={listId} role="listbox" aria-label={page ? page.title : "Matching commands"} aria-multiselectable={multi ? true : undefined}>
             {sections(rows).map((sec, si) => (
               <div key={si} role="group" aria-labelledby={sec.title ? `${listId}-g${si}` : undefined} aria-label={sec.title ? undefined : page?.title}>
                 {sec.title && (
@@ -151,12 +184,12 @@ export function Palette({ groups, pages, onClose, onType, start }: Props): JSX.E
                     key={`${path ?? ""}${item.id}`}
                     id={optionId(i)}
                     role="option"
-                    aria-selected={i === at}
+                    aria-selected={multi ? ticked.includes(item.id) : i === at}
                     aria-label={`${path ? `${path} › ` : ""}${item.label}${item.value !== undefined ? `, ${item.value || "None"}` : ""}${item.hint ? `, ${item.hint}` : ""}`}
                     data-palette-item={item.id}
                     onMouseEnter={() => highlight.setAt(i)}
                     onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => choose(item)}
+                    onClick={() => (multi && ticked.length > 0 ? tick(item) : choose(item))}
                     className={
                       "grid h-8 cursor-pointer items-center gap-x-3 rounded-sm px-2 text-base " +
                       (item.value !== undefined ? "grid-cols-[140px_minmax(0,1fr)_auto_minmax(32px,auto)] " : "grid-cols-[minmax(0,1fr)_auto_minmax(32px,auto)] ") +
@@ -170,6 +203,19 @@ export function Palette({ groups, pages, onClose, onType, start }: Props): JSX.E
                       </>
                     ) : (
                       <span className={"flex min-w-0 items-center gap-2 " + (item.danger ? "text-error" : "")}>
+                        {multi && (
+                          <span
+                            data-tick
+                            aria-hidden="true"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              tick(item);
+                            }}
+                            className={"inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[3px] border text-[10px] leading-none " + (ticked.includes(item.id) ? "border-accent bg-accent text-paper" : "border-hair-strong")}
+                          >
+                            {ticked.includes(item.id) ? "✓" : null}
+                          </span>
+                        )}
                         {item.swatch && <span aria-hidden="true" className={"h-2 w-2 shrink-0 rounded-full " + item.swatch} />}
                         <span className="truncate">
                           {path && <span className="text-ink-faint">{path} › </span>}
@@ -177,7 +223,7 @@ export function Palette({ groups, pages, onClose, onType, start }: Props): JSX.E
                         </span>
                       </span>
                     )}
-                    <span className="max-w-[260px] truncate text-right text-xs text-ink-faint">{item.hint}</span>
+                    <span className="max-w-[260px] truncate text-right text-xs text-ink-faint">{joinHint(item.hint, multi?.hint?.(item.id, ticked))}</span>
                     <span className="flex justify-end text-ink-faint">{item.shortcut ? <Kbd>{item.shortcut}</Kbd> : item.page || item.form ? "›" : null}</span>
                   </div>
                 ))}
@@ -186,7 +232,14 @@ export function Palette({ groups, pages, onClose, onType, start }: Props): JSX.E
           </div>
           {picks.length === 0 && <p className="px-2 py-2 text-xs text-ink-faint">{page?.empty ?? "No match."}</p>}
         </div>
-        <PaletteFooter keys={[["↵", page ? "pick" : "run"], ["Tab", "move"], ["Esc", page ? "back" : "close"]]} />
+        <PaletteFooter
+          keys={[
+            ["↵", multi && ticked.length > 0 ? multi.verb(ticked.length) : page ? "pick" : "run"],
+            ...(multi ? [["Space", "tick"] as const] : []),
+            ["Tab", "move"],
+            ["Esc", page ? "back" : "close"],
+          ]}
+        />
       </div>
     </Overlay>
   );

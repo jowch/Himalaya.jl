@@ -178,6 +178,13 @@ test("plotMismatch: a held frame's plot says it is waiting, any other frame show
   assert.equal(plotMismatch(null, null, held), null);
 });
 
+test("plotMismatch: a sample with nothing selected must ask for a selection, not draw a trace", async () => {
+  const { plotMismatch, NONE_SELECTED_PLOT } = await import("../truth.mjs");
+  const held = new Set();
+  assert.equal(plotMismatch("A_S1", NONE_SELECTED_PLOT, held, false, true), null);
+  assert.deepEqual(plotMismatch("A_S1", null, held, false, true), { frame: "A_S1", plot: null, expected: NONE_SELECTED_PLOT });
+});
+
 test("plotMismatch: an average waiting on a held image says the selected images are waiting", async () => {
   const { plotMismatch, WAITING_AVERAGE, WAITING_PLOT } = await import("../truth.mjs");
   const held = new Set(["B_S2"]);

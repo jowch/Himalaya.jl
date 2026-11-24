@@ -2,7 +2,7 @@ import { refreshPeaks } from "./refreshPeaks";
 import { patchListsWith, refetchAverage, refetchListsWith, refetchSelection } from "./selectionLists";
 import type { QueryClient } from "@tanstack/react-query";
 import type { SseEvent, CurationPostState, AssignmentPostState, SampleCallPostState } from "./types";
-import { writeSampleCall, invalidateOtherFrameAssignments, invalidateSampleCalls } from "./sampleCall";
+import { writeSampleCall, invalidateOtherFrameAssignments, invalidateSampleCalls, invalidateReviewProgress } from "./sampleCall";
 import type {
   Peak, Exposure, Sample,
   Assignment, Experiment,
@@ -58,7 +58,7 @@ export function applyPostStateOnly(remote: SseEvent, qc: QueryClient): void {
     const before = qc.getQueryData<Assignment>(queryKeys.assignment(id));
     writeAssignmentFromPostState(id, ps.assignment, qc);
     if (!sameAssignment(before, ps.assignment)) {
-      qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
+      invalidateReviewProgress(qc, "own");
       invalidateSampleCalls(qc);
     }
   }
@@ -226,7 +226,7 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       if (ps?.call) writeSampleCall(qc, id, ps.call);
       else qc.invalidateQueries({ predicate: (q) => q.queryKey[0] === "exposure" && q.queryKey[2] === "assignment" });
       invalidateSampleCalls(qc);
-      qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
+      invalidateReviewProgress(qc, "remote");
       break;
     }
     case "assignment_add":
@@ -244,7 +244,7 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
         qc.invalidateQueries({ queryKey: queryKeys.assignment(id) });
       }
       if (remote.kind === "assignment_add") invalidateOtherFrameAssignments(qc, id);
-      qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
+      invalidateReviewProgress(qc, "remote");
       invalidateSampleCalls(qc);
       break;
     }
@@ -305,7 +305,7 @@ export function applyRemoteToCache(remote: SseEvent, qc: QueryClient): void {
       const expId = payload?.experiment_id as number | undefined;
       if (expId !== undefined) qc.invalidateQueries({ queryKey: queryKeys.bridges(expId) });
       invalidateSampleCalls(qc);
-      qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
+      invalidateReviewProgress(qc, "remote");
       break;
     }
     case "compares_changed": {
