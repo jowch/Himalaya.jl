@@ -1032,7 +1032,7 @@ export function WorkspacePage(): JSX.Element {
   const shortWindow = useMediaQuery(SHORT_WINDOW);
   const [openPanel, setOpenPanel] = useState<"call" | "exposure">("call");
   const callOpen = !shortWindow || openPanel === "call" || draft !== null;
-  const exposureOpen = !shortWindow || (openPanel === "exposure" && draft === null);
+  const exposureOpen = !shortWindow || !modules.calls || (openPanel === "exposure" && draft === null);
   const tabFree = useRef(false);
   const [pendingTab, setPendingTab] = useState<"first" | "last" | null>(null);
   useEffect(() => {
@@ -1459,15 +1459,14 @@ export function WorkspacePage(): JSX.Element {
   });
 
   const customIndexButton = <CustomIndexButton open={draft !== null} disabled={!canCall} onClick={draft ? () => setDraft(null) : openCustom} />;
-  const indexingSection = (
+  const indexingSection = modules.indexing ? (
     <Section
       title="Indexing"
       className="shrink-0"
-      reserved={!modules.indexing}
     >
-      <IndexingPlot series={modules.indexing ? indexSeries : []} />
+      <IndexingPlot series={indexSeries} />
     </Section>
-  );
+  ) : null;
 
   return (
     <WorkspaceLayout
@@ -1625,53 +1624,55 @@ export function WorkspacePage(): JSX.Element {
         )
       }
       tools={
-        <>
-          <div className={callOpen ? "flex min-h-24 flex-1 flex-col overflow-y-auto" : "shrink-0"} data-testid="workspace-tools-middle">
-            {draft && draftBounds ? (
-              <Section title="Assignment" aside={customIndexButton} pinAside collapsible={shortWindow ? { open: true } : undefined}>
-                <CustomIndexPanel
-                  panelRef={customPanel}
-                  draft={draft}
-                  min={draftBounds.min}
-                  max={draftBounds.max}
-                  landed={draftFit?.landed ?? 0}
-                  total={draftFit?.points.length ?? 0}
-                  disabled={!canCall}
-                  onChange={setDraftClamped}
-                  onAdd={addCustom}
-                  onCancel={() => setDraft(null)}
-                />
-              </Section>
-            ) : (
-              <Section title="Assignment" aside={customIndexButton} pinAside reserved={!modules.calls} collapsible={shortWindow ? { open: callOpen, onOpen: modules.calls ? () => setOpenPanel("call") : undefined } : undefined}>
-                {modules.calls && (
-                <CandidateList
-                    rows={rows}
-                    assigned={assigned}
-                    unsupported={unsupportedIds}
-                    disabled={!username}
-                    formFactor={isFormFactor}
-                    onToggle={toggleCandidate}
-                    onToggleGroup={toggleGroup}
-                    onFormFactor={toggleFormFactor}
-                    onHover={hoverCandidates}
-                  />
+        !setupsKnown ? null : (
+          <>
+            {modules.calls && (
+              <div className={callOpen ? "flex min-h-24 flex-1 flex-col overflow-y-auto" : "shrink-0"} data-testid="workspace-tools-middle">
+                {draft && draftBounds ? (
+                  <Section title="Assignment" aside={customIndexButton} pinAside collapsible={shortWindow ? { open: true } : undefined}>
+                    <CustomIndexPanel
+                      panelRef={customPanel}
+                      draft={draft}
+                      min={draftBounds.min}
+                      max={draftBounds.max}
+                      landed={draftFit?.landed ?? 0}
+                      total={draftFit?.points.length ?? 0}
+                      disabled={!canCall}
+                      onChange={setDraftClamped}
+                      onAdd={addCustom}
+                      onCancel={() => setDraft(null)}
+                    />
+                  </Section>
+                ) : (
+                  <Section title="Assignment" aside={customIndexButton} pinAside collapsible={shortWindow ? { open: callOpen, onOpen: () => setOpenPanel("call") } : undefined}>
+                    <CandidateList
+                      rows={rows}
+                      assigned={assigned}
+                      unsupported={unsupportedIds}
+                      disabled={!username}
+                      formFactor={isFormFactor}
+                      onToggle={toggleCandidate}
+                      onToggleGroup={toggleGroup}
+                      onFormFactor={toggleFormFactor}
+                      onHover={hoverCandidates}
+                    />
+                  </Section>
                 )}
-              </Section>
+              </div>
             )}
-          </div>
-          {!shortWindow && indexingSection}
-          <Section
-            title="Image"
-            aside="← →"
-            folded={groups.length > 1 ? tileOwner : undefined}
-            className={shortWindow && exposureOpen ? "min-h-0 flex-1 overflow-y-auto" : exposureOpen ? "min-h-0 shrink overflow-y-auto" : "shrink-0"}
-            collapsible={shortWindow ? { open: exposureOpen, onOpen: draft === null ? () => setOpenPanel("exposure") : undefined } : undefined}
-          >
-            <MetaList rows={exposureRows(tile, tileOwner)} />
-          </Section>
-          {shortWindow && indexingSection}
-        </>
+            {!shortWindow && indexingSection}
+            <Section
+              title="Image"
+              aside="← →"
+              folded={groups.length > 1 ? tileOwner : undefined}
+              className={shortWindow && exposureOpen ? "min-h-0 flex-1 overflow-y-auto" : exposureOpen ? "min-h-0 shrink overflow-y-auto" : "shrink-0"}
+              collapsible={shortWindow && modules.calls ? { open: exposureOpen, onOpen: draft === null ? () => setOpenPanel("exposure") : undefined } : undefined}
+            >
+              <MetaList rows={exposureRows(tile, tileOwner)} />
+            </Section>
+            {shortWindow && indexingSection}
+          </>
+        )
       }
     />
   );

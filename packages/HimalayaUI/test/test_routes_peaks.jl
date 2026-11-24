@@ -709,7 +709,6 @@ end
             ("POST", "/api/exposures/$e_id/peaks", Dict(:q => 0.5)),
             ("PATCH", "/api/peaks/auto/$auto_peak", Dict(:excluded => true)),
             ("DELETE", "/api/peaks/manual/$manual", nothing),
-            ("POST", "/api/samples/$s_id/call/state", Dict(:state => "form_factor")),
             ("POST", "/api/exposures/$e_id/assignment/members", Dict(:index_id => index_id)),
             ("DELETE", "/api/exposures/$e_id/assignment/members/$index_id", nothing),
             ("POST", "/api/exposures/$e_id/speculative", Dict(:phase => "Pn3m", :anchor_peak_id => auto_peak, :anchor_ratio => 2)),
@@ -725,6 +724,10 @@ end
             @test (count("user_actions"), count("idempotent_responses"), count("auto_peaks"), count("peak_curations")) ==
                   (events, cached, peaks, curations)
         end
+
+        r = send("POST", "/api/samples/$s_id/call/state", Dict(:state => "form_factor"))
+        @test r.status == 200
+        @test JSON3.read(String(r.body)).state == "form_factor"
 
         r = call("PATCH", "/api/exposures/$e_id/status";
             body = Vector{UInt8}(JSON3.write(Dict(:status => "rejected"))), headers = json_hdr)

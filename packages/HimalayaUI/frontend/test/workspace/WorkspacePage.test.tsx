@@ -1526,6 +1526,33 @@ describe("WorkspacePage", () => {
       expect(toasts.at(-1)).toBe("Undone: marked A1 as the same sample as A2, A4");
     });
 
+    it("bridges a capillary sample with an autosampler sample without asking which call to keep, and undoes and redoes it, restoring both calls", async () => {
+      state.setups = [
+        { id: 1, name: "setup1", folder: "setup1", included: true, mode: "autosampler" },
+        { id: 2, name: "setup2", folder: "setup2", included: true, mode: "capillary" },
+      ];
+      state.corpus = state.corpus.map((x) => (x.id === 10 ? { ...x, setup_id: 2 } : x.id === 11 ? { ...x, setup_id: 1, assignment_state: "form_factor" } : x));
+      renderAt("/experiments/1/workspace/10");
+      runFromPalette("same sample as…");
+      const input = screen.getByRole("combobox", { name: "Sample" });
+      fireEvent.change(input, { target: { value: "a2" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+      await settle();
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(calls.filter((c) => c.hook === "bridge").map((c) => c.arg)).toEqual([{ sampleId: 10, toSampleId: 11 }]);
+      state.bridges = [{ sample_id: 10, group_id: 1 }, { sample_id: 11, group_id: 1 }];
+      calls.length = 0;
+      await undo();
+      expect(ops()).toContainEqual(["setCallState", 11, "form_factor"]);
+      expect(toasts.at(-1)).toMatch(/^Undone: /);
+      state.bridges = [];
+      calls.length = 0;
+      await redo();
+      expect(ops()).toEqual([["bridge", 10, 11, undefined]]);
+      expect(toasts.at(-1)).toMatch(/^Redone: /);
+      expect(toasts.filter((t) => t.startsWith("Couldn't"))).toEqual([]);
+    });
+
     it("asks once which call to keep for the whole group, and keeps it through every step", async () => {
       state.corpus = state.corpus.map((s) => (s.id === 13 ? { ...s, assignment_state: "indexed", phase: "Im3m", call_phases: ["Im3m"] } : s));
       renderAt("/experiments/1/workspace/10");
@@ -3912,8 +3939,6 @@ describe("WorkspacePage modules by setup mode", () => {
   };
 
   const sideEffects = (): string[] => calls.map((c) => c.hook);
-  const toolsHeadings = (): (string | null)[] =>
-    within(screen.getByRole("complementary", { name: "Tools" })).getAllByRole("heading").map((h) => h.textContent);
   const paletteIds = (): string[] => {
     fireEvent.keyDown(window, { key: "k", ctrlKey: true });
     const ids = Array.from(screen.getByRole("dialog").querySelectorAll("[data-palette-item]")).map((o) => o.getAttribute("data-palette-item") ?? "");
@@ -3923,48 +3948,43 @@ describe("WorkspacePage modules by setup mode", () => {
 
   const slotOrder = (): (string | null)[] =>
     Array.from(screen.getByRole("complementary", { name: "Tools" }).querySelectorAll("[data-section]")).map((n) => n.getAttribute("data-section"));
-  const reservedSlots = (): (string | null)[] =>
-    Array.from(screen.getByRole("complementary", { name: "Tools" }).querySelectorAll("[data-section][data-reserved]")).map((n) => n.getAttribute("data-section"));
   const SHORT = (query: string) => ({ matches: query === "(max-height: 860px)", media: query, addEventListener: () => {}, removeEventListener: () => {} });
 
-  it("keeps the Assignment, Indexing and Image slots in the same order for an autosampler sample, with nothing interactive in the first two", () => {
+  it("holds only the Image section in an autosampler sample's tools column, and all three in a capillary sample's", () => {
     const view = renderAt(`/experiments/1/workspace/${AUTOSAMPLER}`);
-    expect(slotOrder()).toEqual(["Assignment", "Indexing", "Image"]);
-    expect(reservedSlots()).toEqual(["Assignment", "Indexing"]);
-    expect(toolsHeadings()).toEqual(["Image"]);
-    const tools = screen.getByRole("complementary", { name: "Tools" });
-    for (const name of ["Assignment", "Indexing"]) {
-      const slot = tools.querySelector(`[data-section='${name}']`)!;
-      expect(slot).toHaveAttribute("aria-hidden", "true");
-      expect(within(slot as HTMLElement).queryAllByRole("button", { hidden: true })).toEqual([]);
-      expect(within(slot as HTMLElement).queryAllByRole("checkbox", { hidden: true })).toEqual([]);
-      expect(slot.querySelector("[data-testid='workspace-indexing-fit']")).toBeNull();
-    }
+    expect(slotOrder()).toEqual(["Image"]);
+    expect(screen.getByRole("complementary", { name: "Tools" }).querySelector("[data-section='Image']")).not.toHaveAttribute("data-collapsed");
+    expect(screen.queryByTestId("workspace-tools-middle")).toBeNull();
+    expect(screen.queryByTestId("workspace-indexing")).toBeNull();
     expect(screen.queryByRole("button", { name: /Custom index/ })).toBeNull();
     view.unmount();
     renderAt(`/experiments/1/workspace/${CAPILLARY}`);
     expect(slotOrder()).toEqual(["Assignment", "Indexing", "Image"]);
-    expect(reservedSlots()).toEqual([]);
-    expect(toolsHeadings()).toEqual(["Assignment", "Indexing", "Image"]);
   });
 
-  it("keeps the same slot order and the same folded Image on a short window for an autosampler sample as for a capillary one", () => {
+  it("holds only the open Image section on a short window for an autosampler sample, with no accordion", () => {
     vi.stubGlobal("matchMedia", SHORT);
     try {
       const view = renderAt(`/experiments/1/workspace/${AUTOSAMPLER}`);
-      expect(slotOrder()).toEqual(["Assignment", "Image", "Indexing"]);
-      expect(reservedSlots()).toEqual(["Assignment", "Indexing"]);
+      expect(slotOrder()).toEqual(["Image"]);
       const tools = screen.getByRole("complementary", { name: "Tools" });
-      expect(within(tools).getByRole("button", { name: /^Image/ })).toHaveAttribute("aria-expanded", "false");
-      expect(within(tools).queryByText("File")).toBeNull();
-      expect(tools.querySelector("[data-section='Assignment']")).not.toHaveAttribute("data-collapsed");
+      expect(within(tools).getByText("File")).toBeInTheDocument();
+      expect(within(tools).queryByRole("button", { name: /^Image/ })).toBeNull();
       view.unmount();
       renderAt(`/experiments/1/workspace/${CAPILLARY}`);
       expect(slotOrder()).toEqual(["Assignment", "Image", "Indexing"]);
-      expect(within(screen.getByRole("complementary", { name: "Tools" })).getByRole("button", { name: /^Image/ })).toHaveAttribute("aria-expanded", "false");
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it("paints nothing in the tools column until the setups, and so each sample's mode, are known", () => {
+    state.experimentLoaded = false;
+    const { rerender } = renderAt(`/experiments/1/workspace/${AUTOSAMPLER}`);
+    expect(slotOrder()).toEqual([]);
+    state.experimentLoaded = true;
+    rerender(page(`/experiments/1/workspace/${AUTOSAMPLER}`));
+    expect(slotOrder()).toEqual(["Image"]);
   });
 
   it("does not add or toggle a peak when the plot is clicked on an autosampler sample, but does on a capillary one", () => {

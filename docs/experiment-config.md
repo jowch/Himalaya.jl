@@ -311,11 +311,12 @@ the open sample (`workspace/modules.ts`). A `capillary` or undecided setup has
 all of them. An `autosampler` sample keeps the trace plot (zoom, plot view,
 comparisons, subtraction), the image strip with Drop and Restore, labels and
 bridges. It has no peak editing, no call keys or palette entries, no image
-selection, and no review state. The panels keep their places: the tools column
-keeps its Assignment, Indexing and Image slots in the same order and sizes, and
-for such a sample the first two are reserved but empty, so nothing moves when
-you cross a setup boundary. The header's progress block likewise keeps its
-place, hidden, when no sample has a review state.
+selection, and no review state. A module the mode lacks is not shown and the
+rest move up: the tools column holds only the Image section, open, in both the
+tall and the short layout. The column stays empty until the setups load, so the
+first paint never shows modules the sample's mode then removes. The header's
+progress block keeps its place, hidden, when no sample has a review state, so
+it does not appear as data loads. This arrangement is provisional: as modules are added to the autosampler mode, they go where they are sensible.
 
 The sample list shows no unreviewed mark or call for it (an analysis-gap mark
 such as "All dropped" still shows, without the word "Unreviewed"). It is not

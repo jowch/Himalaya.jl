@@ -6,27 +6,8 @@ interface Collapsible {
   onOpen?: (() => void) | undefined;
 }
 
-export function Section({ title, aside, pinAside, folded, className, collapsible, reserved = false, children }: { title: string; aside?: ReactNode; pinAside?: boolean; folded?: string | undefined; className?: string; collapsible?: Collapsible | undefined; reserved?: boolean; children?: ReactNode }): JSX.Element {
+export function Section({ title, aside, pinAside, folded, className, collapsible, children }: { title: string; aside?: ReactNode; pinAside?: boolean; folded?: string | undefined; className?: string; collapsible?: Collapsible | undefined; children: ReactNode }): JSX.Element {
   const open = collapsible?.open ?? true;
-  if (reserved) {
-    return (
-      <section
-        aria-hidden="true"
-        className={"invisible flex flex-col px-3.5 py-3" + (className ? ` ${className}` : "")}
-        data-section={title}
-        data-reserved=""
-        data-collapsed={open ? undefined : "true"}
-      >
-        <header className={(open ? "mb-2 " : "") + "flex items-baseline justify-between gap-2"}>
-          <div className="inline-flex items-baseline gap-1 text-sm font-semibold">
-            <span className="inline-block w-2.5" />
-            {title}
-          </div>
-        </header>
-        {open && children}
-      </section>
-    );
-  }
   return (
     <section className={"flex flex-col px-3.5 py-3" + (className ? ` ${className}` : "")} data-section={title} data-collapsed={open ? undefined : "true"}>
       <header className={(open ? "mb-2 " : "") + "flex items-baseline justify-between gap-2"}>
