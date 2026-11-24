@@ -33,7 +33,7 @@ end
         end
 
         # Layout detection: the same resolver the ingest funnel calls.
-        r = HimalayaUI.resolve_experiment_layout(root)
+        r = HimalayaUI.resolve_experiment_layout(joinpath(root, DemoGen.CAPILLARY_DIR))
         @test r.integration_pattern == "{name}_tot.dat"
         @test r.image_pattern == "{name}_0_001.tif"
         @test r.setup_file !== nothing && !r.setup_ambiguous
@@ -95,7 +95,7 @@ end
     end
     rows = Dict(begin f = split(l, ","; limit = 10); f[1] => (bases = split(f[2]), drop = Set(split(f[8]))) end
                 for l in readlines(joinpath(root, "TRUTH.csv"))[2:end])
-    tot = joinpath(root, "analysis", "automatic_analysis", "tot_files")
+    tot = joinpath(root, DemoGen.CAPILLARY_DIR, "analysis", "automatic_analysis", "tot_files")
     scatter = Float64[]; rise = Float64[]
     for (label, r) in rows, base in r.bases
         base in r.drop && continue
@@ -273,14 +273,14 @@ end
     @test read(joinpath(plain, "TRUTH.csv"), String) == read(joinpath(late, "TRUTH.csv"), String)
     row = only(split(l, ",")[2] for l in readlines(joinpath(late, "TRUTH.csv")) if startswith(l, DemoGen.LATE_TRACE_SAMPLE * ","))
     held = Set(b * "_tot.dat" for b in split(row))
-    tot(root) = Set(readdir(joinpath(root, "analysis", "automatic_analysis", "tot_files")))
+    tot(root) = Set(readdir(joinpath(root, DemoGen.CAPILLARY_DIR, "analysis", "automatic_analysis", "tot_files")))
     @test !isempty(held)
     @test Set(readdir(joinpath(late, "late"))) == held
     @test tot(late) == setdiff(tot(plain), held)
     for f in held
-        @test read(joinpath(late, "late", f)) == read(joinpath(plain, "analysis", "automatic_analysis", "tot_files", f))
+        @test read(joinpath(late, "late", f)) == read(joinpath(plain, DemoGen.CAPILLARY_DIR, "analysis", "automatic_analysis", "tot_files", f))
     end
-    @test HimalayaUI.resolve_experiment_layout(late).integration_pattern == "{name}_tot.dat"
+    @test HimalayaUI.resolve_experiment_layout(joinpath(late, DemoGen.CAPILLARY_DIR)).integration_pattern == "{name}_tot.dat"
     redirect_stdout(devnull) do
         DemoGen.main([late, "--no-images"])
     end
