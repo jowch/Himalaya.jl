@@ -156,13 +156,13 @@ describe("beam-monitor scaling", () => {
     }
   });
 
-  it("matches capillary setups at high q, whether their traces are divided by I_2 or raw", () => {
+  it("matches capillary setups and setups of unknown type at high q, whether their traces are divided by I_2 or raw", () => {
     for (const by of ["i2", "none"] as const) {
-      for (const [a, b] of [["capillary", "capillary"], [null, null], ["autosampler", "capillary"]] as const) {
+      for (const [a, b, source] of [["capillary", "capillary", "capillary"], ["autosampler", "capillary", "capillary"], [null, null, "unknown_mode"], ["autosampler", null, "unknown_mode"]] as const) {
         const sample = withMonitors({ q, I: q.map((x) => 3 * background(x)) }, mon(6000, 15, 15.8, by, false, a));
         const buffer = withMonitors({ q, I: q.map(background) }, mon(10000, 15, 15.8, by, false, b));
         const r = compareScale(sample, buffer, [], true);
-        expect(r.source).toBe("capillary");
+        expect(r.source).toBe(source);
         expect(r.scale).toBeCloseTo(3, 3);
       }
     }

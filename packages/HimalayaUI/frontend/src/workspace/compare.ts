@@ -61,10 +61,10 @@ export function matchScale(
 // physics: and a normalised sample and its buffer are already on one scale: scale 1.
 // physics: Raw counts there scale with I_2 × exposure time / counting time, because the
 // physics: counter runs longer than the exposure, so the ratio of those fluxes is the
-// physics: scale. Each capillary has its own path length and I_2 does not follow it
-// physics: (on real data a sample and its buffer at scale 1 differed at high q by up to
-// physics: 2.3×), so capillary setups use the high-q match. So do an unknown normalisation,
-// physics: a beam-off image, and an image whose I_2 collapsed while I_0 stayed normal.
+// physics: scale. Dividing raw scattering (∝ path length × transmission) by I_2
+// physics: (∝ transmission) leaves the path length, and each capillary has its own, so
+// physics: capillary setups and setups of unknown type use the high-q match. So do an
+// physics: unknown normalisation, a beam-off image, and an image whose I_2 collapsed.
 export type BeamMonitors = TraceMonitors;
 
 const positive = (v: number | null | undefined): v is number => typeof v === "number" && Number.isFinite(v) && v > 0;
@@ -76,7 +76,7 @@ export function transmittedFlux(m: BeamMonitors | undefined): number | null {
 
 export interface CompareScale {
   scale: number;
-  source: "normalised" | "monitor" | "matched" | "other_setup" | "beam_off" | "i2_collapsed" | "unknown_normalisation" | "capillary";
+  source: "normalised" | "monitor" | "matched" | "other_setup" | "beam_off" | "i2_collapsed" | "unknown_normalisation" | "capillary" | "unknown_mode";
 }
 
 export const isMatchedScale = (s: CompareScale): boolean => s.source !== "normalised" && s.source !== "monitor";
@@ -94,7 +94,9 @@ export function compareScale(main: ScaledTrace, ref: ScaledTrace, peakQs: readon
   if (main.monitors?.i2_collapsed || ref.monitors?.i2_collapsed) return matched("i2_collapsed");
   const by = main.monitors?.normalised_by;
   if (by === undefined || by !== ref.monitors?.normalised_by || (by !== "i2" && by !== "none")) return matched("unknown_normalisation");
-  if (main.monitors?.mode !== "autosampler" || ref.monitors?.mode !== "autosampler") return matched("capillary");
+  const modes = [main.monitors?.mode, ref.monitors?.mode];
+  if (modes.includes("capillary")) return matched("capillary");
+  if (modes.some((m) => m !== "autosampler")) return matched("unknown_mode");
   if (by === "i2") return { scale: 1, source: "normalised" };
   const fm = transmittedFlux(main.monitors);
   const fr = transmittedFlux(ref.monitors);

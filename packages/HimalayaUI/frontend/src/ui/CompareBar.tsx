@@ -34,6 +34,7 @@ const SCALE_NOTES: Record<CompareScale["source"], string> = {
   beam_off: "Taken with the beam off, so matched at high q",
   i2_collapsed: "Transmitted beam dropped on this image, so matched at high q",
   capillary: "Capillary setup, so matched at high q",
+  unknown_mode: "Setup type not set, so matched at high q",
   unknown_normalisation: "Integration settings not found, so matched at high q",
 };
 

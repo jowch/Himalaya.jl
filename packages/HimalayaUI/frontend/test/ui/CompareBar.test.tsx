@@ -68,6 +68,19 @@ describe("CompareBar scale tooltip", () => {
     expect(screen.getByRole("tooltip")).toHaveTextContent("No transmitted-beam reading, so matched at high q");
   });
 
+  it("tells a capillary setup apart from one whose type is not set yet", () => {
+    for (const [source, note] of [["capillary", "Capillary setup, so matched at high q"], ["unknown_mode", "Setup type not set, so matched at high q"]] as const) {
+      resetTooltipWarmth();
+      const { unmount } = render(<CompareBar chips={[chip({ scale: { scale: 1, source } })]} subtractId={undefined} hidden={false} modKey="⌘" onToggleShown={() => {}} onSubtract={() => {}} onRemove={() => {}} onAdd={() => {}} />);
+      fireEvent.mouseEnter(document.querySelector("[data-scale-source]") as HTMLElement);
+      act(() => {
+        vi.advanceTimersByTime(TOOLTIP_OPEN_DELAY_MS);
+      });
+      expect(screen.getByRole("tooltip")).toHaveTextContent(note);
+      unmount();
+    }
+  });
+
   it("says a chip from another setup was matched at high q", () => {
     bar([chip({ scale: { scale: 1, source: "other_setup" } as CompareChip["scale"] })]);
     const scale = document.querySelector("[data-scale-source]") as HTMLElement;
