@@ -3889,3 +3889,166 @@ describe("WorkspacePage", () => {
     expect(options()).toEqual([]);
   });
 });
+
+describe("WorkspacePage modules by setup mode", () => {
+  const setup = (id: number, mode: "capillary" | "autosampler") => ({ id, name: `setup${id}`, folder: `setup${id}`, included: true, mode });
+  const AUTOSAMPLER = 10;
+  const CAPILLARY = 11;
+
+  beforeEach(() => {
+    state.setups = [setup(1, "autosampler"), setup(2, "capillary")];
+    state.corpus = [
+      { ...sample(10, "water 01A (B0101)"), setup_id: 1 },
+      { ...sample(11, "lipidA 01B (S0102)"), setup_id: 2 },
+      { ...sample(12, "lipidA 02B (S0103)", { assignment_state: "form_factor" }), setup_id: 2 },
+      { ...sample(13, "lipidA 03B (S0104)"), setup_id: 2 },
+    ];
+  });
+
+  const sideEffects = (): string[] => calls.map((c) => c.hook);
+  const toolsHeadings = (): (string | null)[] =>
+    within(screen.getByRole("complementary", { name: "Tools" })).getAllByRole("heading").map((h) => h.textContent);
+  const paletteIds = (): string[] => {
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    const ids = Array.from(screen.getByRole("dialog").querySelectorAll("[data-palette-item]")).map((o) => o.getAttribute("data-palette-item") ?? "");
+    fireEvent.keyDown(screen.getByLabelText("Command or sample"), { key: "Escape" });
+    return ids;
+  };
+
+  it("shows neither Assignment nor Indexing for an autosampler sample, and both for a capillary one", () => {
+    const view = renderAt(`/experiments/1/workspace/${AUTOSAMPLER}`);
+    expect(toolsHeadings()).toEqual(["Image"]);
+    expect(screen.queryByRole("button", { name: /Custom index/ })).toBeNull();
+    expect(screen.queryByTestId("workspace-indexing")).toBeNull();
+    view.unmount();
+    renderAt(`/experiments/1/workspace/${CAPILLARY}`);
+    expect(toolsHeadings()).toEqual(["Assignment", "Indexing", "Image"]);
+  });
+
+  it("keeps the Image section open on a short window when it is the only section", () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(max-height: 860px)", media: query, addEventListener: () => {}, removeEventListener: () => {} }));
+    try {
+      renderAt(`/experiments/1/workspace/${AUTOSAMPLER}`);
+      const tools = screen.getByRole("complementary", { name: "Tools" });
+      expect(within(tools).getByText("File")).toBeInTheDocument();
+      expect(within(tools).queryByRole("button", { name: /^Image/ })).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("does not add or toggle a peak when the plot is clicked on an autosampler sample, but does on a capillary one", () => {
+    state.trace = makeTrace(1);
+    state.peaks = [];
+    const view = renderAt(`/experiments/1/workspace/${AUTOSAMPLER}`);
+    clickPlotAt(0.1);
+    expect(sideEffects().filter((h) => /peak/i.test(h))).toEqual([]);
+    view.unmount();
+    renderAt(`/experiments/1/workspace/${CAPILLARY}`);
+    clickPlotAt(0.1);
+    expect(sideEffects().filter((h) => /peak/i.test(h))).not.toEqual([]);
+  });
+
+  it("still lets an autosampler sample zoom, change the plot view and compare", () => {
+    state.trace = makeTrace(1);
+    renderAt(`/experiments/1/workspace/${AUTOSAMPLER}`);
+    const before = currentView();
+    fireEvent.keyDown(window, { key: "v" });
+    expect(currentView()).not.toBe(before);
+    fireEvent.keyDown(window, { key: "c" });
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("ignores the call keys, the custom index key and Enter on an autosampler sample, and leaves Tab alone", () => {
+    renderAt(`/experiments/1/workspace/${AUTOSAMPLER}`);
+    for (const key of ["0", "1", "5", "9", "i", "I", "Escape"]) fireEvent.keyDown(window, { key });
+    expect(fireEvent.keyDown(window, { key: "Tab" })).toBe(true);
+    expect(fireEvent.keyDown(window, { key: "Tab", shiftKey: true })).toBe(true);
+    expect(fireEvent.keyDown(window, { key: "Enter" })).toBe(true);
+    expect(screen.queryByTestId("workspace-custom-index")).toBeNull();
+    expect(sideEffects()).toEqual([]);
+  });
+
+  it("still handles the call keys and Enter on a capillary sample in the same experiment", () => {
+    renderAt(`/experiments/1/workspace/${CAPILLARY}`);
+    fireEvent.keyDown(window, { key: "i" });
+    expect(screen.getByTestId("workspace-custom-index")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.keyDown(window, { key: "0" });
+    expect(sideEffects()).toContain("state");
+    fireEvent.keyDown(window, { key: "Enter" });
+    expect(sideEffects()).toContain("op:setSelection");
+  });
+
+  it("shows the image without a selection checkbox, Select all or none, or selection caption, and still drops and restores", () => {
+    renderAt(`/experiments/1/workspace/${AUTOSAMPLER}`);
+    const strip = screen.getByTestId("workspace-exposures");
+    expect(within(strip).queryAllByRole("checkbox")).toEqual([]);
+    expect(within(strip).queryByRole("button", { name: /^Select (all|none)/ })).toBeNull();
+    expect(screen.queryByTestId("exposure-selection-caption")).toBeNull();
+    fireEvent.click(within(strip).getAllByRole("button", { name: "Drop" })[0]!);
+    expect(calls.filter((c) => c.hook === "status")).toHaveLength(1);
+  });
+
+  it("leaves the call and image-selection commands out of the palette for an autosampler sample only", () => {
+    const view = renderAt(`/experiments/1/workspace/${AUTOSAMPLER}`);
+    const without = paletteIds();
+    for (const id of ["tick", "custom", "form-factor", "select-image"]) expect(without).not.toContain(id);
+    expect(without).toEqual(expect.arrayContaining(["view", "compare", "label"]));
+    view.unmount();
+    renderAt(`/experiments/1/workspace/${CAPILLARY}`);
+    expect(paletteIds()).toEqual(expect.arrayContaining(["tick", "custom", "form-factor", "select-image"]));
+  });
+
+  it("leaves the call, peak and selection rows out of the help for an autosampler sample only", () => {
+    const view = renderAt(`/experiments/1/workspace/${AUTOSAMPLER}`);
+    fireEvent.keyDown(window, { key: "?" });
+    const help = screen.getByRole("dialog");
+    expect(within(help).queryByText("Tick or untick a phase candidate")).toBeNull();
+    expect(within(help).queryByText(/Mark no phase/)).toBeNull();
+    expect(within(help).queryByText(/Custom index:/)).toBeNull();
+    expect(within(help).queryByText(/Select the image to analyze/)).toBeNull();
+    expect(within(help).queryByText(/Turn a peak off or on/)).toBeNull();
+    expect(within(help).getByText("Zoom q")).toBeInTheDocument();
+    view.unmount();
+    renderAt(`/experiments/1/workspace/${CAPILLARY}`);
+    fireEvent.keyDown(window, { key: "?" });
+    const full = screen.getByRole("dialog");
+    expect(within(full).getByText("Tick or untick a phase candidate")).toBeInTheDocument();
+    expect(within(full).getByText(/Turn a peak off or on/)).toBeInTheDocument();
+  });
+
+  it("gives an autosampler sample no unreviewed mark, and leaves it out of the header count", () => {
+    renderAt(`/experiments/1/workspace/${CAPILLARY}`);
+    const list = screen.getByTestId("workspace-samples");
+    const row = (id: number) => list.querySelector(`[data-sample-id='${id}']`) as HTMLElement;
+    expect(within(row(AUTOSAMPLER)).queryByTestId("workspace-status")).toBeNull();
+    expect(within(row(CAPILLARY)).getByRole("img", { name: "Unreviewed" })).toBeInTheDocument();
+    expect(screen.getByTestId("workspace-progress")).toHaveTextContent("1 of 3 reviewed");
+  });
+
+  it("opens on the first reviewable sample, not an autosampler sample listed before it", () => {
+    renderAt("/experiments/1/workspace");
+    expect(screen.getByTestId("where").textContent).toBe(`/experiments/1/workspace/${CAPILLARY}`);
+  });
+
+  it("Z skips an autosampler sample, from either side", () => {
+    const view = renderAt("/experiments/1/workspace/13");
+    fireEvent.keyDown(window, { key: "z" });
+    expect(screen.getByTestId("where").textContent).toBe(`/experiments/1/workspace/${CAPILLARY}`);
+    view.unmount();
+    renderAt(`/experiments/1/workspace/${AUTOSAMPLER}`);
+    fireEvent.keyDown(window, { key: "z" });
+    expect(screen.getByTestId("where").textContent).toBe(`/experiments/1/workspace/${CAPILLARY}`);
+  });
+
+  it("shows no progress, and opens on the first sample, when every sample is from an autosampler setup", () => {
+    state.setups = [setup(1, "autosampler")];
+    state.corpus = [{ ...sample(10, "water 01A (B0101)"), setup_id: 1 }, { ...sample(11, "lipidA 01B (S0102)"), setup_id: 1 }];
+    renderAt("/experiments/1/workspace");
+    expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/10");
+    expect(screen.queryByTestId("workspace-progress")).toBeNull();
+    fireEvent.keyDown(window, { key: "z" });
+    expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/10");
+  });
+});
