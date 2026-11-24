@@ -17,6 +17,9 @@ function rows_to_json(rows; bool_keys::Tuple = ())
     [row_to_json(r; bool_keys) for r in rows]
 end
 
+body_int_list(raw) = raw === nothing ? Int[] :
+    (raw isa AbstractVector && all(x -> x isa Integer && !(x isa Bool), raw)) ? Int[Int(x) for x in raw] : nothing
+
 function _json_error(status::Int, msg::AbstractString; extra...)
     body = Dict{Symbol, Any}(:error => msg)
     for (k, v) in extra

@@ -147,10 +147,11 @@ function register_exposures_routes!()
         db   = current_db()
         body = json(req)
         raw  = get(body, :exposure_ids, nothing)
-        (raw isa AbstractVector && all(x -> x isa Integer, raw)) || return HTTP.Response(422,
+        ids  = raw === nothing ? nothing : body_int_list(raw)
+        ids === nothing && return HTTP.Response(422,
             ["Content-Type" => "application/json"],
             to_json(Dict(:error => "exposure_ids must be a list of image ids")))
-        wanted = sort(unique(Int.(raw)))
+        wanted = sort(unique(ids))
         isempty(sqlrows(DBInterface.execute(db, "SELECT 1 AS x FROM samples WHERE id = ?", [id]))) &&
             return HTTP.Response(404, ["Content-Type" => "application/json"],
                 to_json(Dict(:error => "sample not found")))

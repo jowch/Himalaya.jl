@@ -54,3 +54,16 @@ end
         @test_throws ArgumentError HimalayaUI.to_json(Dict(:r2 => x))
     end
 end
+
+@testset "body_int_list reads a JSON list of ids as Vector{Int}" begin
+    parsed(s) = JSON.parse(s)["ids"]
+    @test HimalayaUI.body_int_list(parsed("""{"ids": []}""")) isa Vector{Int}
+    @test HimalayaUI.body_int_list(parsed("""{"ids": [3, 1]}""")) == [3, 1]
+    @test HimalayaUI.body_int_list(parsed("""{"ids": [3, 1]}""")) isa Vector{Int}
+    @test HimalayaUI.body_int_list(nothing) == Int[]
+    @test HimalayaUI.body_int_list(nothing) isa Vector{Int}
+    @test HimalayaUI.body_int_list(parsed("""{"ids": [1, "2"]}""")) === nothing
+    @test HimalayaUI.body_int_list(parsed("""{"ids": [1.5]}""")) === nothing
+    @test HimalayaUI.body_int_list(parsed("""{"ids": [true]}""")) === nothing
+    @test HimalayaUI.body_int_list(parsed("""{"ids": 3}""")) === nothing
+end
