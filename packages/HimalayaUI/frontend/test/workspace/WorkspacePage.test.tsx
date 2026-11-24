@@ -732,6 +732,33 @@ describe("WorkspacePage", () => {
     expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/11");
   });
 
+  it("sorts the sample list by measured time or by natural name, Z follows the shown order, and the choice is remembered per experiment", () => {
+    const key = "himalaya-ui:sample-sort:1";
+    try {
+      state.corpus = [
+        sample(10, "MO_AMP_10", { measured_at: "2026-03-02T09:00:00" }),
+        sample(11, "MO_AMP_2", { measured_at: "2026-03-02T10:00:00" }),
+        sample(12, "buffer", { measured_at: "2026-03-02T08:00:00" }),
+      ];
+      const rows = (): string[] => within(screen.getByTestId("workspace-samples")).getAllByRole("button").map((b) => b.id);
+      const view = renderAt("/experiments/1/workspace/12");
+      expect(rows()).toEqual(["workspace-sample-12", "workspace-sample-10", "workspace-sample-11"]);
+      fireEvent.click(screen.getByRole("button", { name: "Sort samples by Measured" }));
+      fireEvent.click(screen.getByRole("menuitemradio", { name: /^Name/ }));
+      expect(screen.queryByRole("menu")).toBeNull();
+      expect(rows()).toEqual(["workspace-sample-12", "workspace-sample-11", "workspace-sample-10"]);
+      fireEvent.keyDown(window, { key: "z" });
+      expect(screen.getByTestId("where").textContent).toBe("/experiments/1/workspace/11");
+      expect(window.localStorage.getItem(key)).toBe("name");
+      view.unmount();
+      renderAt("/experiments/1/workspace/12");
+      expect(screen.getByRole("button", { name: "Sort samples by Name" })).toBeInTheDocument();
+      expect(rows()).toEqual(["workspace-sample-12", "workspace-sample-11", "workspace-sample-10"]);
+    } finally {
+      window.localStorage.removeItem(key);
+    }
+  });
+
   it("[ hides the sample list behind a handle at the left edge, and [ or the handle brings it back, remembered on reload", () => {
     try {
       const view = renderAt("/experiments/1/workspace/10");
