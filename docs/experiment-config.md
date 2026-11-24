@@ -216,8 +216,8 @@ each setup.
 
 **Detection.** `detect_setup_mode(data_dir)` (`setup_mode.jl`) lists `data_dir`
 once. It answers `autosampler` when the folder holds at least one
-`AT_SolSAXS_<label>_<scan>.txt`, the autosampler's per-run file (the beamline
-writes it shortly before the run's first frame), `capillary` when it holds at
+`AT_SolSAXS_<label>_<scan>.txt`, a file of the autosampler whose trailing number
+is a start scan, `capillary` when it holds at
 least one `.tif` and no run file, and nothing when it holds neither. Image names
 are not used: a capillary series named like `DOPE_pH7_37C_S0001_0_001.tif` can
 look like an autosampler name and is detected as `capillary`.
@@ -264,11 +264,10 @@ moves, so position would collapse every acquisition into a few samples.
   stem is not stored yet always gets a new sample. Scan numbers are not unique
   in every beamtime (the counter can restart), so two acquisitions can share one.
 - Acquisitions with a well token are ordered by scan number. A load is one
-  label's block within a run: it starts when the label changes, or when the
-  acquisition's scan number is the number in the name of a
-  `data/AT_SolSAXS_<label>_<scan>.txt` file. A run file can cover several plate
-  rows with different labels, each with its own buffer in well A, so a run can
-  hold several loads. Without run files the label alone decides.
+  autosampler run: a block of consecutive acquisitions with one label. A new
+  load starts when the label changes, or when the acquisition's scan number is
+  the start scan named by a `data/AT_SolSAXS_<label>_<scan>.txt` file. Without
+  such files the label alone decides.
 - Stems without a well token (calibration, empty and test shots) all go in load
   `0`, never in a run's load.
 - Indexes come from the files, not from counting, so a file that arrives late
@@ -285,6 +284,10 @@ moves, so position would collapse every acquisition into a few samples.
   their load and the later ones get a new load. A metadata file that arrives
   late only delays its acquisition. If a run's first acquisition arrives after
   the second, the run is split the same way.
+- Known limit: `load_index` is the first scan of a run, so if a folder's scan
+  counter restarts, two runs can share a `load_index`. Ingest then reuses the
+  first load row for both. Their samples stay separate, but that load's times
+  and frame count are the first run's.
 
 **No automatic analysis.** The scan stores no analysis for an autosampler setup:
 no peaks, no `analysis_error` (so nothing in the problems list), no beam-off
@@ -301,9 +304,10 @@ index, `POST /api/exposures/:id/analyze`) still analyze that exposure.
   promoted to `autosampler` (source `detected`) when the folder now has a run
   file, no stored exposure filename carries a well token, and no stored exposure
   is reviewed (`reviewed_at` set). Promotion rewrites `analysis_dir` and the
-  three patterns to the autosampler layout and renames the stored exposures
-  (calibration shots taken before the first run file) to their acquisition
-  stems, so the layout does not ingest them a second time.
+  three patterns to the autosampler layout and renames the stored exposure whose filename ends with the layout's first-frame
+  suffix (a calibration shot taken before the first run file) to its acquisition
+  stem, so the layout does not ingest it a second time. Its other frames keep
+  their names.
 - Otherwise a setup with mode `NULL` and a detected `capillary` stores
   `capillary` with source `detected`. With no evidence it stays `NULL`, scans as
   capillary (there is nothing to scan) and is detected again on the next scan.

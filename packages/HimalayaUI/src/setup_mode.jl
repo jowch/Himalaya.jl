@@ -76,6 +76,7 @@ end
 function _promote_to_autosampler!(db::SQLite.DB, setup)
     id = Int(setup.id)
     layout = autosampler_layout(String(setup.root_dir))
+    first_frame = replace(layout.image_pattern, "{name}" => "", ".tif" => "")
     lock(_DB_WRITE_LOCK) do
         SQLite.transaction(db) do
             DBInterface.execute(db,
@@ -83,9 +84,10 @@ function _promote_to_autosampler!(db::SQLite.DB, setup)
             _write_layout!(db, id, layout)
             for r in sqlrows(DBInterface.execute(db,
                     "SELECT id, filename FROM exposures WHERE setup_id = ? AND filename IS NOT NULL", [id]))
-                stem = acquisition_stem(String(r.filename))
-                stem == r.filename || DBInterface.execute(db,
-                    "UPDATE exposures SET filename = ? WHERE id = ?", [stem, Int(r.id)])
+                name = String(r.filename)
+                endswith(name, first_frame) && DBInterface.execute(db,
+                    "UPDATE exposures SET filename = ? WHERE id = ?",
+                    [chop(name; tail = length(first_frame)), Int(r.id)])
             end
         end
     end
