@@ -30,6 +30,68 @@ function _sub(body, sid)
     isempty(rows) ? nothing : only(rows)
 end
 
+function _seed_run(db, exp_id::Int, load_index::Int, acquisitions)
+    load_id = DBInterface.lastrowid(DBInterface.execute(db,
+        "INSERT INTO loads (experiment_id, load_index) VALUES (?, ?)", [exp_id, load_index]))
+    map(acquisitions) do (kind, scan)
+        well = "01" * string('A' + (scan % 8))
+        sid = HimalayaUI.create_sample!(db; experiment_id=exp_id, load_id=load_id, slot_index=scan,
+            name="lipidA $well ($kind$(lpad(scan, 4, '0')))")
+        HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=sid,
+            filename="lipidA_$(well)_$(kind)$(lpad(scan, 4, '0'))")
+        sid
+    end
+end
+
+function _seed_autosampler(acquisitions...; mode = "autosampler")
+    db = open_prepared_clone(mktempdir())
+    exp_id = HimalayaUI.create_experiment!(db; path="/d", data_dir="/d", analysis_dir="/a")
+    mode === nothing || DBInterface.execute(db, "UPDATE setups SET mode = ?", [mode])
+    runs = [_seed_run(db, exp_id, i, acq) for (i, acq) in enumerate(acquisitions)]
+    (db, exp_id, runs)
+end
+
+@testset "default background" begin
+    run = [("B", 100), ("S", 101), ("S", 102), ("B", 103)]
+
+    @testset "a sample of an autosampler run defaults to the buffer at the start of the run" begin
+        (db, _, ((b1, s1, s2, b2),)) = _seed_autosampler(run)
+        @test HimalayaUI.default_background(db, s1) == b1
+        @test HimalayaUI.default_background(db, s2) == b1
+    end
+
+    @testset "the buffer with the lowest scan wins, whatever order the rows were made in" begin
+        (db, _, ((s1, b2, b1),)) = _seed_autosampler([("S", 101), ("B", 130), ("B", 100)])
+        @test HimalayaUI.default_background(db, s1) == b1
+    end
+
+    @testset "a buffer has no default, and nor does a run without a buffer" begin
+        (db, _, ((b1, s1, s2, b2), (t1, t2))) = _seed_autosampler(run, [("S", 201), ("S", 202)])
+        @test HimalayaUI.default_background(db, b1) === nothing
+        @test HimalayaUI.default_background(db, b2) === nothing
+        @test HimalayaUI.default_background(db, t1) === nothing
+    end
+
+    @testset "a run never borrows the buffer of another run" begin
+        (db, _, ((b1, s1, s2, b2), (c1, c2))) = _seed_autosampler(run, [("B", 200), ("S", 201)])
+        @test HimalayaUI.default_background(db, c2) == c1
+        @test HimalayaUI.default_background(db, s1) == b1
+    end
+
+    @testset "capillary and undecided setups have no default" begin
+        for mode in ("capillary", nothing)
+            (db, _, ((b1, s1, s2, b2),)) = _seed_autosampler(run; mode)
+            @test HimalayaUI.default_background(db, s1) === nothing
+        end
+    end
+
+    @testset "the defaults of a whole experiment come from one pass" begin
+        (db, exp_id, ((b1, s1, s2, b2), (c1, c2))) = _seed_autosampler(run, [("B", 200), ("S", 201)])
+        @test HimalayaUI.default_backgrounds(db, exp_id) ==
+              Dict(b1 => nothing, s1 => b1, s2 => b1, b2 => nothing, c1 => nothing, c2 => c1)
+    end
+end
+
 @testset "sample compares" begin
     @testset "adding and removing comparisons keeps them per sample, in the order added" begin
         db = open_prepared_clone(mktempdir())
