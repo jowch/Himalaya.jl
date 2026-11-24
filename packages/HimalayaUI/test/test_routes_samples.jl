@@ -229,3 +229,24 @@ end
         @test !haskey(byname["dark"], :trace_median)
     end
 end
+
+@testset "GET /api/samples gives each sample the time its first image was taken" begin
+    db = open_prepared_clone(mktempdir())
+    exp_id = HimalayaUI.init_experiment!(db; path="/t", data_dir="/t/d", analysis_dir="/t/a")
+    sample(name, stamps; kind = "file") = (s = HimalayaUI.create_sample!(db; experiment_id=exp_id, name=name);
+        [HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s, filename="$(name)$(i)",
+            kind=kind, timestamp=t) for (i, t) in enumerate(stamps)]; s)
+
+    sample("late", ["2026-03-02T10:05:00", "2026-03-02T10:01:30"])
+    early = sample("early", ["2026-03-02T09:00:00", nothing])
+    sample("untimed", [nothing])
+    HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=early, filename="avg",
+        kind="combined", timestamp="2026-03-01T00:00:00")
+
+    with_inproc_routes(db) do call
+        byname = Dict(String(s.name) => s for s in JSON.parse(String(call("GET", "/api/samples").body)))
+        @test byname["late"].measured_at == "2026-03-02T10:01:30"
+        @test byname["early"].measured_at == "2026-03-02T09:00:00"
+        @test byname["untimed"].measured_at === nothing
+    end
+end
