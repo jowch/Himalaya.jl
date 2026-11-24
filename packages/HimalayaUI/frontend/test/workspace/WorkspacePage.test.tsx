@@ -390,7 +390,8 @@ beforeEach(() => {
   state.bridges = [];
   compareStore.data = EMPTY_COMPARES;
   localStorage.removeItem("himalaya-ui:recent:comparison:1");
-  localStorage.removeItem("himalaya-ui:recent:background:1");
+  localStorage.removeItem("himalaya-ui:recent:background:1:1");
+  localStorage.removeItem("himalaya-ui:recent:background:1:3");
   localStorage.removeItem("himalaya-ui:recent:label");
   state.labels = [];
   state.problems = { ingest_error: null, exposures: [] };
@@ -2314,7 +2315,7 @@ describe("WorkspacePage", () => {
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "c" });
     const rows = within(screen.getByRole("dialog", { name: "Compare with a sample" })).getAllByRole("button");
-    expect(rows.map((r) => r.querySelector("span")?.textContent)).toEqual(["X_03A", "X_10A", "buf_2", "buf_10", "X_02A"]);
+    expect(rows.map((r) => Number(r.getAttribute("data-sample-id")))).toEqual([14, 11, 15, 13, 12]);
     fireEvent.click(rows[4]!);
     expect(JSON.parse(localStorage.getItem("himalaya-ui:recent:comparison:1")!)).toEqual(["12", "14", "11"]);
   });
@@ -4427,7 +4428,7 @@ describe("WorkspacePage autosampler background", () => {
   });
 
   it("B lists backgrounds chosen recently first, then the run's buffers, then the rest by name, and remembers a pick on this browser", () => {
-    localStorage.setItem("himalaya-ui:recent:background:1", JSON.stringify(["50"]));
+    localStorage.setItem("himalaya-ui:recent:background:1:1", JSON.stringify(["50"]));
     seed();
     open(FIRST);
     fireEvent.keyDown(window, { key: "b" });
@@ -4435,7 +4436,17 @@ describe("WorkspacePage autosampler background", () => {
     const order = Array.from(dialog.querySelectorAll("[data-sample-id]")).map((n) => Number(n.getAttribute("data-sample-id")));
     expect(order).toEqual([50, END_BUFFER, OTHER_BUFFER, SECOND, OTHER_RUN]);
     fireEvent.click(within(dialog).getByRole("button", { name: /lipidB 01B \(S0201\)/ }));
-    expect(JSON.parse(localStorage.getItem("himalaya-ui:recent:background:1")!)).toEqual([String(OTHER_RUN), "50"]);
+    expect(JSON.parse(localStorage.getItem("himalaya-ui:recent:background:1:1")!)).toEqual([String(OTHER_RUN), "50"]);
+  });
+
+  it("B keeps recent backgrounds per setup, so a background picked in another setup does not outrank this run's buffers", () => {
+    localStorage.setItem("himalaya-ui:recent:background:1:3", JSON.stringify([String(SECOND)]));
+    seed();
+    open(FIRST);
+    fireEvent.keyDown(window, { key: "b" });
+    const dialog = screen.getByRole("dialog", { name: "Choose the background" });
+    const order = Array.from(dialog.querySelectorAll("[data-sample-id]")).map((n) => Number(n.getAttribute("data-sample-id")));
+    expect(order.slice(0, 2)).toEqual([END_BUFFER, OTHER_BUFFER]);
   });
 
   it("Change opens the same picker, and Escape closes it without a change", () => {
