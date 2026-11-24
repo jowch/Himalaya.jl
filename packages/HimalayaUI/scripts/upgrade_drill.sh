@@ -14,6 +14,7 @@ DB_DIR="$ROOT/db"
 OUT="$ROOT/out"
 JL="julia --threads=4,1"
 HISTORY=packages/HimalayaUI/scripts/upgrade_history.mjs
+HELP_TRUTH=packages/HimalayaUI/scripts/verify_truth.mjs
 
 base_pid=""
 cleanup() {
@@ -53,7 +54,7 @@ export DEMO_DIR="$DEMO" DEMO_DB_DIR="$DB_DIR" DEMO_UI_MODE="${DEMO_UI_MODE:-buil
 bin/verify seed > "$OUT/seed.json" 2>&1 || { echo "the head app did not come up on the upgraded DB"; cat "$OUT/seed.json"; tail -50 "$DB_DIR/backend.log" 2>/dev/null; exit 1; }
 failed=0
 node "$HISTORY" check "${DEMO_API_PORT:-8080}" "$OUT/calls-before.json" > "$OUT/calls-after.json" || { echo "FAILED  calls changed (see $OUT/calls-after.json)"; cat "$OUT/calls-after.json"; failed=1; }
-bin/verify check-truth --ui > "$OUT/check-truth.json" || true
+bin/verify check-truth --ui --gate invariants > "$OUT/check-truth.json" || { node "$HELP_TRUTH" broken "$OUT/check-truth.json"; echo "FAILED  check-truth invariants on the upgraded DB (see $OUT/check-truth.json)"; failed=1; }
 node -e '
   const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
   const inv = r.invariants ?? {};

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bridgeCallDrift, bridgeLabelDrift, compareTruth, selectedFrames, normalizeCall, railMismatch, shownStatus, withBridgedCallEvidence } from "../truth.mjs";
+import { checkTruth, bridgeCallDrift, bridgeLabelDrift, compareTruth, selectedFrames, normalizeCall, railMismatch, shownStatus, withBridgedCallEvidence } from "../truth.mjs";
 
 const TRUTH = [
   { sample: "MO_H2O", bases: "MO_H2O_S1 MO_H2O_S2", phases: "Pn3m", auto: "Pn3m", drop: "", note: "" },
@@ -514,4 +514,23 @@ test("the average's auto call may add a TRUTH phase but must keep the auto call"
   const extra = app({ peg });
   extra[1].combined = { ...extra[1].combined, autoPhases: ["Im3m", "Ia3d"] };
   assert.equal(compareTruth(truth, extra).ok, false);
+});
+
+test("--gate invariants reports TRUTH problems without failing on them, and still fails on a broken invariant", () => {
+  const offTruth = app({ h2o: [frame("MO_H2O_S1", []), frame("MO_H2O_S2", [])] });
+  const auto = compareTruth(TRUTH, offTruth);
+  assert.equal(auto.ok, false);
+  const gated = compareTruth(TRUTH, offTruth, { gate: "invariants" });
+  assert.equal(gated.gate, "invariants");
+  assert.deepEqual(gated.summary.failed, auto.summary.failed);
+  assert.equal(gated.ok, true);
+  const broken = compareTruth(TRUTH, app({ pegShown: { phase: "Im3m" } }), { gate: "invariants" });
+  assert.equal(broken.ok, false);
+  assert.deepEqual(broken.summary.invariants_failed, ["status_matches_assignment"]);
+});
+
+test("check-truth refuses an unknown gate and --gate invariants with --strict", async () => {
+  await assert.rejects(checkTruth({}, { gate: "truth" }), /unknown --gate truth/);
+  await assert.rejects(checkTruth({}, { gate: "invariants", strict: true }), /disagree/);
+  await assert.rejects(checkTruth({}, { gate: "invariants", expect: "triaged" }), /--expect disagree/);
 });

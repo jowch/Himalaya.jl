@@ -15,6 +15,7 @@ const PAGE = `<!doctype html><html><head><title>Stub</title></head><body>
   <button>Twin</button><button>Twin</button>
   <button onclick="document.getElementById('h').textContent = (event.ctrlKey ? 'ctrl' : '') + (event.shiftKey ? 'shift' : '') || 'plain'">Mod</button>
   <button onclick="setTimeout(() => history.pushState({}, '', '/done'), 800)">Later</button>
+  <button onclick="setTimeout(() => { const b = document.createElement('button'); b.id = 'arrived'; b.textContent = 'Arrived'; b.onclick = () => { document.getElementById('h').textContent = 'arrived'; }; document.body.append(b); }, 1200)">Deferred</button>
   <button onclick="fetch('/silent').then((r) => r.text()).then((t) => { document.getElementById('h').textContent = t; })">Silent</button>
   <button onclick="fetch('/hang')">Hang</button>
   <button onclick="fetch('/quick')">Quick</button>
@@ -25,7 +26,12 @@ const PAGE = `<!doctype html><html><head><title>Stub</title></head><body>
   <label>Path <input id="p"></label>
   <section id="out" aria-busy="false"></section>
 </main>
+<output id="who"></output>
 <script>
+  const STATE = "himalaya-ui:state";
+  const booted = localStorage.getItem(STATE);
+  addEventListener("pagehide", () => localStorage.setItem(STATE, booted ?? JSON.stringify({ state: { tutorialSeen: false }, version: 6 })));
+  document.getElementById("who").textContent = "user " + (JSON.parse(booted ?? "{}").state?.username ?? "none");
   function busy() {
     const out = document.getElementById("out");
     out.setAttribute("aria-busy", "true");
@@ -78,6 +84,11 @@ before(async () => {
       return;
     }
     if (req.url === "/hang") return;
+    if (req.url === "/favicon.svg") {
+      res.setHeader("Content-Type", "image/svg+xml");
+      res.end('<svg xmlns="http://www.w3.org/2000/svg"/>');
+      return;
+    }
     if (req.url === "/quick") {
       res.end("quick");
       return;
@@ -119,6 +130,8 @@ test("open, snapshot, click, fill, press, wait-settle, screenshot, close", { ski
   assert.equal(r.title, "Stub");
   assert.equal(r.browserStarted, true);
   assert.equal(r.user, "seeded");
+  ({ r } = await run("snapshot", "--selector", "#who"));
+  assert.match(r.snapshot, /user verify/, "the page booted without the user seed, as the app does when its first load overwrites it");
 
   ({ r } = await run("open", "/", "--onboarding"));
   assert.equal(r.user, "cleared");
@@ -226,6 +239,15 @@ test("open, snapshot, click, fill, press, wait-settle, screenshot, close", { ski
   assert.match(r.error, /GET \/api\/missing\.png returned 404/);
   ({ code } = await run("open", "/"));
   assert.equal(code, 0);
+
+  await run("click", "--role", "button", "--name", "Deferred", "--no-settle");
+  ({ code, r } = await run("click", "--selector", "#arrived", "--no-settle"));
+  assert.equal(code, 0, `a target that renders a moment later is waited for, not reported missing: ${JSON.stringify(r)}`);
+  ({ r } = await run("snapshot", "--selector", "h1"));
+  assert.match(r.snapshot, /arrived/);
+  ({ code, r } = await run("click", "--selector", "#never-there", "--no-settle"));
+  assert.equal(code, 1);
+  assert.match(r.error, /nothing matches selector=#never-there on http:\/\/127\.0\.0\.1:\d+\/\S* after 5000 ms/);
 
   ({ code, r } = await run("click", "--role", "button", "--name", "Twin"));
   assert.equal(code, 1);

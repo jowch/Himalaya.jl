@@ -17,8 +17,17 @@ export async function leavePage(page) {
   if (page.url() !== "about:blank") await page.goto("about:blank");
 }
 
+export const APPLESS_PAGE = "/favicon.svg";
+
+const readState = (page, key) => page.evaluate((k) => JSON.parse(localStorage.getItem(k) ?? "null"), key);
+
 export async function prepareUser(page, cfg, { username, onboarding }) {
-  if (!page.url().startsWith(cfg.uiBase)) await page.goto(cfg.uiBase, { waitUntil: "domcontentloaded" });
+  const appless = routeUrl(cfg, APPLESS_PAGE);
+  if (!onboarding && page.url().startsWith(cfg.uiBase)) {
+    const state = (await readState(page, STATE_KEY))?.state ?? {};
+    if (state.username && state.tutorialSeen) return "kept";
+  }
+  if (page.url() !== appless) await page.goto(appless, { waitUntil: "domcontentloaded" });
   return page.evaluate(
     ({ key, version, username, onboarding }) => {
       const raw = localStorage.getItem(key);
@@ -117,11 +126,14 @@ export function locatorFor(page, flags) {
   return { loc, what };
 }
 
+export const TARGET_WAIT_MS = 5000;
+
 async function resolveOne(page, flags) {
   const { loc, what } = locatorFor(page, flags);
+  await loc.first().waitFor({ state: "attached", timeout: TARGET_WAIT_MS }).catch(() => undefined);
   const count = await loc.count();
   if (count === 0) {
-    throw new UsageError(`nothing matches ${what}`, "run `bin/verify snapshot` to see the roles and names on the page");
+    throw new UsageError(`nothing matches ${what} on ${page.url()} after ${TARGET_WAIT_MS} ms`, "run `bin/verify snapshot` to see the roles and names on the page");
   }
   if (flags.nth !== undefined) {
     const nth = intFlag(flags, "nth");

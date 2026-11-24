@@ -71,9 +71,10 @@ step 10-custom-index log bash -c '
   list="[data-testid=workspace-candidates]"
   custom_row() {
     for _ in 1 2 3 4 5; do
-      bin/verify snapshot --selector "$list" --raw > "$out/10-$1.yml" || true
-      if grep -E "button \".*Custom\"" "$out/10-$1.yml" | grep -q "\[pressed\]"; then [[ $1 == added ]] && return 0
-      elif grep -qE "button \".*Custom\"" "$out/10-$1.yml"; then [[ $1 == removed ]] && return 0
+      if bin/verify snapshot --selector "$list" --raw > "$out/10-$1.yml"; then
+        if grep -E "button \".*Custom\"" "$out/10-$1.yml" | grep -q "\[pressed\]"; then [[ $1 == added ]] && return 0
+        elif grep -qE "button \".*Custom\"" "$out/10-$1.yml"; then [[ $1 == removed ]] && return 0
+        fi
       fi
       sleep 1
     done
@@ -184,7 +185,7 @@ step 14-call-lost-in-place log bash -c '
   done
   [[ -z $(phases) ]] || { echo "excluding every auto peak of $label left its call $(phases); the step cannot test a lost call"; exit 1; }
   echo "turning peaks off dropped the call of $label"
-  bin/verify check-truth --ui > "$out/14-in-place.json" || true
+  bin/verify check-truth --ui --gate invariants > "$out/14-in-place.json" || { node "$help" broken "$out/14-in-place.json"; exit 1; }
   node -e "
     const r = JSON.parse(require(\"fs\").readFileSync(process.argv[1], \"utf8\"));
     const inv = r.invariants.workspace_status_matches;
@@ -203,7 +204,7 @@ step 15-undo-restores-call log bash -c '
   for _ in $(seq 20); do [[ $(phases) == "$want" ]] && break; sleep 0.5; done
   [[ $(phases) == "$want" ]] || { echo "undoing the peak edit left the call of $label as \"$(phases)\", not \"$want\""; exit 1; }
   echo "undoing the peak edit brought back the call $want of $label"
-  bin/verify check-truth --ui > "$out/15-in-place.json" || true
+  bin/verify check-truth --ui --gate invariants > "$out/15-in-place.json" || { node "$help" broken "$out/15-in-place.json"; exit 1; }
   node -e "
     const r = JSON.parse(require(\"fs\").readFileSync(process.argv[1], \"utf8\"));
     const inv = r.invariants.workspace_status_matches;
