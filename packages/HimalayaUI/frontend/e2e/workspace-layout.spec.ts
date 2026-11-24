@@ -338,6 +338,11 @@ test("+ Label and + Compare match a label pill in height and in where their text
   const pill = await fit(page.locator("[data-label]").first());
   expect(await fit(page.getByRole("button", { name: "+ Label L" }))).toEqual(pill);
   expect(await fit(page.getByRole("button", { name: /^\+ Compare/ }))).toEqual(pill);
+  await openSample(page, 40);
+  await page.keyboard.press("c");
+  await page.keyboard.type(`${LONG}01`);
+  await page.keyboard.press("Enter");
+  expect(await fit(page.locator("[data-compare-chip]").first())).toEqual(pill);
 });
 
 test("a long Call list (ten candidates, more than the number keys reach) keeps Indexing and Frame in place, and the column never scrolls", async ({ page }) => {
