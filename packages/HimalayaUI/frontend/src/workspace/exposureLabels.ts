@@ -10,10 +10,8 @@ function imagesKept(e: Counted): { kept: number; total: number } | null {
 export function exposureKindLabel(e: Counted & Pick<Exposure, "kind">): string {
   const images = imagesKept(e);
   if (images) {
-    const noun = images.total === 1 ? "image" : "images";
-    return images.kept === images.total
-      ? `${images.total} ${noun}, beamline average`
-      : `${images.kept} of ${images.total} ${noun}, beamline average`;
+    if (images.total === 1 && images.kept === 1) return "1 image";
+    return images.kept === images.total ? `${images.total} averaged` : `${images.kept} of ${images.total} averaged`;
   }
   if (e.kind === "averaged") return "Averaged";
   if (e.kind === "background_subtracted") return "Subtracted";
