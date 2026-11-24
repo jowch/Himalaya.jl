@@ -1,6 +1,6 @@
 import path from "node:path";
 import { getJson, request } from "./http.mjs";
-import { autosamplerDir, findDemoExperiment, readAutosamplerTruth, readTruth } from "./demo.mjs";
+import { STALE_LAYOUT_HINT, autosamplerDir, findDemoExperiment, readAutosamplerTruth, readTruth, staleDemoLayout } from "./demo.mjs";
 import { AUTOSAMPLER_MODE, collectAutosampler, compareAutosampler, setupMode } from "./autosampler.mjs";
 import { UsageError, intFlag } from "./args.mjs";
 import { callFromText, readViews, statusFromText } from "./views.mjs";
@@ -505,6 +505,7 @@ async function resolveExperiment(cfg, flags) {
   const exp = await findDemoExperiment(cfg).catch(() => {
     throw new UsageError(`backend not answering at ${cfg.apiBase}`, "run `bin/verify seed`");
   });
+  if (!exp && staleDemoLayout(cfg)) throw new UsageError(`${cfg.demoDir} has the layout from before the demo had two setups, so no experiment can match it`, STALE_LAYOUT_HINT);
   if (!exp) throw new UsageError("the demo experiment is not ingested", "run `bin/verify seed`");
   if (exp.ingest_status !== "complete") throw new UsageError(`demo experiment ${exp.id} is ${exp.ingest_status}`, "wait for the scan to finish; `bin/verify doctor` shows progress");
   return exp.id;
@@ -518,8 +519,15 @@ function loadTruth(cfg, flags) {
 
 async function checkAutosampler(cfg, flags, experimentId, setups) {
   const rows = readAutosamplerTruth(cfg, flags.truth);
-  if (!rows) return null;
   const samples = await getJson(cfg.apiBase, `/api/samples?experiment_id=${experimentId}`);
+  if (!rows) {
+    const present = samples.filter((s) => setupMode(setups, s) === AUTOSAMPLER_MODE).length;
+    return present === 0 ? null : {
+      ok: false,
+      error: `TRUTH_autosampler.csv is missing but the app has ${present} autosampler samples, so nothing checks them`,
+      hint: "regenerate the demo with `bin/verify seed --reset`, or pass --truth <TRUTH.csv> from a folder that holds TRUTH_autosampler.csv",
+    };
+  }
   const found = await collectAutosampler(cfg.apiBase, samples, setups, rows);
   return compareAutosampler(rows, found, { dataDir: path.join(autosamplerDir(cfg), "data") });
 }
