@@ -7,7 +7,7 @@ const SAMPLES = ["JC001", "JC002", "JC003", "BUF001"].map((name, i) => ({
 
 function exposureOf(sampleId: number, frame: number) {
   return {
-    id: sampleId * 10 + frame, sample_id: sampleId, filename: `SY_S${sampleId}_0_00${frame + 1}`,
+    id: sampleId * 10 + frame, sample_id: sampleId, filename: `sample_S${sampleId}_0_00${frame + 1}`,
     kind: "file", status: null, image_path: null, image_version: "", sources: [], trace_hash: null,
     analysis_inputs_hash: null, exposure_time: null, counting_time: null, transmitted_counts: null,
     incident_monitor: null, timestamp: null, beam_energy_ev: null, pipe_length_m: null, detector: null,

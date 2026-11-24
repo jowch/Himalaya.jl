@@ -22,7 +22,7 @@ function renderPage() {
 }
 
 const EXP = (over: Partial<api.Experiment>): api.Experiment => ({
-  id: 7, name: "SSRL · 1p7m", description: null, path: "/d",
+  id: 7, name: "Beamtime 1 · setup1", description: null, path: "/d",
   created_at: "2026-04-12T00:00:00",
   last_scanned_at: null, ingest_status: "complete",
   stats: { loads: 13, samples: 170, exposures: 682, sessions: 3, span_hours: 6.5, started_at: "2026-04-01T10:00:00" },
@@ -34,10 +34,10 @@ describe("ExperimentsHomePage (Phase E1)", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it("lists experiment cards", async () => {
-    vi.spyOn(api, "listExperiments").mockResolvedValue([EXP({}), EXP({ id: 8, name: "JC plate" })]);
+    vi.spyOn(api, "listExperiments").mockResolvedValue([EXP({}), EXP({ id: 8, name: "Plate A" })]);
     renderPage();
-    expect(await screen.findByText("SSRL · 1p7m")).toBeInTheDocument();
-    expect(screen.getByText("JC plate")).toBeInTheDocument();
+    expect(await screen.findByText("Beamtime 1 · setup1")).toBeInTheDocument();
+    expect(screen.getByText("Plate A")).toBeInTheDocument();
   });
 
   it("shows when each beamtime collected its samples and how many are left to review", async () => {
@@ -159,7 +159,7 @@ describe("ExperimentsHomePage (Phase E1)", () => {
   });
 
   it("moves between experiment cards with the arrow keys", async () => {
-    vi.spyOn(api, "listExperiments").mockResolvedValue([EXP({}), EXP({ id: 8, name: "JC plate" }), EXP({ id: 9, name: "Third" })]);
+    vi.spyOn(api, "listExperiments").mockResolvedValue([EXP({}), EXP({ id: 8, name: "Plate A" }), EXP({ id: 9, name: "Third" })]);
     renderPage();
     const first = await screen.findByTestId("experiment-card-7");
     const second = screen.getByTestId("experiment-card-8");

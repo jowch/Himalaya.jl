@@ -97,7 +97,11 @@ my-experiment/
     ├── setup_info_20260412_101500.txt     # AgBe calibration: beam centre, distance
     └── automatic_analysis/
         └── tot_files/
+<<<<<<< HEAD
             └── SY_12_034_S0567_tot.dat    # 1D-integrated trace: q  I  σ
+=======
+            └── sample_01_S0001_tot.dat    # 1D-integrated trace: q  I  σ
+>>>>>>> origin/main
 ```
 
 **Experiment directories are read-only at runtime.** HimalayaUI writes only to the central DB, and caches thumbnails next to it.
@@ -117,7 +121,7 @@ The CLI does not create experiments; use the New-experiment funnel in the UI.
 `analyze` and `show` take an `-e`/`--experiment` flag whose value can be:
 
 - an **id** (`-e 1`)
-- a **name** (`-e "SSRL April 2026"`, must match `experiments.name`)
+- a **name** (`-e "Beamtime 1"`, must match `experiments.name`)
 - a **path** (`-e ~/beamtime/2026-04-exp42`, looked up against `experiments.path`)
 
 Without `-e`, `analyze` and `show` use the only registered experiment and fail with a list if there are several.
@@ -128,7 +132,11 @@ Runs peak-finding and indexing for every frame that is not dropped (or only the 
 
 ```bash
 himalaya analyze -e 1
+<<<<<<< HEAD
 himalaya analyze -e 1 --sample "SY_12_034 (S01P02)"
+=======
+himalaya analyze -e 1 --sample "sample_01 (S01P02)"
+>>>>>>> origin/main
 ```
 
 ### `himalaya show [-e <experiment>] --sample <label>`
