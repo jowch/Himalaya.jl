@@ -66,7 +66,7 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
                 content={
                   <>
                     <span className="block font-semibold">{c.setup ? `${c.name} · ${c.setup}` : c.name}</span>
-                    <span className="block">{`Click to ${off ? "show" : "hide"}.${canSubtract ? ` ${modKey}-click to ${sub ? "stop subtracting" : "subtract it from the current trace"}.` : ""}`}</span>
+                    <span className="block">{`Click to ${off ? "show" : "hide"}.`}{canSubtract && ` ${modKey}-click to ${sub ? "stop subtracting" : "subtract it from the current trace"}.`}</span>
                     {c.scale !== undefined && <span className="block">{SCALE_NOTES[c.scale.source]}</span>}
                   </>
                 }
