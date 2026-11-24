@@ -29,12 +29,18 @@ describe("ingestion fetchers (Phase E1)", () => {
     expect((spy.mock.calls[0]![1] as RequestInit).method).toBe("POST");
   });
 
-  it("suggestFolders GETs /api/fs/suggest?prefix=…", async () => {
-    const spy = mockFetchSpy({ folders: [{ path: "/data/beamtime-01/setup1", kind: "setup", setups: null, added: null }], more: false });
-    const out = await api.suggestFolders("/data/beamtime-01/s");
-    expect(out.folders[0]!.path).toContain("setup1");
-    expect(spy.mock.calls[0]![0]).toContain("/api/fs/suggest?");
-    expect(spy.mock.calls[0]![0]).toContain("prefix=");
+  it("listFolder GETs /api/fs/list?path=… with the path encoded once", async () => {
+    const spy = mockFetchSpy({ path: "/data/run 42", parent: "/data", folders: ["setup1"] });
+    const out = await api.listFolder("/data/run 42");
+    expect(out.folders).toEqual(["setup1"]);
+    expect(spy.mock.calls[0]![0]).toBe("/api/fs/list?path=%2Fdata%2Frun%2042");
+  });
+
+  it("describeFolder GETs /api/fs/describe?path=…", async () => {
+    const spy = mockFetchSpy({ path: "/data/beamtime-01", kind: "beamtime", setups: 2, added: null });
+    const out = await api.describeFolder("/data/beamtime-01");
+    expect(out.kind).toBe("beamtime");
+    expect(spy.mock.calls[0]![0]).toBe("/api/fs/describe?path=%2Fdata%2Fbeamtime-01");
   });
 
   it("fetchManifest single-encodes path with slashes and spaces", async () => {

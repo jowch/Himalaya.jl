@@ -34,12 +34,15 @@ describe("shell keys on the pages outside the workspace", () => {
     expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
   });
 
-  it("⌘K opens the palette from inside a text field, where ? and / type once it has text", async () => {
+  it("⌘K opens the palette from the folder path field, where ? and / type", async () => {
+    vi.spyOn(api, "listFolder").mockResolvedValue({ path: "/lab", parent: "/", folders: [] });
     renderAt("/experiments/new");
     await screen.findByTestId("app-shell");
-    const field = screen.getByTestId("dirpicker-input").querySelector("input")!;
-    expect(document.activeElement).toBe(field);
-    fireEvent.change(field, { target: { value: "/lab" } });
+    const list = screen.getByTestId("folder-browser-list");
+    expect(document.activeElement).toBe(list);
+    await screen.findByRole("navigation", { name: "Location" });
+    fireEvent.keyDown(list, { key: "/" });
+    const field = screen.getByRole("textbox", { name: "Folder path" });
     fireEvent.keyDown(field, { key: "?" });
     fireEvent.keyDown(field, { key: "/" });
     expect(useAppState.getState().paletteOpen).toBe(false);
@@ -48,24 +51,22 @@ describe("shell keys on the pages outside the workspace", () => {
     expect(useAppState.getState().paletteOpen).toBe(true);
   });
 
-  it("? from the empty folder field opens the shortcuts list, and types once the field has text", async () => {
+  it("? from the folder list opens the shortcuts list, which names the browser keys", async () => {
+    vi.spyOn(api, "listFolder").mockResolvedValue({ path: "/lab", parent: "/", folders: [] });
     renderAt("/experiments/new");
     await screen.findByTestId("app-shell");
-    const field = screen.getByTestId("dirpicker-input").querySelector("input")!;
-    fireEvent.change(field, { target: { value: "/lab" } });
-    fireEvent.keyDown(field, { key: "?" });
-    expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
-    fireEvent.change(field, { target: { value: "" } });
-    fireEvent.keyDown(field, { key: "?" });
-    expect(await screen.findByRole("dialog", { name: "Keyboard shortcuts" })).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByTestId("folder-browser-list"), { key: "?" });
+    const help = await screen.findByRole("dialog", { name: "Keyboard shortcuts" });
+    expect(help).toHaveTextContent("Go up one folder");
   });
 
-  it("⌘? and Ctrl+? in the empty folder field do not open the shortcuts", async () => {
+  it("⌘? and Ctrl+? in the folder list do not open the shortcuts", async () => {
+    vi.spyOn(api, "listFolder").mockResolvedValue({ path: "/lab", parent: "/", folders: [] });
     renderAt("/experiments/new");
     await screen.findByTestId("app-shell");
-    const field = screen.getByTestId("dirpicker-input").querySelector("input")!;
-    fireEvent.keyDown(field, { key: "?", metaKey: true });
-    fireEvent.keyDown(field, { key: "?", ctrlKey: true });
+    const list = screen.getByTestId("folder-browser-list");
+    fireEvent.keyDown(list, { key: "?", metaKey: true });
+    fireEvent.keyDown(list, { key: "?", ctrlKey: true });
     expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
   });
 

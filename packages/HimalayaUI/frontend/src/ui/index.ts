@@ -25,5 +25,3 @@ export { NoticePill } from "./NoticePill";
 export type { NoticePillTone } from "./NoticePill";
 export { Checkbox } from "./Checkbox";
 export type { CheckboxProps } from "./Checkbox";
-export { SuggestionList } from "./SuggestionList";
-export type { SuggestionItem, SuggestionListProps } from "./SuggestionList";

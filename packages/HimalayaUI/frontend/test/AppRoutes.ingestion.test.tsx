@@ -26,9 +26,10 @@ describe("AppRoutes ingestion tree (Phase E1)", () => {
     expect(await screen.findByText("All experiments")).toBeInTheDocument();
   });
 
-  it("/experiments/new renders the directory picker", () => {
+  it("/experiments/new renders the folder browser", () => {
+    vi.spyOn(api, "listFolder").mockResolvedValue({ path: "/lab", parent: "/", folders: [] });
     renderAt("/experiments/new");
-    expect(screen.getByTestId("dirpicker-input")).toBeInTheDocument();
+    expect(screen.getByTestId("folder-browser-list")).toBeInTheDocument();
   });
 
   it("/ redirects to /experiments", async () => {

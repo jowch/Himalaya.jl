@@ -159,7 +159,7 @@
     "packages/HimalayaUI/test/test_routes_experiments.jl": 37,
     "packages/HimalayaUI/test/test_routes_export.jl": 4,
     "packages/HimalayaUI/test/test_routes_exposures.jl": 3,
-    "packages/HimalayaUI/test/test_routes_fs.jl": 50,
+    "packages/HimalayaUI/test/test_routes_fs.jl": 47,
     "packages/HimalayaUI/test/test_routes_image.jl": 23,
     "packages/HimalayaUI/test/test_routes_peaks.jl": 53,
     "packages/HimalayaUI/test/test_routes_samples.jl": 18,
