@@ -39,6 +39,9 @@ export const queryKeys = {
   problems:   (experimentId: number) => ["experiment", experimentId, "problems"] as const,
   folderPreview: (path: string) => ["folder-preview", path] as const,
   folderPreviews: ["folder-preview"] as const,
+  folderListing: (path: string) => ["folder-listing", path] as const,
+  folderDescription: (path: string) => ["folder-description", path] as const,
+  folderDescriptions: ["folder-description"] as const,
   labelColors:  () => ["label-colors"] as const,
   detectorSize: (url: string) => ["detector-size", url] as const,
   manifest: (dataDir: string, patterns: { image: string; metadata: string; integration: string }, setupFile: string, analysisDir: string) =>
@@ -519,6 +522,7 @@ export function forgetExperiment(qc: QueryClient, experimentId: number): void {
   qc.removeQueries({ queryKey: queryKeys.experiment(experimentId) });
   void qc.invalidateQueries({ queryKey: queryKeys.experiments });
   void qc.invalidateQueries({ queryKey: queryKeys.folderPreviews });
+  void qc.invalidateQueries({ queryKey: queryKeys.folderDescriptions });
 }
 
 export function useCheckForNewFilesOnOpen(experimentId: number): void {

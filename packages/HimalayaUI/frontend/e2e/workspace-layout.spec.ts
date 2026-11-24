@@ -724,9 +724,12 @@ test("each image's checkbox sits inside a square plate in the tile's corner, and
   expect(circle.y).toBeGreaterThanOrEqual(p.y);
   expect(circle.x + circle.width).toBeLessThanOrEqual(p.x + p.width);
   expect(circle.y + circle.height).toBeLessThanOrEqual(p.y + p.height);
-  const before = await box.getAttribute("aria-checked");
+  const wasTicked = (await box.getAttribute("aria-checked")) === "true";
+  const tickedBefore = await page.locator("[data-testid=exposure-select-plate] [role=checkbox][aria-checked=true]").count();
+  const put = page.waitForRequest((r) => r.method() === "PUT" && /\/api\/samples\/44\/selection$/.test(r.url()));
   await page.mouse.click(p.x + 2, p.y + 2);
-  await expect(box).not.toHaveAttribute("aria-checked", before!);
+  const { exposure_ids } = (await put).postDataJSON() as { exposure_ids: number[] };
+  expect(exposure_ids).toHaveLength(tickedBefore + (wasTicked ? -1 : 1));
 });
 
 test("a subscripted phase name in the sample list leaves every row the same height", async ({ page }) => {

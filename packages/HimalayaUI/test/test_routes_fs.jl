@@ -1,114 +1,139 @@
 using Test, HTTP, JSON3, SQLite
 using HimalayaUI
 
-# Filesystem probe routes (spec §6.1). Read-only — no DB writes, no event log,
-# no SSE. The DB argument to with_inproc_routes is required by the harness but
-# unused by /api/fs/* (these routes never touch the DB).
+@testset "list_names, folder_names and folder_listing read a folder, and any_name stops at the first match" begin
+    root = mktempdir()
+    for i in 1:600
+        touch(joinpath(root, "f$(lpad(i, 4, '0')).tif"))
+    end
+    mkpath(joinpath(root, "sub"))
+    @test length(HimalayaUI.list_names(root)) == 601
+    @test HimalayaUI.folder_names(root) == ["sub"]
+    @test HimalayaUI.folder_listing(root, endswith(".tif")) == (folders = ["sub"], holds_image = true)
+    @test HimalayaUI.folder_listing(root, endswith(".dat")).holds_image == false
+    seen = Ref(0)
+    @test HimalayaUI.any_name(n -> (seen[] += 1; endswith(n, ".tif")), root)
+    @test seen[] < 600
+    @test !HimalayaUI.any_name(endswith(".dat"), root)
+    @test HimalayaUI.list_names(joinpath(root, "missing")) == String[]
+    @test HimalayaUI.folder_names(joinpath(root, "missing")) == String[]
+    @test !HimalayaUI.any_name(Returns(true), joinpath(root, "missing"))
+end
 
-_suggest(call, prefix) = JSON3.read(call("GET", "/api/fs/suggest?prefix=$(HTTP.escapeuri(prefix))").body)
-_names(r) = [basename(f.path) for f in r.folders]
+@testset "beamtime folders are read only through dir_entries.jl, never Base.readdir" begin
+    on_server_disk = Set(["image.jl"])
+    src = joinpath(pkgdir(HimalayaUI), "src")
+    offenders = [f for f in readdir(src) if endswith(f, ".jl") && f != "dir_entries.jl" && !(f in on_server_disk) &&
+                 occursin(r"\b(readdir|walkdir)\(", read(joinpath(src, f), String))]
+    @test offenders == String[]
+end
 
-@testset "GET /api/fs/suggest lists matching folders, not files" begin
+_list(call, path) = JSON3.read(call("GET", "/api/fs/list?path=$(HTTP.escapeuri(path))").body)
+_describe(call, path) = JSON3.read(call("GET", "/api/fs/describe?path=$(HTTP.escapeuri(path))").body)
+
+@testset "GET /api/fs/list lists a folder's subfolders in natural order, not files or hidden folders" begin
     mktempdir() do tmp
         db = open_prepared_clone(tmp)
         with_inproc_routes(db) do call
             root = mktempdir()
-            mkpath(joinpath(root, "alpha"))
-            mkpath(joinpath(root, "beta"))
-            touch(joinpath(root, "afile.txt"))
-            resp = call("GET", "/api/fs/suggest?prefix=$(HTTP.escapeuri(joinpath(root, "a")))")
-            @test resp.status == 200
-            r = JSON3.read(resp.body)
-            @test _names(r) == ["alpha"]
-            @test r.folders[1].path == joinpath(root, "alpha")
-            @test r.more == false
-        end
-    end
-end
-
-@testset "GET /api/fs/suggest empty or relative prefix returns nothing" begin
-    mktempdir() do tmp
-        db = open_prepared_clone(tmp)
-        with_inproc_routes(db) do call
-            @test isempty(JSON3.read(call("GET", "/api/fs/suggest").body).folders)
-            cd(mktempdir()) do
-                mkpath("relative")
-                @test isempty(_suggest(call, "./rel").folders)
-                @test isempty(_suggest(call, "rel").folders)
-            end
-        end
-    end
-end
-
-@testset "GET /api/fs/suggest with a trailing slash lists the folder's subfolders" begin
-    mktempdir() do tmp
-        db = open_prepared_clone(tmp)
-        with_inproc_routes(db) do call
-            root = mktempdir()
-            mkpath(joinpath(root, "one"))
-            mkpath(joinpath(root, "two"))
-            mkpath(joinpath(root, ".hidden"))
-            @test _names(_suggest(call, root * "/")) == ["one", "two"]
-            @test _names(_suggest(call, root * "/.h")) == [".hidden"]
-        end
-    end
-end
-
-@testset "GET /api/fs/suggest on a folder without a slash lists it and its siblings" begin
-    mktempdir() do tmp
-        db = open_prepared_clone(tmp)
-        with_inproc_routes(db) do call
-            root = mktempdir()
-            for d in ("setup1", "setup10", "setup2", "setup1/data")
+            for d in ("setup1", "setup10", "setup2", ".hidden")
                 mkpath(joinpath(root, d))
             end
-            @test _names(_suggest(call, joinpath(root, "setup1"))) == ["setup1", "setup10"]
-            @test _names(_suggest(call, joinpath(root, "setup"))) == ["setup1", "setup2", "setup10"]
+            touch(joinpath(root, "afile.txt"))
+            symlink(joinpath(root, "setup2"), joinpath(root, "linked"))
+            resp = call("GET", "/api/fs/list?path=$(HTTP.escapeuri(root))")
+            @test resp.status == 200
+            r = JSON3.read(resp.body)
+            @test r.path == root
+            @test r.parent == dirname(root)
+            @test collect(r.folders) == ["linked", "setup1", "setup2", "setup10"]
         end
     end
 end
 
-@testset "GET /api/fs/suggest matches regardless of case" begin
+@testset "GET /api/fs/list says when the listed folder is a setup or holds its images, so its rows go undescribed" begin
     mktempdir() do tmp
         db = open_prepared_clone(tmp)
         with_inproc_routes(db) do call
-            root = mktempdir()
-            mkpath(joinpath(root, "Beamtime_Nov"))
-            @test _names(_suggest(call, joinpath(root, "beam"))) == ["Beamtime_Nov"]
+            beamtime = mktempdir()
+            nested = joinpath(beamtime, "nested")
+            mkpath(joinpath(nested, "data")); mkpath(joinpath(nested, "analysis"))
+            touch(joinpath(nested, "data", "s_0001.tif"))
+            flat = joinpath(beamtime, "flat")
+            mkpath(joinpath(flat, "notes"))
+            touch(joinpath(flat, "s_0001.tif"))
+            @test _list(call, beamtime).inside_setup == false
+            @test _list(call, nested).inside_setup == true
+            @test _list(call, joinpath(nested, "data")).inside_setup == true
+            @test _list(call, flat).inside_setup == true
+            @test _list(call, joinpath(nested, "analysis")).inside_setup == false
         end
     end
 end
 
-@testset "GET /api/fs/suggest expands ~ to the home folder" begin
+@testset "GET /api/fs/list has no parent at the filesystem root" begin
+    mktempdir() do tmp
+        db = open_prepared_clone(tmp)
+        with_inproc_routes(db) do call
+            r = _list(call, "/")
+            @test r.path == "/"
+            @test r.parent === nothing
+        end
+    end
+end
+
+@testset "GET /api/fs/list expands ~ and refuses a relative path or a missing folder" begin
     mktempdir() do tmp
         db = open_prepared_clone(tmp)
         with_inproc_routes(db) do call
             home = mktempdir()
             mkpath(joinpath(home, "beamtimes"))
             withenv("HOME" => home) do
-                r = _suggest(call, "~/beam")
-                @test [f.path for f in r.folders] == [joinpath(home, "beamtimes")]
+                r = _list(call, "~")
+                @test r.path == home
+                @test collect(r.folders) == ["beamtimes"]
             end
+            @test call("GET", "/api/fs/list?path=rel").status == 400
+            @test call("GET", "/api/fs/list?path=$(HTTP.escapeuri(joinpath(home, "nope")))").status == 400
         end
     end
 end
 
-@testset "GET /api/fs/suggest caps the list and says more match" begin
+@testset "GET /api/fs/list without a path opens beside the last added beamtime" begin
     mktempdir() do tmp
         db = open_prepared_clone(tmp)
         with_inproc_routes(db) do call
-            root = mktempdir()
-            for i in 1:25
-                mkpath(joinpath(root, "d$(i)"))
+            home = mktempdir()
+            withenv("HOME" => home) do
+                @test _list(call, "").path == home
+                share = mktempdir()
+                mkpath(joinpath(share, "older"))
+                mkpath(joinpath(share, "newer"))
+                HimalayaUI.create_experiment!(db; name = "Older", path = joinpath(share, "older"))
+                HimalayaUI.create_experiment!(db; name = "Newer", path = joinpath(share, "newer"))
+                @test _list(call, "").path == share
             end
-            r = _suggest(call, root * "/")
-            @test length(r.folders) == 20
-            @test r.more == true
         end
     end
 end
 
-@testset "GET /api/fs/suggest marks beamtime and setup folders" begin
+@testset "GET /api/fs/describe names an experiment that has no name by its folder" begin
+    mktempdir() do tmp
+        db = open_prepared_clone(tmp)
+        setup = joinpath(mktempdir(), "run7")
+        mkpath(joinpath(setup, "data"))
+        touch(joinpath(setup, "data", "a_0_001.tif"))
+        HimalayaUI.init_experiment!(db; path = setup, data_dir = joinpath(setup, "data"),
+                                    analysis_dir = joinpath(setup, "analysis"))
+        with_inproc_routes(db) do call
+            resp = call("GET", "/api/fs/describe?path=$(HTTP.escapeuri(setup))")
+            @test resp.status == 200
+            @test JSON3.read(resp.body).added.name == "run7"
+        end
+    end
+end
+
+@testset "GET /api/fs/describe marks beamtime and setup folders" begin
     mktempdir() do tmp
         db = open_prepared_clone(tmp)
         with_inproc_routes(db) do call
@@ -120,38 +145,13 @@ end
             end
             mkpath(joinpath(bt, "notes"))
             mkpath(joinpath(root, "empty"))
-            r = _suggest(call, root * "/")
-            kinds = Dict(basename(f.path) => (f.kind, f.setups) for f in r.folders)
-            @test kinds["beamtime"] == ("beamtime", 2)
-            @test kinds["empty"] == (nothing, nothing)
-            r2 = _suggest(call, bt * "/")
-            kinds2 = Dict(basename(f.path) => f.kind for f in r2.folders)
-            @test kinds2["setup1"] == "setup"
-            @test kinds2["notes"] === nothing
-            inner = _suggest(call, joinpath(bt, "setup1") * "/")
-            @test [(basename(f.path), f.kind) for f in inner.folders] == [("data", nothing)]
-            @test all(f -> f.described, vcat(r.folders, r2.folders, inner.folders))
-        end
-    end
-end
-
-@testset "GET /api/fs/suggest marks folders it ran out of time to check as undescribed" begin
-    mktempdir() do tmp
-        db = open_prepared_clone(tmp)
-        with_inproc_routes(db) do call
-            root = mktempdir()
-            mkpath(joinpath(root, "beamtime", "setup1", "data"))
-            touch(joinpath(root, "beamtime", "setup1", "data", "a_0_001.tif"))
-            budget = HimalayaUI.SUGGEST_DESCRIBE_SECONDS[]
-            HimalayaUI.SUGGEST_DESCRIBE_SECONDS[] = 0.0
-            try
-                f = only(_suggest(call, root * "/").folders)
-                @test f.described == false
-                @test f.kind === nothing
-            finally
-                HimalayaUI.SUGGEST_DESCRIBE_SECONDS[] = budget
-            end
-            @test only(_suggest(call, root * "/").folders).described == true
+            b = _describe(call, bt)
+            @test (b.path, b.kind, b.setups, b.added) == (bt, "beamtime", 2, nothing)
+            @test _describe(call, joinpath(bt, "setup1")).kind == "setup"
+            @test _describe(call, joinpath(bt, "notes")).kind === nothing
+            @test _describe(call, joinpath(root, "empty")).kind === nothing
+            @test _describe(call, joinpath(bt, "setup1", "data")).kind == "setup"
+            @test call("GET", "/api/fs/describe?path=rel").status == 400
         end
     end
 end
@@ -165,7 +165,7 @@ end
     @test basename.(HimalayaUI.setup_roots(root)) == ["setup1", "setup2", "setup10"]
 end
 
-@testset "GET /api/fs/suggest names the experiment a folder was added as" begin
+@testset "GET /api/fs/describe names the experiment a folder was added as" begin
     mktempdir() do tmp
         db = open_prepared_clone(tmp)
         with_inproc_routes(db) do call
@@ -174,9 +174,8 @@ end
             mkpath(joinpath(bt, "setup1", "data"))
             touch(joinpath(bt, "setup1", "data", "a_0_001.tif"))
             HimalayaUI.create_experiment!(db; name = "November", path = realpath(bt))
-            r = _suggest(call, root * "/")
-            @test r.folders[1].added.name == "November"
-            @test _suggest(call, bt * "/").folders[1].added === nothing
+            @test _describe(call, bt).added.name == "November"
+            @test _describe(call, joinpath(bt, "setup1")).added === nothing
         end
     end
 end

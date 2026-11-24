@@ -40,8 +40,7 @@ function setup(root: string, overrides: Partial<api.SetupPreview> = {}): api.Set
   };
 }
 
-const folders = (paths: string[]): api.FolderSuggestions =>
-  ({ folders: paths.map((path) => ({ path, kind: null, setups: null, added: null, described: true })), more: false });
+const trimmed = (p: string): string => p.replace(/\/+$/, "") || "/";
 
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -52,34 +51,61 @@ function renderPage() {
   );
 }
 
-function pick(path: string): void {
-  fireEvent.change(screen.getByTestId("dirpicker-input").querySelector("input")!, { target: { value: path } });
+async function pick(path: string): Promise<void> {
+  fireEvent.keyDown(await screen.findByTestId("folder-browser-list"), { key: "/" });
+  const field = await screen.findByRole("textbox", { name: "Folder path" });
+  fireEvent.change(field, { target: { value: path } });
+  fireEvent.keyDown(field, { key: "Enter" });
+  await screen.findByTestId("chosen-folder");
 }
 
 describe("NewExperimentPage", () => {
   beforeEach(() => {
     navigate.mockClear();
-    vi.spyOn(api, "suggestFolders").mockResolvedValue({ folders: [], more: false });
+    vi.spyOn(api, "listFolder").mockImplementation(async (p) => ({ path: p === "" ? "/b" : trimmed(p), parent: "/", folders: [], inside_setup: false }));
+    vi.spyOn(api, "describeFolder").mockImplementation(async (p) => ({ path: trimmed(p), kind: "beamtime", setups: 1, added: null }));
   });
   afterEach(() => vi.restoreAllMocks());
 
-  it("the data and integration folder fields under Details complete folders too", async () => {
+  it("the data and integration folder fields under Details can be browsed", async () => {
     vi.spyOn(api, "previewFolder").mockResolvedValue({ path: "/b/day1", setups: [setup("/b/day1/setup1")] });
     renderPage();
-    pick("/b/day1");
+    await pick("/b/day1");
     const row = await screen.findByTestId("setup-row");
     fireEvent.click(within(row).getByRole("button", { name: "Details" }));
-    vi.mocked(api.suggestFolders).mockImplementation(async (p) =>
-      folders(p === "/b/day1/setup1/d" ? ["/b/day1/setup1/data", "/b/day1/setup1/data_old"] : []));
-    const field = within(row).getByRole("combobox", { name: "Data folder" });
-    fireEvent.focus(field);
-    fireEvent.change(field, { target: { value: "/b/day1/setup1/d" } });
-    await within(row).findByRole("option", { name: "data_old" });
-    fireEvent.keyDown(field, { key: "Tab" });
-    fireEvent.keyDown(field, { key: "Tab" });
-    fireEvent.keyDown(field, { key: "Enter" });
-    expect(field).toHaveValue("/b/day1/setup1/data_old/");
-    expect(within(row).getByRole("combobox", { name: "Integration folder" })).toBeInTheDocument();
+    vi.mocked(api.listFolder).mockImplementation(async (p) =>
+      ({ path: trimmed(p), parent: "/b/day1", folders: p === "/b/day1/setup1" ? ["data", "data_old"] : [], inside_setup: false }));
+    fireEvent.click(screen.getByTestId("details-data-dir-browse"));
+    const list = await screen.findByTestId("details-data-dir-browser-list");
+    await within(list).findByRole("option", { name: "data_old" });
+    expect(within(list).getByRole("option", { name: "data" })).toHaveAttribute("aria-selected", "true");
+    fireEvent.keyDown(list, { key: "Tab" });
+    fireEvent.keyDown(list, { key: "Enter" });
+    expect(within(row).getByRole("textbox", { name: "Data folder" })).toHaveValue("/b/day1/setup1/data_old");
+    expect(screen.queryByTestId("details-data-dir-browser")).toBeNull();
+    expect(within(row).getByRole("textbox", { name: "Integration folder" })).toBeInTheDocument();
+  });
+
+  it("Esc closes a Details folder browser from any folder and hands focus back to Browse", async () => {
+    vi.spyOn(api, "previewFolder").mockResolvedValue({ path: "/b/day1", setups: [setup("/b/day1/setup1")] });
+    renderPage();
+    await pick("/b/day1");
+    const row = await screen.findByTestId("setup-row");
+    fireEvent.click(within(row).getByRole("button", { name: "Details" }));
+    vi.mocked(api.listFolder).mockImplementation(async (p) =>
+      ({ path: trimmed(p), parent: trimmed(p) === "/" ? null : "/", folders: ["data"], inside_setup: false }));
+    const browse = screen.getByTestId("details-data-dir-browse");
+    fireEvent.click(browse);
+    const list = await screen.findByTestId("details-data-dir-browser-list");
+    await within(list).findByRole("option", { name: "data" });
+    expect(screen.getByTestId("details-data-dir-browser")).toHaveTextContent("Esc to close");
+    fireEvent.keyDown(list, { key: "d" });
+    fireEvent.keyDown(list, { key: "Escape" });
+    expect(screen.getByTestId("details-data-dir-browser")).toBeInTheDocument();
+    fireEvent.keyDown(list, { key: "Escape" });
+    expect(screen.queryByTestId("details-data-dir-browser")).toBeNull();
+    await waitFor(() => expect(browse).toHaveFocus());
+    expect(within(row).getByRole("textbox", { name: "Data folder" })).toHaveValue("/b/day1/setup1/data");
   });
 
   it("starts on the folder a link passes in", async () => {
@@ -90,13 +116,18 @@ describe("NewExperimentPage", () => {
         <MemoryRouter initialEntries={["/experiments/new?path=%2Fb%2F20261103"]}><NewExperimentPage /></MemoryRouter>
       </QueryClientProvider>,
     );
-    expect(screen.getByTestId("dirpicker-input").querySelector("input")).toHaveValue("/b/20261103");
+    expect(screen.getByTestId("chosen-folder-path")).toHaveTextContent("/b/20261103");
     await screen.findAllByTestId("setup-row");
   });
 
-  it("puts the cursor in the folder field on arrival", () => {
+  it("puts the keyboard in the folder list on arrival, and back in it after Change", async () => {
+    vi.spyOn(api, "previewFolder").mockResolvedValue({ path: "/b/s1", setups: [setup("/b/s1")] });
     renderPage();
-    expect(document.activeElement).toBe(screen.getByTestId("dirpicker-input").querySelector("input"));
+    expect(document.activeElement).toBe(screen.getByTestId("folder-browser-list"));
+    await pick("/b/s1");
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    expect(document.activeElement).toBe(screen.getByTestId("folder-browser-list"));
+    await waitFor(() => expect(api.listFolder).toHaveBeenLastCalledWith("/b", expect.anything()));
   });
 
   it("keeps the add button disabled until a folder with setups is picked", () => {
@@ -110,7 +141,7 @@ describe("NewExperimentPage", () => {
       setups: [setup("/b/20261103/setup1"), setup("/b/20261103/setup2", { exposures: 1, without_trace: 0 })],
     });
     renderPage();
-    pick("/b/20261103");
+    await pick("/b/20261103");
     const rows = await screen.findAllByTestId("setup-row");
     expect(rows).toHaveLength(2);
     expect(within(rows[0]!).getByTestId("setup-summary")).toHaveTextContent(
@@ -128,7 +159,7 @@ describe("NewExperimentPage", () => {
     });
     const create = vi.spyOn(api, "createExperiment").mockResolvedValue({ id: 11 } as api.Experiment);
     renderPage();
-    pick("/b/20261103");
+    await pick("/b/20261103");
     const rows = await screen.findAllByTestId("setup-row");
     fireEvent.click(within(rows[1]!).getByRole("checkbox"));
     fireEvent.change(screen.getByTestId("experiment-name").querySelector("input")!, { target: { value: " Nov beamtime " } });
@@ -153,22 +184,21 @@ describe("NewExperimentPage", () => {
     vi.spyOn(api, "previewFolder").mockResolvedValue({ path: "/b/20261103/setup1", setups: [setup("/b/20261103/setup1")] });
     vi.spyOn(api, "createExperiment").mockResolvedValue({ id: 11 } as api.Experiment);
     renderPage();
-    pick("/b/20261103/setup1");
+    await pick("/b/20261103/setup1");
     await screen.findAllByTestId("setup-row");
     await act(async () => {});
     fireEvent.keyDown(window, { key: "Enter", metaKey: true });
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/experiments/11"));
   });
 
-  it("⌘/Ctrl+Enter from a focused checkbox or the path field adds the ticked setups and nothing else", async () => {
-    vi.mocked(api.suggestFolders).mockResolvedValue(folders(["/b/20261103/notes"]));
+  it("⌘/Ctrl+Enter from a focused checkbox adds the ticked setups and nothing else", async () => {
     vi.spyOn(api, "previewFolder").mockResolvedValue({
       path: "/b/20261103",
       setups: [setup("/b/20261103/setup1"), setup("/b/20261103/setup2")],
     });
     const create = vi.spyOn(api, "createExperiment").mockResolvedValue({ id: 11 } as api.Experiment);
     renderPage();
-    pick("/b/20261103");
+    await pick("/b/20261103");
     const rows = await screen.findAllByTestId("setup-row");
     const second = within(rows[1]!).getByRole("checkbox");
     fireEvent.click(second);
@@ -179,71 +209,11 @@ describe("NewExperimentPage", () => {
     expect(second).toHaveAttribute("aria-checked", "false");
   });
 
-  it("⌘/Ctrl+Enter in the path field does not pick a suggestion", async () => {
-    vi.mocked(api.suggestFolders).mockResolvedValue(folders(["/b/20261103/notes"]));
-    vi.spyOn(api, "previewFolder").mockResolvedValue({ path: "/b/20261103", setups: [setup("/b/20261103/setup1")] });
-    vi.spyOn(api, "createExperiment").mockResolvedValue({ id: 11 } as api.Experiment);
-    renderPage();
-    pick("/b/20261103");
-    await screen.findAllByTestId("setup-row");
-    const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
-    fireEvent.focus(input);
-    await screen.findByRole("option", { name: "notes" });
-    fireEvent.keyDown(input, { key: "ArrowDown" });
-    expect(screen.getByRole("option", { name: "notes" })).toHaveAttribute("aria-selected", "true");
-    fireEvent.keyDown(input, { key: "Enter", metaKey: true });
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/experiments/11"));
-    expect(input).toHaveValue("/b/20261103");
-  });
-
-  it("plain Enter in the path field adds the found setup rather than entering its first subfolder", async () => {
-    vi.mocked(api.suggestFolders).mockResolvedValue(folders(["/b/20261103/setup1/analysis", "/b/20261103/setup1/data"]));
-    vi.spyOn(api, "previewFolder").mockResolvedValue({ path: "/b/20261103/setup1", setups: [setup("/b/20261103/setup1")] });
-    const create = vi.spyOn(api, "createExperiment").mockResolvedValue({ id: 11 } as api.Experiment);
-    renderPage();
-    pick("/b/20261103/setup1");
-    await screen.findAllByTestId("setup-row");
-    const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
-    fireEvent.focus(input);
-    await screen.findByRole("option", { name: "analysis" });
-    fireEvent.keyDown(input, { key: "Enter" });
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/experiments/11"));
-    expect(create).toHaveBeenCalledTimes(1);
-    expect(input).toHaveValue("/b/20261103/setup1");
-  });
-
-  it("Enter right after picking a subfolder adds only that subfolder's setup, once its own preview has arrived", async () => {
-    vi.mocked(api.suggestFolders).mockImplementation(async (p) =>
-      folders(p.includes("setup1") ? ["/b/day1/setup1/analysis"] : ["/b/day1/setup1", "/b/day1/setup2"]));
-    vi.spyOn(api, "previewFolder").mockImplementation(async (p) =>
-      p.includes("setup1")
-        ? { path: p, setups: [setup("/b/day1/setup1")] }
-        : { path: p, setups: [setup("/b/day1/setup1"), setup("/b/day1/setup2")] },
-    );
-    const create = vi.spyOn(api, "createExperiment").mockResolvedValue({ id: 11 } as api.Experiment);
-    renderPage();
-    pick("/b/day1/");
-    await waitFor(() => expect(screen.getAllByTestId("setup-row")).toHaveLength(2));
-    const input = screen.getByTestId("dirpicker-input").querySelector("input")!;
-    fireEvent.focus(input);
-    await screen.findByRole("option", { name: "setup1" });
-    fireEvent.keyDown(input, { key: "ArrowDown" });
-    fireEvent.keyDown(input, { key: "Enter" });
-    expect(input).toHaveValue("/b/day1/setup1/");
-    fireEvent.keyDown(input, { key: "Enter" });
-    expect(create).not.toHaveBeenCalled();
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/experiments/11"));
-    await act(async () => { await new Promise((r) => setTimeout(r, 200)); });
-    expect(create).toHaveBeenCalledTimes(1);
-    expect(navigate).toHaveBeenCalledTimes(1);
-    expect(create.mock.calls[0]![0]).toMatchObject({ path: "/b/day1/setup1/", setups: [{ data_dir: "/b/day1/setup1/data" }] });
-  });
-
   it("leaves ⌘/Ctrl+Enter to an open dialog such as the palette", async () => {
     vi.spyOn(api, "previewFolder").mockResolvedValue({ path: "/b/s1", setups: [setup("/b/s1")] });
     const create = vi.spyOn(api, "createExperiment").mockResolvedValue({ id: 11 } as api.Experiment);
     renderPage();
-    pick("/b/s1");
+    await pick("/b/s1");
     await screen.findAllByTestId("setup-row");
     await act(async () => {});
     const dialog = document.createElement("div");
@@ -267,7 +237,7 @@ describe("NewExperimentPage", () => {
     let resolve: (e: api.Experiment) => void = () => {};
     const create = vi.spyOn(api, "createExperiment").mockImplementation(() => new Promise((r) => { resolve = r; }));
     renderPage();
-    pick("/b/s1");
+    await pick("/b/s1");
     await screen.findAllByTestId("setup-row");
     await act(async () => {});
     fireEvent.keyDown(window, { key: "Enter", metaKey: true });
@@ -282,7 +252,7 @@ describe("NewExperimentPage", () => {
       path: "/b", setups: [setup("/b/s1", { layout_detected: false })],
     });
     renderPage();
-    pick("/b");
+    await pick("/b");
     const rows = await screen.findAllByTestId("setup-row");
     expect(within(rows[0]!).getByRole("checkbox")).toHaveAttribute("aria-checked", "false");
     expect(screen.getByTestId("create-submit")).toBeDisabled();
@@ -294,7 +264,7 @@ describe("NewExperimentPage", () => {
     vi.spyOn(api, "fetchManifest").mockImplementation(() => new Promise((r) => { answer = r; }));
     const create = vi.spyOn(api, "createExperiment").mockResolvedValue({ id: 11 } as api.Experiment);
     renderPage();
-    pick("/b/s1");
+    await pick("/b/s1");
     await screen.findAllByTestId("setup-row");
     fireEvent.click(screen.getByRole("button", { name: "Details" }));
     fireEvent.change(screen.getByTestId("details-setup-file").querySelector("input")!, { target: { value: "/b/s1/other_setup_info.txt" } });
@@ -315,7 +285,7 @@ describe("NewExperimentPage", () => {
         <MemoryRouter><NewExperimentPage /></MemoryRouter>
       </QueryClientProvider>,
     );
-    pick("/b/s1");
+    await pick("/b/s1");
     await screen.findAllByTestId("setup-row");
     fireEvent.change(screen.getByTestId("experiment-name").querySelector("input")!, { target: { value: "kept" } });
     preview.mockResolvedValue({ path: "/b/s1", setups: [setup("/b/s1", { exposures: 2000 })] });
@@ -327,7 +297,7 @@ describe("NewExperimentPage", () => {
   it("says when a folder cannot be read for another reason", async () => {
     vi.spyOn(api, "previewFolder").mockRejectedValue(new api.ApiError(500, "disk unplugged", null));
     renderPage();
-    pick("/b");
+    await pick("/b");
     await waitFor(() => expect(screen.getByTestId("preview-status")).toHaveTextContent("Could not read that folder: disk unplugged"));
   });
 
@@ -338,7 +308,7 @@ describe("NewExperimentPage", () => {
     });
     const create = vi.spyOn(api, "createExperiment").mockResolvedValue({ id: 12 } as api.Experiment);
     renderPage();
-    pick("/b/20261103");
+    await pick("/b/20261103");
     const rows = await screen.findAllByTestId("setup-row");
     expect(within(rows[0]!).getByTestId("setup-summary")).toHaveTextContent('Already added as "Existing".');
     expect(within(rows[0]!).getByRole("checkbox")).toHaveAttribute("aria-checked", "false");
@@ -351,7 +321,7 @@ describe("NewExperimentPage", () => {
     vi.spyOn(api, "previewFolder").mockResolvedValue({ path: "/b/s1", setups: [setup("/b/s1")] });
     const create = vi.spyOn(api, "createExperiment").mockResolvedValue({ id: 11 } as api.Experiment);
     renderPage();
-    pick("/b/s1");
+    await pick("/b/s1");
     await screen.findAllByTestId("setup-row");
     fireEvent.click(screen.getByRole("button", { name: "Details" }));
     fireEvent.change(screen.getByTestId("details-flight_path_m").querySelector("input")!, { target: { value: "2.5" } });
@@ -372,7 +342,7 @@ describe("NewExperimentPage", () => {
       unmatched: [{ file: "x", miss: "integration" }], geometry: GEOMETRY,
     });
     renderPage();
-    pick("/b/s1");
+    await pick("/b/s1");
     await screen.findAllByTestId("setup-row");
     expect(screen.getByTestId("setup-summary")).toHaveTextContent("integration layout not recognised");
     fireEvent.click(screen.getByRole("button", { name: "Details" }));
@@ -386,7 +356,7 @@ describe("NewExperimentPage", () => {
     vi.spyOn(api, "previewFolder").mockResolvedValue({ path: "/b/s1", setups: [setup("/b/s1")] });
     vi.spyOn(api, "createExperiment").mockRejectedValue(new Error("an experiment already uses this directory"));
     renderPage();
-    pick("/b/s1");
+    await pick("/b/s1");
     await screen.findAllByTestId("setup-row");
     fireEvent.click(screen.getByTestId("create-submit"));
     expect(await screen.findByRole("alert")).toHaveTextContent("an experiment already uses this directory");
@@ -396,7 +366,7 @@ describe("NewExperimentPage", () => {
   it("says when a folder holds no setups", async () => {
     vi.spyOn(api, "previewFolder").mockResolvedValue({ path: "/empty", setups: [] });
     renderPage();
-    pick("/empty");
+    await pick("/empty");
     await waitFor(() => expect(screen.getByTestId("preview-status")).toHaveTextContent("No images found"));
     expect(screen.getByTestId("create-submit")).toBeDisabled();
   });
@@ -411,7 +381,7 @@ describe("NewExperimentPage", () => {
     const create = vi.spyOn(api, "createExperiment");
     const add = vi.spyOn(api, "addSetups").mockResolvedValue({ status: "scanning", experiment_id: 4, setup_ids: [9] });
     renderPage();
-    pick("/b/20261103");
+    await pick("/b/20261103");
     await waitFor(() => expect(screen.getByTestId("preview-status")).toHaveTextContent("already added as Nov beamtime. Tick a setup folder"));
     expect(screen.queryByTestId("experiment-name")).toBeNull();
     expect(screen.getByTestId("create-submit")).toBeDisabled();
@@ -432,7 +402,7 @@ describe("NewExperimentPage", () => {
       setups: [setup("/b/20261103/setup1", { duplicate_of: { id: 4, name: "Nov beamtime" } })],
     });
     renderPage();
-    pick("/b/20261103");
+    await pick("/b/20261103");
     await waitFor(() => expect(screen.getByTestId("preview-status")).toHaveTextContent("added when it is rescanned"));
     expect(screen.getByTestId("create-submit")).toBeDisabled();
     fireEvent.click(screen.getByTestId("open-existing"));
@@ -445,7 +415,7 @@ describe("NewExperimentPage", () => {
       new api.ApiError(409, "this beamtime is already added as Nov beamtime", { error: "x", experiment_id: 4, name: "Nov beamtime" }),
     );
     renderPage();
-    pick("/b/20261103");
+    await pick("/b/20261103");
     await screen.findAllByTestId("setup-row");
     fireEvent.click(screen.getByTestId("create-submit"));
     await screen.findByTestId("open-existing");
@@ -459,7 +429,7 @@ describe("NewExperimentPage", () => {
     const manifest = vi.spyOn(api, "fetchManifest");
     const create = vi.spyOn(api, "createExperiment").mockResolvedValue({ id: 11 } as api.Experiment);
     renderPage();
-    pick("/b/20261103");
+    await pick("/b/20261103");
     const rows = await screen.findAllByTestId("setup-row");
     fireEvent.click(within(rows[0]!).getByRole("button", { name: "Details" }));
     const field = within(rows[0]!).getByTestId("details-integration-pattern").querySelector("input")!;

@@ -18,7 +18,8 @@ async function mockShell(page: Page): Promise<void> {
   await page.route("**/api/users", (r) => r.fulfill(json([])));
   await page.route("**/api/events*", (r) => r.fulfill({ status: 200, contentType: "text/event-stream", body: "" }));
   await page.route("**/api/label-colors", (r) => r.fulfill(json([])));
-  await page.route(/\/api\/fs\/suggest\?/, (r) => r.fulfill(json({ folders: [], more: false })));
+  await page.route(/\/api\/fs\/list\?/, (r) => r.fulfill(json({ path: "/lab", parent: "/", folders: ["20261103", "calibrants"], inside_setup: false })));
+  await page.route(/\/api\/fs\/describe\?/, (r) => r.fulfill(json({ path: "/lab/x", kind: null, setups: null, added: null })));
   await page.route(/\/api\/fs\/preview\?/, (r) => r.fulfill(json({ path: "", setups: [] })));
   await page.route((url) => url.pathname === "/api/experiments", (r) =>
     r.fulfill(json([experiment(1, "First"), experiment(2, "Second"), experiment(3, "Third")])));
@@ -56,28 +57,24 @@ test("? lists the keys for the page it is pressed on", async ({ page }) => {
   await expect(help).toHaveCount(0);
 });
 
-test("the new-experiment page takes typing straight into the folder field", async ({ page }) => {
+test("the new-experiment page takes typing straight into the folder list as a name filter", async ({ page }) => {
   await mockShell(page);
   await page.goto("/experiments/new");
-  const field = page.getByTestId("dirpicker-input").locator("input");
-  await expect(field).toBeFocused();
-  await page.keyboard.type("/lab");
-  await expect(field).toHaveValue("/lab");
+  const list = page.getByTestId("folder-browser-list");
+  await expect(list).toBeFocused();
+  await expect(list.getByRole("option")).toHaveCount(2);
+  await page.keyboard.type("cal");
+  await expect(list.getByRole("option")).toHaveCount(1);
+  await expect(page.getByTestId("folder-browser-filter")).toContainText("cal");
 });
 
-test("? on the new-experiment page opens the shortcuts until the folder field has text", async ({ page }) => {
+test("? on the new-experiment page lists the folder browser's keys", async ({ page }) => {
   await mockShell(page);
   await page.goto("/experiments/new");
-  const field = page.getByTestId("dirpicker-input").locator("input");
-  await expect(field).toBeFocused();
+  await expect(page.getByTestId("folder-browser-list")).toBeFocused();
   await page.keyboard.press("?");
   const help = page.getByRole("dialog", { name: "Keyboard shortcuts" });
-  await expect(help).toBeVisible();
-  await expect(field).toHaveValue("");
+  await expect(help).toContainText("Go up one folder");
   await page.keyboard.press("Escape");
-  await expect(help).toHaveCount(0);
-  await field.focus();
-  await page.keyboard.type("/lab?");
-  await expect(field).toHaveValue("/lab?");
   await expect(help).toHaveCount(0);
 });
