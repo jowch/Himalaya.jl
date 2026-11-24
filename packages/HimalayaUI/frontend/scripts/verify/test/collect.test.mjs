@@ -43,9 +43,16 @@ function routes(demoDir) {
         { id: 2, mode: "autosampler", data_dir: path.join(demoDir, "autosampler", "data") },
       ], ingest_status: "complete" },
     ],
-    "/api/samples/20/exposures": [{ id: 30, filename: "lysA_01A_B0101", status: null, kind: "file", sample_id: 20 }],
-    "/api/samples/21/exposures": [{ id: 31, filename: "lysA_01B_S0102", status: null, kind: "file", sample_id: 21 }],
-    "/api/samples/22/exposures": [{ id: 32, filename: "agbe_S0100", status: null, kind: "file", sample_id: 22 }],
+    "/api/samples/20/exposures": [{ id: 30, filename: "lysA_01A_B0101", status: null, kind: "file", sample_id: 20, frames_total: 10, frames_rejected: 0, analysis_error: null }],
+    "/api/samples/21/exposures": [{ id: 31, filename: "lysA_01B_S0102", status: null, kind: "file", sample_id: 21, frames_total: 10, frames_rejected: 1, analysis_error: null }],
+    "/api/samples/22/exposures": [{ id: 32, filename: "agbe_S0100", status: null, kind: "file", sample_id: 22, frames_total: null, frames_rejected: null, analysis_error: null }],
+    "/api/experiments/4/compares": { backgrounds: [
+      { sample_id: 20, ref_sample_id: null, source: "default", is_buffer: true },
+      { sample_id: 21, ref_sample_id: 20, source: "default", is_buffer: false },
+      { sample_id: 22, ref_sample_id: null, source: "default", is_buffer: false },
+    ] },
+    ...Object.fromEntries([30, 31, 32].flatMap((x) => [[`/api/exposures/${x}/peaks`, []], [`/api/exposures/${x}/indices`, []]])),
+    ...Object.fromEntries([20, 21, 22].map((x) => [`/api/samples/${x}/call`, { sample_id: x, state: "indexed", phase: null, call_phases: [], members: [] }])),
     "/api/samples?experiment_id=4": [
       { id: 10, name: "MO_H2O_S1 (S01P01)", setup_id: 1, assignment_state: "indexed", phase: "Pn3m", call_phases: ["Pn3m"], analyzed_exposure_id: 1 },
       { id: 11, name: "MO_PEG5_S3 (S01P02)", setup_id: 1, assignment_state: "indexed", phase: "Pn3m", call_phases: ["Im3m", "Pn3m"], analyzed_exposure_id: 3 },
@@ -289,6 +296,54 @@ test("check-truth without TRUTH_autosampler.csv leaves the autosampler block out
   try {
     assert.equal(await main(["check-truth"], { cfg, out }), 0);
     assert.equal(out.json().autosampler, null);
+  } finally {
+    await stub.close();
+  }
+});
+
+test("check-truth fails an autosampler sample whose background, frame counts or analysis differ from the generator's", async () => {
+  const demoDir = demoWithTruth();
+  const r0 = routes(demoDir);
+  r0["/api/experiments/4/compares"].backgrounds[1].ref_sample_id = 22;
+  r0["/api/samples/21/exposures"][0].frames_rejected = 4;
+  r0["/api/exposures/30/peaks"] = [{ id: 1, q: 0.1, source: "auto" }];
+  const stub = await stubBackend(r0);
+  const cfg = loadConfig({ ...stub.env, DEMO_DIR: demoDir });
+  const out = sink();
+  try {
+    assert.equal(await main(["check-truth"], { cfg, out }), 1);
+    const r = out.json();
+    assert.deepEqual(r.summary.failed, []);
+    const by = Object.fromEntries(r.autosampler.problems.map((p) => [p.sample, p.problems.join("; ")]));
+    assert.match(by["lysA 01B (S0102)"], /background is agbe_S0100, expected lysA 01A \(B0101\)/);
+    assert.match(by["lysA 01B (S0102)"], /frames 10 total and 4 rejected, expected 10 and 1/);
+    assert.match(by["lysA 01A (B0101)"], /1 peaks/);
+  } finally {
+    await stub.close();
+  }
+});
+
+test("check-truth --ui reads each autosampler sample's workspace and compares it with the generator's truth", async () => {
+  const demoDir = demoWithTruth();
+  const stub = await stubBackend(routes(demoDir));
+  const cfg = loadConfig({ ...stub.env, DEMO_DIR: demoDir });
+  const none = { candidates: 0, peak_glyphs: 0, custom_index: 0 };
+  const read = (bad) => async () => new Map([
+    [20, { background: "This is a buffer", difference_line: 0, minus_pressed: false, ...none }],
+    [21, { background: bad ? "lysA 01A (B0101)chosen" : "lysA 01A (B0101)run's buffer", difference_line: 1, minus_pressed: true, ...none }],
+    [22, { background: "No buffer in this run", difference_line: 0, minus_pressed: false, ...none }],
+  ]);
+  try {
+    const asked = [];
+    const ok = await checkTruth(cfg, { ui: true }, {
+      views: async () => new Map(),
+      autosamplerViews: async (_cfg, id, samples) => { asked.push(samples.map((s) => s.id)); return read(false)(); },
+    });
+    assert.deepEqual(asked, [[20, 21, 22]]);
+    assert.equal(ok.autosampler.ok, true, JSON.stringify(ok.autosampler.problems));
+    const bad = await checkTruth(cfg, { ui: true }, { views: async () => new Map(), autosamplerViews: read(true) });
+    assert.equal(bad.autosampler.ok, false);
+    assert.match(bad.autosampler.problems[0].problems[0], /Background module reads "lysA 01A \(B0101\)chosen"/);
   } finally {
     await stub.close();
   }
