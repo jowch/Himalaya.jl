@@ -96,7 +96,7 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
                   }}
                   className={"grid min-w-min grow grid-cols-[minmax(4ch,1fr)_auto] items-center gap-1 text-left text-ink" + dim}
                 >
-                  <span className="min-w-0 truncate">{c.name}</span>
+                  <span data-chip-name data-chip-truncates className="min-w-0 truncate">{c.name}</span>
                   {c.setup && (
                     <svg data-chip-setup width={10} height={10} viewBox="0 0 10 10" aria-hidden="true" className="text-ink-faint">
                       <rect x={0.5} y={3.5} width={6} height={6} rx={1} fill="none" stroke="currentColor" />
@@ -107,7 +107,7 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
               </Tooltip>
               {c.minus?.kind === "skipped" && (
                 <Tooltip content={SKIP_NOTES[c.minus.reason]}>
-                  <span className={"min-w-0 truncate whitespace-nowrap text-ink-faint" + dim} data-minus-note={c.minus.reason}>
+                  <span className={"shrink-0 whitespace-nowrap text-ink-faint" + dim} data-minus-note={c.minus.reason}>
                     {c.minus.reason === "loading" ? "loading" : "not subtracted"}
                   </span>
                 </Tooltip>
@@ -119,7 +119,7 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
                     data-scale-source={c.scale.source}
                   >
                     <span data-scale-value className="shrink-0">×{c.scale.scale.toPrecision(3)}</span>
-                    {isMatchedScale(c.scale) && <span className="min-w-0 truncate">{"\u00a0matched"}</span>}
+                    {isMatchedScale(c.scale) && <span data-chip-truncates className="min-w-0 truncate">{"\u00a0matched"}</span>}
                   </span>
                 </Tooltip>
               )}
