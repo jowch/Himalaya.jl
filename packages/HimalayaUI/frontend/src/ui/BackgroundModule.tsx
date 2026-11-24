@@ -69,22 +69,23 @@ export function BackgroundModule({ view, editable, picker, onChange, onNone, onD
   const canTurnOff = view.kind !== "off";
   return (
     <Section title="Background" className="relative shrink-0">
-      <div className="flex min-h-6 items-baseline justify-between gap-2" data-testid="background-name">{nameLine(view)}</div>
+      <div className="flex h-6 items-baseline justify-between gap-2" data-testid="background-name">{nameLine(view)}</div>
       <p className={LINE + " text-ink-soft"}>{traceLine(view)}</p>
-      {!hasControls && <div className="mt-1 min-h-6" aria-hidden="true" />}
-      {hasControls && (
-        <div className="mt-1 flex min-h-6 items-center gap-1.5 overflow-hidden">
-          <button type="button" className={ACTION} disabled={idle} onClick={onChange}>
-            Change <Kbd>B</Kbd>
-          </button>
-          {canTurnOff && (
-            <button type="button" className={ACTION} disabled={idle} onClick={onNone}>None</button>
-          )}
-          {offerDefault && (
-            <button type="button" className={ACTION} disabled={idle} onClick={onDefault}>Use the run's buffer</button>
-          )}
-        </div>
-      )}
+      <div className="mt-1 flex h-7 items-center gap-1.5 overflow-hidden" data-testid="background-controls">
+        {hasControls && (
+          <>
+            <button type="button" className={ACTION} disabled={idle} onClick={onChange}>
+              Change <Kbd>B</Kbd>
+            </button>
+            {canTurnOff && (
+              <button type="button" className={ACTION} disabled={idle} onClick={onNone}>None</button>
+            )}
+            {offerDefault && (
+              <button type="button" className={ACTION + " min-w-0 truncate"} disabled={idle} onClick={onDefault}>Use the run's buffer</button>
+            )}
+          </>
+        )}
+      </div>
       {picker}
     </Section>
   );

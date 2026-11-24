@@ -109,4 +109,21 @@ describe("BackgroundModule", () => {
     show(set(), { picker: <div role="dialog" aria-label="Subtract a sample" /> });
     expect(screen.getByRole("dialog", { name: "Subtract a sample" })).toBeInTheDocument();
   });
+
+  it("renders one name row and one controls row in every state, so the module's height does not depend on the sample", () => {
+    const states: BackgroundView[] = [
+      { kind: "loading" },
+      { kind: "buffer" },
+      { kind: "off", reason: "chosen", canUseRunBuffer: true },
+      { kind: "off", reason: "no-buffer", canUseRunBuffer: false },
+      set(),
+      set({ source: "user", canUseRunBuffer: true, trace: "missing", scale: undefined }),
+    ];
+    for (const view of states) {
+      const { unmount } = render(<BackgroundModule view={view} editable picker={undefined} onChange={vi.fn()} onNone={vi.fn()} onDefault={vi.fn()} />);
+      expect(screen.getAllByTestId("background-controls")).toHaveLength(1);
+      expect(screen.getAllByTestId("background-name")).toHaveLength(1);
+      unmount();
+    }
+  });
 });
