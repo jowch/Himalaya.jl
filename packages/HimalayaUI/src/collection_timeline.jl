@@ -34,15 +34,16 @@ function reviewed_samples(db::SQLite.DB, sample_ids::Vector{Int})
         if export_call_state(get(states, sid, "indexed"), get(members, sid, [])) != "uncalled")
 end
 
-function shown_sample_ids(db::SQLite.DB, exp_id::Integer)
+function reviewable_sample_ids(db::SQLite.DB, exp_id::Integer)
     Int[Int(r.id) for r in sqlrows(DBInterface.execute(db, """
         SELECT s.id FROM samples s LEFT JOIN setups st ON st.id = s.setup_id
-         WHERE s.experiment_id = ? AND (st.id IS NULL OR st.included = 1)""", [exp_id]))]
+         WHERE s.experiment_id = ? AND (st.id IS NULL OR st.included = 1)
+           AND (st.mode IS NULL OR st.mode != 'autosampler')""", [exp_id]))]
 end
 
 function review_progress(db::SQLite.DB, exp_id::Integer)
-    shown = shown_sample_ids(db, exp_id)
-    (reviewed = length(reviewed_samples(db, shown)), total = length(shown))
+    reviewable = reviewable_sample_ids(db, exp_id)
+    (reviewed = length(reviewed_samples(db, reviewable)), total = length(reviewable))
 end
 
 function collection_timeline(db::SQLite.DB, exp_id::Integer)
