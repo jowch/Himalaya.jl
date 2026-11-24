@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import type { CorpusSample, Exposure, IndexEntry, LabelColor, SampleCallMember } from "../api";
+import type { AssignmentState, CorpusSample, Exposure, IndexEntry, LabelColor, SampleBridge, SampleCallMember, SampleLabel } from "../api";
 import { ApiError } from "../api";
 import {
   useAddAssignmentPhase,
@@ -47,15 +47,15 @@ import { byRecent, recentRank, recordRecent } from "../lib/recents";
 import { helpKeyFromEmptyField, inDialog, isEditable, suppressGlobalKeys } from "../lib/keys";
 import { useUndoHistory, type UndoEntry, type UndoStep } from "./undo";
 import {
-  bridgeEntry, combinedEntry, selectionEntry, settleCallEntry, customIndexEntry, dropEntry, excludeEntry, identify, labelEntry, noPhaseEntry, peakEntry,
+  bridgeEntry, sharedAfterBridge, combinedEntry, selectionEntry, settleCallEntry, customIndexEntry, dropEntry, excludeEntry, identify, labelEntry, noPhaseEntry, peakEntry,
   experimentEntry, setupEntry, labelColorEntry, tickEntry, unbridgeEntry, untickEntry, compareEntry, droppedByEdit, type PhaseIdentity,
 } from "./undoEntries";
 import { showToast } from "../lib/toast";
 import { useScanState } from "../hooks/useScanState";
 import { useMediaQuery } from "./useMediaQuery";
 import { isIngestStage, stageLabel } from "../lib/ingestStages";
-import { bridgeCounts, bridgedWith, rankBridgeMates } from "../lib/bridges";
-import { callStatesSplit, keepChoices, type KeepCall } from "../lib/bridgeCall";
+import { applyBridge, bridgeCounts, bridgedWith, rankBridgeMates } from "../lib/bridges";
+import { bridgeSteps, callStatesSplit, groupKeepChoices, keepChoices, type KeepCall } from "../lib/bridgeCall";
 import { bufferRole, buffersFirst, displayLabel, firstUnusedColor, labelColor, labelColorIsDefault, labelsFor, sameLabel, sampleMatchesFilter, labelVocabulary, labelKey } from "../lib/labels";
 import { analysisOf, imageFrames, keptExposures, MIN_COMBINED, newestKeptFrame, selectedFrames } from "../lib/exposure";
 import { useMemberTraces } from "./useMemberTraces";
@@ -75,6 +75,7 @@ import { ComparePicker } from "../ui/ComparePicker";
 import { SubtractToggle } from "../ui/SubtractToggle";
 import { PlotViewToggle } from "../ui/PlotViewToggle";
 import { PlotCard } from "../ui/PlotCard";
+import { BridgeMenu } from "../ui/BridgeMenu";
 import { HelpOverlay, type HelpSection } from "../ui/HelpOverlay";
 import { MOD_KEY } from "../lib/modKey";
 import { DetectorOverlay } from "../ui/DetectorOverlay";
@@ -142,7 +143,7 @@ function helpSections(mod: string): HelpSection[] {
         { keys: ["Esc"], what: "Leave the phase choices and let Tab reach every other control until you open another sample" },
         { keys: ["I"], what: "Custom index: press Tab or Shift+Tab to change the symmetry, then drag the lattice, nudge it with ← →, or click a peak to snap to it. Press Enter to add it or Esc to cancel." },
         { keys: ["L"], what: "Label the sample, e.g. Buffer. Press Enter to add it or Esc to close." },
-        { keys: [mod, "K"], what: "Open the commands and choose Same sample as… to mark this as the same sample measured in another setup" },
+        { keys: [mod, "K"], what: "Open the commands and choose Same sample as… to mark this as the same sample measured in another setup. Space after Tab or an arrow ticks several, and Enter marks them all." },
       ],
     },
     {
@@ -320,7 +321,6 @@ export function WorkspacePage(): JSX.Element {
   const averaging = analysis.selected.length >= MIN_COMBINED;
   const memberIds = useMemo(() => (averaging ? analysis.selected.map((m) => m.id) : []), [averaging, analysis.selected]);
   const members = useMemberTraces(memberIds);
-  const shownFrame = frameOf(groups, exposure?.id);
   const tileFrame = frameOf(groups, tile?.id);
 
   const trace = useTrace(exposure?.id);
@@ -452,10 +452,10 @@ export function WorkspacePage(): JSX.Element {
     const names = new Map(inExperiment.map((s) => [s.id, s.name]));
     return bridged.map((r) => names.get(r) ?? `Sample ${r}`);
   }, [bridged, inExperiment]);
-  const bridgedTitles = useMemo(
+  const bridgeMates = useMemo(
     () => bridged.map((r) => {
       const s = inExperiment.find((x) => x.id === r);
-      return s ? frameSetupName(s) : `Sample ${r}`;
+      return { id: r, title: s ? frameSetupName(s) : `Sample ${r}` };
     }),
     [bridged, inExperiment, frameSetupName],
   );
@@ -843,6 +843,34 @@ export function WorkspacePage(): JSX.Element {
       ops.read.call(keep === sampleId ? rid : sampleId).then((c) => send(c.members), () => send([]));
     },
     [sampleId, sample?.name, sample?.assignment_state, samples, bridgeSamples, history, ops, sampleNames, bridgeList, labelList],
+  );
+  const bridgeMany = useCallback(
+    async (ids: readonly number[], keep?: KeepCall) => {
+      if (sampleId === undefined || !sample) return;
+      const mates = ids.flatMap((id) => samples.filter((s) => s.id === id));
+      let bridges: SampleBridge[] = [...bridgeList];
+      let labels: SampleLabel[] = [...labelList];
+      let groupState: AssignmentState = sample.assignment_state ?? "indexed";
+      const parts = [];
+      for (const step of bridgeSteps(sample, mates, keep)) {
+        if (bridgedWith(bridges, sampleId).includes(step.to)) continue;
+        const mate = mates.find((m) => m.id === step.to)!;
+        const states = { from: groupState, to: mate.assignment_state ?? "indexed" };
+        if (typeof step.keep === "number" && parts.length > 0) await ops.whenSaved();
+        const lost = typeof step.keep === "number"
+          ? await ops.read.call(step.keep === sampleId ? step.to : sampleId).then((c) => c.members, () => [])
+          : [];
+        bridgeSamples.mutate(step.keep === undefined ? { sampleId, toSampleId: step.to } : { sampleId, toSampleId: step.to, keepCall: step.keep });
+        parts.push(bridgeEntry(ops, { label: "", sampleId, exposureId: undefined, from: sampleId, to: step.to, bridges, labels, keep: step.keep, states, lost }));
+        bridges = applyBridge(bridges, sampleId, step.to);
+        labels = sharedAfterBridge(labels, [sampleId, ...bridgedWith(bridges, sampleId)]);
+        if (step.keep === step.to || (groupState === "null" && states.to !== "null")) groupState = states.to;
+      }
+      history.record(combinedEntry({
+        label: `marked ${sample.name} as the same sample as ${mates.map((m) => sampleNames.get(m.id) ?? m.name).join(", ")}`, sampleId, exposureId: undefined,
+      }, parts));
+    },
+    [sampleId, sample, samples, bridgeList, labelList, ops, bridgeSamples, history, sampleNames],
   );
   const nameWithSetup = useCallback(
     (s: Pick<CorpusSample, "id" | "name">): string => {
@@ -1252,8 +1280,7 @@ export function WorkspacePage(): JSX.Element {
   const droppedCount = ownFrames.filter((e) => e.status === "rejected").length;
   const keptHint = droppedCount > 0 ? `${ownFrames.length - droppedCount} of ${ownFrames.length} kept` : undefined;
   const reviewed = samples.filter((s) => sampleStatus(s).kind !== "unreviewed").length;
-  const countOf = (at: typeof shownFrame): string | undefined => (at ? `Image ${at.index + 1} of ${at.group.exposures.length}` : undefined);
-  const frameCount = averaging ? `Average of ${analysis.selected.length} images` : countOf(shownFrame);
+  const countOf = (at: typeof tileFrame): string | undefined => (at ? `Image ${at.index + 1} of ${at.group.exposures.length}` : undefined);
   const tileOwnerSample = tileFrame ? inExperiment.find((s) => s.id === tileFrame.group.sampleId) : undefined;
   const tileOwner = tileOwnerSample ? frameSetupName(tileOwnerSample) : undefined;
   const tileCount = countOf(tileFrame);
@@ -1329,6 +1356,8 @@ export function WorkspacePage(): JSX.Element {
       names: (id) => nameWithSetup({ id, name: sampleNames.get(id) ?? `Sample ${id}` }),
       bridged: bridgedNames,
       leave: leaveBridges,
+      groupChoices: (ids) => (sample ? groupKeepChoices(sample, ids.flatMap((id) => samples.filter((s) => s.id === id)), nameWithSetup) : undefined),
+      pickMany: (ids, keep) => void bridgeMany(ids, keep),
     },
     candidates: {
       list: choices,
@@ -1457,10 +1486,9 @@ export function WorkspacePage(): JSX.Element {
           <>
             <SampleHeading
               name={sample.name}
-              meta={exposure ? frameCount : undefined}
+              badge={bridgeMates.length > 0 ? <BridgeMenu key={sampleId} mates={bridgeMates} editable={Boolean(username)} onGo={goSample} onRemove={unbridgeOne} /> : undefined}
               aside={
                 <LabelRow
-                  note={bridgedTitles.length > 0 ? `Same as ${bridgedTitles.join(", ")}` : undefined}
                   labels={sampleLabels}
                   vocabulary={vocabulary}
                   editable={Boolean(username)}

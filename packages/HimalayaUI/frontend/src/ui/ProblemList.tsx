@@ -17,7 +17,7 @@ export function ProblemList({ problems, onPick, onAddSetups, onClose }: Props): 
   const folders = problems?.setups ?? [];
   return (
     <Overlay label="Ingest problems" onClose={onClose} testId="workspace-problems">
-      <div className="flex max-h-[70vh] flex-col gap-3 overflow-y-auto px-5 py-4 text-body">
+      <div className="flex flex-col gap-3 px-5 py-4 text-body">
         <h2 className="text-label text-ink-soft">Ingest problems</h2>
         {problems?.ingest_error != null && (
           <div data-testid="problems-ingest-error" className="flex flex-col gap-1">

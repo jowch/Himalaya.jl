@@ -5,7 +5,7 @@ import { queryKeys } from "../../../queries";
 import { authOpts } from "../../authOpts";
 import { applyBridge, applyUnbridge } from "../../bridges";
 import type { KeepCall } from "../../bridgeCall";
-import { invalidateAssignmentsExcept, invalidateSampleCalls } from "../sampleCall";
+import { invalidateAssignmentsExcept, invalidateSampleCalls, invalidateReviewProgress } from "../sampleCall";
 import type { Mutator, RollbackContext } from "../types";
 
 interface BridgeScope {
@@ -26,7 +26,7 @@ function settle(qc: QueryClient, experimentId: number, response: unknown): void 
   qc.invalidateQueries({ queryKey: queryKeys.bridges(experimentId) });
   invalidateSampleCalls(qc);
   invalidateAssignmentsExcept(qc, []);
-  qc.invalidateQueries({ queryKey: queryKeys.corpusSamples });
+  invalidateReviewProgress(qc, "own");
 }
 
 type BridgeInput = { sampleId: number; toSampleId: number; keepCall?: KeepCall };

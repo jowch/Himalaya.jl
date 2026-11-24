@@ -52,6 +52,13 @@ export interface PalettePage {
   deep?: boolean;
   empty?: string;
   extra?: (query: string) => readonly PaletteItem[];
+  multi?: PaletteMulti;
+}
+
+export interface PaletteMulti {
+  verb: (count: number) => string;
+  commit: (ids: readonly string[]) => PaletteForm | undefined;
+  hint?: (id: string, ticked: readonly string[]) => string | undefined;
 }
 
 export type PaletteRow =
