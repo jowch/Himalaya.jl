@@ -4719,6 +4719,52 @@ describe("WorkspacePage autosampler background", () => {
       expect(open0()).not.toBeNull();
     });
 
+    it.each([
+      ["a buffer", () => entries(), "lipidA 01A", BUFFER],
+      ["a sample that is not a buffer", () => entries({ [FIRST]: { ref_sample_id: SECOND, source: "user" } }), "lipidA 01C", SECOND],
+    ] as const)("reads a chip that is the open sample's background (%s) as the background, not as not subtracted", (_name, backgrounds, name, id) => {
+      seedLevels(backgrounds());
+      open(FIRST);
+      compareWith(name);
+      const chip = chipOf(new RegExp(`^${name}`));
+      expect(chip).toHaveAttribute("data-subtracted");
+      expect(chip).toHaveAccessibleDescription("Subtracted from the current trace");
+      expect(bar().querySelector("[data-minus-note]")).toBeNull();
+      expect(curve(id)).toBeNull();
+      expect(open0()).not.toBeNull();
+    });
+
+    it("draws a comparison from another autosampler setup minus its own background", () => {
+      seedLevels([...entries(), entry(60, { ref_sample_id: 61, default_ref_sample_id: 61, run_buffer_ids: [61] }), entry(61, { ref_sample_id: null, default_ref_sample_id: null, is_buffer: true, run_buffer_ids: [61] })]);
+      state.setups = [...state.setups, { id: 4, name: "setup4", folder: "setup4", included: true, mode: "autosampler" }];
+      state.corpus = [...state.corpus, { ...sample(60, "lipidD 01A (S0301)"), setup_id: 4 }, { ...sample(61, "lipidD 01B (B0300)"), setup_id: 4 }];
+      state.compareTraces.set(60, level(11));
+      state.compareTraces.set(61, level(5));
+      open(FIRST);
+      compareWith("lipidD 01A");
+      expect(curve(60)).not.toBeNull();
+      expect(bar().querySelector("[data-minus-note]")).toBeNull();
+    });
+
+    it("fetches no chip background while Minus is not showing, because the open sample's own background has no trace", () => {
+      seedLevels();
+      state.compareTraces.delete(BUFFER);
+      open(FIRST);
+      compareWith("lipidA 01C");
+      compareWith("lipidB 01B");
+      expect(plot().querySelector("[data-role='trace-line']")).not.toBeNull();
+      expect(compareFetches.flat()).not.toContain(OTHER_BUFFER);
+    });
+
+    it("hides and shows one curve on a click in an autosampler sample's Minus view, where a capillary sample returns to Raw", () => {
+      seedLevels();
+      open(FIRST);
+      compareWith("lipidA 01C");
+      fireEvent.click(chipOf(/^lipidA 01C/));
+      expect(screen.getByRole("button", { name: "Minus lipidA 01A (B0100)" })).toHaveAttribute("aria-pressed", "true");
+      expect(curve(SECOND)).toBeNull();
+    });
+
     it("draws no comparison curve while the open sample's own background is loading", () => {
       seedLevels();
       state.compareTraces.delete(BUFFER);

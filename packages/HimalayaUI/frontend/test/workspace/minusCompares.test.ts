@@ -92,7 +92,7 @@ describe("planMinusCompares", () => {
 
   it("reads the compared sample's own trace the same way", () => {
     const traces = new Map([[BUFFER_A, trace(2, normalised)]]);
-    expect(plan({ traces, statuses: new Map([[11, "loading" as const]]) })).toEqual([{ kind: "skipped", id: 11, reason: "loading" }]);
+    expect(plan({ traces, statuses: new Map([[11, "loading" as const]]) })).toEqual([{ kind: "skipped", id: 11, reason: "loading-own" }]);
     expect(plan({ traces })).toEqual([{ kind: "skipped", id: 11, reason: "no-trace" }]);
   });
 
@@ -100,6 +100,7 @@ describe("planMinusCompares", () => {
     expect(Object.values(SKIP_NOTES).every((n) => n.length > 0)).toBe(true);
     expect(SKIP_NOTES.buffer).toBe("Not subtracted: this is a buffer");
     expect(SKIP_NOTES.loading).toBe("Loading the background trace");
+    expect(SKIP_NOTES["loading-own"]).toBe("Loading this sample's trace");
   });
 });
 
