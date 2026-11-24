@@ -1683,7 +1683,7 @@ export function WorkspacePage(): JSX.Element {
                 />
               }
             />
-            <div className="mx-3.5 mt-1">
+            <div className="mt-1">
               <PlotCard legend={<div className="relative">
               <CompareBar
                 chips={activeRefs.map((rid) => ({

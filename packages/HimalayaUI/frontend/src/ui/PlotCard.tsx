@@ -2,9 +2,9 @@ import type { ReactNode } from "react";
 
 export function PlotCard({ children, notice, corner, legend }: { children: ReactNode; notice?: ReactNode; corner?: ReactNode; legend?: ReactNode }): JSX.Element {
   return (
-    <div className="relative rounded-sm border border-hair bg-plate">
-      {legend && <div data-testid="plot-card-legend" className="relative z-20 px-2 pt-2">{legend}</div>}
-      <div className="relative overflow-hidden rounded-b-sm">
+    <div className="relative border-y border-hair bg-plate">
+      {legend && <div data-testid="plot-card-legend" className="relative z-20 px-3.5 pt-2.5">{legend}</div>}
+      <div className="relative overflow-hidden px-1.5">
         {children}
         {corner && <div data-testid="plot-card-corner" className="absolute right-3 top-6 z-10 flex opacity-40 transition-opacity duration-150 hover:opacity-100 has-focus-visible:opacity-100">{corner}</div>}
         {notice && (
