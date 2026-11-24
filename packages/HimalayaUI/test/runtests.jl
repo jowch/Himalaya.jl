@@ -39,7 +39,7 @@ const GROUPS = [
                   "test_idempotency_replay_invariant.jl","test_concurrent_writes.jl","test_db_connections.jl",
                   "test_idempotency_sse_suppression.jl","test_peak_provenance.jl","test_peak_model_apply.jl"]),
     ("wire",     ["test_http.jl","test_routes_health.jl","test_routes_status.jl",
-                  "test_sse.jl","test_routes_sse_broadcast.jl","test_spa_fallback.jl",
+                  "test_sse.jl","test_routes_sse_broadcast.jl","test_spa_fallback.jl","test_deploy.jl",
                   "test_precompile_workload.jl","test_peak_training_service.jl","test_peak_model_pass.jl"]),
     ("migration", ["test_http.jl","test_migration_upgrade.jl"]),
 ]
@@ -74,7 +74,7 @@ const ALL_ORDER = ["test_config.jl","test_db.jl",
                    "test_concurrent_writes.jl","test_db_connections.jl","test_idempotency_sse_suppression.jl",
                    "test_routes_bridges.jl","test_bridge_calls.jl","test_routes_compares.jl","test_routes_labels.jl","test_routes_label_colors.jl","test_label_suggestions.jl",
                    "test_routes_fs.jl",
-                   "test_peak_provenance.jl","test_peak_model_apply.jl","test_spa_fallback.jl","test_precompile_workload.jl","test_peak_training_service.jl","test_peak_model_pass.jl","test_migration_upgrade.jl"]
+                   "test_peak_provenance.jl","test_peak_model_apply.jl","test_spa_fallback.jl","test_deploy.jl","test_precompile_workload.jl","test_peak_training_service.jl","test_peak_model_pass.jl","test_migration_upgrade.jl"]
 
 # Drift guard: the buckets and ALL_ORDER must cover the identical file set, so a
 # parallel / GROUP=<name> run can never silently skip (or double-run) a file

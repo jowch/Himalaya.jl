@@ -186,21 +186,42 @@ git pull
 make deploy
 ```
 
-`make deploy` runs `make setup`, then builds the frontend into `dist.next` and
-the sysimage into `build/next/`, and runs `make check-sysimage` on the new
-sysimage. Only when all of that passes does it move both into place and run
-`sudo systemctl restart himalaya`. It stops at the first step that fails, and
-until the swap the running daemon, the CLI and the served UI all stay on the
-old version. It takes about 5–10 min. The frontend goes to
-`HIMALAYA_FRONTEND_DIST` when `.env` sets it.
+`make deploy` runs `make setup`, then builds the frontend into a new release
+folder under `dist.releases/` and the sysimage into `build/next/`, and runs
+`make check-sysimage` on the new sysimage. Only when all of that passes does it
+swap both in, and it stops at the first step that fails. It takes about 5–10
+min. The frontend goes next to `HIMALAYA_FRONTEND_DIST` when `.env` sets it.
 
-Unless sudo already allows the restart without a password, it runs `sudo -v`
-first, so the prompt comes at the start, not after the build. sudo's credential
-cache can expire during the build, so it may ask again at the restart. To avoid
-both, allow exactly the restart without a password, e.g.
-`<user> ALL=(root) NOPASSWD: /usr/bin/systemctl restart himalaya` in
-`/etc/sudoers.d/himalaya`. Then it never prompts and runs without a terminal. `HIMALAYA_SERVICE=<unit>` names another systemd unit,
-and `HIMALAYA_RESTART=` skips the restart.
+`make deploy` never uses sudo and never restarts the server. When it finishes it
+prints the command to run yourself:
+
+```bash
+sudo systemctl restart himalaya
+```
+
+`HIMALAYA_SERVICE=<unit>` changes the unit name in that line.
+
+The swap is safe with the old server still running:
+
+- **The sysimage moves in with one rename.** The running server keeps the old
+  file it loaded, so nothing changes for it. Any `himalaya …` command started
+  after the swap runs the new code.
+- **The frontend moves in by repointing a link.** `dist` is a symlink to the
+  newest folder in `dist.releases/`, and it is swapped with one rename. The
+  server reads the folder `dist` pointed to when it started and keeps serving
+  that one, so the old UI stays matched with the old backend until the
+  restart. The newest three releases are kept, so you can deploy twice before
+  restarting.
+- **The first deploy after this change is the exception.** `dist` is still a
+  plain folder then, and the running server follows it, so it serves the new
+  UI to the old backend. Restart straight away that one time.
+- **A failed deploy leaves no release behind**, and pruning never removes the
+  release that was live before the deploy.
+- **The swap uses GNU `mv -T`**, so `make deploy` runs on Linux, not macOS.
+
+Until you restart, the CLI runs the new code against the same database as the
+old server, and `open_db` runs any new schema migrations when it connects. So
+restart soon after a deploy, before anyone runs `himalaya analyze`.
 
 Packages and the sysimage go into the shared depot that `bin/himalaya` runs
 against: every make target reads `JULIA_DEPOT_PATH` from the same `.env`, so
@@ -212,12 +233,11 @@ browser refresh is enough (~30 s).
 
 A few non-obvious things to know:
 
-- **Frontend updates are hot.** Oxygen's static-file mount reads `dist/` per
-  request, so curators see new UI on browser refresh — no daemon restart.
-- **Sysimage swap doesn't kill the running daemon.** systemd keeps the
-  already-loaded sysimage in RAM; you can `make sysimage` (which overwrites
-  `build/himalaya.so` in place) without downtime. CLI invocations starting
-  during the rebuild will see the new file once it's fully written.
+- **`make frontend` alone is hot.** It rebuilds into the folder `dist` points
+  to, and the server reads files per request, so curators see the new UI on a
+  browser refresh with no restart. That holds only when the server was
+  restarted after the last `make deploy`; otherwise it is serving an older
+  release and won't see the rebuild.
 - **Precompile before you restart.** Without a sysimage, the first start after a
   backend change precompiles HimalayaUI, including a warm-up that drives every
   workspace route once (~100 s). Run `Pkg.precompile()` while the old daemon is

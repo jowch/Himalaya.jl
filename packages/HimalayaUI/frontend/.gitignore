@@ -1,7 +1,7 @@
 node_modules
 dist
-dist.next
-dist.old
+dist.releases
+dist.link
 dist-e2e
 .DS_Store
 test-results

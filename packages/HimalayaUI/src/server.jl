@@ -37,6 +37,7 @@ function register_routes!()
     dist_dir = get(ENV, "HIMALAYA_FRONTEND_DIST",
                    joinpath(pkgdir(HimalayaUI), "frontend", "dist"))
     if isdir(dist_dir)
+        dist_dir = realpath(dist_dir)
         Oxygen.dynamicfiles(dist_dir, "/")
 
         @get "/**" function(req::HTTP.Request)

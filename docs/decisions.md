@@ -185,3 +185,9 @@ Every row also needs the date it was decided, as `YYYY-MM-DD`.
 | export-call | JSON and CSV export read the sample call; an uncalled sample exports call_state "uncalled". | 2026-11-22 | built | packages/HimalayaUI/test/test_routes_export.jl › an uncalled sample exports call_state uncalled with its candidates and labels, as JSON and CSV |
 | export-call-members | An image's indices hold only the call's members, and its auto_phases keeps the pipeline's own pick for bin/verify. | 2026-11-22 | built | packages/HimalayaUI/test/test_routes_export.jl › an indexed sample's indices hold only its call's members, and auto_phases keeps the auto pick |
 | export-candidates | A separate candidates field lists every index, called or not. | 2026-11-22 | built | packages/HimalayaUI/test/test_routes_export.jl › a form-factor sample exports no indices and lists every index as a candidate |
+
+## Deploying
+
+| id | Decision | Decided | Status | Evidence |
+|---|---|---|---|---|
+| deploy-no-sudo | `make deploy` uses no sudo and does not restart the server. It swaps in the new build safely under the running server and prints the restart command for Jonathan to run. | 2026-11-24 | built | packages/HimalayaUI/test/test_deploy.jl › make deploy swaps without sudo and leaves the restart to the user |
