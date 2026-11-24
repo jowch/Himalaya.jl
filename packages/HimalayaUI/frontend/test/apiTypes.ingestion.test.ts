@@ -9,7 +9,7 @@ describe("ingestion api types (Phase E1)", () => {
       created_at: "2026-04-12", last_scanned_at: "2026-04-12T10:00:00", ingest_status: "idle",
       setups: [{
         id: 3, experiment_id: 1, folder: "setup1", display_name: null, name: "setup1",
-        position: 0, included: true, root_dir: "/d/setup1",
+        position: 0, included: true, mode: "capillary", root_dir: "/d/setup1",
         data_dir: "/d/setup1/data", analysis_dir: "/d/setup1/analysis",
         image_pattern: "*.tif", metadata_pattern: null, integration_pattern: null,
         q_units: "A^-1", beam_center_x: 421.4, beam_center_y: 836.9, pixel_size_um: 172,

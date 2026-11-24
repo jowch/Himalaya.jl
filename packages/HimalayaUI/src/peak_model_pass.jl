@@ -27,6 +27,7 @@ function peak_model_pass_ids(db::SQLite.DB, model_id::Integer)
         SELECT id FROM exposures
          WHERE reviewed_at IS NULL AND trace_hash IS NOT NULL AND (filename IS NOT NULL OR kind = 'combined')
            AND analysis_error IS NULL AND analysis_version = ?
+           AND (setup_id IS NULL OR setup_id NOT IN (SELECT id FROM setups WHERE mode = 'autosampler'))
            AND peak_model_version IS NOT ?
          ORDER BY experiment_id DESC, id""", [ANALYSIS_VERSION, Int(model_id)]))
         if !((Int(model_id), Int(r.id)) in failed)]

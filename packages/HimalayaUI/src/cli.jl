@@ -51,6 +51,10 @@ function _analyze_experiment!(db::SQLite.DB, exp_id::Int; sample_filter=nothing)
         println("  (no sample named '$(sample_filter)')")
 
     for sample in samples
+        if is_autosampler_sample(db, Int(sample.id))
+            println("  Skipping $(sample.name) (autosampler setup, no automatic analysis)")
+            continue
+        end
         exposures = get_exposures(db, Int(sample.id))
         current = analyzed_exposure_id(db, Int(sample.id))
 

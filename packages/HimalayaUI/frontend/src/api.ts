@@ -8,6 +8,8 @@ export interface User {
 export type GeometrySource = "prp" | "setup" | "user" | "default" | "computed";
 export type IngestStatus = "idle" | "scanning" | "analyzing" | "complete" | "failed";
 
+export type SetupMode = "capillary" | "autosampler";
+
 export interface Setup {
   id: number;
   experiment_id: number;
@@ -16,6 +18,7 @@ export interface Setup {
   name: string;
   position: number;
   included: boolean;
+  mode: SetupMode | null;
   root_dir: string;
   data_dir: string;
   analysis_dir: string;
@@ -172,6 +175,7 @@ export interface CreateSetupBody {
   data_dir: string;
   analysis_dir?: string;
   included: boolean;
+  mode?: SetupMode;
   patterns?: { image?: string; metadata?: string; integration?: string };
   geometry?: {
     beam_center_x?: number; beam_center_x_source?: string;
@@ -235,6 +239,7 @@ export const suggestFolders = (prefix: string) =>
 export interface SetupPreview {
   root: string;
   name: string;
+  mode: SetupMode | null;
   data_dir: string;
   analysis_dir: string | null;
   setup_file: string | null;

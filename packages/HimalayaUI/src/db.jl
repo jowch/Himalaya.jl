@@ -84,6 +84,7 @@ CREATE TABLE IF NOT EXISTS setups (
     display_name         TEXT,
     position             INTEGER NOT NULL DEFAULT 0,
     included             INTEGER NOT NULL DEFAULT 1,
+    mode                 TEXT,
     root_dir             TEXT NOT NULL,
     data_dir             TEXT NOT NULL,
     analysis_dir         TEXT NOT NULL,

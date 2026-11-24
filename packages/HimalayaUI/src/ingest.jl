@@ -74,6 +74,8 @@ end
 
 function _scan_setup!(db::SQLite.DB, experiment_id::Int, setup;
                       analyze::Bool, retry_failed::Bool, on_progress)
+    setup = settle_setup_mode!(db, setup)
+    analyze = analyze && !is_autosampler(setup)
     setup_id     = Int(setup.id)
     data_dir     = String(setup.data_dir)
     analysis_dir = String(setup.analysis_dir)
@@ -102,7 +104,7 @@ function _scan_setup!(db::SQLite.DB, experiment_id::Int, setup;
         end
     end
 
-    grouping = group_into_samples(metas)
+    grouping = is_autosampler(setup) ? group_autosampler(metas, data_dir) : group_into_samples(metas)
 
     new_exposure_ids = Int[]
 
@@ -292,6 +294,7 @@ pending_analysis_ids(db::SQLite.DB, experiment_id::Int; retry_failed::Bool = fal
                   for st in setups_of(db, experiment_id; included_only = true)); init = Int[])
 
 function _pending_setup_ids(db::SQLite.DB, setup; retry_failed::Bool = false)
+    is_autosampler(setup) && return Int[]
     rows = sqlrows(DBInterface.execute(db, """
         SELECT id, filename, analysis_error, analysis_version, analysis_trace_stat FROM exposures
          WHERE setup_id = ?2 AND filename IS NOT NULL

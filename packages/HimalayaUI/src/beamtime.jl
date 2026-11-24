@@ -49,6 +49,7 @@ function _folder_setup_spec(root::AbstractString)
     (; data_dir,
        analysis_dir = something(r.analysis_dir, data_dir),
        root_dir = _canonical_dir(root),
+       mode = r.mode,
        image_pattern = r.image_pattern,
        metadata_pattern = r.metadata_pattern,
        integration_pattern = r.integration_pattern)
