@@ -23,8 +23,8 @@ function _json_error(status::Int, msg::AbstractString; extra...)
         body[k] = v
     end
     HTTP.Response(status, ["Content-Type" => "application/json"],
-                  JSON3.write(body))
+                  to_json(body))
 end
 
 _json(status::Int, body) =
-    HTTP.Response(status, ["Content-Type" => "application/json"], JSON3.write(body))
+    HTTP.Response(status, ["Content-Type" => "application/json"], to_json(body))

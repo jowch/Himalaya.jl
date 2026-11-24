@@ -1,4 +1,4 @@
-using HTTP, JSON3, DBInterface, Tables, Oxygen
+using HTTP, DBInterface, Tables, Oxygen
 
 function register_samples_routes!()
     @get "/api/samples" function(req::HTTP.Request)
@@ -10,7 +10,7 @@ function register_samples_routes!()
             exp_filter = tryparse(Int, params["experiment_id"])
             exp_filter === nothing && return HTTP.Response(400,
                 ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => "experiment_id must be an integer")))
+                to_json(Dict(:error => "experiment_id must be an integer")))
         end
 
         samples = exp_filter === nothing ?
@@ -74,7 +74,7 @@ function register_samples_routes!()
             d
         end
         HTTP.Response(200, ["Content-Type" => "application/json"],
-            JSON3.write(out))
+            to_json(out))
     end
 
     @patch "/api/samples/{id}" function(req::HTTP.Request, id::Int)
@@ -94,7 +94,7 @@ function register_samples_routes!()
         if isempty(fields)
             return HTTP.Response(400,
                 ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => "no updatable fields provided")))
+                to_json(Dict(:error => "no updatable fields provided")))
         end
         return with_idempotency(db, req) do
             sets = join(["$(string(f)) = ?" for f in fields], ", ")
@@ -111,7 +111,7 @@ function register_samples_routes!()
             rows = sqlrows(DBInterface.execute(db,
                 "SELECT * FROM samples WHERE id = ?", [id]))
             HTTP.Response(200, ["Content-Type" => "application/json"],
-                JSON3.write(row_to_json(rows[1])))
+                to_json(row_to_json(rows[1])))
         end
     end
 end

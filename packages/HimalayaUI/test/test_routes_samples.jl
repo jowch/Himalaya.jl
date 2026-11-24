@@ -1,4 +1,5 @@
-using Test, HTTP, JSON3, SQLite, DBInterface, Tables
+using Test, HTTP, SQLite, DBInterface, Tables
+import JSON
 
 @testset "samples routes" begin
     db = open_prepared_clone(mktempdir())
@@ -11,9 +12,9 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         r = call("PATCH", "/api/samples/$s1";
             headers = ["Content-Type" => "application/json",
                        "X-Username"   => "alice"],
-            body = Vector{UInt8}(JSON3.write(Dict(:notes => "hello"))))
+            body = Vector{UInt8}(JSON.json(Dict(:notes => "hello"))))
         @test r.status == 200
-        @test JSON3.read(String(r.body)).notes == "hello"
+        @test JSON.parse(String(r.body)).notes == "hello"
 
     end
 end
@@ -47,7 +48,7 @@ end
     eC = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=sC, filename="c1")
 
     with_inproc_routes(db) do call
-        list   = JSON3.read(String(call("GET", "/api/samples").body))
+        list   = JSON.parse(String(call("GET", "/api/samples").body))
         byname = Dict(String(s.name) => s for s in list)
 
         @test byname["A"].assignment_state == "indexed"
@@ -74,9 +75,9 @@ end
         r2 = call("PATCH", "/api/samples/$sid";
             headers = ["Content-Type" => "application/json",
                        "X-Username"   => "alice"],
-            body = Vector{UInt8}(JSON3.write(Dict(:name => "  spaced  "))))
+            body = Vector{UInt8}(JSON.json(Dict(:name => "  spaced  "))))
         @test r2.status == 200
-        body = JSON3.read(String(r2.body))
+        body = JSON.parse(String(r2.body))
         @test body[:name] == "spaced"
     end
 end
@@ -99,7 +100,7 @@ end
         # Full corpus: every sample across both experiments.
         r = call("GET", "/api/samples")
         @test r.status == 200
-        all = JSON3.read(String(r.body))
+        all = JSON.parse(String(r.body))
         @test length(all) == 3
         @test Set(s.name for s in all) == Set(["A1", "A2", "B1"])
 
@@ -115,15 +116,15 @@ end
         # ?experiment_id= filter narrows to one experiment.
         r = call("GET", "/api/samples?experiment_id=$e1")
         @test r.status == 200
-        filtered = JSON3.read(String(r.body))
+        filtered = JSON.parse(String(r.body))
         @test length(filtered) == 2
         @test Set(s.name for s in filtered) == Set(["A1", "A2"])
-        @test JSON3.write.(filtered) == JSON3.write.([s for s in all if s.experiment_id == e1])
+        @test JSON.json.(filtered) == JSON.json.([s for s in all if s.experiment_id == e1])
 
         # Nonexistent experiment id → empty array (SQL gives this for free).
         r = call("GET", "/api/samples?experiment_id=999999")
         @test r.status == 200
-        @test JSON3.read(String(r.body)) == []
+        @test JSON.parse(String(r.body)) == []
 
         # Malformed experiment_id → 400, not a silent ignore.
         r = call("GET", "/api/samples?experiment_id=abc")
@@ -148,7 +149,7 @@ end
     with_inproc_routes(db) do call
         r = call("GET", "/api/samples")
         @test r.status == 200
-        by_name = Dict(String(s.name) => s for s in JSON3.read(String(r.body)))
+        by_name = Dict(String(s.name) => s for s in JSON.parse(String(r.body)))
         @test by_name["T1"].q_units == "nm^-1"   
         @test by_name["L1"].q_units == "A-1"
         @test by_name["X1"].q_units == "A^-1"     
@@ -168,14 +169,14 @@ end
     with_inproc_routes(db) do call
         r = call("GET", "/api/samples")
         @test r.status == 200
-        rows = JSON3.read(String(r.body))
+        rows = JSON.parse(String(r.body))
         @test length(rows) == 1
         @test rows[1].q_units == "A-1"
     end
 end
 
 @testset "analyzed image: shared cross-view cases" begin
-    cases = JSON3.read(read(joinpath(@__DIR__, "..", "frontend", "test", "fixtures",
+    cases = JSON.parse(read(joinpath(@__DIR__, "..", "frontend", "test", "fixtures",
                                      "analyzed-exposure.json"), String))
     for c in cases
         @testset "$(c.case)" begin
@@ -196,7 +197,7 @@ end
     gone = frames("all_dropped", 2); drop.(gone)
 
     with_inproc_routes(db) do call
-        byname = Dict(String(s.name) => s for s in JSON3.read(String(call("GET", "/api/samples").body)))
+        byname = Dict(String(s.name) => s for s in JSON.parse(String(call("GET", "/api/samples").body)))
         @test byname["newest_dropped"].analyzed_exposure_id == newest[2]
         @test byname["all_dropped"].analyzed_exposure_id === nothing
         @test byname["all_dropped"].assignment_state == "indexed"
@@ -220,7 +221,7 @@ end
         [HimalayaUI.NO_TRACE, no_trace[1]])
 
     with_inproc_routes(db) do call
-        byname = Dict(String(s.name) => s for s in JSON3.read(String(call("GET", "/api/samples").body)))
+        byname = Dict(String(s.name) => s for s in JSON.parse(String(call("GET", "/api/samples").body)))
         @test byname["lit"].beam_off_images == 0
         @test byname["dark"].beam_off_images == 2
         @test byname["dropped"].beam_off_images == 0

@@ -1,4 +1,5 @@
-using Test, HTTP, JSON3, SQLite, DBInterface
+using Test, HTTP, SQLite, DBInterface
+import JSON
 using HimalayaUI
 
 # Spec §3.2 — SPA catch-all serves index.html for any non-API, non-asset
@@ -57,7 +58,7 @@ using HimalayaUI
                     # /api/* routes must take precedence over the SPA catch-all.
                     r = HTTP.get("$base/api/health"; status_exception=false)
                     @test r.status == 200
-                    body = JSON3.read(String(r.body))
+                    body = JSON.parse(String(r.body))
                     @test body.status == "ok"
                 end
             end

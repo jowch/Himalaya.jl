@@ -1,4 +1,4 @@
-using JSON3, SQLite, DBInterface
+using SQLite, DBInterface
 
 const PEAK_TRAINING_CHECK_SECONDS = 300.0
 const PEAK_TRAINING_FIRST_CHECK_SECONDS = 60.0
@@ -76,7 +76,7 @@ function _run_peak_training_child(db::SQLite.DB, watermark::Integer)
             "peak model training exited with code $(proc.exitcode): $(_stderr_tail(err))"
         else
             try
-                r = JSON3.read(read(out, String))
+                r = JSON.parse(read(out, String))
                 Dict{String, Any}(
                     "status" => String(r.status), "watermark" => Int(r.watermark),
                     "counts" => r.counts, "recipe" => r.recipe, "recipe_id" => r.recipe_id,

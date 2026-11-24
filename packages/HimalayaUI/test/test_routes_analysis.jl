@@ -1,4 +1,5 @@
-using Test, HTTP, JSON3, SQLite, DBInterface, Tables
+using Test, HTTP, SQLite, DBInterface, Tables
+import JSON
 using Himalaya
 
 @testset "indices routes" begin
@@ -18,7 +19,7 @@ using Himalaya
         # Indices
         r = call("GET", "/api/exposures/$e_id/indices")
         @test r.status == 200
-        indices = JSON3.read(String(r.body))
+        indices = JSON.parse(String(r.body))
         @test length(indices) >= 1
         @test haskey(indices[1], :peaks)
 
@@ -75,7 +76,7 @@ end
             headers = ["Content-Type"   => "application/json",
                        "X-Username"     => "alice",
                        "X-Client-Op-Id" => op_id],
-            body = Vector{UInt8}(JSON3.write(body)))
+            body = Vector{UInt8}(JSON.json(body)))
         @test r1.status == 200
         body1 = String(copy(r1.body))
 
@@ -93,7 +94,7 @@ end
             headers = ["Content-Type"   => "application/json",
                        "X-Username"     => "alice",
                        "X-Client-Op-Id" => op_id],
-            body = Vector{UInt8}(JSON3.write(body)))
+            body = Vector{UInt8}(JSON.json(body)))
         @test r2.status == 200
         @test String(copy(r2.body)) == body1
 

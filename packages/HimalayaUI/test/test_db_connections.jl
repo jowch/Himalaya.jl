@@ -1,4 +1,5 @@
-using Test, HTTP, SQLite, DBInterface, Tables, JSON3
+using Test, HTTP, SQLite, DBInterface, Tables
+import JSON
 import HimalayaUI
 using HimalayaUI: open_db, bind_db!, current_db, db_connection_middleware
 
@@ -220,7 +221,7 @@ end
                 end
                 @test timedwait(() -> isready(opened), 10.0) === :ok
                 write = @async HTTP.patch("$base/api/exposures/$e_id/status";
-                    body = JSON3.write(Dict(:status => "rejected")),
+                    body = JSON.json(Dict(:status => "rejected")),
                     headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
                     readtimeout = 20, retry = false)
                 @test timedwait(() -> istaskdone(write), 15.0) === :ok

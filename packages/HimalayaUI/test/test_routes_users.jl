@@ -1,4 +1,5 @@
-using Test, HTTP, JSON3, SQLite, DBInterface, Tables
+using Test, HTTP, SQLite, DBInterface, Tables
+import JSON
 
 @testset "users routes" begin
     db = SQLite.DB()
@@ -8,14 +9,14 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         # Empty list
         r = call("GET", "/api/users")
         @test r.status == 200
-        @test JSON3.read(String(r.body)) == []
+        @test JSON.parse(String(r.body)) == []
 
         # Create without first/last (legacy path)
         r = call("POST", "/api/users";
             headers = ["Content-Type" => "application/json"],
-            body = Vector{UInt8}(JSON3.write(Dict(:username => "alice"))))
+            body = Vector{UInt8}(JSON.json(Dict(:username => "alice"))))
         @test r.status == 201
-        created = JSON3.read(String(r.body))
+        created = JSON.parse(String(r.body))
         @test created.username == "alice"
         @test created.id == 1
         @test isnothing(created.first_name)
@@ -24,46 +25,46 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         # Idempotent — second create returns existing
         r = call("POST", "/api/users";
             headers = ["Content-Type" => "application/json"],
-            body = Vector{UInt8}(JSON3.write(Dict(:username => "alice"))))
+            body = Vector{UInt8}(JSON.json(Dict(:username => "alice"))))
         @test r.status == 200
-        @test JSON3.read(String(r.body)).id == 1
+        @test JSON.parse(String(r.body)).id == 1
 
         # Idempotent enrichment: a follow-up POST that supplies first/last fills in
         # the previously-NULL fields (but never overwrites non-null values).
         r = call("POST", "/api/users";
             headers = ["Content-Type" => "application/json"],
-            body = Vector{UInt8}(JSON3.write(Dict(:username => "alice",
+            body = Vector{UInt8}(JSON.json(Dict(:username => "alice",
                                     :first_name => "Alice",
                                     :last_name  => "Smith"))))
         @test r.status == 200
-        enriched = JSON3.read(String(r.body))
+        enriched = JSON.parse(String(r.body))
         @test enriched.id == 1
         @test enriched.first_name == "Alice"
         @test enriched.last_name  == "Smith"
         # Existing names are preserved on a subsequent POST with different names.
         r = call("POST", "/api/users";
             headers = ["Content-Type" => "application/json"],
-            body = Vector{UInt8}(JSON3.write(Dict(:username => "alice",
+            body = Vector{UInt8}(JSON.json(Dict(:username => "alice",
                                     :first_name => "DIFFERENT",
                                     :last_name  => "OVERWRITE"))))
         @test r.status == 200
-        preserved = JSON3.read(String(r.body))
+        preserved = JSON.parse(String(r.body))
         @test preserved.first_name == "Alice"
         @test preserved.last_name  == "Smith"
 
         # Create with first_name and last_name
         r = call("POST", "/api/users";
             headers = ["Content-Type" => "application/json"],
-            body = Vector{UInt8}(JSON3.write(Dict(:username => "jwhc", :first_name => "Jonathan", :last_name => "Chen"))))
+            body = Vector{UInt8}(JSON.json(Dict(:username => "jwhc", :first_name => "Jonathan", :last_name => "Chen"))))
         @test r.status == 201
-        created2 = JSON3.read(String(r.body))
+        created2 = JSON.parse(String(r.body))
         @test created2.username   == "jwhc"
         @test created2.first_name == "Jonathan"
         @test created2.last_name  == "Chen"
 
         # List returns first_name/last_name
         r = call("GET", "/api/users")
-        users = JSON3.read(String(r.body))
+        users = JSON.parse(String(r.body))
         @test length(users) == 2
         jwhc = first(filter(u -> u.username == "jwhc", users))
         @test jwhc.first_name == "Jonathan"
@@ -73,7 +74,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         for bad in ("has space", "with-dash", "@withat", "with.dot")
             r = call("POST", "/api/users";
                 headers = ["Content-Type" => "application/json"],
-                body = Vector{UInt8}(JSON3.write(Dict(:username => bad))))
+                body = Vector{UInt8}(JSON.json(Dict(:username => bad))))
             @test r.status == 400
         end
     end
@@ -98,5 +99,5 @@ end
     @test rows[1].entity_type == "sample"
     @test rows[1].entity_id   == 42
     # note is now stored in the payload JSON column (via apply_event! delegation)
-    @test JSON3.read(rows[1].payload).note == "hello"
+    @test JSON.parse(rows[1].payload).note == "hello"
 end

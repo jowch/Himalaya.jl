@@ -3,14 +3,14 @@ const MODEL_FILE_VERSION = 3
 function save_model(path::AbstractString, m::TrainedModel)
     mkpath(dirname(abspath(path)))
     open(path, "w") do io
-        JSON3.write(io, Dict{String, Any}("file_version" => MODEL_FILE_VERSION, "model" => to_dict(m)))
+        JSON.json(io, Dict{String, Any}("file_version" => MODEL_FILE_VERSION, "model" => to_dict(m)))
     end
     path
 end
 
 function load_model(path::AbstractString)
     d = try
-        JSON3.read(read(path, String))
+        JSON.parse(read(path, String))
     catch err
         error("cannot read model file $path (made by an older version of the tool?); retrain it: $(sprint(showerror, err))")
     end

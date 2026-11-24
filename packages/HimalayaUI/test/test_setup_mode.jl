@@ -1,4 +1,5 @@
-using Test, Dates, SQLite, DBInterface, Tables, JSON3, HimalayaUI
+using Test, Dates, SQLite, DBInterface, Tables, HimalayaUI
+import JSON
 isdefined(@__MODULE__, :write_prp) || include("test_ingestion_core.jl")
 
 _as_count(db, sql, args...) = Int(only(Tables.rowtable(DBInterface.execute(db, sql, collect(args)))).c)
@@ -243,7 +244,7 @@ end
         with_inproc_routes(db) do call
             r = call("GET", "/api/exposures/$(first(shown))/trace")
             @test r.status == 200
-            body = JSON3.read(String(r.body))
+            body = JSON.parse(String(r.body))
             @test length(body.q) == length(body.I) > 10
         end
     end
@@ -317,7 +318,7 @@ function _as_wait_ingest(db, eid; timeout = 60)
 end
 
 _as_json(call, method, path, body) = call(method, path;
-    headers = ["Content-Type" => "application/json"], body = Vector{UInt8}(JSON3.write(body)))
+    headers = ["Content-Type" => "application/json"], body = Vector{UInt8}(JSON.json(body)))
 
 @testset "setup mode routes" begin
     @testset "the folder preview reports each setup's mode and layout" begin
@@ -326,14 +327,14 @@ _as_json(call, method, path, body) = call(method, path;
         write(joinpath(cap, "data", "MO_S0001_0_001.tif"), "fake tif")
         db = fresh_db()
         with_inproc_routes(db) do call
-            r = JSON3.read(String(call("GET", "/api/fs/preview?path=$(HimalayaUI.HTTP.escapeuri(auto))").body))
+            r = JSON.parse(String(call("GET", "/api/fs/preview?path=$(HimalayaUI.HTTP.escapeuri(auto))").body))
             @test only(r.setups).mode == "autosampler"
             @test only(r.setups).patterns.image == "{name}_0_001.tif"
             @test only(r.setups).patterns.integration == "{name}_tot.dat"
             @test only(r.setups).analysis_dir == joinpath(auto, "analysis", "automatic_analysis", "tot_files")
             @test only(r.setups).exposures == 3
             @test only(r.setups).without_trace == 0
-            c = JSON3.read(String(call("GET", "/api/fs/preview?path=$(HimalayaUI.HTTP.escapeuri(cap))").body))
+            c = JSON.parse(String(call("GET", "/api/fs/preview?path=$(HimalayaUI.HTTP.escapeuri(cap))").body))
             @test only(c.setups).mode == "capillary"
         end
     end
@@ -344,25 +345,25 @@ _as_json(call, method, path, body) = call(method, path;
         with_inproc_routes(db) do call
             r = _as_json(call, "POST", "/api/experiments", Dict(:data_dir => joinpath(auto, "data")))
             @test r.status == 202
-            eid = Int(JSON3.read(String(r.body)).id)
+            eid = Int(JSON.parse(String(r.body)).id)
             _as_wait_ingest(db, eid)
             st = only(HimalayaUI.setups_of(db, eid))
             @test st.mode == "autosampler"
             @test st.integration_pattern == "{name}_tot.dat"
             @test _as_count(db, "SELECT COUNT(*) AS c FROM samples WHERE experiment_id = ?", eid) == 3
-            shown = JSON3.read(String(call("GET", "/api/experiments/$eid").body))
+            shown = JSON.parse(String(call("GET", "/api/experiments/$eid").body))
             @test only(shown.setups).mode == "autosampler"
 
             other = _as_write_folder!(mktempdir(), _AS_RUN_A)
             r2 = _as_json(call, "POST", "/api/experiments", Dict(:data_dir => joinpath(other, "data"), :mode => "capillary"))
-            eid2 = Int(JSON3.read(String(r2.body)).id)
+            eid2 = Int(JSON.parse(String(r2.body)).id)
             _as_wait_ingest(db, eid2)
             @test only(HimalayaUI.setups_of(db, eid2)).mode == "capillary"
 
             bad = _as_json(call, "POST", "/api/experiments",
                 Dict(:data_dir => joinpath(_as_write_folder!(mktempdir(), _AS_RUN_A), "data"), :mode => "powder"))
             @test bad.status == 400
-            @test occursin("mode", JSON3.read(String(bad.body)).error)
+            @test occursin("mode", JSON.parse(String(bad.body)).error)
         end
     end
 
@@ -373,7 +374,7 @@ _as_json(call, method, path, body) = call(method, path;
         with_inproc_routes(db) do call
             spec(root; kw...) = Dict(:root => root, :data_dir => joinpath(root, "data"), kw...)
             r = _as_json(call, "POST", "/api/experiments", Dict(:path => bt, :setups => [spec(a)]))
-            eid = Int(JSON3.read(String(r.body)).id)
+            eid = Int(JSON.parse(String(r.body)).id)
             _as_wait_ingest(db, eid)
             @test only(HimalayaUI.setups_of(db, eid)).mode == "autosampler"
 
@@ -381,7 +382,7 @@ _as_json(call, method, path, body) = call(method, path;
             @test _as_json(call, "POST", "/api/experiments/$eid/setups", Dict(:setups => [spec(b; mode = "powder")])).status == 400
             added = _as_json(call, "POST", "/api/experiments/$eid/setups", Dict(:setups => [spec(b; mode = "autosampler")]))
             @test added.status == 202
-            sid = only(JSON3.read(String(added.body)).setup_ids)
+            sid = only(JSON.parse(String(added.body)).setup_ids)
             _as_wait_ingest(db, eid)
             @test HimalayaUI.setup_row(db, sid).mode == "autosampler"
             @test _as_count(db, "SELECT COUNT(*) AS c FROM samples WHERE setup_id = ?", sid) == 2
@@ -543,14 +544,14 @@ end
         db = fresh_db()
         with_inproc_routes(db) do call
             r = _as_json(call, "POST", "/api/experiments", Dict(:data_dir => joinpath(root, "data"), :mode => "capillary"))
-            eid = Int(JSON3.read(String(r.body)).id)
+            eid = Int(JSON.parse(String(r.body)).id)
             _as_wait_ingest(db, eid)
             HimalayaUI.scan_and_group!(db, eid)
             st = only(HimalayaUI.setups_of(db, eid))
             @test (st.mode, st.mode_source) == ("capillary", "user")
             @test ismissing(st.image_pattern)
             @test ismissing(st.integration_pattern)
-            shown = JSON3.read(String(call("GET", "/api/experiments/$eid").body))
+            shown = JSON.parse(String(call("GET", "/api/experiments/$eid").body))
             @test only(shown.setups).mode_source == "user"
         end
     end
@@ -614,7 +615,7 @@ end
     sid = HimalayaUI.add_setup_from_folder!(db, eid, root)
     @test HimalayaUI.setup_row(db, sid).analysis_dir == tot
     with_inproc_routes(db) do call
-        pv = JSON3.read(String(call("GET", "/api/fs/preview?path=$(HimalayaUI.HTTP.escapeuri(root))").body))
+        pv = JSON.parse(String(call("GET", "/api/fs/preview?path=$(HimalayaUI.HTTP.escapeuri(root))").body))
         @test only(pv.setups).analysis_dir == tot
         HimalayaUI.scan_and_group!(db, eid)
         exposure = Int(only(Tables.rowtable(DBInterface.execute(db,

@@ -1,4 +1,4 @@
-using JSON3, SQLite, DBInterface, HTTP, Tables
+using SQLite, DBInterface, HTTP, Tables
 using Dates: now, UTC, format, @dateformat_str
 
 """
@@ -113,7 +113,7 @@ function apply_event!(::InTransaction, db::SQLite.DB, req;
     client_id    = get_client_id(req)
     client_op_id = get_client_op_id(req)
     user_id      = username === nothing ? nothing : get_or_create_user!(db, username)
-    payload_json = payload === nothing ? nothing : JSON3.write(payload)::String
+    payload_json = payload === nothing ? nothing : to_json(payload)::String
 
     event_id::Int = 0
     view_row_id::Union{Int, Nothing} = nothing
@@ -155,13 +155,8 @@ function apply_event!(::InTransaction, db::SQLite.DB, req;
 
     # Run the dispatcher only on a fresh INSERT — on retry the prior
     # application already moved the views, and re-running would double-apply.
-    # Canonicalize payload before dispatch — round-trip through JSON3 so the
-    # live dispatcher and rebuild_views_from_log! see exactly the same shape
-    # (JSON3.Object supports both .field and [:field] access, eliminating
-    # the Symbol-key vs String-key footgun).
     if fresh_insert && payload_json !== nothing
-        payload_canonical = JSON3.read(payload_json)
-        view_row_id = update_view_for_event!(db, kind, entity_id, payload_canonical, event_id)
+        view_row_id = update_view_for_event!(db, kind, entity_id, payload_as_replayed(payload_json), event_id)
     end
     fresh_insert && record_event_reviews!(db, kind, entity_type, entity_id, event_id; direct = review_direct)
 
@@ -188,7 +183,7 @@ function _maybe_broadcast_event!(db, result, kind, entity_type, entity_id, paylo
     # every curation event would also fan out an analyze_run frame even when
     # nothing changed — O(N) extra frames per session. The user_actions row is
     # still written; only the broadcast is suppressed. Strict `=== true` guards
-    # against the JSON3.Object case where a missing key would return `nothing`.
+    # against the JSON.Object case where a missing key would return `nothing`.
     suppress = kind == "analyze_run" &&
                payload !== nothing &&
                get(payload, :findpeaks_skipped, false) === true &&
@@ -239,7 +234,7 @@ that call the InTransaction variant must explicitly enqueue their broadcast
 This helper centralizes the field-by-field unpack so callers don't drift.
 
 Reuses `result.payload_json` (the canonical serialization frozen by
-`apply_event!` after JSON3 round-trip) — no re-serialization needed.
+`apply_event!` after its JSON round-trip) — no re-serialization needed.
 """
 function _enqueue_broadcast_from_result!(result, kind::String,
                                          entity_type::String, entity_id::Integer;
@@ -306,15 +301,17 @@ const RETIRED_EVENT_KINDS = (
     "select_exposure",
 )
 
+payload_as_replayed(payload_json::String) = JSON.parse(payload_json)
+
 """
 Dispatcher that updates materialized views based on event kind.
 Currently a no-op for most events; populated as routes migrate to apply_event!.
 
-**Payload contract:** `payload` is normalized to a `JSON3.Object` (or `nothing`)
+**Payload contract:** `payload` is normalized to a `JSON.Object` (or `nothing`)
 before this is called. The live path in `apply_event!` round-trips through
-`JSON3.write` → `JSON3.read` so dispatcher branches see the same shape they'd
+`to_json` → `JSON.parse` so dispatcher branches see the same shape they'd
 see during `rebuild_views_from_log!`. This eliminates the Symbol-key vs
-String-key footgun: `JSON3.Object` supports both `obj.q` and `obj[:q]` /
+String-key footgun: `JSON.Object` supports both `obj.q` and `obj[:q]` /
 `obj["q"]`. Branch code accesses fields uniformly via `payload.q` style.
 """
 function update_view_for_event!(db, kind, entity_id, payload, event_id)
@@ -663,10 +660,10 @@ function broadcast_event!(event_id::Integer, kind::String, entity_type::String,
         :client_id    => client_id,
         :client_op_id => client_op_id,
         :ts           => format(now(UTC), dateformat"yyyy-mm-ddTHH:MM:SS.sssZ"),
-        :payload      => payload_json === nothing ? nothing : JSON3.read(payload_json),
+        :payload      => payload_json === nothing ? nothing : JSON.parse(payload_json),
     )
     post_state === nothing || (fields[:post_state] = post_state)
-    msg = JSON3.write(fields)
+    msg = to_json(fields)
     _fanout_frame!("event: curation\ndata: $msg\n\n")
     nothing
 end
@@ -723,7 +720,7 @@ function broadcast_progress!(experiment_id::Integer;
         :ts      => ts,
         :payload => payload,
     )
-    msg = JSON3.write(fields)
+    msg = to_json(fields)
     _fanout_frame!("event: curation\ndata: $msg\n\n")
     nothing
 end
@@ -757,8 +754,7 @@ function rebuild_views_from_log!(db::SQLite.DB, entity_id::Integer;
         eid  = Int(r.id)
         ent  = Int(r.entity_id)
         ismissing(r.payload) && continue
-        payload = JSON3.read(String(r.payload))
-        update_view_for_event!(db, kind, ent, payload, eid)
+        update_view_for_event!(db, kind, ent, payload_as_replayed(String(r.payload)), eid)
     end
     nothing
 end

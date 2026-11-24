@@ -1,4 +1,5 @@
-using Test, HTTP, JSON3, SQLite, DBInterface, Tables
+using Test, HTTP, SQLite, DBInterface, Tables
+import JSON
 
 @testset "export routes" begin
     tmp = mktempdir()
@@ -23,7 +24,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
             r = call("GET", "/api/experiments/$exp_id/export?format=json")
             @test r.status == 200
             @test occursin("application/json", HTTP.header(r, "Content-Type"))
-            body = JSON3.read(String(r.body))
+            body = JSON.parse(String(r.body))
             @test length(body) == 1
             s = body[1]
             @test s.name == "D1"
@@ -61,7 +62,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
     end
 
     auto_before = with_inproc_routes(db) do call
-        collect(String, JSON3.read(String(call("GET", "/api/experiments/$exp_id/export").body))[1].exposures[1].auto_phases)
+        collect(String, JSON.parse(String(call("GET", "/api/experiments/$exp_id/export").body))[1].exposures[1].auto_phases)
     end
     auto_ids = [Int(r.id) for r in Tables.rowtable(DBInterface.execute(db,
         "SELECT id FROM indices WHERE exposure_id = ?", [e_id]))]
@@ -75,7 +76,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
 
     @testset "an indexed sample's indices hold only its call's members, and auto_phases keeps the auto pick" begin
         with_inproc_routes(db) do call
-            s = JSON3.read(String(call("GET", "/api/experiments/$exp_id/export").body))[1]
+            s = JSON.parse(String(call("GET", "/api/experiments/$exp_id/export").body))[1]
             @test s.call_state == "indexed"
             @test s.phase == "Im3m"
             @test collect(s.call_phases) == ["Im3m"]
@@ -98,7 +99,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
 
     @testset "a form-factor sample exports no indices and lists every index as a candidate" begin
         with_inproc_routes(db) do call
-            s = JSON3.read(String(call("GET", "/api/experiments/$exp_id/export").body))[1]
+            s = JSON.parse(String(call("GET", "/api/experiments/$exp_id/export").body))[1]
             @test s.call_state == "form_factor"
             @test s.phase === nothing
             @test isempty(s.call_phases)
@@ -115,7 +116,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
     DBInterface.execute(db, "UPDATE sample_calls SET state = 'null' WHERE sample_id = ?", [s_id])
     @testset "a cleared call exports as uncalled" begin
         with_inproc_routes(db) do call
-            s = JSON3.read(String(call("GET", "/api/experiments/$exp_id/export").body))[1]
+            s = JSON.parse(String(call("GET", "/api/experiments/$exp_id/export").body))[1]
             @test s.call_state == "uncalled"
             @test isempty(s.exposures[1].indices)
         end

@@ -1,4 +1,5 @@
-using Test, HTTP, JSON3, SQLite, DBInterface, Tables
+using Test, HTTP, SQLite, DBInterface, Tables
+import JSON
 using HimalayaUI
 using Himalaya
 
@@ -33,11 +34,11 @@ end
             ctx = _setup_analyzed_exposure(tmp)
             with_inproc_routes(ctx.db) do call
                 r = call("POST", "/api/exposures/$(ctx.exposure_id)/peaks";
-                    body = Vector{UInt8}(JSON3.write(Dict(:q => 0.5))),
+                    body = Vector{UInt8}(JSON.json(Dict(:q => 0.5))),
                     headers = ["Content-Type" => "application/json",
                                "X-Username"   => "alice"])
                 @test r.status == 201
-                body = JSON3.read(String(r.body))
+                body = JSON.parse(String(r.body))
                 # Full Peak shape (intensity/prominence/sharpness null on
                 # manual peaks — but explicitly present in the response, NOT
                 # omitted) plus metadata. PeakAddResponse extends Peak in
@@ -72,11 +73,11 @@ end
                 [ctx.exposure_id])))
             with_inproc_routes(ctx.db) do call
                 r = call("PATCH", "/api/peaks/auto/$(auto.id)";
-                    body = Vector{UInt8}(JSON3.write(Dict(:excluded => true))),
+                    body = Vector{UInt8}(JSON.json(Dict(:excluded => true))),
                     headers = ["Content-Type" => "application/json",
                                "X-Username"   => "alice"])
                 @test r.status == 200
-                body = JSON3.read(String(r.body))
+                body = JSON.parse(String(r.body))
                 # Same shape as PeakAddResponse: Peak fields + metadata.
                 # All Peak interface fields should be present (intensity,
                 # prominence, sharpness exist on auto peaks but null on
@@ -98,15 +99,15 @@ end
             with_inproc_routes(ctx.db) do call
                 # Add a manual peak first so we have something deletable.
                 r = call("POST", "/api/exposures/$(ctx.exposure_id)/peaks";
-                    body = Vector{UInt8}(JSON3.write(Dict(:q => 0.5))),
+                    body = Vector{UInt8}(JSON.json(Dict(:q => 0.5))),
                     headers = ["Content-Type" => "application/json",
                                "X-Username"   => "alice"])
-                manual_id = JSON3.read(String(r.body)).id
+                manual_id = JSON.parse(String(r.body)).id
 
                 r2 = call("DELETE", "/api/peaks/manual/$manual_id";
                     headers = ["X-Username" => "alice"])
                 @test r2.status == 200
-                body = JSON3.read(String(r2.body))
+                body = JSON.parse(String(r2.body))
                 assert_keys(body, [:event_id, :view_row_id, :analysis_inputs_hash])
                 @test body.event_id isa Integer
                 @test body.analysis_inputs_hash isa AbstractString
@@ -126,7 +127,7 @@ end
                     headers = ["X-Username"     => "alice",
                                "X-Client-Op-Id" => "uuid-shape-reanalyze"])
                 @test r.status == 200
-                body = JSON3.read(String(r.body))
+                body = JSON.parse(String(r.body))
                 assert_keys(body, [:id, :analyzed, :analysis_inputs_hash])
                 @test body.analyzed === true
                 @test body.analysis_inputs_hash isa AbstractString
@@ -148,7 +149,7 @@ end
             with_inproc_routes(ctx.db) do call
                 r = call("GET", "/api/exposures/$(ctx.exposure_id)/indices")
                 @test r.status == 200
-                indices = JSON3.read(String(r.body))
+                indices = JSON.parse(String(r.body))
                 @test !isempty(indices)
                 expected = [
                     :id, :exposure_id, :phase, :basis, :score, :r_squared,
@@ -181,11 +182,11 @@ end
                                :anchor_peak_id => p1, :anchor_ratio => 1,
                                :additional => [Dict(:ratio_position => 2, :peak_id => p2)])
                 r = call("POST", "/api/exposures/$(ctx.exposure_id)/speculative";
-                    body = Vector{UInt8}(JSON3.write(body_in)),
+                    body = Vector{UInt8}(JSON.json(body_in)),
                     headers = ["Content-Type" => "application/json",
                                "X-Username"   => "alice"])
                 @test r.status == 200
-                body = JSON3.read(String(r.body))
+                body = JSON.parse(String(r.body))
                 # IndexEntry interface in api.ts: id, exposure_id, phase,
                 # basis, score, r_squared, lattice_d, status, kind,
                 # inputs_hash, peaks, predicted_q.
@@ -214,13 +215,13 @@ end
                 [ctx.exposure_id]))[1].q)
             with_inproc_routes(ctx.db) do call
                 r = call("POST", "/api/exposures/$(ctx.exposure_id)/custom-index";
-                    body = Vector{UInt8}(JSON3.write(
+                    body = Vector{UInt8}(JSON.json(
                         Dict(:phase => "Pn3m", :basis => q1,
                              :ratios => Himalaya.phaseratios(Himalaya.Pn3m; normalize = true)[1:6]))),
                     headers = ["Content-Type" => "application/json",
                                "X-Username"   => "alice"])
                 @test r.status == 200
-                body = JSON3.read(String(r.body))
+                body = JSON.parse(String(r.body))
                 expected = [
                     :id, :exposure_id, :phase, :basis, :score, :r_squared,
                     :lattice_d, :bonnet, :status, :kind, :inputs_hash,
@@ -249,11 +250,11 @@ end
             s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
             with_inproc_routes(db) do call
                 r = call("PATCH", "/api/samples/$s_id";
-                    body = Vector{UInt8}(JSON3.write(Dict(:notes => "n"))),
+                    body = Vector{UInt8}(JSON.json(Dict(:notes => "n"))),
                     headers = ["Content-Type" => "application/json",
                                "X-Username"   => "alice"])
                 @test r.status == 200
-                body = JSON3.read(String(r.body))
+                body = JSON.parse(String(r.body))
                 @test :tags ∉ keys(body)
                 @test :id in keys(body)
                 @test :notes in keys(body)
@@ -273,7 +274,7 @@ end
             with_inproc_routes(ctx.db) do call
                 r = call("GET", "/api/samples/$(ctx.sample_id)/exposures")
                 @test r.status == 200
-                body = only(JSON3.read(String(r.body)))
+                body = only(JSON.parse(String(r.body)))
                 expected = [
                     :id, :sample_id, :filename, :kind, :status,
                     :image_path, :trace_hash, :analysis_inputs_hash,
@@ -301,7 +302,7 @@ end
             with_inproc_routes(ctx.db) do call
                 r = call("GET", "/api/exposures/$(ctx.exposure_id)/peaks")
                 @test r.status == 200
-                peaks = JSON3.read(String(r.body))
+                peaks = JSON.parse(String(r.body))
                 @test !isempty(peaks)
                 expected = [
                     :id, :exposure_id, :q, :intensity, :prominence, :sharpness,
@@ -323,14 +324,14 @@ end
         with_inproc_routes(ctx.db) do call
             r = call("GET", "/api/samples/$sid/call")
             @test r.status == 200
-            body = JSON3.read(String(r.body))
+            body = JSON.parse(String(r.body))
             assert_keys(body, [:sample_id, :state, :phase, :call_phases, :members])
 
             r = call("POST", "/api/samples/$sid/call/state";
-                body = Vector{UInt8}(JSON3.write(Dict(:state => "form_factor"))),
+                body = Vector{UInt8}(JSON.json(Dict(:state => "form_factor"))),
                 headers = ["Content-Type" => "application/json", "X-Username" => "alice"])
             @test r.status == 200
-            body = JSON3.read(String(r.body))
+            body = JSON.parse(String(r.body))
             assert_keys(body, [:sample_id, :state, :phase, :call_phases, :members,
                                :event_id, :view_row_id])
             @test body.state == "form_factor"
@@ -347,7 +348,7 @@ end
         DBInterface.execute(ctx.db,
             "INSERT INTO sample_labels (sample_id, label, state, source) VALUES (?, 'buffer', 'suggested', 'ingest')", [sid])
         headers = ["Content-Type" => "application/json", "X-Username" => "alice"]
-        body(label) = Vector{UInt8}(JSON3.write(Dict(:label => label)))
+        body(label) = Vector{UInt8}(JSON.json(Dict(:label => label)))
         with_inproc_routes(ctx.db) do call
             responses = [
                 call("POST", "/api/samples/$sid/labels"; body = body("37C"), headers),
@@ -357,8 +358,8 @@ end
             ]
             for r in responses
                 @test r.status == 200
-                rows = JSON3.read(String(r.body))
-                @test rows isa JSON3.Array && !isempty(rows)
+                rows = JSON.parse(String(r.body))
+                @test rows isa AbstractVector && !isempty(rows)
                 foreach(row -> assert_keys(row, [:id, :sample_id, :label, :state, :source]), rows)
             end
         end

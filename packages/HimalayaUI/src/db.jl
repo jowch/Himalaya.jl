@@ -1383,12 +1383,12 @@ end
 
 function _log_migration_event!(db::SQLite.DB, kind::String, entity_type::String,
                                entity_id::Int, payload::Dict)
-    payload_json = JSON3.write(payload)
+    payload_json = to_json(payload)
     res = DBInterface.execute(db,
         """INSERT INTO user_actions (user_id, action, entity_type, entity_id, payload)
            VALUES (NULL, ?, ?, ?, ?)""",
         [kind, entity_type, entity_id, payload_json])
-    update_view_for_event!(db, kind, entity_id, JSON3.read(payload_json),
+    update_view_for_event!(db, kind, entity_id, payload_as_replayed(payload_json),
                            Int(DBInterface.lastrowid(res)))
     nothing
 end

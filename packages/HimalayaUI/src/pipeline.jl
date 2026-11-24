@@ -1,7 +1,6 @@
 using Himalaya
 using SparseArrays
 using Tables
-using JSON3
 using HTTP: HTTP, Request
 
 function greedy_dominating(candidates, claim_sets)
@@ -653,7 +652,7 @@ function _persist_analysis_inner!(db::SQLite.DB, exposure_id::Int,
             # The locked path yields -Inf deterministically — RSS > 0 by
             # construction, since the claim was made at CUSTOM_SNAP_TOL — and
             # -Inf round-trips as a live Float64, walks past every ismissing
-            # guard, and then throws in JSON3.write inside the analyze
+            # guard, and then throws in to_json inside the analyze
             # transaction. That makes the exposure permanently un-analyzable:
             # the value recomputes identically on every retry. Normalize both
             # arities and both branches to NULL.
@@ -851,7 +850,7 @@ function _serialized_indices_bytes(db::SQLite.DB, exposure_id::Int)::Int
         :kind        => ismissing(r.kind) ? nothing : String(r.kind),
         :inputs_hash => ismissing(r.inputs_hash) ? nothing : String(r.inputs_hash),
     ) for r in rows]
-    sizeof(JSON3.write(arr))
+    sizeof(to_json(arr))
 end
 
 function get_indices_for_exposure(db::SQLite.DB, exposure_id::Int)
@@ -1272,7 +1271,7 @@ function analyze_exposure!(db::SQLite.DB, exposure_id::Int, analysis_dir::String
                 payload     = payload,
                 post_state  = post_state) :
             (event_id = 0, user_id = nothing, client_id = nothing, client_op_id = nothing,
-             payload_json = JSON3.write(payload))
+             payload_json = to_json(payload))
     end
     end  # lock(_DB_WRITE_LOCK)
     skipped_for_review && return (dropped_assignment_phases = String[],)

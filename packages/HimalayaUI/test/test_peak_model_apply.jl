@@ -1,4 +1,5 @@
-using Test, HTTP, JSON3, Random, SQLite, DBInterface, Tables
+using Test, HTTP, Random, SQLite, DBInterface, Tables
+import JSON
 using HimalayaUI
 import HimalayaPeakModel as HPM
 isdefined(@__MODULE__, :_pt_db) || include("peak_training_fixture.jl")
@@ -19,7 +20,7 @@ isdefined(@__MODULE__, :_pma_db) || include("peak_model_apply_fixture.jl")
         DBInterface.execute(db, "UPDATE exposures SET peak_model_version = 7 WHERE id = ?", [eid])
         with_inproc_routes(db) do call
             r = call("GET", "/api/samples/$sid/exposures")
-            body = JSON3.read(String(r.body))
+            body = JSON.parse(String(r.body))
             @test length(body) == 1 && !haskey(body[1], :peak_model_version)
         end
         DBInterface.close!(db)
