@@ -27,38 +27,51 @@ interface Props {
   onDefault: () => void;
 }
 
-const LINE = "min-h-9 text-caption";
+const NOTE = "h-5 truncate whitespace-nowrap text-caption text-ink-soft";
 const ACTION = "shrink-0 whitespace-nowrap rounded-sm border border-hair-strong bg-plate px-2 py-0.5 text-caption text-ink hover:bg-paper-sunk disabled:text-ink-faint disabled:hover:bg-plate";
+
+const MATCHED_AT_HIGH_Q = "matched at high q";
+
+const SCALE_LABELS: Record<CompareScale["source"], string | undefined> = {
+  normalised: undefined,
+  monitor: "scaled",
+  matched: MATCHED_AT_HIGH_Q,
+  unknown_normalisation: MATCHED_AT_HIGH_Q,
+  unknown_mode: MATCHED_AT_HIGH_Q,
+  capillary: MATCHED_AT_HIGH_Q,
+  other_setup: "other setup, matched",
+  beam_off: "beam off, matched",
+  i2_collapsed: "I₂ dropped, matched",
+};
+
+function offLabel(view: BackgroundView): string | undefined {
+  if (view.kind === "buffer") return "Buffer";
+  if (view.kind === "off") return view.reason === "chosen" ? "None" : "No buffer in this run";
+  return undefined;
+}
 
 function nameLine(view: BackgroundView): ReactNode {
   if (view.kind === "set") {
     return (
       <>
         <Tooltip content={view.name} overflowOnly><span className="min-w-0 truncate text-body text-ink">{view.name}</span></Tooltip>
-        <span className="shrink-0 text-caption text-ink-faint">{view.source === "default" ? "The run's first buffer" : "Your choice"}</span>
+        <span className="shrink-0 text-caption text-ink-faint">{view.source === "default" ? "run buffer" : "chosen"}</span>
       </>
     );
   }
-  if (view.kind === "buffer") return <span className="min-w-0 truncate text-body text-ink-soft">This is a buffer, so nothing is subtracted from it.</span>;
-  if (view.kind === "off") {
-    return <span className="min-w-0 truncate text-body text-ink-soft">{view.reason === "chosen" ? "No background. Nothing is subtracted." : "No buffer in this run. Choose one to subtract."}</span>;
-  }
-  return <span className="text-body text-ink-faint">Loading</span>;
+  if (view.kind === "loading") return <span className="text-body text-ink-faint">Loading</span>;
+  return <span className="min-w-0 truncate text-body text-ink-soft">{offLabel(view)}</span>;
 }
 
-function traceLine(view: BackgroundView): ReactNode {
+function traceNote(view: BackgroundView): { text: string; description?: string } | null {
   if (view.kind !== "set") return null;
-  if (view.trace === "loading") return "Loading the trace";
-  if (view.trace === "missing") return "No trace for this background";
-  if (view.trace === "hidden") return "The setup of this background is hidden";
+  if (view.trace === "loading") return { text: "loading" };
+  if (view.trace === "missing") return { text: "no trace" };
+  if (view.trace === "hidden") return { text: "setup hidden" };
   if (!view.scale) return null;
-  return (
-    <span>
-      <span data-scale-source={view.scale.source}>{SCALE_NOTES[view.scale.source]}</span>
-      {" "}
-      <span data-scale-value className="whitespace-nowrap text-ink-faint">{`×${view.scale.scale.toPrecision(3)}`}</span>
-    </span>
-  );
+  const label = SCALE_LABELS[view.scale.source];
+  if (!label) return null;
+  return { text: `${label} ×${view.scale.scale.toPrecision(3)}`, description: SCALE_NOTES[view.scale.source] };
 }
 
 export function BackgroundModule({ view, editable, picker, onChange, onNone, onDefault }: Props): JSX.Element {
@@ -67,10 +80,11 @@ export function BackgroundModule({ view, editable, picker, onChange, onNone, onD
   const hasControls = view.kind !== "buffer";
   const offerDefault = (view.kind === "set" || view.kind === "off") && view.canUseRunBuffer;
   const canTurnOff = view.kind !== "off";
+  const note = traceNote(view);
   return (
     <Section title="Background" className="relative shrink-0">
       <div className="flex h-6 items-baseline justify-between gap-2" data-testid="background-name">{nameLine(view)}</div>
-      <p className={LINE + " text-ink-soft"}>{traceLine(view)}</p>
+      <p className={NOTE} data-testid="background-note" {...(note?.description ? { "aria-description": note.description } : {})}>{note?.text}</p>
       <div className="mt-1 flex h-7 items-center gap-1.5 overflow-hidden" data-testid="background-controls">
         {hasControls && (
           <>
@@ -81,7 +95,7 @@ export function BackgroundModule({ view, editable, picker, onChange, onNone, onD
               <button type="button" className={ACTION} disabled={idle} onClick={onNone}>None</button>
             )}
             {offerDefault && (
-              <button type="button" className={ACTION + " min-w-0 truncate"} disabled={idle} onClick={onDefault}>Use the run's buffer</button>
+              <Tooltip content="Use the run's buffer as the background"><button type="button" className={ACTION} disabled={idle} onClick={onDefault}>Run buffer</button></Tooltip>
             )}
           </>
         )}

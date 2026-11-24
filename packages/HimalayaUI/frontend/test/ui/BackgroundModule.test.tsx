@@ -100,9 +100,13 @@ describe("BackgroundModule", () => {
   it.each(Object.keys(SCALE_NOTES) as CompareScale["source"][])("shows %s as a short label and gives the whole sentence as its description", (source) => {
     show(set({ scale: { scale: source === "normalised" ? 1 : 1.5, source } }));
     const note = screen.getByTestId("background-note");
-    if (source === "normalised") expect(note).toBeEmptyDOMElement();
-    else expect(note).toHaveTextContent(SHORT[source]);
-    expect(note).toHaveAttribute("aria-description", SCALE_NOTES[source]);
+    if (source === "normalised") {
+      expect(note).toBeEmptyDOMElement();
+      expect(note).not.toHaveAttribute("aria-description");
+    } else {
+      expect(note).toHaveTextContent(SHORT[source]);
+      expect(note).toHaveAttribute("aria-description", SCALE_NOTES[source]);
+    }
     expect(screen.queryByText(SCALE_NOTES[source])).toBeNull();
     expect(screen.queryByRole("tooltip")).toBeNull();
   });

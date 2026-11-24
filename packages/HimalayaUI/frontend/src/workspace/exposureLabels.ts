@@ -12,8 +12,8 @@ export function exposureKindLabel(e: Counted & Pick<Exposure, "kind">): string {
   if (images) {
     const noun = images.total === 1 ? "image" : "images";
     return images.kept === images.total
-      ? `${images.total} ${noun}, beamline average`
-      : `${images.kept} of ${images.total} ${noun}, beamline average`;
+      ? `${images.total} ${noun}`
+      : `${images.kept} of ${images.total} ${noun}`;
   }
   if (e.kind === "averaged") return "Averaged";
   if (e.kind === "background_subtracted") return "Subtracted";
