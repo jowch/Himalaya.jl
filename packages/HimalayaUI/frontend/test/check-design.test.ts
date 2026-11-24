@@ -125,3 +125,19 @@ describe("scanUnpairedFontSize", () => {
     expect(scanUnpairedFontSize("plot/Chart.tsx", src)).toEqual([]);
   });
 });
+
+describe("explained-term-only", () => {
+  it("flags a dotted underline outside Term, even in src/ui", () => {
+    expect(scanContent("ui/CompareBar.tsx", `<span className="underline decoration-dotted" />`)).toEqual([
+      expect.objectContaining({ rule: "explained-term-only", text: "decoration-dotted" }),
+    ]);
+  });
+  it("flags a help cursor in a consumer", () => {
+    expect(scanContent("workspace/Foo.tsx", `<span className="cursor-help" />`)).toEqual([
+      expect.objectContaining({ rule: "explained-term-only", text: "cursor-help" }),
+    ]);
+  });
+  it("lets Term draw both", () => {
+    expect(scanContent("ui/Term.tsx", `const LOOK = "cursor-help underline decoration-dotted";`)).toEqual([]);
+  });
+});

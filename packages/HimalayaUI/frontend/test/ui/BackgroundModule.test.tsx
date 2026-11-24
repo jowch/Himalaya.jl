@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BackgroundModule, type BackgroundView } from "../../src/ui/BackgroundModule";
-import { SCALE_NOTES } from "../../src/ui/CompareBar";
+import { explainScale, SCALE_REASONS } from "../../src/ui/scaleExplanation";
 import { resetTooltipWarmth, TOOLTIP_OPEN_DELAY_MS } from "../../src/ui/Tooltip";
 import type { CompareScale } from "../../src/workspace/compare";
 
@@ -51,7 +51,7 @@ describe("BackgroundModule", () => {
 
   it("shows a collapsed transmitted beam", () => {
     show(set({ scale: { scale: 2, source: "i2_collapsed" } }));
-    expect(screen.getByTestId("background-note")).toHaveTextContent("I₂ low, matched ×2.00");
+    expect(screen.getByTestId("background-note")).toHaveTextContent("I₂ collapsed, matched ×2.00");
   });
 
   it("says when the background has no trace", () => {
@@ -94,7 +94,7 @@ describe("BackgroundModule", () => {
     unknown_mode: "matched at high q ×1.50",
     other_setup: "other setup, matched ×1.50",
     beam_off: "beam off, matched ×1.50",
-    i2_collapsed: "I₂ low, matched ×1.50",
+    i2_collapsed: "I₂ collapsed, matched ×1.50",
     capillary: "matched at high q ×1.50",
   };
 
@@ -107,13 +107,13 @@ describe("BackgroundModule", () => {
       vi.useRealTimers();
     });
 
-    it.each(Object.keys(SCALE_NOTES).filter((k) => k !== "normalised") as CompareScale["source"][])("explains %s in the chip's words on hover", (source) => {
+    it.each(["monitor", "beam_off", ...Object.keys(SCALE_REASONS)] as CompareScale["source"][])("explains %s in the chip's words on hover", (source) => {
       show(set({ scale: { scale: 1.5, source } }));
-      fireEvent.mouseEnter(screen.getByTestId("background-note"));
+      fireEvent.mouseEnter(screen.getByText(SHORT[source]));
       act(() => {
         vi.advanceTimersByTime(TOOLTIP_OPEN_DELAY_MS);
       });
-      expect(screen.getByRole("tooltip")).toHaveTextContent(SCALE_NOTES[source]);
+      expect(screen.getByRole("tooltip")).toHaveTextContent(explainScale({ scale: 1.5, source }, "The background"));
     });
 
     it("has no tooltip when the note is empty", () => {
@@ -126,7 +126,7 @@ describe("BackgroundModule", () => {
     });
   });
 
-  it.each(Object.keys(SCALE_NOTES) as CompareScale["source"][])("shows %s as a short label and gives the whole sentence as its description", (source) => {
+  it.each(["normalised", "monitor", "beam_off", ...Object.keys(SCALE_REASONS)] as CompareScale["source"][])("shows %s as a short label and gives the whole sentence as its description", (source) => {
     show(set({ scale: { scale: source === "normalised" ? 1 : 1.5, source } }));
     const note = screen.getByTestId("background-note");
     if (source === "normalised") {
@@ -134,7 +134,8 @@ describe("BackgroundModule", () => {
       return;
     }
     expect(note).toHaveTextContent(SHORT[source]);
-    expect(screen.queryByText(SCALE_NOTES[source])).toBeNull();
+    expect(screen.getByText(explainScale({ scale: 1.5, source }, "The background"))).not.toBeVisible();
+    expect(screen.getByText(SHORT[source])).toHaveAccessibleDescription(explainScale({ scale: 1.5, source }, "The background"));
   });
 
   it("tags a buffer and offers no controls", () => {
