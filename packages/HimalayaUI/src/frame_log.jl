@@ -24,8 +24,7 @@ function _first_buffer_frame_counts(text::AbstractString)
     _frame_counts(length(frames), count(endswith(_FRAME_LOG_REJECTED_SUFFIX), frames), false)
 end
 
-# physics: the beamline's averaged trace (`_tot.dat`) is the mean of the frames its software
-# kept, so `total - rejected` is the number of frames the trace represents.
+# physics: the beamline's averaged trace (`_tot.dat`) is the mean of the frames its software did not reject, so the trace represents the kept frames.
 function parse_frame_log(text::AbstractString)
     m = match(_FRAME_LOG_SAMPLE_SUMMARY, text)
     m === nothing || return _frame_counts(parse(Int, m.captures[1]), parse(Int, m.captures[2]), true)

@@ -309,14 +309,16 @@ a single image. The beamline's `sastool/<filename><frame>.log` (under
 holds the counts. `exposures.frames_total` and `frames_rejected` (the last two
 columns, NULL when unknown) take them from the `Sample frames:N Rejected:M`
 line. The log of a run's first buffer has no summary, so its `frame #` lines are
-counted instead, and only once the log has not changed for a minute. A log with
-no readable counts, or no log (calibration shots), leaves both NULL. Capillary
+counted instead, once the log has been unchanged for a minute; that count is not
+revised afterwards. Only a log with a `Sample frames:` line, or with no summary
+lines at all, gives a count. A log with no readable counts, or no log
+(calibration shots), leaves both NULL. Capillary
 setups are never read, and a stored value is never overwritten. `backfill_frame_counts!`
 fills unset rows at the end of every `scan_and_group!`, on every
 `POST /api/experiments/:id/scan` and once at boot, so rows ingested earlier
 are filled without new files and a log that appears later is picked up on the
-next scan. The Image panel then reads `Beamline average of 9 of 10 images` (or
-`of 10 images` when none were rejected) and an exposure of `9 × 1.0 s`; with
+next scan. The Image panel then reads `9 of 10 images, beamline average` (or
+`10 images, beamline average` when none were rejected) and an exposure of `9 × 1.0 s`; with
 NULL counts it reads `Single` and `1.0 s` as before.
 
 **Settling a setup.** At the start of every `_scan_setup!`:
