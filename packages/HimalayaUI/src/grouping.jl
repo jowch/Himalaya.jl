@@ -15,7 +15,7 @@ function tif_listing(data_dir::AbstractString, tif_pattern::AbstractString)
     tif_scan_dir = isempty(scan_subdir) ? String(data_dir) : joinpath(data_dir, scan_subdir)
     isdir(tif_scan_dir) || return nothing
     tif_files = sort!(filter(f -> startswith(f, tif_prefix_literal) && endswith(f, tif_suffix),
-                             readdir(tif_scan_dir)))
+                             list_names(tif_scan_dir)))
     (tif_scan_dir, tif_files, tif_suffix)
 end
 

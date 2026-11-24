@@ -170,6 +170,7 @@ function run_ingest!(db::SQLite.DB, experiment_id::Int; phase::Union{String,Noth
             try
                 try_backfill_monitors!(db, experiment_id)
                 add_new_setups!(db, experiment_id)
+                read_trace_normalisations!(db; experiment_id)
                 scan_and_group!(db, experiment_id; retry_failed = force,
                     on_progress = (p, t, stage) -> broadcast_progress!(experiment_id;
                         kind = "ingest_progress", processed = p, total = t, stage = stage, extra...))
@@ -252,12 +253,28 @@ function try_backfill_monitors!(db::SQLite.DB, experiment_id::Int)
 end
 
 function backfill_all_monitors!(db::SQLite.DB)
+    try
+        read_trace_normalisations!(db)
+    catch err
+        @warn "trace normalisation read failed" exception = err
+    end
     ids = sqlrows(DBInterface.execute(db,
         "SELECT DISTINCT experiment_id FROM exposures
           WHERE prp_path IS NOT NULL AND monitors_read = 0 AND experiment_id IS NOT NULL"))
     for r in ids
         eid = Int(r.experiment_id)
         try_backfill_monitors!(db, eid) > 0 && suggest_labels_quietly!(db, eid)
+    end
+    nothing
+end
+
+function backfill_all_frame_counts!(db::SQLite.DB)
+    ids = sqlrows(DBInterface.execute(db, """
+        SELECT DISTINCT e.experiment_id FROM exposures e JOIN setups st ON st.id = e.setup_id
+         WHERE e.frames_total IS NULL AND e.kind = 'file' AND st.mode = 'autosampler'
+           AND e.experiment_id IS NOT NULL"""))
+    for r in ids
+        try_backfill_frame_counts!(db, Int(r.experiment_id))
     end
     nothing
 end
@@ -276,6 +293,7 @@ function _boot_background_work(db::SQLite.DB, resume::Bool)
     try
         with_background_db(db) do bg
             backfill_all_monitors!(bg)
+            backfill_all_frame_counts!(bg)
             resume && resume_ingests!(bg)
             backfill_trace_medians!(bg)
             deselect_beam_off_once!(bg)

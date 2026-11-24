@@ -60,15 +60,17 @@ function parse_prp(path::AbstractString)
                 @warn "parse_prp: could not parse Exposure time" path val_raw
             end
 
-        # physics: I_signal is the transmitted beam behind the sample (the beamstop
-        # physics: APD), integrated over the counting time and already dark-corrected.
-        # physics: Raw I_1 is not: in a typical 15 s exposure its dark counts are
-        # physics: ~97% of the total, so it is never used as a stand-in.
-        elseif lowercase(key) == "i_signal" && val_str !== nothing
+        # physics: I_2 is the photodiode in the beamstop, the beam that got through the
+        # physics: sample: incident flux times transmission. The beamline writes it with
+        # physics: dark counts already removed, and they are a small part of the reading.
+        # physics: I_signal is not used: it copies whichever counter the file's "is from:"
+        # physics: line names, usually the APD, which reads close to the incident beam
+        # physics: and is mostly dark counts.
+        elseif startswith(key, "I_2(") && val_str !== nothing
             try
                 transmitted_counts = parse(Float64, val_str)
             catch
-                @warn "parse_prp: could not parse I_signal" path val_raw
+                @warn "parse_prp: could not parse I_2" path val_raw
             end
 
         # physics: I_0 is the ion chamber upstream of the sample, the incident flux.

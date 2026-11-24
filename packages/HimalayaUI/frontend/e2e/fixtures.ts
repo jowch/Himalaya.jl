@@ -1,6 +1,18 @@
 import { test as base, expect } from "@playwright/test";
 
-export const test = base.extend<{ unmockedRequests: string[] }>({
+export const test = base.extend<{ unmockedRequests: string[]; pageCrashes: string[] }>({
+  pageCrashes: [
+    async ({ page }, use) => {
+      const crashes: string[] = [];
+      page.on("pageerror", (error) => crashes.push(error.message));
+      page.on("console", (message) => {
+        if (message.type() === "error" && message.text().startsWith("ErrorBoundary caught")) crashes.push(message.text());
+      });
+      await use(crashes);
+      expect(crashes, "the page threw, or React gave up on a render and showed \"Something went wrong\"").toEqual([]);
+    },
+    { auto: true },
+  ],
   unmockedRequests: [
     async ({ page }, use) => {
       const unmocked: string[] = [];

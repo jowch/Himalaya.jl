@@ -14,7 +14,7 @@ whose `assignments.state = 'form_factor'` (NOT `'indexed'`) — used to prove
 `confirmed_indices` gates on `assignments.state = 'indexed'`, not merely on
 `assignment_members` row presence.
 The experiment's one setup carries geometry and a `{name}_tot.dat` integration
-pattern. A second sample (`sample2_id`, a buffer) is sample 1's subtraction
+pattern; its integ.mpp divides traces by I_2. A second sample (`sample2_id`, a buffer) is sample 1's subtraction
 background and shares a bridge with it; sample 1 has an `indexed` sample call
 and confirmed, suggested and removed labels. A third sample (`empty_id`) holds no
 exposures, like a sample the retired merge route emptied: readers list it.
@@ -99,6 +99,9 @@ function build_fixture(path::AbstractString, analysis_dir::AbstractString)
         DBInterface.execute(db,
             "UPDATE setups SET energy_kev = 11.0, flight_path_m = 1.1, integration_pattern = '{name}_tot.dat', mode = 'capillary', mode_source = 'user' WHERE id = ?",
             [setup_id])
+        DBInterface.execute(db, "UPDATE exposures SET frames_total = 10, frames_rejected = 1 WHERE id = ?", [exposure_id])
+        write(joinpath(analysis_dir, "integ.mpp"), "-i yes i2 2.5e7\n")
+        HimalayaUI.read_trace_normalisations!(db; experiment_id)
 
         sample2_id = HimalayaUI.create_sample!(db; experiment_id=experiment_id, name="Buffer 1")
         DBInterface.execute(db,

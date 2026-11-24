@@ -227,16 +227,18 @@ export interface IngestProblems { ingest_error: string | null; exposures: Proble
 export const listProblems = (id: number) =>
   request<IngestProblems>("GET", `/api/experiments/${id}/problems`);
 
-export interface FolderSuggestion {
+export interface FolderListing { path: string; parent: string | null; folders: string[]; inside_setup: boolean }
+export const listFolder = (path: string, opts?: AuthOpts) =>
+  request<FolderListing>("GET", `/api/fs/list?path=${encodeURIComponent(path)}`, undefined, opts);
+
+export interface FolderDescription {
   path: string;
   kind: "beamtime" | "setup" | null;
   setups: number | null;
   added: { id: number; name: string } | null;
-  described: boolean;
 }
-export interface FolderSuggestions { folders: FolderSuggestion[]; more: boolean }
-export const suggestFolders = (prefix: string) =>
-  request<FolderSuggestions>("GET", `/api/fs/suggest?prefix=${encodeURIComponent(prefix)}`);
+export const describeFolder = (path: string, opts?: AuthOpts) =>
+  request<FolderDescription>("GET", `/api/fs/describe?path=${encodeURIComponent(path)}`, undefined, opts);
 
 export interface SetupPreview {
   root: string;
@@ -411,6 +413,8 @@ export interface Exposure {
   detector: string | null;
   setup_id: number | null;
   beam_off: boolean;
+  frames_total: number | null;
+  frames_rejected: number | null;
 }
 
 export const listExposures = (sample_id: number, opts?: { signal?: AbortSignal }) =>
@@ -429,10 +433,16 @@ export const setExposureStatus = (
   "PATCH", `/api/exposures/${id}/status`, selected === undefined ? { status } : { status, selected }, opts);
 
 // Trace
+export type TraceNormalisation = "i2" | "i1" | "none" | "unknown";
+
 export interface TraceMonitors {
   transmitted_counts: number | null;
   exposure_time: number | null;
   counting_time: number | null;
+  normalised_by?: TraceNormalisation;
+  beam_off?: boolean;
+  i2_collapsed?: boolean;
+  mode?: SetupMode | null;
 }
 
 export interface Trace {

@@ -24,14 +24,15 @@ function write_prp(path::AbstractString;
         detector = "Pilatus 1M",
         exposure_time = 15,
         horizontal_position_mm = 58.9,
-        i_signal = nothing,
+        i_2 = nothing,
         i_0 = nothing)
     open(path, "w") do io
         println(io, "Image file name: $(basename(path)[1:end-4]).tif")
         println(io, "Time this file was written: $timestamp")
-        if i_signal !== nothing
+        if i_2 !== nothing
             println(io, "I_Signal (i.e. I1 in header file) is from: i_apd")
-            println(io, "I_signal=$i_signal (corrected for dark counts)")
+            println(io, "I_signal=4100.0 (corrected for dark counts)")
+            println(io, "I_2(daqCounter1.1)=$i_2 (corrected for dark counts)")
         end
         i_0 === nothing || println(io, "I_0(daqIon3.0)=$i_0")
         println(io, "Exposure time=$exposure_time")
@@ -358,7 +359,7 @@ end
         @test trunc_prp.counting_time_s === missing
     end
 
-    @testset "parse_prp beam monitors" begin
+    @testset "parse_prp reads the transmitted beam from I_2, whatever I_Signal names" begin
         dir = mktempdir()
         p = joinpath(dir, "SYN_01_001_S100_0_001.prp")
         write(p, """
@@ -367,30 +368,28 @@ end
             I_Signal (i.e. I1 in header file) is from: i_apd
             I_signal=4100.0 (corrected for dark counts)
             I_0(daqIon3.0)=1.2345
-            I_1(daqCounter1.0)=304300.0
+            I_1(daqCounter1.0)=209300.0
             I_2(daqCounter1.1)=31000000.5 (corrected for dark counts)
-            I_apd(daqCounter1.0)=304300.0
-            Exposure time=15
-            Counting time=15.8
+            I_apd(daqCounter1.0)=209300.0
+            Exposure time=10
+            Counting time=10.8
             i1 dark counts=19000.0 per sec
+            i2 dark counts=40000.0 per sec
             Beam energy=9000.0 eV
-            Beam Intensity Reference: i1 i2 acquisition_time
-            empty(air)=300.0 12000000.0 20260101_120000
-            water=40000.0 8000000 20260101_1300
             """)
         prp = HimalayaUI.parse_prp(p)
-        @test prp.transmitted_counts ≈ 4100.0
+        @test prp.transmitted_counts ≈ 31000000.5
         @test prp.incident_monitor ≈ 1.2345
-        @test prp.counting_time_s ≈ 15.8
-        @test prp.exposure_time_s ≈ 15.0
+        @test prp.counting_time_s ≈ 10.8
+        @test prp.exposure_time_s ≈ 10.0
 
-        mixed = joinpath(dir, "mixed_case.prp")
-        write(mixed, "I_Signal=812.5 (corrected for dark counts)\n")
-        @test HimalayaUI.parse_prp(mixed).transmitted_counts ≈ 812.5
+        traced_by_i2 = joinpath(dir, "traced_by_i2.prp")
+        write(traced_by_i2, "I_Signal (i.e. I1 in header file) is from: i_2\nI_signal=812.5 (corrected for dark counts)\nI_2(daqCounter1.1)=812.5 (corrected for dark counts)\n")
+        @test HimalayaUI.parse_prp(traced_by_i2).transmitted_counts ≈ 812.5
 
-        q = joinpath(dir, "no_signal.prp")
-        write(q, "I_1(daqCounter1.0)=304300.0\nExposure time=15\n")
-        @test HimalayaUI.parse_prp(q).transmitted_counts === missing
+        only_signal = joinpath(dir, "only_signal.prp")
+        write(only_signal, "I_signal=4100.0 (corrected for dark counts)\nExposure time=15\n")
+        @test HimalayaUI.parse_prp(only_signal).transmitted_counts === missing
     end
 
     @testset "slot clustering" begin
@@ -698,7 +697,7 @@ end
         for (fi, stem) in enumerate(stems)
             write_prp(joinpath(data_dir, "$stem.prp");
                 timestamp = Dates.format(t0 + Second(19 * fi), "dd u yyyy HH:MM:SS"),
-                exposure_time = 15.0, i_signal = 7000.0 + fi, i_0 = 1.5)
+                exposure_time = 15.0, i_2 = 7000.0 + fi, i_0 = 1.5)
             write(joinpath(data_dir, "$stem.tif"), "fake tif")
         end
         write_setup_info(joinpath(analysis_dir, "setup_info_20260301_120000.txt"))
@@ -751,7 +750,7 @@ end
             stem = "SY_1_$(fi)_S$(lpad(fi, 4, '0'))_0_001"
             write_prp(joinpath(data_dir, "$stem.prp");
                 timestamp = Dates.format(t0 + Second(19 * fi), "dd u yyyy HH:MM:SS"),
-                exposure_time = 15.0, i_signal = 7000.0 + fi, i_0 = 1.5)
+                exposure_time = 15.0, i_2 = 7000.0 + fi, i_0 = 1.5)
             write(joinpath(data_dir, "$stem.tif"), "fake tif")
         end
         write_setup_info(joinpath(analysis_dir, "setup_info_20260301_120000.txt"))
@@ -777,6 +776,42 @@ end
             HimalayaUI._DB_REF[] = nothing
             SQLite.close(db)
         end
+    end
+
+    @testset "migrate_transmitted_from_i2! drops the stored I_signal and re-reads I_2 from each .prp" begin
+        dir = mktempdir()
+        data_dir     = joinpath(dir, "data")
+        analysis_dir = joinpath(dir, "analysis")
+        mkpath(data_dir); mkpath(analysis_dir)
+        t0 = DateTime(2026, 4, 26, 23, 14, 8)
+        stems = ["SY_1_$(fi)_S$(lpad(fi, 4, '0'))_0_001" for fi in 1:2]
+        for (fi, stem) in enumerate(stems)
+            write_prp(joinpath(data_dir, "$stem.prp");
+                timestamp = Dates.format(t0 + Second(19 * fi), "dd u yyyy HH:MM:SS"),
+                exposure_time = 15.0, i_2 = 7000.0 + fi, i_0 = 1.5)
+            write(joinpath(data_dir, "$stem.tif"), "fake tif")
+        end
+        write_setup_info(joinpath(analysis_dir, "setup_info_20260301_120000.txt"))
+        db = fresh_db()
+        exp_id = HimalayaUI.create_experiment!(db;
+            name = "old-signal", path = dir, data_dir = data_dir, analysis_dir = analysis_dir)
+        HimalayaUI.scan_and_group!(db, exp_id; analyze = false)
+        DBInterface.execute(db, "UPDATE exposures SET transmitted_counts = 4100.0, monitors_read = 1")
+        DBInterface.execute(db, "DELETE FROM schema_migrations WHERE name = ?", [HimalayaUI.MIGRATION_TRANSMITTED_FROM_I2])
+
+        HimalayaUI.migrate_transmitted_from_i2!(db)
+        rows() = Tables.rowtable(DBInterface.execute(db,
+            "SELECT transmitted_counts, incident_monitor, monitors_read FROM exposures
+              WHERE experiment_id = ? ORDER BY filename", [exp_id]))
+        @test all(r -> ismissing(r.transmitted_counts) && r.monitors_read == 0, rows())
+        @test all(r -> r.incident_monitor ≈ 1.5, rows())
+
+        @test HimalayaUI.backfill_monitors!(db, exp_id) == 2
+        @test [r.transmitted_counts for r in rows()] ≈ [7001.0, 7002.0]
+
+        DBInterface.execute(db, "UPDATE exposures SET transmitted_counts = 1.0")
+        HimalayaUI.migrate_transmitted_from_i2!(db)
+        @test all(r -> r.transmitted_counts == 1.0, rows())
     end
 
     @testset "migrate_exposures_beam_monitors! adds the columns to an old exposures table" begin

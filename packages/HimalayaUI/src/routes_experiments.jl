@@ -367,7 +367,10 @@ function register_experiments_routes!()
             Dict{String,Any}()
         end
         force_scan = get(req_body, :force, get(req_body, "force", false)) === true
-        Threads.@spawn with_background_db(bg -> try_backfill_monitors!(bg, id), db)
+        Threads.@spawn with_background_db(db) do bg
+            try_backfill_monitors!(bg, id)
+            try_backfill_frame_counts!(bg, id)
+        end
         if !(force_scan || ingest_running(id) || ingest_has_work(db, id))
             return HTTP.Response(200, ["Content-Type" => "application/json"],
                 JSON3.write(Dict(:status => coalesce(first(rows).ingest_status, "complete"),

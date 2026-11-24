@@ -17,6 +17,8 @@
     @test sts[1].energy_kev == 11.0
     @test sts[1].flight_path_m == 1.1
     @test sts[1].integration_pattern == "{name}_tot.dat"
+    @test sts[1].trace_normalisation == "i2"
+    @test sts[1].normalisation_base == 2.5e7
     @test sts[1].mode == "capillary"
     @test sts[1].mode_source == "user"
     @test length(setups(db)) == 1
@@ -34,6 +36,8 @@
     @test exs[1].filename == "s1"
     @test exs[1].setup_id == ids.setup_id
     @test exs[1].experiment_id == ids.experiment_id
+    @test (exs[1].frames_total, exs[1].frames_rejected) == (10, 1)
+    @test ismissing(exs[2].frames_total) && ismissing(exs[2].frames_rejected)
 
     close(db)
 end

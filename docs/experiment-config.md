@@ -21,10 +21,26 @@ live in `routes_fs.jl` and never write to the DB; the create and scan live in
 
 | Step | Route | What it does |
 |------|-------|--------------|
-| Pick a folder | `GET /api/fs/suggest?prefix=` | Folder autocomplete: up to 20 folders whose names start with the last path segment (case-insensitive, natural order, `~` expanded, hidden folders only when the segment starts with `.`), `more` when others match. Each is marked `beamtime` (with its setup count) or `setup` and with the experiment it was added as, within a 0.5 s budget. Relative paths get nothing; `/api/fs/preview` refuses them. |
+| Browse | `GET /api/fs/list?path=` | One folder's subfolders, natural order, hidden ones left out, `~` expanded, plus its `parent` (`null` at `/`) and `inside_setup`, true when the folder is a setup or holds images itself. With no path it opens beside the most recently added beamtime, or in the home folder. One directory read, typed from the directory entries, so a big or slow folder never costs a stat per entry. `400` for a relative path or a missing folder. |
+| Label a folder | `GET /api/fs/describe?path=` | Marks one folder `beamtime` (with its setup count) or `setup`, and names the experiment it was added as. The browser asks for each listed folder in turn, after the list is shown, and asks for no more once you leave the folder (the one already asked still finishes on the server). Inside a setup it asks for none, so `data` and `analysis` are never read. Finding a setup stops at the first `.tif` in its data folder, but a setup whose images sit directly in it (no `data/`) is read in full once, to look for setup subfolders. |
 | Preview | `GET /api/fs/preview?path=` | Lists the setups under the folder, each with its layout, counts and geometry (see [Preview](#preview)). `400` when the path is not a directory. |
 | Correct a setup | `GET /api/fs/manifest?path=&analysis_dir=&setup_file=&{image,metadata,integration}_pattern=` | Recounts one setup after the user edits its layout in Details (see [File manifest](#file-manifest)). |
 | Add | `POST /api/experiments` | One call for the folder. Creates the experiment and its setups, returns `202`, and starts the first scan in the background. |
+
+The folder browser (`components/FolderPicker.tsx`, drawn by `ui/FolderBrowser.tsx`)
+follows the list keys: ↑↓ or Tab move, Enter adds a beamtime or setup (or opens a
+plain folder), → opens, ← or Esc go up, typing filters by name and `/` opens a
+field for pasting a path. The Data and Integration folder fields under Details
+open the same browser, where Enter uses the highlighted folder and Esc closes it.
+A start folder that no longer exists opens the nearest folder above it.
+
+Every folder read in these routes and in the scan goes through `dir_entries.jl`
+(`list_names`, `folder_names`, `any_name`). Julia's own `readdir` doesn't let
+garbage collection run while the directory is read, so on a slow network share
+one listing can stall every thread that allocates, ingest and every request
+included. That is the likely cause of the slow folder suggestions during an
+ingest: measured on local disk, not yet on the share. The `dir_entries.jl`
+readers make the libuv call `gc_safe`.
 
 `NewExperimentPage` (`/experiments/new`) shows a name field (default: the
 picked folder's name) and one row per setup: a checkbox, the setup's folder
@@ -334,6 +350,25 @@ strip can be selected. When no
 sample in the experiment has a review state, the header shows no progress and
 the card shows no review count.
 
+**Images the average kept.** An autosampler exposure is the beamline's average
+of its acquisition's frames, minus the frames its software rejected, so it is not
+a single image. The beamline's `sastool/<filename><frame>.log` (under
+`<root>/analysis/automatic_analysis`, `<frame>` from the setup's image pattern)
+holds the counts. `exposures.frames_total` and `frames_rejected` (the last two
+columns, NULL when unknown) take them from the `Sample frames:N Rejected:M`
+line. The log of a run's first buffer has no summary, so its `frame #` lines are
+counted instead, once the log has been unchanged for a minute; that count is not
+revised afterwards. Only a log with a `Sample frames:` line, or with no summary
+lines at all, gives a count. A log with no readable counts, or no log
+(calibration shots), leaves both NULL. Capillary
+setups are never read, and a stored value is never overwritten. `backfill_frame_counts!`
+fills unset rows at the end of every `scan_and_group!`, on every
+`POST /api/experiments/:id/scan` and once at boot, so rows ingested earlier
+are filled without new files and a log that appears later is picked up on the
+next scan. The Image panel then reads `9 of 10 images, beamline average` (or
+`10 images, beamline average` when none were rejected) and an exposure of `9 × 1.0 s`; with
+NULL counts it reads `Single` and `1.0 s` as before.
+
 **Settling a setup.** At the start of every `_scan_setup!`:
 
 - A setup with mode `NULL` or mode `capillary` with source `detected` is
@@ -444,12 +479,25 @@ runs once per included setup (`_scan_setup!`), reading `data_dir`,
    at least one new exposure, so no pass leaves an empty sample behind. Existing samples and exposures are never
    rewritten, so renames, rejections, peak curation and phase calls survive.
    The one exception is the beam monitors (`transmitted_counts` from
-   `I_signal`, `incident_monitor` from `I_0`, `counting_time`).
+   `I_2`, the beamstop photodiode, `incident_monitor` from `I_0`, `counting_time`).
+   `I_signal` is not read: it copies whichever counter the `.prp` names, usually
+   the APD, which reads close to the incident beam. Each setup's trace
+   normalisation comes from the nearest `integ.mpp` at or above its analysis folder,
+   searching no higher than the experiment's own folder
+   (`setups.trace_normalisation`: `i2`, `i1`, `none` or `unknown`). It is re-read with the
+   monitors on every scan and after new setups are added, and a changed `integ.mpp`
+   updates the stored value. An unreachable analysis folder keeps the stored value.
+   SSRL writes it at `<setup>/analysis/integ.mpp`, two levels above `tot_files`, and
+   lines starting with `#` are skipped. Only autosampler setups use it for the buffer
+   scale (scale 1 on `i2`, the `I_2` flux ratio on `none`); capillary setups match at high q.
    `backfill_monitors!` reads them from the stored `prp_path` of every exposure
    still marked `monitors_read = 0`, on every scan request and at the start of
    every pass, so a finished beamtime ingested before the monitors
    were parsed picks them up with no new files. Each file is read once, and a
-   stored value is never overwritten.
+   stored value is never overwritten, with one exception: the
+   `exposures_transmitted_from_i2_v1` migration clears every stored
+   `transmitted_counts` once, because it held `I_signal`, so the backfill reads
+   `I_2` in its place.
 5. **Analyzes** (capillary setups only), outside the write transaction, every exposure that is new,
    never analyzed, whose integration file has appeared since it was last
    tried, or whose stored `analysis_version` differs from `ANALYSIS_VERSION`

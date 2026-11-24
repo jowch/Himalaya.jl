@@ -31,7 +31,10 @@ const MIGRATION_DROP_SCAN_SIGNATURE = "drop_scan_signature_v1"
 const MIGRATION_EXPOSURES_BEAM_MONITORS = "exposures_beam_monitors_v1"
 const MIGRATION_EXPOSURES_PIPE_LENGTH = "exposures_pipe_length_v1"
 const MIGRATION_EXPOSURES_Q_STEP = "exposures_q_step_v1"
+const MIGRATION_TRANSMITTED_FROM_I2 = "exposures_transmitted_from_i2_v1"
+const MIGRATION_SETUP_NORMALISATION = "setups_trace_normalisation_v1"
 const MIGRATION_EXPOSURES_DESELECTED = "exposures_deselected_v1"
+const MIGRATION_EXPOSURES_FRAME_COUNTS = "exposures_frame_counts_v1"
 const MIGRATION_EXPOSURES_TRACE_MEDIAN = "exposures_trace_median_v1"
 const MIGRATION_BEAM_OFF_DESELECTED = "beam_off_deselected_v1"
 
@@ -103,6 +106,8 @@ CREATE TABLE IF NOT EXISTS setups (
     q_units              TEXT,
     q_units_source       TEXT DEFAULT 'default',
     created_at           DATETIME DEFAULT CURRENT_TIMESTAMP,
+    trace_normalisation  TEXT,
+    normalisation_base   REAL,
     mode                 TEXT,
     mode_source          TEXT DEFAULT 'default'
 );
@@ -163,7 +168,9 @@ CREATE TABLE IF NOT EXISTS exposures (
     setup_id             INTEGER REFERENCES setups(id),
     reviewed_at          TEXT,
     peak_model_version   INTEGER,
-    deselected           INTEGER NOT NULL DEFAULT 0
+    deselected           INTEGER NOT NULL DEFAULT 0,
+    frames_total         INTEGER,
+    frames_rejected      INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS exposure_sources (
@@ -548,12 +555,27 @@ function migrate_schema!(db::SQLite.DB)
     migrate_share_bridged_labels!(db)
     migrate_share_bridged_calls!(db)
     migrate_setups!(db)
+    migrate_setup_normalisation!(db)
     migrate_exposures_pipe_length!(db)
+    migrate_transmitted_from_i2!(db)
     migrate_exposures_q_step!(db)
     migrate_exposures_trace_median!(db)
     migrate_peak_provenance!(db)
     migrate_peak_models!(db)
     migrate_exposures_deselected!(db)
+    migrate_exposures_frame_counts!(db)
+end
+
+function migrate_exposures_frame_counts!(db::SQLite.DB)
+    _migrated(db, MIGRATION_EXPOSURES_FRAME_COUNTS) && return nothing
+    SQLite.transaction(db) do
+        existing = cols_of(db, "exposures")
+        for name in ("frames_total", "frames_rejected")
+            name in existing || DBInterface.execute(db, "ALTER TABLE exposures ADD COLUMN $name INTEGER")
+        end
+        _record_migration!(db, MIGRATION_EXPOSURES_FRAME_COUNTS)
+    end
+    nothing
 end
 
 function migrate_exposures_deselected!(db::SQLite.DB)
@@ -929,6 +951,28 @@ function migrate_exposures_pipe_length!(db::SQLite.DB)
         DBInterface.execute(db,
             "UPDATE exposures SET monitors_read = 0 WHERE prp_path IS NOT NULL AND pipe_length_m IS NULL")
         _record_migration!(db, MIGRATION_EXPOSURES_PIPE_LENGTH)
+    end
+    nothing
+end
+
+function migrate_setup_normalisation!(db::SQLite.DB)
+    _migrated(db, MIGRATION_SETUP_NORMALISATION) && return nothing
+    SQLite.transaction(db) do
+        existing = cols_of(db, "setups")
+        for (name, decl) in (("trace_normalisation", "TEXT"), ("normalisation_base", "REAL"))
+            name in existing || DBInterface.execute(db, "ALTER TABLE setups ADD COLUMN $name $decl")
+        end
+        _record_migration!(db, MIGRATION_SETUP_NORMALISATION)
+    end
+    nothing
+end
+
+function migrate_transmitted_from_i2!(db::SQLite.DB)
+    _migrated(db, MIGRATION_TRANSMITTED_FROM_I2) && return nothing
+    SQLite.transaction(db) do
+        DBInterface.execute(db, "UPDATE exposures SET transmitted_counts = NULL WHERE kind = 'file'")
+        DBInterface.execute(db, "UPDATE exposures SET monitors_read = 0 WHERE kind = 'file' AND prp_path IS NOT NULL")
+        _record_migration!(db, MIGRATION_TRANSMITTED_FROM_I2)
     end
     nothing
 end

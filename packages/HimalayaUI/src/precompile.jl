@@ -43,7 +43,7 @@ end
 function _workload_prp(path::AbstractString)
     write(path, """
         Image file name: frame.tif
-        I_signal=1000.0 (corrected for dark counts)
+        I_2(daqCounter1.1)=1000.0 (corrected for dark counts)
         I_0(daqIon3.0)=1.5
         Exposure time=1
         Counting time=1.05
@@ -87,7 +87,10 @@ function _workload_requests(send, experiment::Int, sample::Int, other::Int, expo
     _workload_call(send, "GET", "/api/health")
     _workload_call(send, "GET", "/api/users")
     _workload_call(send, "GET", "/api/experiments")
-    _workload_call(send, "GET", "/api/experiments/$experiment")
+    folder = _workload_call(send, "GET", "/api/experiments/$experiment").path
+    _workload_call(send, "GET", "/api/fs/list?path=$(HTTP.escapeuri(folder))")
+    _workload_call(send, "GET", "/api/fs/describe?path=$(HTTP.escapeuri(folder))")
+    _workload_call(send, "GET", "/api/fs/describe?path=$(HTTP.escapeuri(joinpath(folder, "data")))")
     _workload_call(send, "GET", "/api/experiments/$experiment/bridges")
     _workload_call(send, "GET", "/api/experiments/$experiment/problems")
     _workload_call(send, "GET", "/api/samples")
