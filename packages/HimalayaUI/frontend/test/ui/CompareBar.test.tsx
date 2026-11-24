@@ -151,6 +151,17 @@ describe("CompareBar in Minus view", () => {
     expect(screen.getByRole("button", { name: "MO_PEG6" })).toHaveAccessibleDescription("Minus buf");
   });
 
+  it("keeps the short note whole and apart from the name, which is the only part that truncates", () => {
+    bar([chip({ name: "a very long sample name that cannot fit in the chip", minus: { kind: "skipped", reason: "buffer" } })]);
+    const note = document.querySelector("[data-minus-note='buffer']") as HTMLElement;
+    const name = document.querySelector("[data-chip-name]") as HTMLElement;
+    expect(note.textContent).toBe("not subtracted");
+    expect(name.contains(note)).toBe(false);
+    expect(note.hasAttribute("data-chip-name")).toBe(false);
+    expect(document.querySelectorAll("[data-chip-truncates]")).toHaveLength(1);
+    expect(name).toHaveAttribute("data-chip-truncates");
+  });
+
   it("still says how to hide and subtract on a chip that is not drawn", () => {
     bar([chip({ minus: { kind: "skipped", reason: "buffer" } })]);
     expect(hover("MO_PEG5")).toHaveTextContent("Click to hide. ⌘-click to subtract it from the current trace.");
