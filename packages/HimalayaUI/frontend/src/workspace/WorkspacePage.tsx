@@ -64,7 +64,7 @@ import { useCorpusPalette } from "../hooks/useCorpusPalette";
 import { allFrames, frameGroups, frameOf } from "./frameGroups";
 import { phaseColor } from "../phases";
 import { useAppState } from "../state";
-import { modulesFor, type WorkspaceModules } from "./modules";
+import { modulesFor, NO_MODULES, type WorkspaceModules } from "./modules";
 import { beamOffWarning, firstUnreviewed, i0BelowZero, imageUrl, nearestKeptExposure, nextUnreviewed, peakClick, rankCandidates, sampleStatus, stepExposure } from "./model";
 import { samePeak, type PeakRef } from "../lib/peakRef";
 import { clampDomain, compareScale, COMPARES_FULL, MAX_COMPARES, scaledTrace, subtractTrace } from "./compare";
@@ -288,7 +288,11 @@ export function WorkspacePage(): JSX.Element {
   const reviewable = useCallback((s: CorpusSample) => modulesOf(s).review, [modulesOf]);
   const sample = requested === undefined ? firstUnreviewed(samples, reviewable) : samples.find((s) => s.id === requested);
   const sampleId = sample?.id;
-  const modules = useMemo(() => (sample ? modulesOf(sample) : modulesFor(null)), [sample, modulesOf]);
+  const modesPending = !setupsKnown || (corpus.data === undefined && !corpus.isError);
+  const modules = useMemo(
+    () => (sample ? modulesOf(sample) : modesPending ? NO_MODULES : modulesFor(null)),
+    [sample, modulesOf, modesPending],
+  );
   const goSample = useCallback(
     (sid: number) => navigate(`/experiments/${experimentId}/workspace/${sid}`, { replace: true }),
     [navigate, experimentId],
@@ -1628,7 +1632,7 @@ export function WorkspacePage(): JSX.Element {
         )
       }
       tools={
-        !setupsKnown ? null : (
+        modesPending ? null : (
           <>
             {modules.calls && (
               <div className={callOpen ? "flex min-h-24 flex-1 flex-col overflow-y-auto" : "shrink-0"} data-testid="workspace-tools-middle">
