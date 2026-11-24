@@ -118,6 +118,20 @@ describe("CandidateList", () => {
     expect(chip.style.color).not.toBe("var(--color-paper)");
   });
 
+  it("keeps a ticked, a partly ticked and a hovered choice apart by the keycap alone, since a row tint for ticks reads like hover", () => {
+    const [a, b, c] = [candidate(1), candidate(2), candidate(3)];
+    render(
+      <CandidateList rows={[{ kind: "group", members: [a!, b!], peaks: 8 }, one(c!)]} assigned={new Set([a!.id])} disabled={false} formFactor={false}
+        onToggle={() => {}} onToggleGroup={() => {}} onFormFactor={() => {}} onHover={() => {}} />,
+    );
+    const [group, ticked, , unticked] = within(screen.getByTestId("workspace-candidates")).getAllByRole("button");
+    const rowLook = (el: HTMLElement) => el.className.split(" ").filter((c) => c.startsWith("bg-") || c.startsWith("hover:bg-")).sort();
+    expect(rowLook(ticked!)).toEqual(rowLook(unticked!));
+    expect(rowLook(group!)).toEqual(rowLook(unticked!));
+    const keys = [group, ticked, unticked].map((el) => el!.querySelector("kbd")!.getAttribute("data-pressed"));
+    expect(keys).toEqual(["mixed", "true", null]);
+  });
+
   it("reports hover on pointer movement, so a row that appears under a resting pointer previews as soon as the pointer moves", () => {
     const onHover = vi.fn();
     const [a, b] = [candidate(1), candidate(2)];
