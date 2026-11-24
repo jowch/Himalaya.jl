@@ -48,6 +48,12 @@ export async function collectAutosampler(api, experimentId, samples, setups, row
   }));
 }
 
+const REQUIRED_COLUMNS = ["sample", "stem", "kind", "default_background", "frames_total", "frames_rejected"];
+
+function missingColumns(rows) {
+  return rows.length ? REQUIRED_COLUMNS.filter((c) => !(c in rows[0])) : [];
+}
+
 const orNone = (v) => (v === null || v === undefined || v === "" ? "none" : v);
 const count = (v) => (v === "" || v === undefined ? null : Number(v));
 
@@ -64,6 +70,7 @@ function backgroundProblems(row, s) {
 
 function frameProblems(row, s) {
   if (!s.frames) return [];
+  if (row.kind !== "calibration" && (row.frames_total === "" || row.frames_rejected === "")) return ["TRUTH_autosampler.csv has no frame counts for this sample"];
   const total = count(row.frames_total);
   const rejected = count(row.frames_rejected);
   if (s.frames.total === total && s.frames.rejected === rejected) return [];
@@ -89,9 +96,10 @@ function expectedBackgroundText(row) {
 function uiProblems(row, ui) {
   const out = [];
   const expected = expectedBackgroundText(row);
+  if (!ui.plot_drawn) out.push("the plot was not drawn within the wait");
   if (ui.background !== expected) out.push(`Background module reads "${ui.background}", expected "${expected}"`);
   const minus = Boolean(row.default_background) && row.kind !== "buffer";
-  if (minus && !(ui.difference_line === 1 && ui.minus_pressed)) out.push(`not drawn in Minus: ${ui.difference_line} difference lines, Minus ${ui.minus_pressed ? "" : "not "}pressed`);
+  if (minus && ui.plot_drawn && !(ui.difference_line === 1 && ui.minus_pressed)) out.push(`not drawn in Minus: ${ui.difference_line} difference lines, Minus ${ui.minus_pressed ? "" : "not "}pressed`);
   if (!minus && ui.difference_line) out.push("draws a difference line without a background");
   if (ui.candidates) out.push("shows the call candidates");
   if (ui.peak_glyphs) out.push("shows peak markers");
@@ -118,9 +126,11 @@ function rowProblems(row, matches, dataDir) {
 export function compareAutosampler(rows, samples, { dataDir = null } = {}) {
   const byName = new Map();
   for (const s of samples) byName.set(s.name, [...(byName.get(s.name) ?? []), s]);
-  const problems = rows
+  const absent = missingColumns(rows);
+  const problems = (absent.length ? [{ sample: "TRUTH_autosampler.csv", problems: [`missing the columns ${absent.join(", ")}`] }] : [])
+    .concat(rows
     .map((row) => ({ sample: row.sample, problems: rowProblems(row, byName.get(row.sample) ?? [], dataDir) }))
-    .filter((p) => p.problems.length);
+    .filter((p) => p.problems.length));
   const known = new Set(rows.map((r) => r.sample));
   const extras = samples.filter((s) => s.mode === AUTOSAMPLER_MODE && !known.has(s.name)).map((s) => s.name);
   return {

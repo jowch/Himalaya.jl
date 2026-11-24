@@ -78,6 +78,12 @@ export async function waitForSampleRows(page, expected, { timeoutMs = 20000, pol
   }
 }
 
+export async function requireSampleRows(page, expected, options) {
+  const seen = await waitForSampleRows(page, expected, options);
+  if (seen < expected) throw new Error(`the workspace listed ${seen} of ${expected} samples; it had not finished loading, or the server is slow`);
+  return seen;
+}
+
 async function readWorkspaceRows(page) {
   return page.locator("[data-testid='workspace-samples'] [data-sample-id]").evaluateAll((els) =>
     els.map((el) => {
@@ -172,7 +178,7 @@ export async function readWorkspace(page, cfg, experimentId, samples, { reload =
   if ((await filter.count()) && (await filter.inputValue())) {
     await filter.fill("");
   }
-  await waitForSampleRows(page, samples.length);
+  await requireSampleRows(page, samples.length);
   const rows = await readWorkspaceRows(page);
   const texts = new Map(rows.map((r) => [r.id, r.text]));
   for (const s of samples) {

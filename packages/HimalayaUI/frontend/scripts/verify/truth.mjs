@@ -532,7 +532,8 @@ async function checkAutosampler(cfg, flags, experimentId, setups, autosamplerVie
   const found = await collectAutosampler(cfg.apiBase, experimentId, samples, setups, rows);
   if (flags.ui) {
     const kind = new Map(rows.map((r) => [r.sample, r.kind]));
-    const asked = found.filter((s) => s.mode === AUTOSAMPLER_MODE).map((s) => ({ id: s.id, name: s.name, traceless: kind.get(s.name) === "calibration" && s.exposure_id !== null ? [s.exposure_id] : [] }));
+    const background = new Map(rows.map((r) => [r.sample, r.default_background]));
+    const asked = found.filter((s) => s.mode === AUTOSAMPLER_MODE).map((s) => ({ id: s.id, name: s.name, traceless: kind.get(s.name) === "calibration" && s.exposure_id !== null ? [s.exposure_id] : [], minus: kind.get(s.name) === "sample" && Boolean(background.get(s.name)) }));
     const read = await autosamplerViews(cfg, experimentId, asked);
     for (const s of found) if (read.has(s.id)) s.ui = read.get(s.id);
   }
