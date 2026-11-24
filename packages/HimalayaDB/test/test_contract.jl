@@ -23,6 +23,7 @@ using DBInterface
     db = HimalayaDB.connect(dbpath)
     db_sample_ids = [s.id for s in samples(db; experiment=ids.experiment_id)]
     db_peaks = curated_peaks(db, ids.exposure_id)
+    db_exposure = only(filter(e -> e.id == ids.exposure_id, exposures(db; sample=ids.sample_id)))
     db_indices = index_candidates(db, ids.exposure_id)
     db_calls = Dict(sid => phase_call(db, sid) for sid in (ids.sample_id, ids.sample2_id))
     db_labels = [l for sid in (ids.sample_id, ids.sample2_id) for l in sample_labels(db, sid)]
@@ -54,7 +55,6 @@ using DBInterface
           (ui_setup.trace_normalisation, ui_setup.normalisation_base)
     @test db_setup.mode == ui_setup.mode == "capillary"
     @test db_setup.mode_source == ui_setup.mode_source == "user"
-    db_exposure = only(filter(e -> e.id == ids.exposure_id, exposures(db; sample=ids.sample_id)))
     @test (db_exposure.frames_total, db_exposure.frames_rejected) == (ui_frames.frames_total, ui_frames.frames_rejected) == (10, 1)
     @test HimalayaDB.integration_pattern_for(db_setup.integration_pattern) == ui_pattern
 
