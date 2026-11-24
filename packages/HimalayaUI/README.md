@@ -20,7 +20,7 @@ A web application for semi-automatic indexing of SAXS diffraction patterns. Poin
 | Tool     | Version |
 |----------|---------|
 | Julia    | 1.9 or newer |
-| Node.js  | 22 (22.22.2+), 24 (24.15+) or 26+ (`make setup` and `make deploy` build the frontend) |
+| Node.js  | 22 (22.22.2+), 24 (24.15+) or 26+ (`make setup` and `make deploy` build the frontend; `npm ci` stops with `EBADENGINE` on an older Node) |
 | Browser  | Any modern Chromium/Firefox/Safari |
 
 Runs locally on your workstation or on a lab server over SSH port-forward. No external services.
