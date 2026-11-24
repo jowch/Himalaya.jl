@@ -14,14 +14,14 @@
 # realistic scale (`make demo-large-data`); see docs/demo.md "Large mode". There each
 # .tif is a hardlink to one of ~24 pooled frames, not rendered from its own trace.
 #
-# Layout written (what routes_fs.jl `resolve_experiment_layout` auto-detects);
+# Layout written (capillary/ here, autosampler/ by demo_autosampler.jl, TRUTH_autosampler.csv beside TRUTH.csv);
 # <base> = <label>_S<scan>, one scan per exposure, 1-3 scans per sample, a few of
 # them bad on purpose (BAD_SCANS):
-#   <out>/data/<base>_0_001.tif        Pilatus 1M frame, Int32 counts (-1 in module gaps)
-#   <out>/data/<base>_0_001.prp        SSRL PRP sidecar (energy, pipe length, position, time, beam monitors)
-#   <out>/analysis/setup_info_<ts>.txt beam center + AgBe-calibrated distance
-#   <out>/analysis/automatic_analysis/tot_files/<base>_tot.dat   q  I  sigma
-#   <out>/TRUTH.csv                    per sample: generated phases, expected auto call,
+#   <out>/capillary/data/<base>_0_001.tif        Pilatus 1M frame, Int32 counts (-1 in module gaps)
+#   <out>/capillary/data/<base>_0_001.prp        SSRL PRP sidecar (energy, pipe length, position, time, beam monitors)
+#   <out>/capillary/analysis/setup_info_<ts>.txt beam center + AgBe-calibrated distance
+#   <out>/capillary/analysis/automatic_analysis/tot_files/<base>_tot.dat   q  I  sigma
+#   <out>/TRUTH.csv                    per capillary sample: generated phases, expected auto call,
 #                                      phase-tagged reflection q values, scans to drop,
 #                                      and which of those are flares (sample still there)
 # test/test_demo_data.jl holds the regression floor on the expected auto calls.
@@ -380,9 +380,9 @@ function write_integ_mpp(path; normalised::Bool)
     end
 end
 
-function write_setup_info(path; distance_mm = MEAN_DISTANCE_MM)
+function write_setup_info(path; distance_mm = MEAN_DISTANCE_MM, calibration = "../data/agbe_1p7m_S1000_0_001.tif")
     open(path, "w") do io
-        print(io, "File used for calibration:\n../data/agbe_1p7m_S1000_0_001.tif\n\n")
+        print(io, "File used for calibration:\n$calibration\n\n")
         print(io, "Beam center is at ($BEAM_X, $BEAM_Y)\n\n")
         println(io, "Calculated detector distances are:")
         for (i, d) in enumerate([1807.0, 1810.5, 1812.5])
@@ -451,6 +451,7 @@ end
 const TRUTH_HEADER = "sample,bases,phases,lattice_A,auto,expected_peaks_q,images,drop,flare,note"
 const T0_DEFAULT = DateTime(2026, 4, 26, 18, 0, 0)
 
+const CAPILLARY_DIR = "capillary"
 const LATE_TRACE_SAMPLE = "MO_lowH2O"
 late_dir(out) = joinpath(out, "late")
 
@@ -465,7 +466,6 @@ function prepare_tree(out)
     for d in (data, tot)
         isdir(d) && foreach(f -> rm(joinpath(d, f)), readdir(d))
     end
-    rm(late_dir(out); force = true, recursive = true)
     mkpath(data); mkpath(tot)
     data, analysis, tot
 end
@@ -515,7 +515,8 @@ function main_curated(o)
     rng = Xoshiro(seed)
     rng_img = Xoshiro(seed + 1)
     rng_beam = Xoshiro(seed + 2)
-    data, analysis, tot = prepare_tree(out)
+    foreach(d -> rm(joinpath(out, d); force = true, recursive = true), ("data", "analysis", "late"))
+    data, analysis, tot = prepare_tree(joinpath(out, CAPILLARY_DIR))
     dirs = (data = data, tot = tot)
     write_setup_info(joinpath(analysis, "setup_info_20260301_120000.txt"))
     write_integ_mpp(joinpath(analysis, "integ.mpp"); normalised = true)
@@ -551,7 +552,9 @@ function main_curated(o)
             startswith(f, LATE_TRACE_SAMPLE * "_S") && mv(joinpath(tot, f), joinpath(late_dir(out), f))
         end
     end
-    println("Wrote synthetic demo experiment to $out ($(length(SAMPLES)) samples, seed $seed",
+    auto = write_autosampler!(out, seed, images)
+    println("Wrote synthetic demo experiment to $out ($(length(SAMPLES)) capillary samples and ",
+            "$(auto.acquisitions) autosampler acquisitions in $(auto.runs) runs, seed $seed",
             images ? "" : ", no images", o.late ? ", $LATE_TRACE_SAMPLE's traces held in late/" : "", ")")
     out
 end
@@ -782,5 +785,7 @@ function main(args = ARGS)
     check_target(o.out, o.large)
     o.large ? main_large(o) : main_curated(o)
 end
+
+include(joinpath(@__DIR__, "demo_autosampler.jl"))
 
 abspath(PROGRAM_FILE) == (@__FILE__) && main()

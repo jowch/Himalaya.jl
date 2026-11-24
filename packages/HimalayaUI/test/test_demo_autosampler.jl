@@ -1,5 +1,5 @@
 using Test, Dates, SQLite, DBInterface, Tables, Statistics, Random, HimalayaUI
-isdefined(@__MODULE__, :fresh_db) || include("test_http.jl")
+isdefined(@__MODULE__, :fresh_db) || include("test_ingestion_core.jl")
 
 module DemoGenAS
     include(joinpath(@__DIR__, "..", "scripts", "make_demo_data.jl"))
