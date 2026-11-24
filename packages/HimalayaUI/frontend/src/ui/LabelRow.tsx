@@ -225,7 +225,7 @@ export function LabelRow({
           type="button"
           ref={addButton}
           onClick={onOpenAdd}
-          className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-dashed border-hair-strong pl-2.5 pr-1 text-caption text-ink-soft hover:text-ink"
+          className="inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-dashed border-hair-strong pt-0.5 pb-[3px] pl-2.5 pr-1 text-caption text-ink-soft hover:text-ink"
         >
           + <span className="@max-[34rem]:sr-only">Label</span> <Kbd>L</Kbd>
         </button>
