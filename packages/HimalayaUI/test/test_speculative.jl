@@ -327,6 +327,30 @@ end
     end
 end
 
+@testset "speculative create with an empty additional list indexes the anchor alone" begin
+    tmp = mktempdir()
+    analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
+    mkpath(analysis_dir)
+    cp(joinpath(@__DIR__, "..", "..", "..", "test", "data", "example_tot.dat"),
+       joinpath(analysis_dir, "example_tot.dat"))
+    db     = open_prepared_clone(tmp)
+    exp_id = HimalayaUI.init_experiment!(db; path=tmp,
+        data_dir=joinpath(tmp,"data"), analysis_dir=analysis_dir)
+    s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id, name="D1")
+    e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot")
+    HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
+    p1 = Int(Tables.rowtable(DBInterface.execute(db,
+        "SELECT id FROM auto_peaks WHERE exposure_id = ? ORDER BY q LIMIT 1", [e_id]))[1].id)
+
+    with_inproc_routes(db) do call
+        body = Dict(:phase => "Lamellar", :anchor_peak_id => p1, :anchor_ratio => 1, :additional => [])
+        r = call("POST", "/api/exposures/$e_id/speculative";
+            headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
+            body = Vector{UInt8}(JSON.json(body)))
+        @test r.status == 200
+    end
+end
+
 @testset "speculative delete is atomic: both indices row and user_actions row removed/created together" begin
     tmp = mktempdir()
     analysis_dir = joinpath(tmp, "analysis", "automatic_analysis")
