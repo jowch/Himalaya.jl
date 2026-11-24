@@ -13,6 +13,7 @@ export interface ExposureStripGroup {
   key: number;
   title: string | undefined;
   exposures: readonly Exposure[];
+  selection?: ExposureSelection | undefined;
 }
 
 export interface ExposureSelection {
@@ -27,7 +28,6 @@ export interface ExposureSelection {
 interface Props {
   groups: readonly ExposureStripGroup[];
   currentId: number | undefined;
-  selection?: ExposureSelection | undefined;
   onPick: (id: number) => void;
   onToggleDrop: (e: Exposure) => void;
   warningOf?: (e: Exposure) => string | undefined;
@@ -42,33 +42,40 @@ function selectionCaption(selection: ExposureSelection): string {
   return `Average of ${n} images`;
 }
 
-export function ExposureStrip({ groups, currentId, selection, onPick, onToggleDrop, warningOf }: Props): JSX.Element {
+function SelectionTools({ selection, of }: { selection: ExposureSelection; of: string | undefined }): JSX.Element {
+  const all = [...selection.selectableIds].every((id) => selection.selectedIds.has(id));
+  const suffix = of === undefined ? "" : ` of ${of}`;
+  return (
+    <div className="flex items-center gap-1.5" data-testid="exposure-selection-tools">
+      <span className="mr-auto text-xs text-ink-soft" data-testid="exposure-selection-caption">{selectionCaption(selection)}</span>
+      <Button type="button" variant="outline" disabled={all} aria-label={`Select all${suffix}`} onClick={selection.onAll}>Select all</Button>
+      <Button type="button" variant="outline" disabled={selection.selectedIds.size === 0} aria-label={`Select none${suffix}`} onClick={selection.onNone}>Select none</Button>
+    </div>
+  );
+}
+
+export function ExposureStrip({ groups, currentId, onPick, onToggleDrop, warningOf }: Props): JSX.Element {
   const ref = useRovingFocus<HTMLDivElement>(currentId);
   const hasCurrent = groups.some((g) => g.exposures.some((e) => e.id === currentId));
-  const click = (ev: MouseEvent<HTMLElement>, id: number): void => {
+  const click = (ev: MouseEvent<HTMLElement>, id: number, selection: ExposureSelection | undefined): void => {
     releaseMouseFocus(ev);
     const canSelect = selection?.selectableIds.has(id) ?? false;
     if (canSelect && ev.shiftKey) selection?.onRange(id);
     else if (canSelect && (ev.metaKey || ev.ctrlKey)) selection?.onToggle(id);
     else onPick(id);
   };
-  const all = selection ? [...selection.selectableIds].every((id) => selection.selectedIds.has(id)) : true;
   return (
     <div ref={ref} className="flex flex-col gap-1.5" data-testid="workspace-exposures">
-      {selection && (
-        <div className="flex items-center gap-1.5" data-testid="exposure-selection-tools">
-          <span className="mr-auto text-xs text-ink-soft" data-testid="exposure-selection-caption">{selectionCaption(selection)}</span>
-          <Button type="button" variant="outline" disabled={all} onClick={selection.onAll}>Select all</Button>
-          <Button type="button" variant="outline" disabled={selection.selectedIds.size === 0} onClick={selection.onNone}>Select none</Button>
-        </div>
-      )}
-      {groups.map((g, gi) => (
+      {groups.map((g, gi) => {
+        const selection = g.selection;
+        return (
         <section key={g.key} aria-label={g.title} className="flex flex-col gap-1">
           {g.title !== undefined && (
             <Tooltip content={g.title} overflowOnly>
               <h4 data-testid="frame-group-header" className="m-0 truncate text-xs font-semibold text-ink-soft">{g.title}</h4>
             </Tooltip>
           )}
+          {selection && <SelectionTools selection={selection} of={gi === 0 ? undefined : g.title} />}
           <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,136px)] gap-2 p-0">
             {g.exposures.map((e, i) => {
               const cur = e.id === currentId;
@@ -78,7 +85,8 @@ export function ExposureStrip({ groups, currentId, selection, onPick, onToggleDr
               const selected = selection?.selectedIds.has(e.id) ?? false;
               const src = imageUrl(e, true);
               const warning = warningOf?.(e);
-              const name = gi === 0 || g.title === undefined ? `Image ${i + 1}` : `Image ${i + 1} of ${g.title}`;
+              const of = gi === 0 || g.title === undefined ? "" : ` of ${g.title}`;
+              const name = `Image ${i + 1}${of}`;
               return (
                 <li
                   key={e.id}
@@ -97,7 +105,7 @@ export function ExposureStrip({ groups, currentId, selection, onPick, onToggleDr
                       aria-label={`${name}${dropped ? ", dropped" : ""}${warning !== undefined ? `, ${warning.toLowerCase()}` : ""}`}
                       tabIndex={stop}
                       data-roving="image"
-                      onClick={(ev) => click(ev, e.id)}
+                      onClick={(ev) => click(ev, e.id, selection)}
                       className={
                         "relative grid aspect-square w-full place-items-center overflow-hidden rounded-[3px] bg-frame-edge" +
                         (warning !== undefined ? " outline outline-2 -outline-offset-2 outline-warning" : "")
@@ -123,7 +131,7 @@ export function ExposureStrip({ groups, currentId, selection, onPick, onToggleDr
                           checked={selected}
                           tabIndex={stop}
                           data-roving="select"
-                          aria-label={`Analyze ${name.toLowerCase()}`}
+                          aria-label={`Analyze image ${i + 1}${of}`}
                           onChange={() => selection.onToggle(e.id)}
                           onClickCapture={(ev) => {
                             if (ev.shiftKey) {
@@ -156,7 +164,8 @@ export function ExposureStrip({ groups, currentId, selection, onPick, onToggleDr
             })}
           </ul>
         </section>
-      ))}
+        );
+      })}
     </div>
   );
 }

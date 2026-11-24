@@ -57,7 +57,7 @@ import { isIngestStage, stageLabel } from "../lib/ingestStages";
 import { applyBridge, bridgeCounts, bridgedWith, rankBridgeMates } from "../lib/bridges";
 import { bridgeSteps, callStatesSplit, groupKeepChoices, keepChoices, type KeepCall } from "../lib/bridgeCall";
 import { bufferRole, buffersFirst, displayLabel, firstUnusedColor, labelColor, labelColorIsDefault, labelsFor, sameLabel, sampleMatchesFilter, labelVocabulary, labelKey } from "../lib/labels";
-import { analysisOf, imageFrames, keptExposures, MIN_COMBINED, newestKeptFrame } from "../lib/exposure";
+import { analysisOf, imageFrames, keptExposures, MIN_COMBINED, newestKeptFrame, selectedFrames } from "../lib/exposure";
 import { useMemberTraces } from "./useMemberTraces";
 import { unsupportedCalls } from "./unsupportedCalls";
 import { useCorpusPalette } from "../hooks/useCorpusPalette";
@@ -99,7 +99,7 @@ import { ExperimentNotice } from "../ui/ExperimentNotice";
 import { ProblemList } from "../ui/ProblemList";
 import { RemoveExperimentDialog } from "../ui/RemoveExperimentDialog";
 import { COMPARE_COLORS, WorkspacePlot, type CombLine, type CompareLine } from "../ui/WorkspacePlot";
-import { ExposureStrip } from "../ui/ExposureStrip";
+import { ExposureStrip, type ExposureSelection } from "../ui/ExposureStrip";
 import { CandidateList } from "../ui/CandidateList";
 import { callChoices, cycleChoice, inCallChoices } from "./callTab";
 import { callRows, keyedRows } from "./bonnetGroups";
@@ -300,8 +300,6 @@ export function WorkspacePage(): JSX.Element {
   useEffect(() => setExposureId(linkedExposure), [sampleId, linkedExposure]);
   const ownFrames: Exposure[] = useMemo(() => imageFrames(exposures.data), [exposures.data]);
   const analysis = useMemo(() => analysisOf(exposures.data), [exposures.data]);
-  const selectedIds = useMemo(() => new Set(analysis.selected.map((e) => e.id)), [analysis.selected]);
-  const selectableIds = useMemo(() => new Set(keptExposures(ownFrames).map((e) => e.id)), [ownFrames]);
   const frameSetupName = useCallback(
     (s: CorpusSample): string => {
       const st = setups.length > 1 && s.setup_id != null ? setups.find((x) => x.id === s.setup_id)?.name : undefined;
@@ -624,46 +622,43 @@ export function WorkspacePage(): JSX.Element {
     },
     [setStatus, sampleId, history, ops, frameName, exposureList, tile],
   );
-  const anchor = useRef<number | undefined>(undefined);
-  useEffect(() => { anchor.current = undefined; }, [sampleId]);
-  const applySelection = useCallback(
-    (next: number[], label: string) => {
-      if (sampleId === undefined) return;
-      const prev = analysis.selected.map((e) => e.id);
-      ops.setSelection(sampleId, next);
-      history.record(selectionEntry(ops, { label, sampleId, exposureId: undefined, prev, next }));
-    },
-    [sampleId, analysis.selected, ops, history],
-  );
-  const toggleSelect = useCallback(
-    (eid: number) => {
-      anchor.current = eid;
-      const on = selectedIds.has(eid);
-      const next = on ? [...selectedIds].filter((id) => id !== eid) : [...selectedIds, eid];
-      applySelection(next, `${on ? "deselected" : "selected"} ${frameName(eid)}`);
-    },
-    [selectedIds, applySelection, frameName],
-  );
-  const selectRange = useCallback(
-    (eid: number) => {
-      const order = keptExposures(ownFrames).map((e) => e.id);
-      const from = order.indexOf(anchor.current ?? analysis.selected[0]?.id ?? eid);
-      const to = order.indexOf(eid);
-      if (to < 0) return;
-      const span = order.slice(Math.min(from < 0 ? to : from, to), Math.max(from, to) + 1);
-      anchor.current = eid;
-      applySelection([...new Set([...selectedIds, ...span])], `selected ${span.length} images of ${sample?.name ?? "this sample"}`);
-    },
-    [ownFrames, analysis.selected, selectedIds, applySelection, sample?.name],
-  );
-  const selectAll = useCallback(
-    () => applySelection([...selectableIds], `selected every image of ${sample?.name ?? "this sample"}`),
-    [selectableIds, applySelection, sample?.name],
-  );
-  const selectNone = useCallback(
-    () => applySelection([], `cleared the selection of ${sample?.name ?? "this sample"}`),
-    [applySelection, sample?.name],
-  );
+  const anchors = useRef(new Map<number, number>());
+  useEffect(() => { anchors.current = new Map(); }, [sampleId]);
+  const groupSelections = useMemo(() => {
+    if (sampleId === undefined) return new Map<number, ExposureSelection>();
+    return new Map(groups.map((g) => {
+      const owner = g.sampleId;
+      const ownerName = (owner === sampleId ? sample?.name : inExperiment.find((x) => x.id === owner)?.name) ?? "this sample";
+      const kept = keptExposures(g.exposures).map((e) => e.id);
+      const prev = selectedFrames(g.exposures).map((e) => e.id);
+      const selectedIds = new Set(prev);
+      const apply = (next: number[], label: string): void => {
+        ops.setSelection(owner, next);
+        history.record(selectionEntry(ops, { label, sampleId, owner, exposureId: undefined, prev, next }));
+      };
+      const selection: ExposureSelection = {
+        selectedIds,
+        selectableIds: new Set(kept),
+        onToggle: (eid) => {
+          anchors.current.set(owner, eid);
+          const on = selectedIds.has(eid);
+          apply(on ? prev.filter((id) => id !== eid) : [...prev, eid], `${on ? "deselected" : "selected"} ${frameName(eid)}`);
+        },
+        onRange: (eid) => {
+          const to = kept.indexOf(eid);
+          if (to < 0) return;
+          const at = kept.indexOf(anchors.current.get(owner) ?? prev[0] ?? eid);
+          const from = at < 0 ? to : at;
+          const span = kept.slice(Math.min(from, to), Math.max(from, to) + 1);
+          anchors.current.set(owner, eid);
+          apply([...new Set([...prev, ...span])], `selected ${span.length} images of ${ownerName}`);
+        },
+        onAll: () => apply(kept, `selected every image of ${ownerName}`),
+        onNone: () => apply([], `cleared the selection of ${ownerName}`),
+      };
+      return [owner, selection] as const;
+    }));
+  }, [groups, sampleId, sample?.name, inExperiment, ops, history, frameName]);
 
   const draftQs = useMemo(() => (draft ? draftPrediction(draft) : []), [draft]);
   const combs: CombLine[] = useMemo(
@@ -1579,7 +1574,7 @@ export function WorkspacePage(): JSX.Element {
               </PlotCard>
             </div>
             <MainSection title="Images" hint={keptHint}>
-              <ExposureStrip groups={groups.map((g) => ({ key: g.sampleId, title: g.title, exposures: g.exposures }))} currentId={tile?.id} selection={username ? { selectedIds, selectableIds, onToggle: toggleSelect, onRange: selectRange, onAll: selectAll, onNone: selectNone } : undefined} onPick={setExposureId} onToggleDrop={toggleDrop} warningOf={beamOffWarning} />
+              <ExposureStrip groups={groups.map((g) => ({ key: g.sampleId, title: g.title, exposures: g.exposures, selection: username ? groupSelections.get(g.sampleId) : undefined }))} currentId={tile?.id} onPick={setExposureId} onToggleDrop={toggleDrop} warningOf={beamOffWarning} />
             </MainSection>
           </>
         ) : (

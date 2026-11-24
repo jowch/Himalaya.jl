@@ -130,7 +130,7 @@ const editOps = {
     labels: async () => state.labels,
     bridges: async () => state.bridges,
     call: async (sid: number) => ({ sample_id: sid, state: "indexed" as const, phase: null, call_phases: [], members: server.callMembers.get(sid) ?? (sid === 10 ? [{ index_id: 2, exposure_id: 101, phase: "Pn3m" }] : []) }),
-    exposures: async () => state.exposures.map((e) => (server.status.has(e.id) ? { ...e, status: server.status.get(e.id)! } : e)),
+    exposures: async (sampleId: number) => (state.mateExposures.get(sampleId) ?? state.exposures).map((e) => (server.status.has(e.id) ? { ...e, status: server.status.get(e.id)! } : e)),
     labelColors: async () => {
       const merged = new Map(state.labelColors.map((e) => [e.label.toLowerCase(), e]));
       for (const [k, color] of server.colors) {
@@ -3614,6 +3614,35 @@ describe("WorkspacePage", () => {
     expect(calls.filter((c) => c.hook === "status")).toHaveLength(0);
     await act(async () => { fireEvent.keyDown(window, { key: "z", ctrlKey: true }); for (let i = 0; i < 10; i++) await Promise.resolve(); });
     expect(calls.filter((c) => c.hook === "op:setStatus").map((c) => c.arg)).toEqual([[12, 200, "rejected"], [12, 200, null, true]]);
+  });
+
+  it("selects a same sample's images as that sample's own selection, never mixed with this sample's", async () => {
+    state.bridges = [{ sample_id: 10, group_id: 4 }, { sample_id: 12, group_id: 4 }];
+    state.corpus = state.corpus.map((s) => (s.id === 12 ? { ...s, assignment_state: "indexed" } : s));
+    const mate = [exposure(200, { sample_id: 12, selected: true }), exposure(201, { sample_id: 12, selected: false }), exposure(202, { sample_id: 12, selected: false })];
+    state.mateExposures = new Map([[12, mate]]);
+    state.exposures = [exposure(100, { selected: false }), exposure(101, { selected: true })];
+    renderAt("/experiments/1/workspace/10");
+    const strip = screen.getByTestId("workspace-exposures");
+    expect(within(strip).getAllByRole("checkbox").map((c) => c.getAttribute("aria-label"))).toEqual([
+      "Analyze image 1", "Analyze image 2", "Analyze image 1 of A3", "Analyze image 2 of A3", "Analyze image 3 of A3",
+    ]);
+    expect(within(strip).getAllByTestId("exposure-selection-caption").map((c) => c.textContent)).toEqual(["1 image selected", "1 image selected"]);
+    fireEvent.click(within(strip).getByRole("checkbox", { name: "Analyze image 2 of A3" }));
+    fireEvent.click(screen.getByRole("button", { name: "Image 3 of A3" }), { metaKey: true });
+    fireEvent.click(screen.getByRole("button", { name: "Image 1 of A3" }), { shiftKey: true });
+    fireEvent.click(screen.getByRole("button", { name: "Select all of A3" }));
+    fireEvent.click(screen.getByRole("button", { name: "Select none of A3" }));
+    expect(calls.filter((c) => c.hook === "op:setSelection").map((c) => c.arg)).toEqual([
+      [12, [200, 201]], [12, [200, 202]], [12, [200, 201, 202]], [12, [200, 201, 202]], [12, []],
+    ]);
+    state.mateExposures = new Map([[12, mate.map((e) => ({ ...e, selected: false }))]]);
+    await act(async () => { fireEvent.keyDown(window, { key: "z", ctrlKey: true }); for (let i = 0; i < 10; i++) await Promise.resolve(); });
+    expect(calls.filter((c) => c.hook === "op:setSelection").map((c) => c.arg).at(-1)).toEqual([12, [200]]);
+    fireEvent.click(screen.getByRole("button", { name: "Image 1" }), { metaKey: true });
+    expect(calls.filter((c) => c.hook === "op:setSelection").map((c) => c.arg).at(-1)).toEqual([10, [101, 100]]);
+    fireEvent.click(screen.getByRole("button", { name: "Image 3 of A3" }), { shiftKey: true });
+    expect(calls.filter((c) => c.hook === "op:setSelection").map((c) => c.arg).at(-1)).toEqual([12, [200, 201, 202]]);
   });
 
   it("an unbridged sample's frames have no group heading", () => {
