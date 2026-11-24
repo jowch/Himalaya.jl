@@ -41,15 +41,17 @@ export async function readAutosamplerViews(cfg, experimentId, samples) {
   }
   await ensureBrowser(cfg);
   const session = await connect(cfg);
+  const page = await session.context.newPage();
   const out = new Map();
   try {
-    await prepareUser(session.page, cfg, { username: "verify", onboarding: false });
+    await prepareUser(page, cfg, { username: "verify", onboarding: false });
     const held = new Set(samples.flatMap((s) => s.traceless ?? []));
     for (const s of samples) {
-      await settledGoto(session.page, cfg, WORKSPACE_ROUTE(experimentId, s.id), held);
-      out.set(s.id, await readSample(session.page));
+      await settledGoto(page, cfg, WORKSPACE_ROUTE(experimentId, s.id), held);
+      out.set(s.id, await readSample(page));
     }
   } finally {
+    await page.close().catch(() => undefined);
     await session.browser.close().catch(() => undefined);
   }
   return out;
