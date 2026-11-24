@@ -15,7 +15,7 @@ _want(g) = GROUP == "All" || GROUP == g
 # Pass-sum invariant across buckets holds. The seen-set dedup keeps it included once
 # per process.)
 const GROUPS = [
-    ("db",       ["test_http.jl","test_config.jl","test_db.jl",
+    ("db",       ["test_http.jl","test_config.jl","test_db.jl","test_db_rows.jl",
                   "test_migrate_speculative_durability.jl","test_migrate_hex_sqrt11.jl",
                   "test_migrate_ratio_position_int.jl",
                   "test_ingestion_schema.jl","test_peak_models.jl"]),
@@ -49,7 +49,7 @@ GROUP == "All" || GROUP in first.(GROUPS) ||
 
 # Single source of truth for the serial bisect order — the exact historical
 # runtests include order. The buckets above must partition this same set.
-const ALL_ORDER = ["test_config.jl","test_db.jl",
+const ALL_ORDER = ["test_config.jl","test_db.jl","test_db_rows.jl",
                    "test_migrate_speculative_durability.jl","test_migrate_hex_sqrt11.jl",
                   "test_migrate_ratio_position_int.jl",
                    "test_ingestion_schema.jl","test_peak_models.jl",

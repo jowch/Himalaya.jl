@@ -29,17 +29,23 @@ function register_trace_routes!()
             JSON3.write(Dict(:error => ".dat file not found for $(row.filename)")))
 
         q, I, σ = load_dat(path)
-        monitors = Dict(:transmitted_counts => coalesce(row.transmitted_counts, nothing),
-                        :exposure_time      => coalesce(row.exposure_time, nothing),
-                        :counting_time      => coalesce(row.counting_time, nothing),
-                        :normalised_by      => coalesce(row.trace_normalisation, NORMALISATION_UNKNOWN),
-                        :beam_off           => is_beam_off(row.trace_median, row.analysis_error, row.incident_monitor),
-                        :i2_collapsed       => is_i2_collapsed(row.transmitted_counts, row.incident_monitor, row.counting_time,
-                                                               setup_transmission_median(db, row.setup_id)),
-                        :mode               => coalesce(row.mode, nothing))
+        monitors = _file_monitors(db, row)
         HTTP.Response(200, ["Content-Type" => "application/json"],
             JSON3.write(Dict(:q => q, :I => I, :sigma => σ, :monitors => monitors)))
     end
+end
+
+function _file_monitors(db::SQLite.DB, row)
+    monitors = Dict{Symbol,Any}()
+    monitors[:transmitted_counts] = coalesce(row.transmitted_counts, nothing)
+    monitors[:exposure_time]      = coalesce(row.exposure_time, nothing)
+    monitors[:counting_time]      = coalesce(row.counting_time, nothing)
+    monitors[:normalised_by]      = coalesce(row.trace_normalisation, NORMALISATION_UNKNOWN)
+    monitors[:beam_off]           = is_beam_off(row.trace_median, row.analysis_error, row.incident_monitor)
+    monitors[:i2_collapsed]       = is_i2_collapsed(row.transmitted_counts, row.incident_monitor, row.counting_time,
+                                                    setup_transmission_median(db, row.setup_id))
+    monitors[:mode]               = coalesce(row.mode, nothing)
+    monitors
 end
 
 function _combined_trace_response(db::SQLite.DB, id::Int)
