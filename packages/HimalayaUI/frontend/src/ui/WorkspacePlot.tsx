@@ -6,7 +6,7 @@ import { makeAxis, positiveExtent, type Axis1D, type ScaleType } from "../plot/p
 import { hitTestPeaks, zoomXDomain, PEAK_HIT_PX } from "../plot/interaction";
 import { viewAxes, viewIntensity, viewLabel, type PlotView } from "../workspace/plotView";
 import { fitYDomain, PLOT_MARGINS, ticksFor } from "../workspace/plotScale";
-import { differenceAxis } from "../workspace/difference";
+import { differenceAxis, subtractedSeries } from "../workspace/difference";
 
 export interface CombLine {
   id: number;
@@ -175,10 +175,11 @@ export function WorkspacePlot({
   const lineQ = difference ? difference.q : trace.q;
   const viewed = (difference ? difference.d : trace.I).map((v, i) => viewIntensity(view, lineQ[i]!, v));
   const diffAxis = residual && difference ? differenceAxis(view, lineQ, viewed, shownX, peaks.filter((p) => !p.excluded).map((p) => p.q)) : null;
-  const I = diffAxis ? viewed.map(diffAxis.to) : viewed;
+  const curve = difference && !residual ? subtractedSeries(view, lineQ, difference.d, shownX) : null;
+  const I = diffAxis ? viewed.map(diffAxis.to) : curve ? curve.I : viewed;
   const shownCompares = difference ? [] : compares.map((c) => ({ ...c, I: c.I.map((v, i) => viewIntensity(view, c.q[i]!, v)) }));
   const shownMembers = difference ? [] : members.map((m) => ({ ...m, I: m.I.map((v, i) => viewIntensity(view, m.q[i]!, v)) }));
-  const yDomain = diffAxis ? diffAxis.domain : fitYDomain({ q: lineQ, I }, [...shownCompares, ...shownMembers], shownX, yType, difference !== undefined);
+  const yDomain = diffAxis ? diffAxis.domain : curve ? curve.domain : fitYDomain({ q: trace.q, I }, [...shownCompares, ...shownMembers], shownX, yType);
   const yLabel = viewLabel(view);
 
   const lowX = Math.min(...shownX);
