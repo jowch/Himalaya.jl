@@ -3,7 +3,10 @@ using HimalayaUI, HTTP, JSON3, Oxygen, SQLite
 const H = HimalayaUI
 
 const BUDGET_MS = Dict("boot" => 200, "experiment" => 200, "first sample" => 150)
-budget(step) = get(BUDGET_MS, step, 100) * parse(Float64, get(ENV, "FIRST_USE_BUDGET_SCALE", "1"))
+const ONE_METHOD_MS = 40
+budget_scale() = parse(Float64, get(ENV, "FIRST_USE_BUDGET_SCALE", "1"))
+budget(step) = get(BUDGET_MS, step, 100) * budget_scale()
+one_method_budget() = ONE_METHOD_MS * budget_scale()
 
 const SERVER_COMPILE_NS = Ref(UInt64(0))
 const TRACE = Ref{Union{Nothing, String}}(nothing)
@@ -78,11 +81,17 @@ function measure(db_path)
         out = f()
         ms = (SERVER_COMPILE_NS[] - t0) / 1e6
         push!(results, name => ms)
+        timed = sort!([(parse(Float64, m.captures[1]), l) for l in SERVER_TRACE
+                       for m in (match(r"^#=\s*([\d.]+) ms", l),) if m !== nothing]; rev = true)
+        slowest(entries) = join(("    " * first(l, 300) for (_, l) in first(entries, 8)), "\n")
         if ms > budget(name)
-            timed = sort!([(parse(Float64, m.captures[1]), l) for l in SERVER_TRACE
-                           for m in (match(r"^#=\s*([\d.]+) ms", l),) if m !== nothing]; rev = true)
             push!(failures, "$name compiled for $(round(Int, ms)) ms (budget $(round(Int, budget(name))) ms). Slowest:\n" *
-                  join(("    " * first(l, 300) for (_, l) in first(timed, 8)), "\n"))
+                  slowest(timed))
+        end
+        too_slow = filter(((t, _),) -> t > one_method_budget(), timed)
+        if !isempty(too_slow)
+            push!(failures, "$name compiled $(length(too_slow)) method(s) for more than $(round(Int, one_method_budget())) ms each, " *
+                  "which a warmed path never needs:\n" * slowest(too_slow))
         end
         out
     end
@@ -144,7 +153,8 @@ function measure(db_path)
     if !isempty(failures)
         println(stderr, """
 
-            First use compiled more than its budget. Each step below is the first time a fresh server \
+            First use compiled more than its budget, or one method compiled for longer than any warmed \
+            path needs. Each step below is the first time a fresh server \
             does it on the demo. Usual causes: a route the precompile workload does not drive, a value \
             whose type depends on the data (read DB rows with `sqlrows`), or cached code thrown away at \
             load (run scripts/check_precompile_cache.jl). See packages/HimalayaUI/src/AGENTS.md, "Cold start".

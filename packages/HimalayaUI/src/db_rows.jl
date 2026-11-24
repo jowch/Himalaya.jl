@@ -21,7 +21,10 @@ function sqlrows(q::SQLite.Query)
     NT = NamedTuple{Tuple(names), Tuple{types...}}
     rows = Vector{NT}(undef, length(values))
     for (k, v) in enumerate(values)
-        rows[k] = NT(Tuple(v))
+        rows[k] = _row_typed_by_columns_not_values(NT, v)
     end
     rows
 end
+
+_row_typed_by_columns_not_values(::Type{NT}, values::Vector{Any}) where {NT <: NamedTuple} =
+    ccall(:jl_new_structv, Any, (Any, Ptr{Any}, UInt32), NT, values, length(values))::NT
