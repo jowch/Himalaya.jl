@@ -115,7 +115,7 @@ test("check-truth reads the backend's real endpoint shapes end to end", async ()
     assert.equal(r.samples.length, 2);
     assert.equal(r.autosampler.ok, true);
     assert.deepEqual([r.autosampler.expected, r.autosampler.found], [3, 3]);
-    assert.ok(!stub.seen.some((u) => /\/exposures\/3[0-2]\//.test(u)));
+    assert.ok(!stub.seen.some((u) => /\/exposures\/3[0-2]\/assignment/.test(u)));
     assert.ok(stub.seen.includes("/api/samples?experiment_id=4"));
     assert.ok(!stub.seen.some((u) => u.includes("experiment_id=3")));
   } finally {
@@ -197,7 +197,7 @@ test("check-truth --ui hands the reader each sample's exposure order and folds i
     ]);
   };
   try {
-    const r = await checkTruth(cfg, { ui: true }, { views });
+    const r = await checkTruth(cfg, { ui: true }, { views, autosamplerViews: async () => new Map() });
     assert.equal(asked[0].experimentId, 4);
     assert.deepEqual(asked[0].samples[0], { id: 10, name: "MO_H2O_S1 (S01P01)", frameOrder: ["MO_H2O_S2", "MO_H2O_S1"], heldIds: [] });
     assert.equal(r.ok, false);
@@ -220,8 +220,8 @@ test("check-truth --ui --reload asks for a fresh workspace load, and plain --ui 
     return new Map();
   };
   try {
-    await checkTruth(cfg, { ui: true, reload: true }, { views });
-    await checkTruth(cfg, { ui: true }, { views });
+    await checkTruth(cfg, { ui: true, reload: true }, { views, autosamplerViews: async () => new Map() });
+    await checkTruth(cfg, { ui: true }, { views, autosamplerViews: async () => new Map() });
     assert.deepEqual(asked, [{ reload: true }, { reload: false }]);
   } finally {
     await stub.close();
@@ -238,7 +238,7 @@ test("check-truth --ui fails when the workspace list, read in place after a writ
       [11, { workspace: "MO_PEG5_S3", workspace_text: "Pn3m + Im3m", workspace_reused: true }],
     ]);
   try {
-    const r = await checkTruth(cfg, { ui: true }, { views });
+    const r = await checkTruth(cfg, { ui: true }, { views, autosamplerViews: async () => new Map() });
     assert.equal(r.workspace_read, "in place");
     assert.equal(r.ok, false);
     assert.ok(r.summary.invariants_failed.includes("workspace_status_matches"));
@@ -335,11 +335,13 @@ test("check-truth --ui reads each autosampler sample's workspace and compares it
   ]);
   try {
     const asked = [];
+    const tracelessAsked = [];
     const ok = await checkTruth(cfg, { ui: true }, {
       views: async () => new Map(),
-      autosamplerViews: async (_cfg, id, samples) => { asked.push(samples.map((s) => s.id)); return read(false)(); },
+      autosamplerViews: async (_cfg, id, samples) => { asked.push(samples.map((s) => s.id)); tracelessAsked.push(...samples.map((s) => s.traceless)); return read(false)(); },
     });
     assert.deepEqual(asked, [[20, 21, 22]]);
+    assert.deepEqual(tracelessAsked, [[], [], [32]]);
     assert.equal(ok.autosampler.ok, true, JSON.stringify(ok.autosampler.problems));
     const bad = await checkTruth(cfg, { ui: true }, { views: async () => new Map(), autosamplerViews: read(true) });
     assert.equal(bad.autosampler.ok, false);

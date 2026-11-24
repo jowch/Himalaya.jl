@@ -38,7 +38,7 @@ export function frameFromLabels(labels, frameOrder) {
 
 export const WORKSPACE_ROUTE = (experimentId, id) => `/experiments/${experimentId}/workspace/${id}`;
 
-async function settledGoto(page, cfg, route) {
+export async function settledGoto(page, cfg, route, heldIds = new Set()) {
   await leavePage(page);
   const tracker = armSettle(page);
   try {
@@ -49,7 +49,7 @@ async function settledGoto(page, cfg, route) {
   }
   const settle = await tracker.wait({ timeoutMs: 20000 });
   if (!settle.settled) throw new Error(`${route} did not settle within 20000 ms (busy ${settle.busy}, in flight: ${settle.inflight.join(" ")})`);
-  failedRequests(settle, route);
+  failedRequests(settle, route, heldIds);
 }
 
 export function workspaceStart(currentUrl, uiBase, experimentId, firstSampleId, { reload = false } = {}) {
