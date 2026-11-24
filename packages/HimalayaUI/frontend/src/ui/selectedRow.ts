@@ -1,1 +1,1 @@
-export const SELECTED_ROW = "bg-accent/25";
+export const SELECTED_ROW = "bg-row-selected";

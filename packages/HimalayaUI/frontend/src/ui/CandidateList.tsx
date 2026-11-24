@@ -25,7 +25,7 @@ const NOT_FOUND = "Not found in the selected images. The call stays, with lines 
 
 const ROW = "grid w-full items-center rounded-sm border px-2 text-left text-base disabled:opacity-50 ";
 const look = (on: boolean | "mixed") =>
-  "border-transparent " + (on === true ? SELECTED_ROW : on === "mixed" ? "bg-accent/10 hover:bg-accent/15" : "hover:bg-ink/6");
+  "border-transparent " + (on === true ? SELECTED_ROW : on === "mixed" ? "bg-row-selected/50 hover:bg-row-selected/75" : "hover:bg-ink/6");
 
 export function CandidateList({ rows, assigned, unsupported = NONE, disabled, formFactor, onToggle, onToggleGroup, onFormFactor, onHover }: Props): JSX.Element {
   const [pointerFocus, setPointerFocus] = useState(false);

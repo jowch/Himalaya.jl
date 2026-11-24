@@ -141,7 +141,7 @@ export function CustomIndexPanel({ draft, min, max, landed, total, disabled, onC
           type="button"
           onClick={onAdd}
           disabled={!canAdd}
-          className="flex w-full items-center justify-between gap-2 rounded-sm bg-accent px-3 py-2 text-body font-semibold text-paper disabled:opacity-50"
+          className="flex w-full items-center justify-between gap-2 rounded-sm bg-accent-fill px-3 py-2 text-body font-semibold text-on-accent disabled:opacity-50"
         >
           <span className="min-w-0 truncate">
             Add {draft.phase} {(typed ?? draft.lattice).toFixed(1)} Å

@@ -64,19 +64,19 @@ describe("CandidateList", () => {
         onToggle={() => {}} onToggleGroup={() => {}} onFormFactor={() => {}} onHover={() => {}} />,
     );
     expect(screen.getByTestId("workspace-bonnet-group")).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByTestId("workspace-bonnet-group").className).not.toMatch(/(^| )bg-accent\//);
+    expect(screen.getByTestId("workspace-bonnet-group").className).not.toMatch(/(^| )bg-row-selected/);
     rerender(
       <CandidateList rows={[{ kind: "group", members: [a!, b!], peaks: 8 }]} assigned={new Set([a!.id])} disabled={false} formFactor={false}
         onToggle={() => {}} onToggleGroup={() => {}} onFormFactor={() => {}} onHover={() => {}} />,
     );
     expect(screen.getByTestId("workspace-bonnet-group")).toHaveAttribute("aria-pressed", "mixed");
-    expect(screen.getByTestId("workspace-bonnet-group").className).toMatch(/(^| )bg-accent\/10( |$)/);
+    expect(screen.getByTestId("workspace-bonnet-group").className).toMatch(/(^| )bg-row-selected\/50( |$)/);
     rerender(
       <CandidateList rows={[{ kind: "group", members: [a!, b!], peaks: 8 }]} assigned={new Set([a!.id, b!.id])} disabled={false} formFactor={false}
         onToggle={() => {}} onToggleGroup={() => {}} onFormFactor={() => {}} onHover={() => {}} />,
     );
     expect(screen.getByTestId("workspace-bonnet-group")).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByTestId("workspace-bonnet-group").className).toMatch(/(^| )bg-accent\/25( |$)/);
+    expect(screen.getByTestId("workspace-bonnet-group").className).toMatch(/(^| )bg-row-selected( |$)/);
   });
 
   it("fills a ticked row instead of outlining it, so selection never reads as keyboard focus", () => {
@@ -88,12 +88,12 @@ describe("CandidateList", () => {
     const [on, off] = within(screen.getByTestId("workspace-candidates")).getAllByRole("button");
     const ff = screen.getByTestId("workspace-form-factor");
     for (const el of [on!, ff]) {
-      expect(el.className).toContain("bg-accent/25");
+      expect(el.className).toMatch(/(^| )bg-row-selected( |$)/);
       expect(el.className).not.toContain("shadow-");
       expect(el.className).toContain("border-transparent");
       expect(el.className).not.toMatch(/border-ink/);
     }
-    expect(off!.className).not.toContain("bg-accent/");
+    expect(off!.className).not.toContain("bg-row-selected");
     expect(off!.className).not.toMatch(/hover:border-/);
   });
 
