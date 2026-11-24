@@ -1,4 +1,4 @@
-using Test, HTTP, JSON3
+using Test, HTTP, JSON3, DBInterface
 
 @testset "trace route" begin
     tmp = mktempdir()
@@ -43,6 +43,15 @@ using Test, HTTP, JSON3
         @test haskey(bare.monitors, :transmitted_counts) && bare.monitors.transmitted_counts === nothing
         @test haskey(bare.monitors, :exposure_time) && bare.monitors.exposure_time === nothing
         @test haskey(bare.monitors, :counting_time) && bare.monitors.counting_time === nothing
+        @test body.monitors.normalised_by == "unknown"
+        @test body.monitors.beam_off == false
+
+        write(joinpath(dirname(analysis_dir), "integ.mpp"), "-o out\n-i yes i2 2.5e6\n-s 1\n")
+        @test HimalayaUI.read_trace_normalisations!(db) == 1
+        @test JSON3.read(String(call("GET", "/api/exposures/$e_id/trace").body)).monitors.normalised_by == "i2"
+
+        DBInterface.execute(db, "UPDATE exposures SET trace_median = 0.2 WHERE id = ?", [e_id])
+        @test JSON3.read(String(call("GET", "/api/exposures/$e_id/trace").body)).monitors.beam_off == true
 
         r = call("GET", "/api/exposures/99999/trace")
         @test r.status == 404

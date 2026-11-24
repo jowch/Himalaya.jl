@@ -5,13 +5,13 @@ const MIN_COMBINED_SOURCES = 2
 const COMBINED_KIND = "combined"
 const Q_GRID_RTOL = 1e-6
 
-# physics: each _tot.dat holds raw ring-averaged counts accumulated over its own
-# physics: exposure. The pooled estimate of intensity per monitor count is ΣIᵢ / ΣTᵢ,
-# physics: which stays unbiased when the beam decays between images. Multiplying by
-# physics: the mean monitor ΣTᵢ / N puts it back on the scale of one image, and that
-# physics: product is ΣIᵢ / N. Normalising each image first and taking an unweighted
-# physics: mean would overweight short or weak images. Errors add in quadrature:
-# physics: σ = √(Σσᵢ²) / N.
+# physics: the average is the unweighted mean ΣIᵢ / N. SASTool usually divides each
+# physics: trace by its own I_2 (the setup's trace_normalisation), so each image is
+# physics: already intensity per unit of transmitted beam and the mean is unbiased,
+# physics: though not the lowest-noise estimate: that weights each image by its I_2,
+# physics: Σ(Iᵢ·I₂ᵢ) / ΣI₂ᵢ. On a raw-count setup ΣIᵢ / N is the pooled sum put back on
+# physics: one image's scale, which stays unbiased when the beam decays between
+# physics: images. Errors add in quadrature either way: σ = √(Σσᵢ²) / N.
 function combine_traces(traces::AbstractVector)
     isempty(traces) && throw(ArgumentError("nothing to combine"))
     q = traces[1][1]
@@ -150,17 +150,29 @@ function _source_trace_path(db::SQLite.DB, exposure_id::Int)
     resolve_trace_path(String(r.analysis_dir), integration_pattern_for_exposure(db, exposure_id), String(r.filename))
 end
 
+function _combined_normalisation(db::SQLite.DB, cid::Int)::String
+    rows = sqlrows(DBInterface.execute(db,
+        "SELECT st.trace_normalisation FROM exposures e JOIN setups st ON st.id = e.setup_id WHERE e.id = ?", [cid]))
+    isempty(rows) ? NORMALISATION_UNKNOWN : coalesce(rows[1].trace_normalisation, NORMALISATION_UNKNOWN)
+end
+
 function combined_monitors(db::SQLite.DB, cid::Int)
     sources = combined_source_ids(db, cid)
-    none = Dict{Symbol,Any}(:transmitted_counts => nothing, :exposure_time => nothing, :counting_time => nothing)
+    normalised_by = _combined_normalisation(db, cid)
+    none = Dict{Symbol,Any}(:transmitted_counts => nothing, :exposure_time => nothing, :counting_time => nothing,
+                            :normalised_by => normalised_by, :beam_off => false)
     isempty(sources) && return none
     ph = join(fill("?", length(sources)), ",")
     rows = sqlrows(DBInterface.execute(db,
-        "SELECT transmitted_counts, exposure_time, counting_time FROM exposures WHERE id IN ($ph)", sources))
+        "SELECT transmitted_counts, exposure_time, counting_time, trace_median, analysis_error, incident_monitor
+           FROM exposures WHERE id IN ($ph)", sources))
+    beam_off = any(r -> is_beam_off(r.trace_median, r.analysis_error, r.incident_monitor), rows)
     usable(v) = !ismissing(v) && isfinite(Float64(v)) && Float64(v) > 0
-    all(r -> usable(r.transmitted_counts) && usable(r.exposure_time) && usable(r.counting_time), rows) || return none
+    all(r -> usable(r.transmitted_counts) && usable(r.exposure_time) && usable(r.counting_time), rows) ||
+        return merge(none, Dict{Symbol,Any}(:beam_off => beam_off))
     flux = sum(Float64(r.transmitted_counts) * Float64(r.exposure_time) / Float64(r.counting_time) for r in rows) / length(rows)
-    Dict{Symbol,Any}(:transmitted_counts => flux, :exposure_time => 1.0, :counting_time => 1.0)
+    Dict{Symbol,Any}(:transmitted_counts => flux, :exposure_time => 1.0, :counting_time => 1.0,
+                     :normalised_by => normalised_by, :beam_off => beam_off)
 end
 
 function combined_due(db::SQLite.DB, cid::Int)::Bool

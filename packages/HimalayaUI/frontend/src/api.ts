@@ -422,10 +422,14 @@ export const setExposureStatus = (
   "PATCH", `/api/exposures/${id}/status`, selected === undefined ? { status } : { status, selected }, opts);
 
 // Trace
+export type TraceNormalisation = "i2" | "i1" | "none" | "unknown";
+
 export interface TraceMonitors {
   transmitted_counts: number | null;
   exposure_time: number | null;
   counting_time: number | null;
+  normalised_by?: TraceNormalisation;
+  beam_off?: boolean;
 }
 
 export interface Trace {

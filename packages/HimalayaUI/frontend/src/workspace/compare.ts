@@ -55,19 +55,15 @@ export function matchScale(
   return ratios[Math.floor(ratios.length / 2)]!;
 }
 
-// physics: the SSRL integration writes raw detector counts, so a trace scales with
-// physics: the flux that crossed the sample while the detector counted. I_2, the
-// physics: beamstop photodiode behind the sample, dark-corrected, integrates that flux
-// physics: over the counting time, which runs longer than the exposure, so the flux
-// physics: during the exposure is I_2 × exposure time / counting time. It folds in
-// physics: each sample's own transmission, so the ratio of two exposures' flux puts a
-// physics: buffer on the sample's scale with no assumption about what either scatters.
-// physics: Raw counts, not counts per I_2: the error column of the real
-// physics: test/data/*_tot.dat files is Poisson per pixel. Their first bin has
-// physics: σ² = I exactly, and at high q σ²/I ≈ 1e-3 (about 1000 pixels a ring).
-// physics: If the integration ever does divide by the monitor, set this to "per_flux".
-export const TRACE_NORMALISATION: "raw_counts" | "per_flux" = "raw_counts";
-
+// physics: SASTool usually divides each trace by its own I_2, the beamstop photodiode
+// physics: behind the sample (the setup's integ.mpp has `-i yes i2`). I_2 is the beam
+// physics: that got through the sample, so a normalised sample and its buffer are
+// physics: already on one scale and the buffer scale is 1. A setup integrated without
+// physics: `-i` writes raw counts, which scale with the flux that crossed the sample
+// physics: while the detector counted: I_2 × exposure time / counting time, because
+// physics: the counter runs longer than the exposure. There the ratio of the two
+// physics: fluxes is the scale. Any other or unknown normalisation falls back to the
+// physics: high-q match, as does a beam-off image, whose I_2 is only dark noise.
 export type BeamMonitors = TraceMonitors;
 
 const positive = (v: number | null | undefined): v is number => typeof v === "number" && Number.isFinite(v) && v > 0;
@@ -79,8 +75,10 @@ export function transmittedFlux(m: BeamMonitors | undefined): number | null {
 
 export interface CompareScale {
   scale: number;
-  source: "monitor" | "matched" | "other_setup";
+  source: "normalised" | "monitor" | "matched" | "other_setup" | "beam_off" | "unknown_normalisation";
 }
+
+export const isMatchedScale = (s: CompareScale): boolean => s.source !== "normalised" && s.source !== "monitor";
 
 type ScaledTrace = Pick<Trace, "q" | "I" | "monitors">;
 
@@ -89,13 +87,16 @@ type ScaledTrace = Pick<Trace, "q" | "I" | "monitors">;
 // physics: puts two images on one scale only within a setup, so across setups the
 // physics: high-q match is the better estimate.
 export function compareScale(main: ScaledTrace, ref: ScaledTrace, peakQs: readonly number[], sameSetup: boolean): CompareScale {
-  if (!sameSetup) return { scale: matchScale(main, ref, peakQs), source: "other_setup" };
+  const matched = (source: CompareScale["source"]): CompareScale => ({ scale: matchScale(main, ref, peakQs), source });
+  if (!sameSetup) return matched("other_setup");
+  if (main.monitors?.beam_off || ref.monitors?.beam_off) return matched("beam_off");
+  const by = main.monitors?.normalised_by;
+  if (by === undefined || by !== ref.monitors?.normalised_by) return matched("unknown_normalisation");
+  if (by === "i2") return { scale: 1, source: "normalised" };
+  if (by !== "none") return matched("unknown_normalisation");
   const fm = transmittedFlux(main.monitors);
   const fr = transmittedFlux(ref.monitors);
-  if (fm !== null && fr !== null) {
-    return { scale: TRACE_NORMALISATION === "raw_counts" ? fm / fr : 1, source: "monitor" };
-  }
-  return { scale: matchScale(main, ref, peakQs), source: "matched" };
+  return fm !== null && fr !== null ? { scale: fm / fr, source: "monitor" } : matched("matched");
 }
 
 export function scaledTrace(ref: Pick<Trace, "q" | "I">, scale: number): { q: number[]; I: number[] } {

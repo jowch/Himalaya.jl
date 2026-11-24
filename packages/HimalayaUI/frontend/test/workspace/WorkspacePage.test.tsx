@@ -2304,7 +2304,7 @@ describe("WorkspacePage", () => {
   });
 
   it("scales by the transmitted beam when both traces carry monitors, even where high-q matching would disagree", () => {
-    const monitors = (transmitted_counts: number) => ({ transmitted_counts, exposure_time: 15, counting_time: 15.8 });
+    const monitors = (transmitted_counts: number) => ({ transmitted_counts, exposure_time: 15, counting_time: 15.8, normalised_by: "none" as const });
     state.corpus = state.corpus.map((s) => ({ ...s, setup_id: 1 }));
     state.trace = { ...makeTrace(1), monitors: monitors(6000) };
     state.compareTraces = new Map([[11, { ...makeTrace(2), monitors: monitors(8000) }]]);
@@ -2316,8 +2316,21 @@ describe("WorkspacePage", () => {
     expect(scale).toHaveTextContent(/^×0\.750$/);
   });
 
+  it("leaves a comparison at scale 1 when the setup already divides traces by the transmitted beam", () => {
+    const monitors = (transmitted_counts: number) => ({ transmitted_counts, exposure_time: 15, counting_time: 15.8, normalised_by: "i2" as const });
+    state.corpus = state.corpus.map((s) => ({ ...s, setup_id: 1 }));
+    state.trace = { ...makeTrace(1), monitors: monitors(6000) };
+    state.compareTraces = new Map([[11, { ...makeTrace(2), monitors: monitors(8000) }]]);
+    renderAt("/experiments/1/workspace/10");
+    fireEvent.keyDown(window, { key: "c" });
+    fireEvent.click(within(screen.getByRole("dialog")).getByText("A2"));
+    const scale = screen.getByRole("button", { name: "Remove A2" }).parentElement!.querySelector("[data-scale-source]")!;
+    expect(scale).toHaveAttribute("data-scale-source", "normalised");
+    expect(scale).toHaveTextContent(/^×1\.00$/);
+  });
+
   it("matches a comparison from another setup at high q, even when both carry monitors", () => {
-    const monitors = (transmitted_counts: number) => ({ transmitted_counts, exposure_time: 15, counting_time: 15.8 });
+    const monitors = (transmitted_counts: number) => ({ transmitted_counts, exposure_time: 15, counting_time: 15.8, normalised_by: "none" as const });
     state.corpus = state.corpus.map((s) => (s.id === 11 ? { ...s, setup_id: 2 } : { ...s, setup_id: 1 }));
     state.trace = { ...makeTrace(1), monitors: monitors(6000) };
     state.compareTraces = new Map([[11, { ...makeTrace(2), monitors: monitors(8000) }]]);
@@ -2330,7 +2343,7 @@ describe("WorkspacePage", () => {
   });
 
   it("matches at high q while the sample's setup is unknown, even when both carry monitors", () => {
-    const monitors = (transmitted_counts: number) => ({ transmitted_counts, exposure_time: 15, counting_time: 15.8 });
+    const monitors = (transmitted_counts: number) => ({ transmitted_counts, exposure_time: 15, counting_time: 15.8, normalised_by: "none" as const });
     state.corpus = state.corpus.map((s) => ({ ...s, setup_id: null }));
     state.trace = { ...makeTrace(1), monitors: monitors(6000) };
     state.compareTraces = new Map([[11, { ...makeTrace(2), monitors: monitors(8000) }]]);
@@ -2341,10 +2354,11 @@ describe("WorkspacePage", () => {
     expect(scale).toHaveAttribute("data-scale-source", "other_setup");
   });
 
-  it("says when a comparison had no monitors and was matched at high q instead", () => {
+  it("says when a raw-count comparison had no monitors and was matched at high q instead", () => {
+    const noFlux = { transmitted_counts: null, exposure_time: 15, counting_time: 15.8, normalised_by: "none" as const };
     state.corpus = state.corpus.map((s) => ({ ...s, setup_id: 1 }));
-    state.trace = makeTrace(1);
-    state.compareTraces = new Map([[11, makeTrace(2)]]);
+    state.trace = { ...makeTrace(1), monitors: noFlux };
+    state.compareTraces = new Map([[11, { ...makeTrace(2), monitors: noFlux }]]);
     renderAt("/experiments/1/workspace/10");
     fireEvent.keyDown(window, { key: "c" });
     fireEvent.click(within(screen.getByRole("dialog")).getByText("A2"));

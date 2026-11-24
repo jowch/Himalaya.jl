@@ -32,6 +32,7 @@ const MIGRATION_EXPOSURES_BEAM_MONITORS = "exposures_beam_monitors_v1"
 const MIGRATION_EXPOSURES_PIPE_LENGTH = "exposures_pipe_length_v1"
 const MIGRATION_EXPOSURES_Q_STEP = "exposures_q_step_v1"
 const MIGRATION_TRANSMITTED_FROM_I2 = "exposures_transmitted_from_i2_v1"
+const MIGRATION_SETUP_NORMALISATION = "setups_trace_normalisation_v1"
 const MIGRATION_EXPOSURES_DESELECTED = "exposures_deselected_v1"
 const MIGRATION_EXPOSURES_TRACE_MEDIAN = "exposures_trace_median_v1"
 const MIGRATION_BEAM_OFF_DESELECTED = "beam_off_deselected_v1"
@@ -103,7 +104,9 @@ CREATE TABLE IF NOT EXISTS setups (
     pixel_size_um_source TEXT DEFAULT 'default',
     q_units              TEXT,
     q_units_source       TEXT DEFAULT 'default',
-    created_at           DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at           DATETIME DEFAULT CURRENT_TIMESTAMP,
+    trace_normalisation  TEXT,
+    normalisation_base   REAL
 );
 
 CREATE TABLE IF NOT EXISTS loads (
@@ -547,6 +550,7 @@ function migrate_schema!(db::SQLite.DB)
     migrate_share_bridged_labels!(db)
     migrate_share_bridged_calls!(db)
     migrate_setups!(db)
+    migrate_setup_normalisation!(db)
     migrate_exposures_pipe_length!(db)
     migrate_transmitted_from_i2!(db)
     migrate_exposures_q_step!(db)
@@ -929,6 +933,18 @@ function migrate_exposures_pipe_length!(db::SQLite.DB)
         DBInterface.execute(db,
             "UPDATE exposures SET monitors_read = 0 WHERE prp_path IS NOT NULL AND pipe_length_m IS NULL")
         _record_migration!(db, MIGRATION_EXPOSURES_PIPE_LENGTH)
+    end
+    nothing
+end
+
+function migrate_setup_normalisation!(db::SQLite.DB)
+    _migrated(db, MIGRATION_SETUP_NORMALISATION) && return nothing
+    SQLite.transaction(db) do
+        existing = cols_of(db, "setups")
+        for (name, decl) in (("trace_normalisation", "TEXT"), ("normalisation_base", "REAL"))
+            name in existing || DBInterface.execute(db, "ALTER TABLE setups ADD COLUMN $name $decl")
+        end
+        _record_migration!(db, MIGRATION_SETUP_NORMALISATION)
     end
     nothing
 end

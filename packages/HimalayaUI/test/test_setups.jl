@@ -204,3 +204,41 @@ _count(db, sql, args...) = Int(only(Tables.rowtable(DBInterface.execute(db, sql,
         @test only(Tables.rowtable(DBInterface.execute(db, "SELECT pipe_length_m FROM exposures"))).pipe_length_m ≈ 0.7
     end
 end
+
+@testset "trace normalisation is read from the setup's integ.mpp" begin
+    dir = mktempdir()
+    mpp(text) = (p = joinpath(dir, "integ.mpp"); write(p, text); p)
+    @test HimalayaUI.parse_integ_normalisation(mpp("-o x\n-i yes i2 2.5e6\n")) == (by = "i2", base = 2.5e6)
+    @test HimalayaUI.parse_integ_normalisation(mpp("  -i yes I1 100\n")) == (by = "i1", base = 100.0)
+    @test HimalayaUI.parse_integ_normalisation(mpp("-o x\n-s 1\n")) == (by = "none", base = nothing)
+    @test HimalayaUI.parse_integ_normalisation(mpp("-i no\n")) == (by = "none", base = nothing)
+    @test HimalayaUI.parse_integ_normalisation(mpp("-i yes ion3 1\n")).by == "unknown"
+    @test HimalayaUI.parse_integ_normalisation(mpp("-i yes\n")).by == "unknown"
+
+    root = mktempdir()
+    analysis = joinpath(root, "setup1", "analysis", "automatic_analysis")
+    mkpath(analysis)
+    @test HimalayaUI.trace_normalisation(analysis).by == "unknown"
+    write(joinpath(root, "setup1", "analysis", "integ.mpp"), "-i yes i2 1e6\n")
+    @test HimalayaUI.trace_normalisation(analysis) == (by = "i2", base = 1e6)
+
+    db = HimalayaUI.open_db(joinpath(mktempdir(), "h.db"))
+    other = joinpath(root, "setup2", "analysis")
+    mkpath(other)
+    eid = HimalayaUI.create_experiment!(db; name = "norm", path = root,
+        data_dir = joinpath(root, "setup1", "data"), analysis_dir = analysis)
+    sid2 = HimalayaUI.create_setup!(db; experiment_id = eid, data_dir = joinpath(root, "setup2", "data"),
+        analysis_dir = other, position = 1)
+    stored() = Dict(Int(r.id) => (r.trace_normalisation, r.normalisation_base)
+                    for r in Tables.rowtable(DBInterface.execute(db, "SELECT id, trace_normalisation, normalisation_base FROM setups")))
+    @test HimalayaUI.read_trace_normalisations!(db; experiment_id = eid) == 1
+    @test isequal(stored()[sid2], ("unknown", missing))
+    @test any(v -> v == ("i2", 1e6), values(stored()))
+
+    write(joinpath(other, "integ.mpp"), "-o x\n")
+    @test HimalayaUI.read_trace_normalisations!(db) == 1
+    @test isequal(stored()[sid2], ("none", missing))
+    write(joinpath(other, "integ.mpp"), "-i yes i2 5\n")
+    @test HimalayaUI.read_trace_normalisations!(db) == 0
+    @test isequal(stored()[sid2], ("none", missing))
+end

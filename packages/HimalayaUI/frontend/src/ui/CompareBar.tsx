@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Kbd } from "./Kbd";
 import { Tooltip } from "./Tooltip";
-import type { CompareScale } from "../workspace/compare";
+import { isMatchedScale, type CompareScale } from "../workspace/compare";
 import { COMPARE_DASH } from "./WorkspacePlot";
 
 export interface CompareChip {
@@ -26,11 +26,14 @@ interface Props {
   trailing?: ReactNode;
 }
 
-function scaleNote(scale: CompareScale): string {
-  if (scale.source === "monitor") return "Scaled by the transmitted beam";
-  if (scale.source === "other_setup") return "From another setup, so matched at high q";
-  return "No transmitted-beam reading, so matched at high q";
-}
+const SCALE_NOTES: Record<CompareScale["source"], string> = {
+  normalised: "Both already divided by the transmitted beam, so not rescaled",
+  monitor: "Scaled by the transmitted beam",
+  matched: "No transmitted-beam reading, so matched at high q",
+  other_setup: "From another setup, so matched at high q",
+  beam_off: "Taken with the beam off, so matched at high q",
+  unknown_normalisation: "Integration settings not found, so matched at high q",
+};
 
 export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, onSubtract, onRemove, onAdd, full = false, trailing }: Props): JSX.Element {
   const perRow = Math.max(1, Math.ceil((chips.length + (full ? 0 : 1) + 1) / 2));
@@ -60,7 +63,7 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
                   <>
                     <span className="block font-semibold">{c.setup ? `${c.name} · ${c.setup}` : c.name}</span>
                     <span className="block">{`Click to ${off ? "show" : "hide"}. ${modKey}-click to ${sub ? "stop subtracting" : "subtract it from the current trace"}.`}</span>
-                    {c.scale !== undefined && <span className="block">{scaleNote(c.scale)}</span>}
+                    {c.scale !== undefined && <span className="block">{SCALE_NOTES[c.scale.source]}</span>}
                   </>
                 }
               >
@@ -86,13 +89,13 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
                 </button>
               </Tooltip>
               {c.scale !== undefined && (
-                <Tooltip content={scaleNote(c.scale)}>
+                <Tooltip content={SCALE_NOTES[c.scale.source]}>
                   <span
                     className={"grid min-w-min grid-cols-[auto_minmax(0,1fr)] items-baseline whitespace-nowrap text-ink-faint" + dim}
                     data-scale-source={c.scale.source}
                   >
                     <span data-scale-value className="shrink-0">×{c.scale.scale.toPrecision(3)}</span>
-                    {c.scale.source !== "monitor" && <span className="min-w-0 truncate">{"\u00a0matched"}</span>}
+                    {isMatchedScale(c.scale) && <span className="min-w-0 truncate">{"\u00a0matched"}</span>}
                   </span>
                 </Tooltip>
               )}

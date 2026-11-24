@@ -16,6 +16,7 @@ end
 _nothing_if_missing(x) = ismissing(x) ? nothing : x
 
 function backfill_monitors!(db::SQLite.DB, experiment_id::Int)
+    read_trace_normalisations!(db; experiment_id)
     rows = sqlrows(DBInterface.execute(db,
         "SELECT id, prp_path FROM exposures
           WHERE experiment_id = ? AND prp_path IS NOT NULL AND monitors_read = 0",

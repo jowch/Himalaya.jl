@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import type { TraceNormalisation } from "../../src/api";
 import { compareScale, transmittedFlux, clampDomain, stripRange, interpolateAt, matchScale, robustRange, scaledTrace, subtractTrace } from "../../src/workspace/compare";
 
 const q = Array.from({ length: 101 }, (_, i) => 0.01 + i * 0.002);
@@ -101,9 +102,13 @@ describe("compare", () => {
 });
 
 describe("beam-monitor scaling", () => {
-  const mon = (transmitted_counts: number | null, exposure_time: number | null = 15, counting_time: number | null = 15.8) => ({
-    transmitted_counts, exposure_time, counting_time,
-  });
+  const mon = (
+    transmitted_counts: number | null,
+    exposure_time: number | null = 15,
+    counting_time: number | null = 15.8,
+    normalised_by: TraceNormalisation = "none",
+    beam_off = false,
+  ) => ({ transmitted_counts, exposure_time, counting_time, normalised_by, beam_off });
   const withMonitors = <T extends object>(t: T, monitors: ReturnType<typeof mon>) => ({ ...t, monitors });
 
   it("measures the flux through the sample during the detector exposure, not the longer counting window", () => {
@@ -133,6 +138,31 @@ describe("beam-monitor scaling", () => {
       .toBeCloseTo((30 / 30.8) / (15 / 15.8), 9);
   });
 
+  it("leaves traces already divided by I_2 at scale 1, whatever their flux ratio", () => {
+    const sample = withMonitors({ q, I: q.map((x) => 3 * background(x)) }, mon(6000, 15, 15.8, "i2"));
+    const buffer = withMonitors({ q, I: q.map(background) }, mon(10000, 15, 15.8, "i2"));
+    expect(compareScale(sample, buffer, [], true)).toEqual({ scale: 1, source: "normalised" });
+  });
+
+  it("matches at high q when the normalisation is unknown, by I_1, or differs between the traces", () => {
+    const sample = withMonitors({ q, I: q.map((x) => 3 * background(x)) }, mon(6000, 15, 15.8, "unknown"));
+    const buffer = withMonitors({ q, I: q.map(background) }, mon(10000, 15, 15.8, "unknown"));
+    for (const [a, b] of [["unknown", "unknown"], ["i1", "i1"], ["i2", "none"]] as const) {
+      const r = compareScale({ ...sample, monitors: mon(6000, 15, 15.8, a) }, { ...buffer, monitors: mon(10000, 15, 15.8, b) }, [], true);
+      expect(r.source).toBe("unknown_normalisation");
+      expect(r.scale).toBeCloseTo(3, 3);
+    }
+  });
+
+  it("matches at high q when either image was taken with the beam off, whatever its I_2 reads", () => {
+    const sample = withMonitors({ q, I: q.map((x) => 3 * background(x)) }, mon(6000, 15, 15.8, "i2"));
+    const dark = withMonitors({ q, I: q.map(background) }, mon(250, 15, 15.8, "i2", true));
+    expect(compareScale(sample, dark, [], true).source).toBe("beam_off");
+    expect(compareScale(dark, sample, [], true).source).toBe("beam_off");
+    const raw = withMonitors({ q, I: q.map((x) => 3 * background(x)) }, mon(6000));
+    expect(compareScale(raw, withMonitors({ q, I: q.map(background) }, mon(250, 15, 15.8, "none", true)), [], true).source).toBe("beam_off");
+  });
+
   it("matches at high q across setups even when both traces carry monitors", () => {
     const sample = withMonitors({ q, I: q.map((x) => 3 * background(x)) }, mon(7000));
     const other = withMonitors({ q, I: q.map(background) }, mon(7000));
@@ -148,7 +178,7 @@ describe("beam-monitor scaling", () => {
     const r = compareScale(sample, buffer, [], true);
     expect(r.source).toBe("matched");
     expect(r.scale).toBeCloseTo(3, 3);
-    expect(compareScale({ q, I: sample.I }, withMonitors({ q, I: buffer.I }, mon(7000)), [], true).source).toBe("matched");
+    expect(compareScale({ q, I: sample.I }, withMonitors({ q, I: buffer.I }, mon(7000)), [], true).source).toBe("unknown_normalisation");
     expect(compareScale(withMonitors({ q, I: sample.I }, mon(7000)), withMonitors({ q, I: buffer.I }, mon(-3)), [], true).source).toBe("matched");
   });
 });

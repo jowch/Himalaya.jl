@@ -252,6 +252,11 @@ function try_backfill_monitors!(db::SQLite.DB, experiment_id::Int)
 end
 
 function backfill_all_monitors!(db::SQLite.DB)
+    try
+        read_trace_normalisations!(db)
+    catch err
+        @warn "trace normalisation read failed" exception = err
+    end
     ids = sqlrows(DBInterface.execute(db,
         "SELECT DISTINCT experiment_id FROM exposures
           WHERE prp_path IS NOT NULL AND monitors_read = 0 AND experiment_id IS NOT NULL"))
