@@ -807,9 +807,9 @@ export function WorkspacePage(): JSX.Element {
     return notes;
   }, [samples, labelList]);
   const bridgePickable = useMemo(() => {
-    const others = samples.filter((s) => s.id !== sampleId && !bridged.includes(s.id));
+    const others = samples.filter((s) => s.id !== sampleId && !bridged.includes(s.id) && modulesOf(s).calls === modules.calls);
     return sample ? rankBridgeMates(sample, others) : others;
-  }, [samples, sample, sampleId, bridged]);
+  }, [samples, sample, sampleId, bridged, modules.calls, modulesOf]);
   useEffect(() => {
     setLabeling(false);
     setColoringLabel(undefined);

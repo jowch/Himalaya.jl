@@ -61,6 +61,16 @@ function refuse_autosampler_exposure(db::SQLite.DB, exposure_id::Integer)
          WHERE e.id = ? AND st.mode = 'autosampler'""", exposure_id) ? _autosampler_refusal(AUTOSAMPLER_NOT_EDITABLE) : nothing
 end
 
+const AUTOSAMPLER_NOT_BRIDGEABLE = "A capillary sample and an autosampler sample can't be the same sample."
+
+function autosampler_samples(db::SQLite.DB, sample_ids::AbstractVector{<:Integer})
+    isempty(sample_ids) && return Set{Int}()
+    marks = join(fill("?", length(sample_ids)), ", ")
+    Set(Int(r.id) for r in sqlrows(DBInterface.execute(db, """
+        SELECT s.id FROM samples s JOIN setups st ON st.id = s.setup_id
+         WHERE st.mode = 'autosampler' AND s.id IN ($marks)""", Int.(collect(sample_ids)))))
+end
+
 function refuse_autosampler_row(db::SQLite.DB, table::AbstractString, id::Integer)
     rows = sqlrows(DBInterface.execute(db, "SELECT exposure_id FROM $table WHERE id = ?", [Int(id)]))
     isempty(rows) || ismissing(rows[1].exposure_id) ? nothing : refuse_autosampler_exposure(db, Int(rows[1].exposure_id))

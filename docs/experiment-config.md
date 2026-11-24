@@ -304,10 +304,9 @@ analyze it: adding, excluding or removing a peak, adding or removing an
 assignment member, a custom or speculative index, deleting an index,
 `POST /api/exposures/:id/analyze` and `PUT /api/samples/:id/selection` all
 answer 422 and write no event. Setting a call state is not refused: it cannot
-start an analysis, and a bridge writes one to an autosampler mate that undo
-must be able to restore. Labels, bridges, comparisons and drop or restore
-still work. The workspace never asks which call to keep when the other side of
-a bridge is an autosampler sample.
+start an analysis, and undoing a bridge between two autosampler samples
+restores it. Labels, bridges within one mode, comparisons and drop or restore
+still work.
 
 **In the workspace.** The workspace picks its modules from the setup mode of
 the open sample (`workspace/modules.ts`). A `capillary` or undecided setup has
@@ -319,7 +318,7 @@ rest move up: the tools column holds only the Image section, open, in both the
 tall and the short layout. The column stays empty until the setups load, so the
 first paint never shows modules the sample's mode then removes. The header's
 progress block keeps its place, hidden, when no sample has a review state, so
-it does not appear as data loads. This arrangement is provisional: as modules are added to the autosampler mode, they go where they are sensible.
+it does not appear as data loads. A capillary sample and an autosampler sample cannot be bridged: the "Same sample as" page offers only samples of the open sample's mode (a setup with no mode counts as capillary), and `POST /api/samples/:id/bridge` answers 422 for a bridge, or a join of two groups, that would mix them. A mixed group stored before this rule is left as it is and stays listed. This arrangement is provisional: as modules are added to the autosampler mode, they go where they are sensible.
 
 The sample list shows no unreviewed mark or call for it (an analysis-gap mark
 such as "All dropped" still shows, without the word "Unreviewed"). It is not
@@ -331,8 +330,7 @@ tooltip says nothing about review (the timeline's third value is `2`, against
 `1` reviewed and `0` not). The selection controls follow the sample that owns
 each image, so a bridged capillary mate keeps its selection controls beside an
 autosampler sample, and the help lists the selection rows when any image in the
-strip can be selected. A bridge still shares a call with an autosampler mate
-(`align_call_state!`): the call is stored on the mate but never shown. When no
+strip can be selected. When no
 sample in the experiment has a review state, the header shows no progress and
 the card shows no review count.
 

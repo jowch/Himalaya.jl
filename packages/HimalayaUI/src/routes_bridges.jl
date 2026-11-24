@@ -36,6 +36,13 @@ function _live_sample_count(db, sample_ids::Vector{Int})
         sample_ids))).n)
 end
 
+function refuse_mixed_mode_bridge(db, a::Int, b::Int)
+    ga, gb = _bridge_group_of(db, a), _bridge_group_of(db, b)
+    ids = unique(vcat(a, b, ga === nothing ? Int[] : _bridge_members(db, ga), gb === nothing ? Int[] : _bridge_members(db, gb)))
+    autosamplers = autosampler_samples(db, ids)
+    isempty(autosamplers) || length(autosamplers) == length(ids) ? nothing : _autosampler_refusal(AUTOSAMPLER_NOT_BRIDGEABLE)
+end
+
 function bridge_moves(ga::Union{Int, Nothing}, gb::Union{Int, Nothing}, a::Int, b::Int,
                       members_of::Function, fresh::Function)
     ga === nothing && gb === nothing && (g = fresh(); return [(a, g), (b, g)])
@@ -151,6 +158,9 @@ function register_bridge_routes!()
         Int(both[1].experiment_id) == Int(both[2].experiment_id) ||
             return _json_error(422, "samples are in different experiments")
         exp_id = Int(both[1].experiment_id)
+
+        refusal = refuse_mixed_mode_bridge(db, id, to)
+        refusal === nothing || return refusal
 
         keep = body isa AbstractDict ? get(body, "keep_call", nothing) : nothing
         keep isa Integer && (keep = Int(keep))
