@@ -11,14 +11,14 @@ describe("exposureKindLabel", () => {
 
   it("says how many images the beamline kept when it rejected some", () => {
     expect(exposureKindLabel(makeExposure({ frames_total: 10, frames_rejected: 1 })))
-      .toBe("9 of 10 images, beamline average");
+      .toBe("9 of 10 images");
   });
 
   it("says how many images the beamline averaged when it rejected none", () => {
     expect(exposureKindLabel(makeExposure({ frames_total: 10, frames_rejected: 0 })))
-      .toBe("10 images, beamline average");
+      .toBe("10 images");
     expect(exposureKindLabel(makeExposure({ frames_total: 1, frames_rejected: 0 })))
-      .toBe("1 image, beamline average");
+      .toBe("1 image");
   });
 
   it("reads as a single image while the counts are unknown", () => {
