@@ -1,4 +1,5 @@
-using Test, HTTP, JSON3, SQLite, DBInterface, Tables
+using Test, HTTP, SQLite, DBInterface, Tables
+import JSON
 
 @testset "combine_traces" begin
     q = [0.01, 0.02, 0.03]
@@ -60,10 +61,10 @@ _select!(db, ids) = DBInterface.execute(db,
     @test HimalayaUI.count_auto_peaks(db, cid) > 0
     run = first(HimalayaUI.sqlrows(DBInterface.execute(db,
         "SELECT payload FROM user_actions WHERE action = 'analyze_run' AND entity_id = ? ORDER BY id DESC LIMIT 1", [cid])))
-    @test JSON3.read(run.payload).average_of_sample == fx.s_id
+    @test JSON.parse(run.payload).average_of_sample == fx.s_id
     single = first(HimalayaUI.sqlrows(DBInterface.execute(db,
         "SELECT payload FROM user_actions WHERE action = 'analyze_run' AND entity_id = ? ORDER BY id DESC LIMIT 1", [fx.ids[1]])))
-    @test !haskey(JSON3.read(single.payload), :average_of_sample)
+    @test !haskey(JSON.parse(single.payload), :average_of_sample)
     @test HimalayaUI.refresh_selection!(db, fx.s_id) == cid
     @test _kind_count(db, fx.s_id) == 1
     @test !HimalayaUI.combined_due(db, cid)
@@ -112,15 +113,15 @@ end
     cid = HimalayaUI.refresh_selection!(db, fx.s_id)
     json_hdr = ["Content-Type" => "application/json"]
     put(ids) = call -> call("PUT", "/api/samples/$(fx.s_id)/selection";
-        body = JSON3.write(Dict(:exposure_ids => ids)), headers = json_hdr)
+        body = JSON.json(Dict(:exposure_ids => ids)), headers = json_hdr)
     status(call, id, st) = call("PATCH", "/api/exposures/$id/status";
-        body = JSON3.write(Dict(:status => st)), headers = json_hdr)
+        body = JSON.json(Dict(:status => st)), headers = json_hdr)
     with_inproc_routes(db) do call
         analyzed() = only(filter(s -> s.id == fx.s_id,
-            JSON3.read(String(call("GET", "/api/samples?experiment_id=$(fx.exp_id)").body)))).analyzed_exposure_id
-        listing() = JSON3.read(String(call("GET", "/api/samples/$(fx.s_id)/exposures").body))
+            JSON.parse(String(call("GET", "/api/samples?experiment_id=$(fx.exp_id)").body)))).analyzed_exposure_id
+        listing() = JSON.parse(String(call("GET", "/api/samples/$(fx.s_id)/exposures").body))
         gap() = only(filter(s -> s.id == fx.s_id,
-            JSON3.read(String(call("GET", "/api/samples?experiment_id=$(fx.exp_id)").body)))).analysis_gap
+            JSON.parse(String(call("GET", "/api/samples?experiment_id=$(fx.exp_id)").body)))).analysis_gap
         @test analyzed() == cid
         @test gap() === nothing
 
@@ -131,7 +132,7 @@ end
         @test all(e -> e.selected === true, filter(e -> e.kind == "file", listing()))
         @test !any(e -> haskey(e, :deselected), listing())
 
-        tr = JSON3.read(String(call("GET", "/api/exposures/$cid/trace").body))
+        tr = JSON.parse(String(call("GET", "/api/exposures/$cid/trace").body))
         @test sort(collect(tr.sources)) == fx.ids
         @test tr.monitors.transmitted_counts ≈ 1000.0
         @test tr.monitors.i2_collapsed == false
@@ -139,12 +140,12 @@ end
         DBInterface.execute(db, "UPDATE exposures SET incident_monitor = 1.5 WHERE kind = 'file'")
         original = only(Tables.rowtable(DBInterface.execute(db, "SELECT transmitted_counts FROM exposures WHERE id = ?", [fx.ids[2]]))).transmitted_counts
         DBInterface.execute(db, "UPDATE exposures SET transmitted_counts = 1.0 WHERE id = ?", [fx.ids[2]])
-        @test JSON3.read(String(call("GET", "/api/exposures/$cid/trace").body)).monitors.i2_collapsed == true
+        @test JSON.parse(String(call("GET", "/api/exposures/$cid/trace").body)).monitors.i2_collapsed == true
         DBInterface.execute(db, "UPDATE exposures SET transmitted_counts = ? WHERE id = ?", [original, fx.ids[2]])
 
         r = put([fx.ids[3], fx.ids[1]])(call)
         @test r.status == 200
-        body = JSON3.read(String(r.body))
+        body = JSON.parse(String(r.body))
         @test collect(body.exposure_ids) == [fx.ids[1], fx.ids[3]]
         pair = body.analyzed_exposure_id
         @test _sources(db, pair) == [fx.ids[1], fx.ids[3]]
@@ -152,12 +153,12 @@ end
         @test only(filter(e -> e.id == fx.ids[2], listing())).selected === false
 
         r = put([fx.ids[2]])(call)
-        @test JSON3.read(String(r.body)).analyzed_exposure_id == fx.ids[2]
+        @test JSON.parse(String(r.body)).analyzed_exposure_id == fx.ids[2]
         @test analyzed() == fx.ids[2]
 
         r = put(Int[])(call)
         @test r.status == 200
-        @test JSON3.read(String(r.body)).analyzed_exposure_id === nothing
+        @test JSON.parse(String(r.body)).analyzed_exposure_id === nothing
         @test analyzed() === nothing
         @test gap() == "none_selected"
 
@@ -170,10 +171,10 @@ end
         @test status(call, fx.ids[2], "accepted").status == 200
         @test only(filter(e -> e.id == fx.ids[2], listing())).selected === false
         @test status(call, fx.ids[2], "rejected").status == 200
-        undo = call("PATCH", "/api/exposures/$(fx.ids[2])/status"; body = JSON3.write(Dict(:status => nothing, :selected => true)), headers = json_hdr)
+        undo = call("PATCH", "/api/exposures/$(fx.ids[2])/status"; body = JSON.json(Dict(:status => nothing, :selected => true)), headers = json_hdr)
         @test undo.status == 200
         @test HimalayaUI.selected_image_ids(db, fx.s_id) == fx.ids
-        @test call("PATCH", "/api/exposures/$(fx.ids[2])/status"; body = JSON3.write(Dict(:status => nothing, :selected => "yes")), headers = json_hdr).status == 422
+        @test call("PATCH", "/api/exposures/$(fx.ids[2])/status"; body = JSON.json(Dict(:status => nothing, :selected => "yes")), headers = json_hdr).status == 422
         @test put([fx.ids[1], fx.ids[3]])(call).status == 200
         @test analyzed() == HimalayaUI.combined_for_set(db, fx.s_id, [fx.ids[1], fx.ids[3]])
 
@@ -191,8 +192,8 @@ end
         @test status(call, cid, "rejected").status == 422
         @test put([fx.ids[3]])(call).status == 422
         @test put([cid])(call).status == 422
-        @test call("PUT", "/api/samples/$(fx.s_id)/selection"; body = JSON3.write(Dict(:exposure_ids => "all")), headers = json_hdr).status == 422
-        @test call("PUT", "/api/samples/99999/selection"; body = JSON3.write(Dict(:exposure_ids => Int[])), headers = json_hdr).status == 404
+        @test call("PUT", "/api/samples/$(fx.s_id)/selection"; body = JSON.json(Dict(:exposure_ids => "all")), headers = json_hdr).status == 422
+        @test call("PUT", "/api/samples/99999/selection"; body = JSON.json(Dict(:exposure_ids => Int[])), headers = json_hdr).status == 404
     end
 end
 
@@ -205,9 +206,9 @@ end
     image = HimalayaUI.create_exposure!(db; experiment_id = fx.exp_id, sample_id = water, setup_id = auto, filename = "a_tot")
     with_inproc_routes(db) do call
         resp = call("PUT", "/api/samples/$water/selection";
-            body = JSON3.write(Dict(:exposure_ids => Int[])), headers = ["Content-Type" => "application/json"])
+            body = JSON.json(Dict(:exposure_ids => Int[])), headers = ["Content-Type" => "application/json"])
         @test resp.status == 422
-        @test JSON3.read(String(resp.body)).error == "An autosampler sample has one image, so there is nothing to select."
+        @test JSON.parse(String(resp.body)).error == "An autosampler sample has one image, so there is nothing to select."
         @test HimalayaUI.selected_image_ids(db, water) == [image]
     end
 end

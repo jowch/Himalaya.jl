@@ -1,4 +1,5 @@
-using Test, Random, JSON3, SQLite, DBInterface, Tables
+using Test, Random, SQLite, DBInterface, Tables
+import JSON
 using HimalayaUI
 import HimalayaPeakModel as HPM
 
@@ -128,7 +129,7 @@ end
 
         r = HimalayaUI.run_peak_training(ro; recipe, cache_dir, io = devnull,
                                          peaks_slack = 100, ff_slack = 100)
-        r = JSON3.read(JSON3.write(r))
+        r = JSON.parse(JSON.json(r))
         @test r.status == "passed"
         @test r.counts.exposures == 36 && r.counts.labelled_exposures == 36 && r.counts.group_by == "experiment"
         @test r.counts.labels.positive > 0 && r.counts.labels.negative + r.counts.labels.weak_negative > 0
@@ -151,7 +152,7 @@ end
         @test length(r.metrics.sweep) == length(0.3:0.05:0.9)
         @test r.metrics.cv.candidate_auc > 0.5
         @test length(r.metrics.cv.by_threshold) == 5
-        @test sort(collect(keys(r.metrics.gate.caps))) == [:peaks_per_exposure, :peaks_per_form_factor]
+        @test sort(collect(String, keys(r.metrics.gate.caps))) == ["peaks_per_exposure", "peaks_per_form_factor"]
         if r.status == "passed"
             f = HPM.from_dict(HPM.Fitted, r.fitted)
             @test HPM.canonical(HPM.to_dict(f)) == HPM.canonical(r.fitted)
@@ -160,12 +161,12 @@ end
             @test r.fitted === nothing && !isempty(r.metrics.gate.reasons)
         end
 
-        again = JSON3.read(JSON3.write(HimalayaUI.run_peak_training(ro; recipe, cache_dir, io = devnull,
+        again = JSON.parse(JSON.json(HimalayaUI.run_peak_training(ro; recipe, cache_dir, io = devnull,
                                                                     peaks_slack = 100, ff_slack = 100)))
         @test again.metrics.comparison == r.metrics.comparison && again.threshold == r.threshold
         @test length(readdir(cache_dir)) == 36
 
-        tight = JSON3.read(JSON3.write(HimalayaUI.run_peak_training(ro; recipe, io = devnull,
+        tight = JSON.parse(JSON.json(HimalayaUI.run_peak_training(ro; recipe, io = devnull,
                                                                     peaks_slack = -100)))
         @test tight.status == "rejected" && tight.fitted === nothing && tight.threshold == 0.9
         @test "no threshold keeps peaks within the caps" in tight.metrics.gate.reasons
@@ -179,7 +180,7 @@ end
         DBInterface.close!(b.db)
         ro = HimalayaUI.open_readonly_db(b.path)
         cache_dir = HimalayaUI.peak_feature_cache_dir(b.path)
-        r = JSON3.read(JSON3.write(HimalayaUI.run_peak_training(ro; cache_dir, io = devnull)))
+        r = JSON.parse(JSON.json(HimalayaUI.run_peak_training(ro; cache_dir, io = devnull)))
         @test r.status == "rejected" && r.fitted === nothing
         @test !r.metrics.gate.passed && length(r.metrics.gate.reasons) == 3
         @test r.counts.curated_exposures == 12 && r.counts.experiments == 2

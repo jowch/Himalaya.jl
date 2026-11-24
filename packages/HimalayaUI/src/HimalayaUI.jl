@@ -1,5 +1,6 @@
 module HimalayaUI
 
+include("json_writer.jl")
 include("db_rows.jl")
 include("db.jl")
 include("setups.jl")

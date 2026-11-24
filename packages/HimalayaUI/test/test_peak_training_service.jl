@@ -1,4 +1,5 @@
-using Test, JSON3, SQLite, DBInterface, Tables
+using Test, SQLite, DBInterface, Tables
+import JSON
 using HimalayaUI
 import HimalayaPeakModel as HPM
 isdefined(@__MODULE__, :_pt_db) || include("peak_training_fixture.jl")
@@ -12,7 +13,7 @@ function _pts_events!(db, n; age = "-1 hour")
     end
 end
 
-_pts_result(; status = "passed", watermark = 0) = JSON3.write(Dict(
+_pts_result(; status = "passed", watermark = 0) = JSON.json(Dict(
     "status" => status, "watermark" => watermark, "counts" => Dict("curations" => 1),
     "recipe" => Dict("version" => 1), "recipe_id" => "r1", "feature_version" => "fv",
     "core_version" => "0.0.0", "threshold" => 0.5, "nms" => 8,
@@ -52,7 +53,7 @@ const _PTS_PRINT = "println(ENV[\"FAKE_RESULT\"])"
             HimalayaUI.wait_peak_training()
             row = only(_pts_rows(db))
             @test row.status == "passed" && row.label_watermark == 4 && row.recipe_id == "r1"
-            @test JSON3.read(row.fitted_json).kind == "fake"
+            @test JSON.parse(row.fitted_json).kind == "fake"
             @test !HimalayaUI.peak_training_running()
             @test HimalayaUI.maybe_start_peak_training!(db; min_events = 1, quiet_seconds = 60.0) === :not_due
             @test length(_pts_rows(db)) == 1
@@ -99,7 +100,7 @@ end
             HimalayaUI.wait_peak_training()
             row = only(_pts_rows(db))
             @test row.status == "failed" && row.label_watermark == 2 && ismissing(row.fitted_json)
-            err = JSON3.read(row.metrics_json).error
+            err = JSON.parse(row.metrics_json).error
             @test occursin("the real reason", err) && occursin("code 3", err) && length(err) <= 2000
             @test HimalayaUI.maybe_start_peak_training!(db; kw...) === :not_due
         end
@@ -113,7 +114,7 @@ end
             @test HimalayaUI.maybe_start_peak_training!(db; min_events = 1, quiet_seconds = 0.0) === :started
             HimalayaUI.wait_peak_training()
             row = only(_pts_rows(db))
-            @test row.status == "failed" && occursin("no usable result", JSON3.read(row.metrics_json).error)
+            @test row.status == "failed" && occursin("no usable result", JSON.parse(row.metrics_json).error)
         end
     end
 end
@@ -258,11 +259,11 @@ end
             @test HimalayaUI.production_detector(db).id == row.id
             @test row.label_watermark == HimalayaUI.label_watermark(db)
             @test row.core_version == string(pkgversion(HimalayaUI.Himalaya))
-            @test JSON3.read(row.metrics_json).gate.passed
-            @test JSON3.read(row.counts_json).exposures == 36
-            @test HPM.recipe_id(HPM.from_dict(HPM.Recipe, JSON3.read(row.recipe_json))) == row.recipe_id
-            f = HPM.from_dict(HPM.Fitted, JSON3.read(row.fitted_json))
-            @test HPM.canonical(HPM.to_dict(f)) == HPM.canonical(JSON3.read(row.fitted_json))
+            @test JSON.parse(row.metrics_json).gate.passed
+            @test JSON.parse(row.counts_json).exposures == 36
+            @test HPM.recipe_id(HPM.from_dict(HPM.Recipe, JSON.parse(row.recipe_json))) == row.recipe_id
+            f = HPM.from_dict(HPM.Fitted, JSON.parse(row.fitted_json))
+            @test HPM.canonical(HPM.to_dict(f)) == HPM.canonical(JSON.parse(row.fitted_json))
             @test length(readdir(joinpath(dir, "cache", "peak-features", "h"))) == 36
             @test isequal(snapshot(), before)
         finally

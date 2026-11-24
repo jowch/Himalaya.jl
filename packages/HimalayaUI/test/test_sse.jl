@@ -1,4 +1,5 @@
-using Test, HTTP, JSON3, SQLite, DBInterface, Tables
+using Test, HTTP, SQLite, DBInterface, Tables
+import JSON
 using HimalayaUI
 
 # ---------------------------------------------------------------------------
@@ -24,7 +25,7 @@ using HimalayaUI
 
             HimalayaUI.broadcast_event!(
                 1, "test_broadcast", "exposure", 42,
-                user_id, "tab-xyz", "uuid-789", JSON3.write(Dict(:foo => "bar")))
+                user_id, "tab-xyz", "uuid-789", JSON.json(Dict(:foo => "bar")))
 
             @test isready(pending)
             frame = take!(pending)
@@ -39,7 +40,7 @@ using HimalayaUI
             # Parse JSON to assert ts + client_op_id keys present.
             data_line = first([l for l in split(frame, '\n') if startswith(l, "data: ")])
             json_str = replace(data_line, r"^data: " => "")
-            obj = JSON3.read(json_str)
+            obj = JSON.parse(json_str)
             @test haskey(obj, :client_op_id)
             @test haskey(obj, :ts)
             @test obj.client_op_id == "uuid-789"
@@ -82,7 +83,7 @@ end
             @test occursin("\"client_op_id\":null", frame)
 
             data_line = first([l for l in split(frame, '\n') if startswith(l, "data: ")])
-            obj = JSON3.read(replace(data_line, r"^data: " => ""))
+            obj = JSON.parse(replace(data_line, r"^data: " => ""))
             @test haskey(obj, :client_op_id)
             @test haskey(obj, :ts)
             @test occursin(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$", obj.ts)
@@ -260,7 +261,7 @@ end
             frame = take!(pending)
             @test occursin("event: curation", frame)
             data_line = first([l for l in split(frame, '\n') if startswith(l, "data: ")])
-            obj = JSON3.read(replace(data_line, r"^data: " => ""))
+            obj = JSON.parse(replace(data_line, r"^data: " => ""))
             @test obj.kind == "analyze_run"
         finally
             lock(HimalayaUI.SSE_LOCK) do
@@ -304,7 +305,7 @@ end
             @test Base.n_avail(pending) == 1
             frame = take!(pending)
             data_line = first([l for l in split(frame, '\n') if startswith(l, "data: ")])
-            obj = JSON3.read(replace(data_line, r"^data: " => ""))
+            obj = JSON.parse(replace(data_line, r"^data: " => ""))
             @test obj.kind == "peak_added"
         finally
             lock(HimalayaUI.SSE_LOCK) do
@@ -326,12 +327,12 @@ end
         end
         try
             HimalayaUI.broadcast_event!(1, "peak_added", "exposure", 42,
-                nothing, "tab-id", "op-id", JSON3.write(Dict(:q => 1.0));
+                nothing, "tab-id", "op-id", JSON.json(Dict(:q => 1.0));
                 post_state = Dict(:analysis_inputs_hash => "abc123", :indices => Any[]))
             frame = take!(sub.pending)
             data_line = first([l for l in split(frame, '\n') if startswith(l, "data: ")])
             json_str = replace(data_line, r"^data: " => "")
-            obj = JSON3.read(json_str)
+            obj = JSON.parse(json_str)
             @test haskey(obj, :post_state)
             @test obj.post_state.analysis_inputs_hash == "abc123"
         finally
@@ -354,11 +355,11 @@ end
         end
         try
             HimalayaUI.broadcast_event!(1, "peak_added", "exposure", 42,
-                nothing, "tab-id", "op-id", JSON3.write(Dict(:q => 1.0)))
+                nothing, "tab-id", "op-id", JSON.json(Dict(:q => 1.0)))
             frame = take!(sub.pending)
             data_line = first([l for l in split(frame, '\n') if startswith(l, "data: ")])
             json_str = replace(data_line, r"^data: " => "")
-            obj = JSON3.read(json_str)
+            obj = JSON.parse(json_str)
             @test !haskey(obj, :post_state)
         finally
             lock(HimalayaUI.SSE_LOCK) do

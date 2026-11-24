@@ -1,4 +1,5 @@
-using Test, HTTP, JSON3, SQLite, DBInterface, Tables
+using Test, HTTP, SQLite, DBInterface, Tables
+import JSON
 
 @testset "exposures routes" begin
     tmp = mktempdir()
@@ -27,7 +28,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         # List
         r = call("GET", "/api/samples/$s_id/exposures")
         @test r.status == 200
-        list = JSON3.read(String(r.body))
+        list = JSON.parse(String(r.body))
         @test length(list) == 2
         @test list[1].filename == "example_tot"
         @test list[1].selected === true
@@ -44,12 +45,12 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test list[1].beam_off === false
         @test !haskey(list[1], :trace_median)
         DBInterface.execute(db, "UPDATE exposures SET trace_median = 0.0 WHERE id = ?", [e2])
-        @test JSON3.read(String(call("GET", "/api/samples/$s_id/exposures").body))[2].beam_off === true
+        @test JSON.parse(String(call("GET", "/api/samples/$s_id/exposures").body))[2].beam_off === true
         DBInterface.execute(db, "UPDATE exposures SET trace_median = NULL WHERE id = ?", [e2])
 
         r = call("GET", "/api/samples/$s2_id/exposures")
         @test r.status == 200
-        withprp = JSON3.read(String(r.body))
+        withprp = JSON.parse(String(r.body))
         @test withprp[1].id == e3
         @test withprp[1].timestamp == "2026-03-14T14:05:11"
         @test withprp[1].beam_energy_ev ≈ 9000.5
@@ -62,7 +63,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
 
         write(prp, "Beam energy=1.0 eV\nPipe length=1 mm\nDetector=rewritten\n")
         write(joinpath(tmp, "missing.prp"), "Beam energy=11000 eV\nDetector=late\n")
-        again = JSON3.read(String(call("GET", "/api/samples/$s2_id/exposures").body))
+        again = JSON.parse(String(call("GET", "/api/samples/$s2_id/exposures").body))
         @test again[1].beam_energy_ev ≈ 9000.5
         @test again[1].detector == "Pilatus 1M"
         @test again[2].beam_energy_ev ≈ 11000
@@ -72,7 +73,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         r = call("POST", "/api/exposures/$e1/analyze";
             headers = ["X-Username" => "alice"])
         @test r.status == 200
-        @test JSON3.read(String(r.body)).analyzed === true
+        @test JSON.parse(String(r.body)).analyzed === true
 
         # 404 for nonexistent
         r = call("POST", "/api/exposures/9999/analyze";

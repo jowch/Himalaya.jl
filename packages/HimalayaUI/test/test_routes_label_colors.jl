@@ -1,4 +1,5 @@
-using Test, HTTP, JSON3, SQLite, DBInterface, Tables
+using Test, HTTP, SQLite, DBInterface, Tables
+import JSON
 using HimalayaUI
 
 if !isdefined(@__MODULE__, :with_test_server)
@@ -8,12 +9,12 @@ end
 const _COLOR_HEADERS = ["Content-Type" => "application/json", "X-Username" => "alice"]
 
 _set_color(call, label, color) = call("PUT", "/api/label-colors"; headers=_COLOR_HEADERS,
-    body=Vector{UInt8}(JSON3.write(Dict(:label => label, :color => color))))
+    body=Vector{UInt8}(JSON.json(Dict(:label => label, :color => color))))
 
 function _colors(call)
     r = call("GET", "/api/label-colors")
     @test r.status == 200
-    Dict(String(x.label) => String(x.color) for x in JSON3.read(String(r.body)))
+    Dict(String(x.label) => String(x.color) for x in JSON.parse(String(r.body)))
 end
 
 _color_rows(db) = Dict(String(r.label) => String(r.color) for r in
@@ -26,7 +27,7 @@ _color_rows(db) = Dict(String(r.label) => String(r.color) for r in
             @test _colors(call) == Dict()
             r = _set_color(call, "37C", "teal")
             @test r.status == 200
-            @test Dict(String(x.label) => String(x.color) for x in JSON3.read(String(r.body))) == Dict("37C" => "teal")
+            @test Dict(String(x.label) => String(x.color) for x in JSON.parse(String(r.body))) == Dict("37C" => "teal")
             _set_color(call, "37c", "rose")
             @test _colors(call) == Dict("37C" => "rose")
         end

@@ -1,4 +1,5 @@
-using Test, HTTP, JSON3, SQLite, DBInterface, Tables
+using Test, HTTP, SQLite, DBInterface, Tables
+import JSON
 
 @testset "peaks routes" begin
     tmp = mktempdir()
@@ -17,7 +18,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         # GET peaks
         r = call("GET", "/api/exposures/$e_id/peaks")
         @test r.status == 200
-        list = JSON3.read(String(r.body))
+        list = JSON.parse(String(r.body))
         @test length(list) > 0
         @test all(p -> p.source == "auto", list)
 
@@ -27,17 +28,17 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
 
         # POST manual peak
         r = call("POST", "/api/exposures/$e_id/peaks";
-            body = Vector{UInt8}(JSON3.write(Dict(:q => 0.5))),
+            body = Vector{UInt8}(JSON.json(Dict(:q => 0.5))),
             headers = ["Content-Type" => "application/json",
                        "X-Username"   => "alice"])
         @test r.status == 201
-        body = JSON3.read(String(r.body))
+        body = JSON.parse(String(r.body))
         @test body.q == 0.5
         @test body.source == "manual"
         peak_id = body.id
 
         r = call("GET", "/api/exposures/$e_id/peaks")
-        list = JSON3.read(String(r.body))
+        list = JSON.parse(String(r.body))
         manual = filter(p -> p.source == "manual", list)
         @test length(manual) == 1
 
@@ -45,13 +46,13 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         r = call("DELETE", "/api/peaks/manual/$peak_id";
             headers = ["X-Username" => "alice"])
         @test r.status == 200
-        del_body = JSON3.read(String(r.body))
+        del_body = JSON.parse(String(r.body))
         @test haskey(del_body, :event_id)
         @test haskey(del_body, :view_row_id)
         @test haskey(del_body, :analysis_inputs_hash)
 
         r = call("GET", "/api/exposures/$e_id/peaks")
-        list = JSON3.read(String(r.body))
+        list = JSON.parse(String(r.body))
         # After deleting the only manual peak, no manual peaks should remain.
         # (Note: auto peak ids and curation ids are in separate sequences and
         #  may collide; check by source rather than by id.)
@@ -70,26 +71,26 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
 
         # Toggle excluded=true
         r = call("PATCH", "/api/peaks/auto/$auto_id";
-            body = Vector{UInt8}(JSON3.write(Dict(:excluded => true))),
+            body = Vector{UInt8}(JSON.json(Dict(:excluded => true))),
             headers = ["Content-Type" => "application/json",
                        "X-Username"   => "alice"])
         @test r.status == 200
-        body = JSON3.read(String(r.body))
+        body = JSON.parse(String(r.body))
         @test body.excluded == true
         @test body.source   == "auto"
 
         # Toggle back to false
         r = call("PATCH", "/api/peaks/auto/$auto_id";
-            body = Vector{UInt8}(JSON3.write(Dict(:excluded => false))),
+            body = Vector{UInt8}(JSON.json(Dict(:excluded => false))),
             headers = ["Content-Type" => "application/json",
                        "X-Username"   => "alice"])
         @test r.status == 200
-        body = JSON3.read(String(r.body))
+        body = JSON.parse(String(r.body))
         @test body.excluded == false
 
         # PATCH unknown peak → 404
         r = call("PATCH", "/api/peaks/auto/99999";
-            body = Vector{UInt8}(JSON3.write(Dict(:excluded => true))),
+            body = Vector{UInt8}(JSON.json(Dict(:excluded => true))),
             headers = ["Content-Type" => "application/json",
                        "X-Username"   => "alice"])
         @test r.status == 404
@@ -97,11 +98,11 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         # ── Reanalysis preserves excluded state ──────────────────────────
         # Re-mark the auto peak as excluded, then re-run analysis.
         r = call("PATCH", "/api/peaks/auto/$auto_id";
-            body = Vector{UInt8}(JSON3.write(Dict(:excluded => true))),
+            body = Vector{UInt8}(JSON.json(Dict(:excluded => true))),
             headers = ["Content-Type" => "application/json",
                        "X-Username"   => "alice"])
         @test r.status == 200
-        excluded_q = JSON3.read(String(r.body)).q
+        excluded_q = JSON.parse(String(r.body)).q
 
         HimalayaUI.analyze_exposure!(db, e_id, analysis_dir)
 
@@ -109,7 +110,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         # and an exclude curation row should still be present for it.
         # Use the joined view (get_peaks_for_exposure) via GET /api/exposures/:id/peaks.
         r_after = call("GET", "/api/exposures/$e_id/peaks")
-        post_list = JSON3.read(String(r_after.body))
+        post_list = JSON.parse(String(r_after.body))
         match = filter(p -> abs(Float64(p.q) - excluded_q) < 1e-6, post_list)
         @test !isempty(match)
         @test match[1].excluded == true
@@ -138,23 +139,23 @@ end
     with_inproc_routes(db) do call
         # Missing q → 400.
         r = call("POST", "/api/exposures/$e_id/peaks";
-            body = Vector{UInt8}(JSON3.write(Dict(:NOT_q => 0.5))),
+            body = Vector{UInt8}(JSON.json(Dict(:NOT_q => 0.5))),
             headers = ["Content-Type" => "application/json",
                        "X-Username"   => "alice"])
         @test r.status == 400
-        body = JSON3.read(String(r.body))
+        body = JSON.parse(String(r.body))
         @test occursin("missing field: q", String(body.error))
 
         # Non-numeric q → 400.
         r = call("POST", "/api/exposures/$e_id/peaks";
-            body = Vector{UInt8}(JSON3.write(Dict(:q => "not-a-number"))),
+            body = Vector{UInt8}(JSON.json(Dict(:q => "not-a-number"))),
             headers = ["Content-Type" => "application/json",
                        "X-Username"   => "alice"])
         @test r.status == 400
 
         # Valid body still 201.
         r = call("POST", "/api/exposures/$e_id/peaks";
-            body = Vector{UInt8}(JSON3.write(Dict(:q => 0.5))),
+            body = Vector{UInt8}(JSON.json(Dict(:q => 0.5))),
             headers = ["Content-Type" => "application/json",
                        "X-Username"   => "alice"])
         @test r.status == 201
@@ -178,13 +179,13 @@ end
 
     with_inproc_routes(db) do call
         r = call("POST", "/api/exposures/$e_id/peaks";
-            body = Vector{UInt8}(JSON3.write(Dict(:q => 0.77))),
+            body = Vector{UInt8}(JSON.json(Dict(:q => 0.77))),
             headers = ["Content-Type" => "application/json", "X-Username" => "bob"])
         @test r.status == 201
-        new_id = JSON3.read(String(r.body)).id
+        new_id = JSON.parse(String(r.body)).id
 
         r = call("GET", "/api/exposures/$e_id/peaks")
-        list = JSON3.read(String(r.body))
+        list = JSON.parse(String(r.body))
         manual = filter(p -> p.source == "manual", list)
         @test length(manual) == 1
         @test manual[1].id == new_id
@@ -215,10 +216,10 @@ end
 
         # Exclude it
         r = call("PATCH", "/api/peaks/auto/$auto_id";
-            body = Vector{UInt8}(JSON3.write(Dict(:excluded => true))),
+            body = Vector{UInt8}(JSON.json(Dict(:excluded => true))),
             headers = ["Content-Type" => "application/json", "X-Username" => "alice"])
         @test r.status == 200
-        @test JSON3.read(String(r.body)).excluded == true
+        @test JSON.parse(String(r.body)).excluded == true
 
         # Verify a curation row was inserted
         excl = Tables.rowtable(DBInterface.execute(db,
@@ -228,10 +229,10 @@ end
 
         # Un-exclude it
         r = call("PATCH", "/api/peaks/auto/$auto_id";
-            body = Vector{UInt8}(JSON3.write(Dict(:excluded => false))),
+            body = Vector{UInt8}(JSON.json(Dict(:excluded => false))),
             headers = ["Content-Type" => "application/json", "X-Username" => "alice"])
         @test r.status == 200
-        @test JSON3.read(String(r.body)).excluded == false
+        @test JSON.parse(String(r.body)).excluded == false
 
         # Curation row should be gone
         excl2 = Tables.rowtable(DBInterface.execute(db,
@@ -263,7 +264,7 @@ end
         # Two consecutive PATCH { excluded: true }
         for _ in 1:2
             r = call("PATCH", "/api/peaks/auto/$auto_id";
-                body = Vector{UInt8}(JSON3.write(Dict(:excluded => true))),
+                body = Vector{UInt8}(JSON.json(Dict(:excluded => true))),
                 headers = ["Content-Type" => "application/json", "X-Username" => "alice"])
             @test r.status == 200
         end
@@ -292,16 +293,16 @@ end
     with_inproc_routes(db) do call
         # Add a manual peak
         r = call("POST", "/api/exposures/$e_id/peaks";
-            body = Vector{UInt8}(JSON3.write(Dict(:q => 0.88))),
+            body = Vector{UInt8}(JSON.json(Dict(:q => 0.88))),
             headers = ["Content-Type" => "application/json", "X-Username" => "carol"])
         @test r.status == 201
-        manual_id = JSON3.read(String(r.body)).id
+        manual_id = JSON.parse(String(r.body)).id
 
         # Delete it
         r = call("DELETE", "/api/peaks/manual/$manual_id";
             headers = ["X-Username" => "carol"])
         @test r.status == 200
-        del_body = JSON3.read(String(r.body))
+        del_body = JSON.parse(String(r.body))
         @test haskey(del_body, :event_id)
         @test haskey(del_body, :view_row_id)
         @test haskey(del_body, :analysis_inputs_hash)
@@ -309,7 +310,7 @@ end
 
         # Should no longer appear in GET (no manual peaks)
         r = call("GET", "/api/exposures/$e_id/peaks")
-        list = JSON3.read(String(r.body))
+        list = JSON.parse(String(r.body))
         @test !any(p -> p.source == "manual", list)
 
         # curation row gone
@@ -337,16 +338,16 @@ end
     with_inproc_routes(db) do call
         # Two sequential POSTs at different q values.
         r1 = call("POST", "/api/exposures/$e_id/peaks";
-            body = Vector{UInt8}(JSON3.write(Dict(:q => 0.111))),
+            body = Vector{UInt8}(JSON.json(Dict(:q => 0.111))),
             headers = ["Content-Type" => "application/json", "X-Username" => "alice"])
         @test r1.status == 201
-        b1 = JSON3.read(String(r1.body))
+        b1 = JSON.parse(String(r1.body))
 
         r2 = call("POST", "/api/exposures/$e_id/peaks";
-            body = Vector{UInt8}(JSON3.write(Dict(:q => 0.222))),
+            body = Vector{UInt8}(JSON.json(Dict(:q => 0.222))),
             headers = ["Content-Type" => "application/json", "X-Username" => "bob"])
         @test r2.status == 201
-        b2 = JSON3.read(String(r2.body))
+        b2 = JSON.parse(String(r2.body))
 
         # Each response id must point to the row whose q matches the request.
         row1 = Tables.rowtable(DBInterface.execute(db,
@@ -380,20 +381,20 @@ end
         "SELECT id FROM auto_peaks WHERE exposure_id = ? ORDER BY q LIMIT 1", [e_id]))).id)
     align_next_curation_id!(db, auto_id)
     hdrs = ["Content-Type" => "application/json", "X-Username" => "alice"]
-    listed(call) = JSON3.read(String(call("GET", "/api/exposures/$e_id/peaks").body))
+    listed(call) = JSON.parse(String(call("GET", "/api/exposures/$e_id/peaks").body))
     twins(call) = filter(p -> p.id == auto_id, listed(call))
 
     with_inproc_routes(db) do call
         r = call("POST", "/api/exposures/$e_id/peaks";
-            body = Vector{UInt8}(JSON3.write(Dict(:q => 0.5))), headers = hdrs)
+            body = Vector{UInt8}(JSON.json(Dict(:q => 0.5))), headers = hdrs)
         @test r.status == 201
-        @test JSON3.read(String(r.body)).id == auto_id
+        @test JSON.parse(String(r.body)).id == auto_id
         @test sort([String(p.source) for p in twins(call)]) == ["auto", "manual"]
 
         r = call("PATCH", "/api/peaks/auto/$auto_id";
-            body = Vector{UInt8}(JSON3.write(Dict(:excluded => true))), headers = hdrs)
+            body = Vector{UInt8}(JSON.json(Dict(:excluded => true))), headers = hdrs)
         @test r.status == 200
-        body = JSON3.read(String(r.body))
+        body = JSON.parse(String(r.body))
         @test body.source == "auto"
         @test body.excluded === true
         @test Dict(String(p.source) => p.excluded for p in twins(call)) ==
@@ -407,7 +408,7 @@ end
         @test r.status == 404
 
         r = call("PATCH", "/api/peaks/auto/$auto_id";
-            body = Vector{UInt8}(JSON3.write(Dict(:excluded => false))), headers = hdrs)
+            body = Vector{UInt8}(JSON.json(Dict(:excluded => false))), headers = hdrs)
         @test r.status == 200
         @test [(String(p.source), p.excluded) for p in twins(call)] == [("auto", false)]
     end
@@ -439,13 +440,13 @@ end
 
     with_inproc_routes(db) do call
         r = call("POST", "/api/exposures/$e_id/peaks";
-            body = Vector{UInt8}(JSON3.write(Dict(:q => manual_q))), headers = hdrs)
-        @test JSON3.read(String(r.body)).id == twin_id
+            body = Vector{UInt8}(JSON.json(Dict(:q => manual_q))), headers = hdrs)
+        @test JSON.parse(String(r.body)).id == twin_id
         r = call("POST", "/api/exposures/$e_id/custom-index";
-            body = Vector{UInt8}(JSON3.write(Dict(:phase => "Lamellar", :basis => manual_q, :ratios => [1.0]))),
+            body = Vector{UInt8}(JSON.json(Dict(:phase => "Lamellar", :basis => manual_q, :ratios => [1.0]))),
             headers = hdrs)
         @test r.status == 200
-        ix = Int(JSON3.read(String(r.body)).id)
+        ix = Int(JSON.parse(String(r.body)).id)
         @test claimed(ix) == [(twin_id, "curation")]
 
         DBInterface.execute(db,
@@ -517,12 +518,12 @@ end
             _drain_curation_frames(pending; timeout=0.05)
 
             r = call("POST", "/api/exposures/$e_id/peaks";
-                body = Vector{UInt8}(JSON3.write(Dict(:q => 0.55))),
+                body = Vector{UInt8}(JSON.json(Dict(:q => 0.55))),
                 headers = ["Content-Type"  => "application/json",
                            "X-Username"    => "alice",
                            "X-Client-Op-Id" => "uuid-m22-post-1"])
             @test r.status == 201
-            body = JSON3.read(String(r.body))
+            body = JSON.parse(String(r.body))
             @test haskey(body, :event_id)
             @test haskey(body, :view_row_id)
             @test haskey(body, :analysis_inputs_hash)
@@ -557,7 +558,7 @@ end
             _drain_curation_frames(pending; timeout=0.05)
 
             r1 = call("POST", "/api/exposures/$e_id/peaks";
-                body = Vector{UInt8}(JSON3.write(Dict(:q => 0.66))),
+                body = Vector{UInt8}(JSON.json(Dict(:q => 0.66))),
                 headers = ["Content-Type"   => "application/json",
                            "X-Username"     => "alice",
                            "X-Client-Op-Id" => "uuid-m22-retry"])
@@ -569,7 +570,7 @@ end
 
             # Same op_id → cached body returned, no new event row, no broadcast.
             r2 = call("POST", "/api/exposures/$e_id/peaks";
-                body = Vector{UInt8}(JSON3.write(Dict(:q => 0.66))),
+                body = Vector{UInt8}(JSON.json(Dict(:q => 0.66))),
                 headers = ["Content-Type"   => "application/json",
                            "X-Username"     => "alice",
                            "X-Client-Op-Id" => "uuid-m22-retry"])
@@ -606,13 +607,13 @@ end
             _drain_curation_frames(pending; timeout=0.05)
 
             r = call("PATCH", "/api/peaks/auto/$auto_id";
-                body = Vector{UInt8}(JSON3.write(Dict(:excluded => true))),
+                body = Vector{UInt8}(JSON.json(Dict(:excluded => true))),
                 headers = ["Content-Type"   => "application/json",
                            "X-Username"     => "alice",
                            "X-Client-Op-Id" => "uuid-m22-patch"])
             @test r.status == 200
             r_body_str = String(copy(r.body))
-            body = JSON3.read(r_body_str)
+            body = JSON.parse(r_body_str)
             @test body.excluded == true
             @test haskey(body, :event_id)
             @test haskey(body, :analysis_inputs_hash)
@@ -628,7 +629,7 @@ end
 
             # Retry returns cached body, no second event.
             r2 = call("PATCH", "/api/peaks/auto/$auto_id";
-                body = Vector{UInt8}(JSON3.write(Dict(:excluded => true))),
+                body = Vector{UInt8}(JSON.json(Dict(:excluded => true))),
                 headers = ["Content-Type"   => "application/json",
                            "X-Username"     => "alice",
                            "X-Client-Op-Id" => "uuid-m22-patch"])
@@ -654,17 +655,17 @@ end
         try
             # First add a manual peak (without subscriber drained).
             r = call("POST", "/api/exposures/$e_id/peaks";
-                body = Vector{UInt8}(JSON3.write(Dict(:q => 0.42))),
+                body = Vector{UInt8}(JSON.json(Dict(:q => 0.42))),
                 headers = ["Content-Type" => "application/json", "X-Username" => "alice"])
             @test r.status == 201
-            manual_id = JSON3.read(String(r.body)).id
+            manual_id = JSON.parse(String(r.body)).id
             _drain_curation_frames(pending; timeout=0.1)
 
             r = call("DELETE", "/api/peaks/manual/$manual_id";
                 headers = ["X-Username"     => "alice",
                            "X-Client-Op-Id" => "uuid-m22-del"])
             @test r.status == 200
-            del_body = JSON3.read(String(r.body))
+            del_body = JSON.parse(String(r.body))
             @test haskey(del_body, :analysis_inputs_hash)
 
             frames = _drain_curation_frames(pending)
@@ -704,7 +705,7 @@ end
     with_inproc_routes(db) do call
         send(method, path, body = nothing) = body === nothing ?
             call(method, path; headers = json_hdr) :
-            call(method, path; body = Vector{UInt8}(JSON3.write(body)), headers = json_hdr)
+            call(method, path; body = Vector{UInt8}(JSON.json(body)), headers = json_hdr)
         attempts = [
             ("POST", "/api/exposures/$e_id/peaks", Dict(:q => 0.5)),
             ("PATCH", "/api/peaks/auto/$auto_peak", Dict(:excluded => true)),
@@ -720,17 +721,17 @@ end
             events, cached, peaks, curations = count("user_actions"), count("idempotent_responses"), count("auto_peaks"), count("peak_curations")
             r = send(method, path, body)
             @test (method, path, r.status) == (method, path, 422)
-            @test JSON3.read(String(r.body)).error == "An autosampler sample is not analyzed, so its peaks, calls and indices can't be edited."
+            @test JSON.parse(String(r.body)).error == "An autosampler sample is not analyzed, so its peaks, calls and indices can't be edited."
             @test (count("user_actions"), count("idempotent_responses"), count("auto_peaks"), count("peak_curations")) ==
                   (events, cached, peaks, curations)
         end
 
         r = send("POST", "/api/samples/$s_id/call/state", Dict(:state => "form_factor"))
         @test r.status == 200
-        @test JSON3.read(String(r.body)).state == "form_factor"
+        @test JSON.parse(String(r.body)).state == "form_factor"
 
         r = call("PATCH", "/api/exposures/$e_id/status";
-            body = Vector{UInt8}(JSON3.write(Dict(:status => "rejected"))), headers = json_hdr)
+            body = Vector{UInt8}(JSON.json(Dict(:status => "rejected"))), headers = json_hdr)
         @test r.status == 200
     end
 end

@@ -1,4 +1,4 @@
-using HTTP, JSON3, DBInterface, Tables, Oxygen
+using HTTP, DBInterface, Tables, Oxygen
 
 function register_users_routes!()
     @get "/api/users" function(req::HTTP.Request)
@@ -12,15 +12,15 @@ function register_users_routes!()
         if !haskey(body, :username)
             return HTTP.Response(400,
                 ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => "missing field: username")))
+                to_json(Dict(:error => "missing field: username")))
         end
         username = String(body.username)
         isempty(username) && return HTTP.Response(400,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "username required")))
+            to_json(Dict(:error => "username required")))
         occursin(r"^[A-Za-z0-9_]+$", username) || return HTTP.Response(400,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "username must contain only letters, digits, and underscores")))
+            to_json(Dict(:error => "username must contain only letters, digits, and underscores")))
 
         first_name = haskey(body, :first_name) ? (isnothing(body.first_name) ? nothing : String(body.first_name)) : nothing
         last_name  = haskey(body, :last_name)  ? (isnothing(body.last_name)  ? nothing : String(body.last_name))  : nothing
@@ -42,7 +42,7 @@ function register_users_routes!()
                     "SELECT id, username, first_name, last_name FROM users WHERE id = ?", [existing.id]))
             end
             return HTTP.Response(200, ["Content-Type" => "application/json"],
-                JSON3.write(row_to_json(rows[1])))
+                to_json(row_to_json(rows[1])))
         end
 
         result = DBInterface.execute(db,
@@ -50,7 +50,7 @@ function register_users_routes!()
             [username, first_name, last_name])
         uid = Int(DBInterface.lastrowid(result))
         HTTP.Response(201, ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:id => uid, :username => username,
+            to_json(Dict(:id => uid, :username => username,
                              :first_name => first_name, :last_name => last_name)))
     end
 end

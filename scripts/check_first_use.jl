@@ -1,4 +1,5 @@
-using HimalayaUI, HTTP, JSON3, Oxygen, SQLite
+using HimalayaUI, HTTP, Oxygen, SQLite
+import JSON
 
 const H = HimalayaUI
 
@@ -24,10 +25,10 @@ function on_server(f)
 end
 
 function call(method, target, body = nothing)
-    payload = body === nothing ? UInt8[] : Vector{UInt8}(JSON3.write(body))
+    payload = body === nothing ? UInt8[] : Vector{UInt8}(JSON.json(body))
     res = on_server(() -> H._workload_inproc(method, target, payload))
     res.status < 300 || error("$method $target returned $(res.status): $(String(copy(res.body)))")
-    isempty(res.body) || !occursin("json", HTTP.header(res, "Content-Type")) ? nothing : JSON3.read(res.body)
+    isempty(res.body) || !occursin("json", HTTP.header(res, "Content-Type")) ? nothing : JSON.parse(res.body)
 end
 
 function prepare(root, db_path)

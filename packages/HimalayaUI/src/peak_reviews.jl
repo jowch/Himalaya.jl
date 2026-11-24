@@ -19,7 +19,7 @@ function _snapshot_peaks_json(db::SQLite.DB, exposure_id::Integer)
     rows = sqlrows(DBInterface.execute(db,
         "SELECT q, found_by, model_id FROM auto_peaks WHERE exposure_id = ? ORDER BY id",
         [Int(exposure_id)]))
-    JSON3.write([Dict(:q => Float64(r.q), :found_by => String(r.found_by),
+    to_json([Dict(:q => Float64(r.q), :found_by => String(r.found_by),
                       :model_id => ismissing(r.model_id) ? nothing : Int(r.model_id))
                  for r in rows])
 end

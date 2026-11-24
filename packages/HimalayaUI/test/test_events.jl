@@ -1,4 +1,5 @@
-using Test, HTTP, JSON3, SQLite, DBInterface, Tables
+using Test, HTTP, SQLite, DBInterface, Tables
+import JSON
 using HimalayaUI
 
 @testset "apply_event! writes to user_actions and returns event_id" begin
@@ -18,7 +19,7 @@ using HimalayaUI
         @test String(row.action) == "test_kind"
         @test String(row.entity_type) == "exposure"
         @test Int(row.entity_id) == 42
-        @test JSON3.read(row.payload).foo == "bar"
+        @test JSON.parse(row.payload).foo == "bar"
         # user_id should resolve to alice's id.
         @test !ismissing(row.user_id)
     end
@@ -65,7 +66,7 @@ end
             "SELECT action, entity_type, entity_id, payload FROM user_actions
              ORDER BY id DESC LIMIT 1")))
         @test String(row.action) == "set_status"
-        @test JSON3.read(row.payload).note == "rejected"
+        @test JSON.parse(row.payload).note == "rejected"
     end
 end
 

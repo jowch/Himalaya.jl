@@ -59,12 +59,6 @@ describe("queries — peak mutations (queue-driven, M2.2)", () => {
   it("useAddPeak replaces the placeholder with the server peak on success", async () => {
     const { client, wrapper } = withClient();
     client.setQueryData<Peak[]>(queryKeys.peaks(EXPOSURE_ID), []);
-    // Flat shape (matches `routes_peaks.jl` JSON3.write Dict). Earlier
-    // version of this fixture wrapped under `peak: {...}`, which matched
-    // a stale `PeakAddResponse.peak: Peak` type but NOT the actual server
-    // response — the production mutator crashed on `response.peak.id`
-    // because there is no `peak` key. Caught only in the deep-scan after
-    // the fourth review round.
     mockOnce(201, {
       id: 99, exposure_id: EXPOSURE_ID, q: 0.123, intensity: null,
       prominence: null, sharpness: null, source: "manual", excluded: false,

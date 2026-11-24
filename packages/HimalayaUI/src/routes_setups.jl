@@ -44,7 +44,7 @@ function register_setups_routes!()
                 kind = "setup_updated", entity_type = "setup", entity_id = id, payload = changed)
             _enqueue_broadcast_from_result!(result, "setup_updated", "setup", id)
             HTTP.Response(200, ["Content-Type" => "application/json"],
-                JSON3.write(_setup_row_to_json(setup_row(db, id))))
+                to_json(_setup_row_to_json(setup_row(db, id))))
         end
         if scan && resp.status == 200
             eid = Int(row.experiment_id)

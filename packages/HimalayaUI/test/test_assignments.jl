@@ -2,7 +2,8 @@ using Test
 using HimalayaUI
 using Himalaya
 using SQLite, DBInterface, Tables
-using JSON3, HTTP
+using HTTP
+import JSON
 
 @testset "assignments schema" begin
     mktempdir() do dir
@@ -198,7 +199,7 @@ end
 
         # The route's body is _assignment_body; assert its JSON-serialized shape.
         body = HimalayaUI._assignment_body(db, e_id)
-        round = JSON3.read(JSON3.write(body))
+        round = JSON.parse(HimalayaUI.to_json(body))
         @test round.exposure_id == e_id
         @test round.state == "form_factor"
         @test collect(round.members) == Int[]
@@ -222,7 +223,7 @@ if isdefined(@__MODULE__, :with_test_server)
             with_inproc_routes(db) do call
                 r = call("GET", "/api/exposures/$e_id/assignment")
                 @test r.status == 200
-                got = JSON3.read(String(r.body))
+                got = JSON.parse(String(r.body))
                 @test got.exposure_id == e_id
                 @test got.state == "indexed"
                 @test collect(got.members) == [10]
@@ -266,15 +267,15 @@ if isdefined(@__MODULE__, :with_test_server)
                 # Invalid state → 400.
                 r = call("POST", "/api/samples/$s_id/call/state";
                     headers = ["Content-Type" => "application/json"],
-                    body = Vector{UInt8}(JSON3.write(Dict(:state => "bogus"))))
+                    body = Vector{UInt8}(JSON.json(Dict(:state => "bogus"))))
                 @test r.status == 400
 
                 # Valid: form_factor clears members.
                 r = call("POST", "/api/samples/$s_id/call/state";
                     headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
-                    body = Vector{UInt8}(JSON3.write(Dict(:state => "form_factor"))))
+                    body = Vector{UInt8}(JSON.json(Dict(:state => "form_factor"))))
                 @test r.status == 200
-                got = JSON3.read(String(r.body))
+                got = JSON.parse(String(r.body))
                 @test got.state == "form_factor"
                 @test collect(got.members) == Int[]
                 @test HimalayaUI._assignment_body(db, e_id)[:state] == "form_factor"
@@ -365,15 +366,15 @@ if isdefined(@__MODULE__, :with_test_server)
                 # Missing field -> 400.
                 r = call("POST", "/api/exposures/$e_id/assignment/members";
                     headers = ["Content-Type" => "application/json"],
-                    body = Vector{UInt8}(JSON3.write(Dict(:nope => 1))))
+                    body = Vector{UInt8}(JSON.json(Dict(:nope => 1))))
                 @test r.status == 400
 
                 # Valid add -> 200, body is the canonical assignment shape.
                 r = call("POST", "/api/exposures/$e_id/assignment/members";
                     headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
-                    body = Vector{UInt8}(JSON3.write(Dict(:index_id => 10))))
+                    body = Vector{UInt8}(JSON.json(Dict(:index_id => 10))))
                 @test r.status == 200
-                got = JSON3.read(String(r.body))
+                got = JSON.parse(String(r.body))
                 @test got.exposure_id == e_id
                 @test got.state == "indexed"
                 @test collect(got.members) == [10]
@@ -383,7 +384,7 @@ if isdefined(@__MODULE__, :with_test_server)
                 # Idempotent re-add of the same member is a no-op on membership.
                 r = call("POST", "/api/exposures/$e_id/assignment/members";
                     headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
-                    body = Vector{UInt8}(JSON3.write(Dict(:index_id => 11))))
+                    body = Vector{UInt8}(JSON.json(Dict(:index_id => 11))))
                 @test r.status == 200
                 @test HimalayaUI._assignment_body(db, e_id)[:members] == [10, 11]
             end
@@ -407,20 +408,20 @@ if isdefined(@__MODULE__, :with_test_server)
                 for stale in (999, 20)
                     r = call("POST", "/api/exposures/$e_id/assignment/members";
                         headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
-                        body = Vector{UInt8}(JSON3.write(Dict(:index_id => stale))))
+                        body = Vector{UInt8}(JSON.json(Dict(:index_id => stale))))
                     @test r.status == 409
-                    @test occursin("index", JSON3.read(String(r.body)).error)
+                    @test occursin("index", JSON.parse(String(r.body)).error)
                 end
                 @test isempty(HimalayaUI._assignment_body(db, e_id)[:members])
                 @test events_before() == before
 
                 op = ["Content-Type" => "application/json", "X-Username" => "alice", "X-Client-Op-Id" => "op-replay"]
                 first_try = call("POST", "/api/exposures/$e_id/assignment/members";
-                    headers = op, body = Vector{UInt8}(JSON3.write(Dict(:index_id => 10))))
+                    headers = op, body = Vector{UInt8}(JSON.json(Dict(:index_id => 10))))
                 @test first_try.status == 200
                 DBInterface.execute(db, "DELETE FROM indices WHERE id = 10")
                 retry = call("POST", "/api/exposures/$e_id/assignment/members";
-                    headers = op, body = Vector{UInt8}(JSON3.write(Dict(:index_id => 10))))
+                    headers = op, body = Vector{UInt8}(JSON.json(Dict(:index_id => 10))))
                 @test retry.status == 200
                 @test String(retry.body) == String(first_try.body)
             end
@@ -441,7 +442,7 @@ if isdefined(@__MODULE__, :with_test_server)
                 r = call("DELETE", "/api/exposures/$e_id/assignment/members/10";
                     headers = ["X-Username" => "alice"])
                 @test r.status == 200
-                got = JSON3.read(String(r.body))
+                got = JSON.parse(String(r.body))
                 @test collect(got.members) == Int[]
                 @test isempty(HimalayaUI._assignment_body(db, e_id)[:members])
 
@@ -470,7 +471,7 @@ if isdefined(@__MODULE__, :with_test_server)
                 entity_type="exposure", entity_id=e_id, payload=Dict(:index_id => 10))
             b = HimalayaUI._assignment_body(db, e_id)
             post_state = Dict(:assignment => Dict(:state => b[:state], :members => b[:members]))
-            round = JSON3.read(JSON3.write(post_state))
+            round = JSON.parse(HimalayaUI.to_json(post_state))
             @test haskey(round, :assignment)
             @test !haskey(round, :indices)
             @test round.assignment.state == "indexed"
@@ -614,12 +615,6 @@ end
 end
 
 @testset "a one-peak locked index stores NULL r_squared, not -Inf" begin
-    # R² = 1 - RSS/TSS is undefined at one observation (TSS == 0). On the
-    # locked branch RSS > 0 by construction — the claim is made at
-    # CUSTOM_SNAP_TOL — so the result is -Inf, deterministically. Unlike NaN
-    # (which SQLite binds to NULL), -Inf round-trips as a live Float64 and
-    # then throws in JSON3.write INSIDE the analyze transaction, making the
-    # exposure permanently un-analyzable: every retry recomputes it.
     mktempdir() do dir
         db = open_prepared_clone(dir)
         exp_id = HimalayaUI.create_experiment!(db; path="/x", data_dir="/x", analysis_dir="/x")
@@ -658,11 +653,8 @@ end
         @test !ismissing(row.score)
         @test ismissing(row.r_squared)   # NULL, not -Inf
 
-        # The reachable consequence: this must serialize. Pre-guard it threw
-        # ErrorException("-Inf not allowed to be written in JSON spec"),
-        # unwinding the whole analyze transaction on every retry.
         payload = HimalayaUI._serialized_indices_for_broadcast(db, e_id)
-        @test JSON3.write(payload) isa String
+        @test HimalayaUI.to_json(payload) isa String
     end
 end
 
@@ -680,7 +672,7 @@ end
     ts = read(ts_path, String)
 
     json_path = joinpath(@__DIR__, "..", "frontend", "src", "lib", "phaseRatioIndices.json")
-    indices = JSON3.read(read(json_path, String))
+    indices = JSON.parse(read(json_path, String))
     entries = Dict{String, Tuple{String, Vector{Int}}}()
     for m in eachmatch(r"(\w+):\s*\{\s*kind:\s*\"(\w+)\",\s*Ms:\s*phaseRatioIndices\.(\w+)", ts)
         name, kind, key = m.captures[1], m.captures[2], m.captures[3]
@@ -831,7 +823,7 @@ end
             for bad in (Any[], Any[0.0, 1.0], Any[-1.0], "six")
                 rb = call("POST", "/api/exposures/$e_id/custom-index";
                     headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
-                    body = Vector{UInt8}(JSON3.write(
+                    body = Vector{UInt8}(JSON.json(
                         Dict(:phase => "Pn3m", :basis => basis, :ratios => bad))))
                 @test rb.status == 400
             end
@@ -842,11 +834,11 @@ end
 
             r = call("POST", "/api/exposures/$e_id/custom-index";
                 headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
-                body = Vector{UInt8}(JSON3.write(
+                body = Vector{UInt8}(JSON.json(
                     Dict(:phase => "Pn3m", :basis => basis,
                          :ratios => _pn3m_drawn_ratios()))))
             @test r.status == 200
-            nid = Int(JSON3.read(String(r.body)).id)
+            nid = Int(JSON.parse(String(r.body)).id)
 
             @test n("index_peaks", nid) == 2
             @test n("speculative_peak_intents", nid) == 2
@@ -890,14 +882,14 @@ if isdefined(@__MODULE__, :with_test_server)
                 # missing basis → 400
                 r = call("POST", "/api/exposures/$e_id/custom-index";
                     headers = ["Content-Type" => "application/json"],
-                    body = Vector{UInt8}(JSON3.write(Dict(:phase => "Pn3m"))))
+                    body = Vector{UInt8}(JSON.json(Dict(:phase => "Pn3m"))))
                 @test r.status == 400
 
                 r = call("POST", "/api/exposures/$e_id/custom-index";
                     headers = ["Content-Type" => "application/json", "X-Username" => "alice"],
-                    body = Vector{UInt8}(JSON3.write(Dict(:phase => "Pn3m", :basis => basis))))
+                    body = Vector{UInt8}(JSON.json(Dict(:phase => "Pn3m", :basis => basis))))
                 @test r.status == 200
-                got = JSON3.read(String(r.body))
+                got = JSON.parse(String(r.body))
                 @test got.phase == "Pn3m"
                 @test got.kind == "speculative"
                 @test got.basis ≈ basis

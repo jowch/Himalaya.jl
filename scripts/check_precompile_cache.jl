@@ -57,9 +57,9 @@ if !isempty(rejected)
         $(length(rejected)) of $total precompiled specializations of HimalayaUI, Himalaya and HimalayaPeakModel were thrown away when \
         HimalayaUI loaded, so the routes that use them compile again on first use.
         A method added after HimalayaUI was compiled invalidated something they call. The usual cause is a \
-        call on an abstract argument type, such as `JSON3.read(::AbstractString)` or `replace(::AbstractString, …)`: \
+        call on an abstract argument type, such as `JSON.parse(::AbstractString)` or `replace(::AbstractString, …)`: \
         convert to `String` first. A route that returns a plain Julia value goes through Oxygen's JSON.jl \
-        serializer, which is invalidated too: return an `HTTP.Response` with `JSON3.write`.
+        serializer, which is invalidated too: return an `HTTP.Response` with `to_json`, never `JSON.json`.
         Find the culprit with SnoopCompile: `invalidation_trees(@snoop_invalidations using HimalayaUI)`.
         Rejected:""")
     foreach(r -> println(stderr, "  ", r), rejected)

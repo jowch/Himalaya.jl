@@ -1,6 +1,6 @@
 module PeakClassifier
 
-using JSON3
+import JSON
 using HimalayaPeakModel
 import HimalayaUI
 import Himalaya

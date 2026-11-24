@@ -1,4 +1,5 @@
-using Test, HTTP, JSON3, SQLite, DBInterface, Tables, HimalayaUI
+using Test, HTTP, SQLite, DBInterface, Tables, HimalayaUI
+import JSON
 isdefined(@__MODULE__, :_write_setup!) || include("test_setups.jl")
 
 @testset "PATCH /api/setups/:id" begin
@@ -20,18 +21,18 @@ isdefined(@__MODULE__, :_write_setup!) || include("test_setups.jl")
         end
         r = patch(call, s1, """{"name":"  Long pipe  "}""")
         @test r.status == 200
-        @test JSON3.read(r.body).name == "Long pipe"
+        @test JSON.parse(r.body).name == "Long pipe"
         @test HimalayaUI.setup_row(db, s1).display_name == "Long pipe"
-        @test JSON3.read(patch(call, s1, """{"name":"setup1"}""").body).name == "setup1"
+        @test JSON.parse(patch(call, s1, """{"name":"setup1"}""").body).name == "setup1"
         @test ismissing(HimalayaUI.setup_row(db, s1).display_name)
-        @test JSON3.read(patch(call, s1, """{"name":null}""").body).display_name === nothing
+        @test JSON.parse(patch(call, s1, """{"name":null}""").body).display_name === nothing
 
         @test patch(call, s1, """{"included":false}""").status == 400
         @test HimalayaUI.setup_row(db, s1).included == 1
 
         r = patch(call, s2, """{"included":true}""")
         @test r.status == 200
-        @test JSON3.read(r.body).included === true
+        @test JSON.parse(r.body).included === true
         t0 = time()
         while time() - t0 < 30
             n = only(Tables.rowtable(DBInterface.execute(db,
@@ -64,9 +65,9 @@ isdefined(@__MODULE__, :_write_setup!) || include("test_setups.jl")
             "SELECT entity_type, entity_id, payload FROM user_actions WHERE action = 'setup_updated' ORDER BY id"))
         @test length(rows) == 6
         @test all(r -> r.entity_type == "setup", rows)
-        @test JSON3.read(rows[1].payload).experiment_id == eid
-        @test JSON3.read(rows[1].payload).name == "Long pipe"
-        @test JSON3.read(rows[4].payload).included === true
+        @test JSON.parse(rows[1].payload).experiment_id == eid
+        @test JSON.parse(rows[1].payload).name == "Long pipe"
+        @test JSON.parse(rows[4].payload).included === true
     end
     frames = String[]
     while isready(sub.pending)

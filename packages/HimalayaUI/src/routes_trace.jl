@@ -1,4 +1,4 @@
-using HTTP, JSON3, DBInterface, Tables, Oxygen
+using HTTP, DBInterface, Tables, Oxygen
 
 function register_trace_routes!()
     @get "/api/exposures/{id}/trace" function(req::HTTP.Request, id::Int)
@@ -11,27 +11,27 @@ function register_trace_routes!()
              WHERE e.id = ?", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "image not found")))
+            to_json(Dict(:error => "image not found")))
         row = rows[1]
         is_combined_kind(row.kind) && return _combined_trace_response(db, id)
         String(row.kind) == "file" || return HTTP.Response(400,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "trace not available for derived images")))
+            to_json(Dict(:error => "trace not available for derived images")))
         row.filename === missing && return HTTP.Response(400,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "image has no filename")))
+            to_json(Dict(:error => "image has no filename")))
 
         pattern = integration_pattern_for(row)
         filename = String(row.filename)
         path = resolve_trace_path(String(row.analysis_dir), pattern, filename)
         path === nothing && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => ".dat file not found for $(row.filename)")))
+            to_json(Dict(:error => ".dat file not found for $(row.filename)")))
 
         q, I, σ = load_dat(path)
         monitors = _file_monitors(db, row)
         HTTP.Response(200, ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:q => q, :I => I, :sigma => σ, :monitors => monitors)))
+            to_json(Dict(:q => q, :I => I, :sigma => σ, :monitors => monitors)))
     end
 end
 
@@ -54,9 +54,9 @@ function _combined_trace_response(db::SQLite.DB, id::Int)
     catch err
         err isa ArgumentError || rethrow()
         return HTTP.Response(404, ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => err.msg)))
+            to_json(Dict(:error => err.msg)))
     end
     HTTP.Response(200, ["Content-Type" => "application/json"],
-        JSON3.write(Dict(:q => q, :I => I, :sigma => σ, :monitors => combined_monitors(db, id),
+        to_json(Dict(:q => q, :I => I, :sigma => σ, :monitors => combined_monitors(db, id),
                          :sources => combined_source_ids(db, id))))
 end
