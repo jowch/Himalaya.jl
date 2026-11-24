@@ -67,7 +67,7 @@ function _workload_beamtime_tree(root::AbstractString)
 end
 
 function _workload_refused(send, method::AbstractString, target::AbstractString, body = nothing)
-    payload = body === nothing ? UInt8[] : Vector{UInt8}(JSON3.write(body))
+    payload = body === nothing ? UInt8[] : Vector{UInt8}(to_json(body))
     res = send(method, target, payload)
     res.status == 422 || error("precompile workload: $method $target returned $(res.status), expected 422")
     nothing

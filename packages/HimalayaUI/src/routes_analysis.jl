@@ -1,4 +1,4 @@
-using HTTP, JSON3, DBInterface, Tables, Oxygen, SQLite
+using HTTP, DBInterface, Tables, Oxygen, SQLite
 using Himalaya
 
 function _assignment_body(db::SQLite.DB, exposure_id::Int)
@@ -81,22 +81,22 @@ function register_analysis_routes!()
             d
         end
         HTTP.Response(200, ["Content-Type" => "application/json"],
-            JSON3.write(out))
+            to_json(out))
     end
 
     @get "/api/exposures/{id}/assignment" function(req::HTTP.Request, id::Int)
         db = current_db()
         HTTP.Response(200, ["Content-Type" => "application/json"],
-            JSON3.write(_assignment_body(db, id)))
+            to_json(_assignment_body(db, id)))
     end
 
     @get "/api/samples/{id}/call" function(req::HTTP.Request, id::Int)
         db = current_db()
         _sample_exists(db, id) || return HTTP.Response(404,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "sample not found")))
+            to_json(Dict(:error => "sample not found")))
         HTTP.Response(200, ["Content-Type" => "application/json"],
-            JSON3.write(_sample_call_body(db, id)))
+            to_json(_sample_call_body(db, id)))
     end
 
     @post "/api/samples/{id}/call/state" function(req::HTTP.Request, id::Int)
@@ -104,16 +104,16 @@ function register_analysis_routes!()
         body = json(req)
         if !haskey(body, :state)
             return HTTP.Response(400, ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => "missing field: state")))
+                to_json(Dict(:error => "missing field: state")))
         end
         state = String(body.state)
         if !(state in ("indexed", "form_factor", "null"))
             return HTTP.Response(400, ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => "invalid state: $state")))
+                to_json(Dict(:error => "invalid state: $state")))
         end
         _sample_exists(db, id) || return HTTP.Response(404,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "sample not found")))
+            to_json(Dict(:error => "sample not found")))
         return with_idempotency(db, req) do
             result = apply_event!(InTransaction(), db, req;
                 kind        = "sample_call_set_state",
@@ -127,7 +127,7 @@ function register_analysis_routes!()
             broadcast_call_states!(db, mates)
             b[:event_id]    = result.event_id
             b[:view_row_id] = result.view_row_id
-            HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(b))
+            HTTP.Response(200, ["Content-Type" => "application/json"], to_json(b))
         end
     end
 
@@ -138,20 +138,20 @@ function register_analysis_routes!()
         body = json(req)
         if !haskey(body, :index_id)
             return HTTP.Response(400, ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => "missing field: index_id")))
+                to_json(Dict(:error => "missing field: index_id")))
         end
         local index_id::Int
         try
             index_id = Int(body.index_id)
         catch
             return HTTP.Response(400, ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => "index_id must be an integer")))
+                to_json(Dict(:error => "index_id must be an integer")))
         end
         return with_idempotency(db, req) do
             isempty(sqlrows(DBInterface.execute(db,
                 "SELECT 1 FROM indices WHERE id = ? AND exposure_id = ?", [index_id, id]))) &&
                 return HTTP.Response(409, ["Content-Type" => "application/json"],
-                    JSON3.write(Dict(:error => "this index changed after re-analysis, so pick it again")))
+                    to_json(Dict(:error => "this index changed after re-analysis, so pick it again")))
             result = apply_event!(InTransaction(), db, req;
                 kind        = "assignment_add",
                 entity_type = "exposure",
@@ -164,7 +164,7 @@ function register_analysis_routes!()
             broadcast_call_states!(db, mates)
             b[:event_id]    = result.event_id
             b[:view_row_id] = result.view_row_id
-            HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(b))
+            HTTP.Response(200, ["Content-Type" => "application/json"], to_json(b))
         end
     end
 
@@ -183,7 +183,7 @@ function register_analysis_routes!()
                 post_state = Dict(:assignment => _assignment_post_state(b)))
             b[:event_id]    = result.event_id
             b[:view_row_id] = result.view_row_id
-            HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(b))
+            HTTP.Response(200, ["Content-Type" => "application/json"], to_json(b))
         end
     end
 
@@ -196,7 +196,7 @@ function register_analysis_routes!()
             if !haskey(body, field)
                 return HTTP.Response(400,
                     ["Content-Type" => "application/json"],
-                    JSON3.write(Dict(:error => "missing field: $(field)")))
+                    to_json(Dict(:error => "missing field: $(field)")))
             end
         end
         local phase_name::String
@@ -209,7 +209,7 @@ function register_analysis_routes!()
         catch
             return HTTP.Response(400,
                 ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => "phase must be string; anchor_peak_id and anchor_ratio must be integers")))
+                to_json(Dict(:error => "phase must be string; anchor_peak_id and anchor_ratio must be integers")))
         end
         return with_idempotency(db, req) do
             additional      = haskey(body, :additional) ? body.additional : []
@@ -217,7 +217,7 @@ function register_analysis_routes!()
             P = resolve_phase(phase_name)
             P === nothing && return HTTP.Response(400,
                 ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => "unknown phase: $phase_name")))
+                to_json(Dict(:error => "unknown phase: $phase_name")))
 
             ratio_to_peak = Dict{Int, Int}(anchor_ratio => anchor_peak_id)
             for entry in additional
@@ -225,7 +225,7 @@ function register_analysis_routes!()
                 pid = Int(entry.peak_id)
                 haskey(ratio_to_peak, rp) && return HTTP.Response(400,
                     ["Content-Type" => "application/json"],
-                    JSON3.write(Dict(:error => "duplicate ratio_position $rp")))
+                    to_json(Dict(:error => "duplicate ratio_position $rp")))
                 ratio_to_peak[rp] = pid
             end
 
@@ -235,7 +235,7 @@ function register_analysis_routes!()
             catch e
                 return HTTP.Response(400,
                     ["Content-Type" => "application/json"],
-                    JSON3.write(Dict(:error => sprint(showerror, e))))
+                    to_json(Dict(:error => sprint(showerror, e))))
             end
             payload = Dict(:index_id => nid)
             result = apply_event!(InTransaction(), db, req;
@@ -265,7 +265,7 @@ function register_analysis_routes!()
             d = row_to_json(ix)
             d[:peaks]       = rows_to_json(peak_rows)
             d[:predicted_q] = predicted
-            HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(d))
+            HTTP.Response(200, ["Content-Type" => "application/json"], to_json(d))
         end
     end
 
@@ -277,7 +277,7 @@ function register_analysis_routes!()
         for field in (:phase, :basis)
             if !haskey(body, field)
                 return HTTP.Response(400, ["Content-Type" => "application/json"],
-                    JSON3.write(Dict(:error => "missing field: $(field)")))
+                    to_json(Dict(:error => "missing field: $(field)")))
             end
         end
         local phase_name::String
@@ -293,17 +293,17 @@ function register_analysis_routes!()
                          Float64[Float64(r) for r in raw]
         catch
             return HTTP.Response(400, ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => "phase must be string; basis a number; ratios an array of numbers")))
+                to_json(Dict(:error => "phase must be string; basis a number; ratios an array of numbers")))
         end
         if ratios !== nothing && (isempty(ratios) || any(r -> !(r > 0), ratios))
             return HTTP.Response(400, ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => "ratios must be a non-empty array of positive numbers")))
+                to_json(Dict(:error => "ratios must be a non-empty array of positive numbers")))
         end
         P = resolve_phase(phase_name)
         P === nothing && return HTTP.Response(400, ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "unknown phase: $phase_name")))
+            to_json(Dict(:error => "unknown phase: $phase_name")))
         basis > 0 || return HTTP.Response(400, ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "basis must be positive")))
+            to_json(Dict(:error => "basis must be positive")))
 
         return with_idempotency(db, req) do
             nid = insert_custom_index!(db, id, P, basis; drawn_ratios = ratios)
@@ -348,7 +348,7 @@ function register_analysis_routes!()
             d[:bonnet]      = _bonnet_for_index(db, id, String(ix.phase), ix.lattice_d, nid)
             d[:event_id]    = sc.event_id
             d[:view_row_id] = sc.view_row_id
-            HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(d))
+            HTTP.Response(200, ["Content-Type" => "application/json"], to_json(d))
         end
     end
 
@@ -361,11 +361,11 @@ function register_analysis_routes!()
                 "SELECT id, kind, exposure_id FROM indices WHERE id = ?", [id]))
             isempty(rows) && return HTTP.Response(404,
                 ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => "index not found")))
+                to_json(Dict(:error => "index not found")))
             kind_val = String(rows[1].kind)
             kind_val == "speculative" || return HTTP.Response(403,
                 ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => "only speculative indices can be deleted; use group exclusion for auto indices")))
+                to_json(Dict(:error => "only speculative indices can be deleted; use group exclusion for auto indices")))
 
             exposure_id = Int(rows[1].exposure_id)
             was_member = !isempty(sqlrows(DBInterface.execute(db,
@@ -404,7 +404,7 @@ function register_analysis_routes!()
             end
 
             HTTP.Response(200, ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:deleted => id)))
+                to_json(Dict(:deleted => id)))
         end
     end
 end

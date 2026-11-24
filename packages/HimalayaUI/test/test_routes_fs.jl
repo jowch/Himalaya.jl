@@ -1,4 +1,5 @@
-using Test, HTTP, JSON3, SQLite
+using Test, HTTP, SQLite
+import JSON
 using HimalayaUI
 
 @testset "list_names, folder_names and folder_listing read a folder, and any_name stops at the first match" begin
@@ -28,8 +29,8 @@ end
     @test offenders == String[]
 end
 
-_list(call, path) = JSON3.read(call("GET", "/api/fs/list?path=$(HTTP.escapeuri(path))").body)
-_describe(call, path) = JSON3.read(call("GET", "/api/fs/describe?path=$(HTTP.escapeuri(path))").body)
+_list(call, path) = JSON.parse(call("GET", "/api/fs/list?path=$(HTTP.escapeuri(path))").body)
+_describe(call, path) = JSON.parse(call("GET", "/api/fs/describe?path=$(HTTP.escapeuri(path))").body)
 
 @testset "GET /api/fs/list lists a folder's subfolders in natural order, not files or hidden folders" begin
     mktempdir() do tmp
@@ -43,7 +44,7 @@ _describe(call, path) = JSON3.read(call("GET", "/api/fs/describe?path=$(HTTP.esc
             symlink(joinpath(root, "setup2"), joinpath(root, "linked"))
             resp = call("GET", "/api/fs/list?path=$(HTTP.escapeuri(root))")
             @test resp.status == 200
-            r = JSON3.read(resp.body)
+            r = JSON.parse(resp.body)
             @test r.path == root
             @test r.parent == dirname(root)
             @test collect(r.folders) == ["linked", "setup1", "setup2", "setup10"]
@@ -128,7 +129,7 @@ end
         with_inproc_routes(db) do call
             resp = call("GET", "/api/fs/describe?path=$(HTTP.escapeuri(setup))")
             @test resp.status == 200
-            @test JSON3.read(resp.body).added.name == "run7"
+            @test JSON.parse(resp.body).added.name == "run7"
         end
     end
 end
@@ -189,13 +190,13 @@ end
             withenv("HOME" => home) do
                 resp = call("GET", "/api/fs/preview?path=$(HTTP.escapeuri("~/bt"))")
                 @test resp.status == 200
-                @test JSON3.read(resp.body).path == joinpath(home, "bt")
+                @test JSON.parse(resp.body).path == joinpath(home, "bt")
             end
             cd(mktempdir()) do
                 mkpath("relative")
                 resp = call("GET", "/api/fs/preview?path=relative")
                 @test resp.status == 400
-                @test occursin("full path", JSON3.read(resp.body).error)
+                @test occursin("full path", JSON.parse(resp.body).error)
             end
         end
     end
@@ -211,7 +212,7 @@ end
             q = "path=$(HTTP.escapeuri(dir))&image_pattern=$(HTTP.escapeuri("{name}.tif"))&metadata_pattern=$(HTTP.escapeuri("{name}.prp"))&integration_pattern=$(HTTP.escapeuri("{name}.dat"))"
             resp = call("GET", "/api/fs/manifest?$q")
             @test resp.status == 200
-            m = JSON3.read(resp.body)
+            m = JSON.parse(resp.body)
             @test m.matched.image == 2
             @test m.matched.metadata == 1
             @test any(u -> u.miss == "metadata", m.unmatched)   # s2 missing prp
@@ -233,7 +234,7 @@ end
             touch(joinpath(dir, "extra.tiff"))   # near-miss: .tiff superset of .tif
             touch(joinpath(dir, "caps.TIF"))      # near-miss: case
             q = "path=$(HTTP.escapeuri(dir))&image_pattern=$(HTTP.escapeuri("{name}.tif"))&metadata_pattern=$(HTTP.escapeuri("{name}.prp"))&integration_pattern=$(HTTP.escapeuri("{name}.dat"))"
-            m = JSON3.read(call("GET", "/api/fs/manifest?$q").body)
+            m = JSON.parse(call("GET", "/api/fs/manifest?$q").body)
             @test m.matched.image == 1                                       # only good.tif matched exactly
             img_misses = filter(u -> u.miss == "image", m.unmatched)
             @test Set([u.near for u in img_misses]) == Set(["extra.tiff", "caps.TIF"])
@@ -257,7 +258,7 @@ end
                 "&image_pattern=$(HTTP.escapeuri("{name}.tif"))" *
                 "&metadata_pattern=$(HTTP.escapeuri("{name}.prp"))" *
                 "&integration_pattern=$(HTTP.escapeuri("{name}.dat"))"
-            m = JSON3.read(call("GET", "/api/fs/manifest?$q").body)
+            m = JSON.parse(call("GET", "/api/fs/manifest?$q").body)
             meta_miss  = only(filter(u -> u.miss == "metadata", m.unmatched))
             integ_miss = only(filter(u -> u.miss == "integration", m.unmatched))
             @test meta_miss.file == "good" && meta_miss.near == "good.PRP"
@@ -281,12 +282,12 @@ end
             base = "image_pattern=$(HTTP.escapeuri("{name}.tif"))&metadata_pattern=$(HTTP.escapeuri("{name}.prp"))&integration_pattern=$(HTTP.escapeuri("{name}.dat"))"
 
             # Without analysis_dir: integration matched against data_dir → 0.
-            m0 = JSON3.read(call("GET", "/api/fs/manifest?path=$(HTTP.escapeuri(data))&$base").body)
+            m0 = JSON.parse(call("GET", "/api/fs/manifest?path=$(HTTP.escapeuri(data))&$base").body)
             @test m0.matched.image == 3
             @test m0.matched.integration == 0
 
             # With analysis_dir: integration matched against the analysis subtree → 2 (A, B).
-            m1 = JSON3.read(call("GET",
+            m1 = JSON.parse(call("GET",
                 "/api/fs/manifest?path=$(HTTP.escapeuri(data))&analysis_dir=$(HTTP.escapeuri(analysis))&$base").body)
             @test m1.matched.image == 3
             @test m1.matched.integration == 2
@@ -301,7 +302,7 @@ end
         with_inproc_routes(db) do call
             resp = call("GET", "/api/fs/manifest?path=$(HTTP.escapeuri("/no/such/path/xyz"))")
             @test resp.status == 400
-            @test haskey(JSON3.read(resp.body), :error)
+            @test haskey(JSON.parse(resp.body), :error)
         end
     end
 end
@@ -362,7 +363,7 @@ end
             q = "path=$(HTTP.escapeuri(dir))&image_pattern=$(HTTP.escapeuri("{name}.tif"))&metadata_pattern=$(HTTP.escapeuri("{name}.prp"))&integration_pattern=$(HTTP.escapeuri("{name}.dat"))"
             resp = call("GET", "/api/fs/manifest?$q")
             @test resp.status == 200
-            m = JSON3.read(resp.body)
+            m = JSON.parse(resp.body)
 
             # Legacy fields still intact.
             @test m.matched.image == 2
@@ -408,7 +409,7 @@ end
             q = "path=$(HTTP.escapeuri(dir))&image_pattern=$(HTTP.escapeuri("{name}.tif"))&metadata_pattern=$(HTTP.escapeuri("{name}.prp"))&integration_pattern=$(HTTP.escapeuri("{name}.dat"))"
             resp = call("GET", "/api/fs/manifest?$q")
             @test resp.status == 200
-            m = JSON3.read(resp.body)
+            m = JSON.parse(resp.body)
 
             # Returns 200 (not 500) with all-null geometry.
             @test haskey(m, :geometry)
@@ -437,7 +438,7 @@ end
             q = "path=$(HTTP.escapeuri(dir))&image_pattern=$(HTTP.escapeuri("{name}.tif"))&metadata_pattern=$(HTTP.escapeuri("{name}.prp"))&integration_pattern=$(HTTP.escapeuri("{name}.dat"))"
             resp = call("GET", "/api/fs/manifest?$q")
             @test resp.status == 200
-            m = JSON3.read(resp.body)
+            m = JSON.parse(resp.body)
             @test m.matched.image == 20
             @test length(m.matched_files) == 12
             @test issorted(m.matched_files)
@@ -528,7 +529,7 @@ end
                 "&metadata_pattern=$(HTTP.escapeuri("{name}.prp"))"
             resp = call("GET", "/api/fs/manifest?$q")
             @test resp.status == 200
-            geo = JSON3.read(resp.body).geometry
+            geo = JSON.parse(resp.body).geometry
             @test geo.beam_center_x ≈ 420.5
             @test geo.beam_center_x_source == "setup"
         end
@@ -571,7 +572,7 @@ end
             _fs_make_ssrl_setup(root; stems = ["SY_1_001_S1", "SY_1_002_S2"], traced = ["SY_1_001_S1"])
             resp = call("GET", "/api/fs/preview?path=$(HTTP.escapeuri(root))")
             @test resp.status == 200
-            setups = JSON3.read(resp.body).setups
+            setups = JSON.parse(resp.body).setups
             @test length(setups) == 1
             s = only(setups)
             @test s.root == root
@@ -598,7 +599,7 @@ end
             mkpath(joinpath(day, "notes")); touch(joinpath(day, "notes", "plan.txt"))
             resp = call("GET", "/api/fs/preview?path=$(HTTP.escapeuri(day))")
             @test resp.status == 200
-            setups = JSON3.read(resp.body).setups
+            setups = JSON.parse(resp.body).setups
             @test [s.name for s in setups] == ["20261103/setup1", "20261103/setup2"]
             @test [s.exposures for s in setups] == [2, 1]
             @test setups[1].setup_file == joinpath(day, "setup1", "analysis", "setup_info_20260301_120000.txt")
@@ -616,10 +617,10 @@ end
         HimalayaUI.create_experiment!(db; name = "first", path = joinpath(root, "data"),
             data_dir = joinpath(root, "data"), analysis_dir = root)
         with_inproc_routes(db) do call
-            s = only(JSON3.read(call("GET", "/api/fs/preview?path=$(HTTP.escapeuri(day))").body).setups)
+            s = only(JSON.parse(call("GET", "/api/fs/preview?path=$(HTTP.escapeuri(day))").body).setups)
             @test s.duplicate_of.name == "first"
             empty = mktempdir()
-            @test isempty(JSON3.read(call("GET", "/api/fs/preview?path=$(HTTP.escapeuri(empty))").body).setups)
+            @test isempty(JSON.parse(call("GET", "/api/fs/preview?path=$(HTTP.escapeuri(empty))").body).setups)
         end
     end
 end
@@ -678,7 +679,7 @@ end
         with_inproc_routes(db) do call
             resp = call("POST", "/api/experiments";
                 headers = ["Content-Type" => "application/json"],
-                body = Vector{UInt8}(JSON3.write(Dict("data_dir" => joinpath(link, "data") * "/", "name" => "again"))))
+                body = Vector{UInt8}(JSON.json(Dict("data_dir" => joinpath(link, "data") * "/", "name" => "again"))))
             @test resp.status == 409
         end
     end
@@ -706,11 +707,11 @@ end
         with_inproc_routes(db) do call
             post(path) = call("POST", "/api/experiments";
                 headers = ["Content-Type" => "application/json"],
-                body = Vector{UInt8}(JSON3.write(Dict("data_dir" => path, "name" => basename(path)))))
+                body = Vector{UInt8}(JSON.json(Dict("data_dir" => path, "name" => basename(path)))))
             r = post(joinpath(link, "data") * "/")
             @test r.status == 202
             stored = first(Tables.rowtable(DBInterface.execute(db, "SELECT data_dir FROM setups WHERE experiment_id = ?",
-                [JSON3.read(r.body).id]))).data_dir
+                [JSON.parse(r.body).id]))).data_dir
             @test stored == realpath(real)
             @test post(real).status == 409
         end

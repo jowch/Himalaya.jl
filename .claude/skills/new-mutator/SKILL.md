@@ -108,7 +108,7 @@ In `packages/HimalayaUI/src/routes_<resource>.jl`:
             payload     = Dict(:field => value))
         # response body — what gets cached for retries
         HTTP.Response(201, ["Content-Type" => "application/json"],
-            JSON3.write(Dict(...)))
+            to_json(Dict(...)))
     end
 end
 ```

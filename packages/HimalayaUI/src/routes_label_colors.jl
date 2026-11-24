@@ -1,4 +1,4 @@
-using HTTP, JSON3, DBInterface, Tables, Oxygen
+using HTTP, DBInterface, Tables, Oxygen
 
 const LABEL_COLORS = ("rose", "plum", "violet", "blue", "teal", "green", "ochre", "stone")
 const SYSTEM_LABEL_COLORS = Dict("Buffer" => "blue", "Calibrant" => "ochre", "Empty capillary" => "stone")

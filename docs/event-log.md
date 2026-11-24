@@ -184,10 +184,10 @@ carries members. Deleting an experiment deletes its `sample_calls` rows.
 
 ### Payload contract
 
-The dispatcher sees `payload` as a `JSON3.Object` (or `nothing`),
-re-parsed from `payload_json` *inside* `apply_event!` so the live path
+The dispatcher sees `payload` as a `JSON.Object` (or `nothing`),
+re-parsed by `payload_as_replayed` from `payload_json` *inside* `apply_event!` so the live path
 and `rebuild_views_from_log!` see exactly the same shape. Branch code
-accesses fields uniformly via `payload.q` style — `JSON3.Object` supports
+accesses fields uniformly via `payload.q` style — `JSON.Object` supports
 both symbol and string keys so the symbol-vs-string footgun is
 neutralised at the boundary.
 
@@ -491,7 +491,7 @@ this doc:
 ## 5. Adding a new view-producing event kind
 
 1. Add a dispatcher branch in `update_view_for_event!`. Use
-   `JSON3.Object` payload access (`payload.field`).
+   `JSON.Object` payload access (`payload.field`).
 2. Make the originating route call `apply_event!` (not `log_action!`)
    with `entity_type='exposure'` so `idx_events_by_exposure` indexes it.
 3. Add the kind to `rebuild_views_from_log!`'s round-trip test in

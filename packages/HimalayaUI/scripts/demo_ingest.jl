@@ -11,7 +11,9 @@
 # Several roots are ingested one after another (`make demo-large`); each experiment
 # is named after its directory then.
 
-using HTTP, JSON3
+using HTTP
+
+import JSON
 
 function main(args = ARGS)
     roots = String[]; port = 8080
@@ -38,7 +40,7 @@ end
 
 function ingest_root(root, port, name)
     base = "http://127.0.0.1:$port/api"
-    getj(path, q) = JSON3.read(HTTP.get(base * path; query = q).body)
+    getj(path, q) = JSON.parse(HTTP.get(base * path; query = q).body)
 
     setups = sort(collect(getj("/fs/preview", ["path" => root]).setups); by = rs -> rs.mode == "autosampler")
     isempty(setups) && error("$root holds no setup folder. Regenerate it with `make demo-clean demo-data`.")
@@ -50,7 +52,7 @@ function ingest_root(root, port, name)
 
     # Already there? Done if its scan finished; otherwise (a previous run was
     # interrupted mid-scan, or the scan failed) force a rescan and wait for it.
-    for e in JSON3.read(HTTP.get("$base/experiments").body)
+    for e in JSON.parse(HTTP.get("$base/experiments").body)
         any(st -> get(st, :data_dir, nothing) in data_dirs, get(e, :setups, [])) || continue
         if get(e, :ingest_status, "") == "complete"
             println("$name already ingested (id $(e.id)); nothing to do.")
@@ -58,7 +60,7 @@ function ingest_root(root, port, name)
         end
         println("Demo experiment $(e.id) is '$(get(e, :ingest_status, ""))'; rescanning.")
         HTTP.post("$base/experiments/$(e.id)/scan", ["Content-Type" => "application/json"],
-                  JSON3.write(Dict(:force => true)))
+                  JSON.json(Dict(:force => true)))
         return wait_for_scan(base, e.id)
     end
 
@@ -71,8 +73,8 @@ function ingest_root(root, port, name)
                          :included => true, :patterns => rs.patterns, :geometry => rs.geometry)
                     for rs in setups],
     )
-    created = JSON3.read(HTTP.post("$base/experiments", ["Content-Type" => "application/json"],
-                                   JSON3.write(body)).body)
+    created = JSON.parse(HTTP.post("$base/experiments", ["Content-Type" => "application/json"],
+                                   JSON.json(body)).body)
     println("Created experiment $(created.id).")
     wait_for_scan(base, created.id)
 end
@@ -80,7 +82,7 @@ end
 function wait_for_scan(base, id)
     print("Scanning")
     for _ in 1:600
-        st = JSON3.read(HTTP.get("$base/experiments/$id").body)
+        st = JSON.parse(HTTP.get("$base/experiments/$id").body)
         status = get(st, :ingest_status, "")
         if status == "complete"
             println(" done. ", get(st, :stats, ""))

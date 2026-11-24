@@ -1,4 +1,5 @@
-using Test, Random, DBInterface, SQLite, JSON3
+using Test, Random, DBInterface, SQLite
+import JSON
 using PeakClassifier
 import HimalayaUI
 
@@ -24,7 +25,7 @@ end
     m = train(build_dataset(exps); n_trees = 30)
     path = joinpath(mktempdir(), "sub", "m.json")
     save_model(path, m)
-    @test JSON3.read(read(path, String))[:file_version] == 3
+    @test JSON.parse(read(path, String))[:file_version] == 3
     m2 = load_model(path)
     e = exps[1]
     @test predict_peaks(m2, e.q, e.I, e.σ) == predict_peaks(m, e.q, e.I, e.σ)
@@ -37,14 +38,14 @@ end
     pl = joinpath(mktempdir(), "lr.json"); save_model(pl, lr)
     @test predict_peaks(load_model(pl), e.q, e.I, e.σ) == predict_peaks(lr, e.q, e.I, e.σ)
 
-    stale = JSON3.read(read(path, String), Dict{String, Any})
+    stale = JSON.parse(read(path, String), Dict{String, Any})
     stale["model"]["feature_version"] = "default-1;detector_features=true;himalaya=0.0.0"
     ps = joinpath(mktempdir(), "stale.json")
-    write(ps, JSON3.write(stale))
+    write(ps, JSON.json(stale))
     @test_throws "retrain" load_model(ps)
 
     old = joinpath(mktempdir(), "old.json")
-    write(old, JSON3.write(Dict("file_version" => 2, "model" => Dict())))
+    write(old, JSON.json(Dict("file_version" => 2, "model" => Dict())))
     @test_throws "retrain" load_model(old)
 
     serialized = joinpath(mktempdir(), "old.jls")
@@ -231,7 +232,7 @@ end
         @test occursin("persistence", text) && occursin("wins", text)
         path = joinpath(dir, "sub", "out.json")
         write_evaluation(path, r)
-        j = JSON3.read(read(path, String))
+        j = JSON.parse(read(path, String))
         @test [x.name for x in j.detectors] == ["hybrid", "persistence"]
         h = j.detectors[1]
         @test h.metrics.phase.correct == 24 && h.metrics.phase.total == 24
@@ -249,7 +250,7 @@ end
     mktempdir() do dir
         b = eval_fixture(dir)
         ro = HimalayaUI.open_readonly_db(b.path)
-        run = JSON3.read(JSON3.write(HimalayaUI.run_peak_training(ro; recipe = HPM.default_recipe(n_trees = 15),
+        run = JSON.parse(JSON.json(HimalayaUI.run_peak_training(ro; recipe = HPM.default_recipe(n_trees = 15),
                                                                   io = devnull, peaks_slack = 100, ff_slack = 100)))
         DBInterface.close!(ro)
         h = only(evaluate_database(b.path; detectors = [:hybrid], io = devnull).entries).summary

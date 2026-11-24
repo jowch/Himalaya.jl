@@ -1,5 +1,6 @@
 # packages/HimalayaUI/test/test_ingestion_structural_events.jl
-using Test, HTTP, JSON3, SQLite, DBInterface, Tables
+using Test, HTTP, SQLite, DBInterface, Tables
+import JSON
 using HimalayaUI
 
 # Standalone-run support: under runtests.jl the in-process harness
@@ -74,7 +75,7 @@ user_req(name="alice") = HTTP.Request("POST", "/x", ["X-Username" => name], UInt
 
         # The dispatcher ignores the extra payload keys — it reads only sample_id.
         # Confirm the durable payload round-trips all three fields for the SSE arm.
-        pl = JSON3.read(String(first(Tables.rowtable(DBInterface.execute(db,
+        pl = JSON.parse(String(first(Tables.rowtable(DBInterface.execute(db,
             "SELECT payload FROM user_actions WHERE id = ?", [result.event_id]))).payload))
         @test Int(pl.sample_id) == s2_id
         @test Int(pl.from_sample_id) == s1_id

@@ -25,13 +25,6 @@ JSON-safe form of a `Learner`, `Fitted`, `FeatureSet`, `Recipe` or
 """
 function to_dict end
 
-"""
-    from_dict(T, d)
-
-Inverse of `to_dict` for `T` in `Learner`, `Fitted`, `FeatureSet`, `Recipe`
-and `TrainedModel`. `d` may have `String` or `Symbol` keys (so `JSON3.read`
-output works). An unregistered `kind` is an error.
-"""
 function from_dict end
 
 fld(d, k::AbstractString) = haskey(d, Symbol(k)) ? d[Symbol(k)] :

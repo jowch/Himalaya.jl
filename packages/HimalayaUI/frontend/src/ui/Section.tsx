@@ -38,26 +38,17 @@ export function Section({ title, aside, pinAside, folded, className, collapsible
   );
 }
 
-export function MainSection({ title, hint, children }: { title: string; hint?: ReactNode; children: ReactNode }): JSX.Element {
+export function SampleHeading({ name, eyebrow, badge, aside }: { name: string; eyebrow?: string | undefined; badge?: ReactNode; aside?: ReactNode }): JSX.Element {
   return (
-    <section className="flex flex-col">
-      <header className="flex items-baseline gap-2.5 px-3.5 pb-1.5 pt-3">
-        <h2 className="text-sm font-semibold text-ink-soft">{title}</h2>
-        {hint && <span className="text-xs text-ink-faint">{hint}</span>}
-      </header>
-      <div className="px-3.5 pb-4">{children}</div>
-    </section>
-  );
-}
-
-export function SampleHeading({ name, badge, aside }: { name: string; badge?: ReactNode; aside?: ReactNode }): JSX.Element {
-  return (
-    <div data-sample-heading className="@container flex min-w-0 items-center gap-3 px-3.5 pb-1 pt-2.5">
-      <div className="flex min-w-0 items-center gap-1.5">
-        <Tooltip content={name} overflowOnly>
-          <h2 tabIndex={-1} className="m-0 min-w-0 truncate text-xl font-normal leading-tight text-ink focus:outline-none">{name}</h2>
-        </Tooltip>
-        {badge}
+    <div data-sample-heading className="@container flex min-w-0 items-end gap-3 px-3.5 pb-1 pt-2">
+      <div className="flex min-w-0 flex-col">
+        {eyebrow !== undefined && <span className="mb-0.5 truncate text-xs font-semibold text-accent">{eyebrow}</span>}
+        <div className="flex min-w-0 items-center gap-1.5">
+          <Tooltip content={name} overflowOnly>
+            <h2 tabIndex={-1} className="m-0 min-w-0 truncate text-xl font-semibold text-ink focus:outline-none">{name}</h2>
+          </Tooltip>
+          {badge}
+        </div>
       </div>
       {aside && <div className="flex min-w-min flex-1 basis-0 justify-end">{aside}</div>}
     </div>

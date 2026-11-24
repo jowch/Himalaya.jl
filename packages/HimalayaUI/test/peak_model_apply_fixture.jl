@@ -1,4 +1,5 @@
-using Test, HTTP, JSON3, Random, SQLite, DBInterface, Tables
+using Test, HTTP, Random, SQLite, DBInterface, Tables
+import JSON
 using HimalayaUI
 import HimalayaPeakModel as HPM
 isdefined(@__MODULE__, :_pt_db) || include("peak_training_fixture.jl")
@@ -16,7 +17,7 @@ function _pma_trained()
         r = HimalayaUI.run_peak_training(ro; recipe = HPM.default_recipe(n_trees = 15), io = devnull,
                                          peaks_slack = 100, ff_slack = 100)
         DBInterface.close!(ro)
-        _PMA_TRAINED[] = JSON3.read(JSON3.write(r))
+        _PMA_TRAINED[] = JSON.parse(JSON.json(r))
     end
     _PMA_TRAINED[]
 end

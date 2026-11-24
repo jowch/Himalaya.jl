@@ -37,7 +37,7 @@ const AUTOSAMPLER_NOT_EDITABLE = "An autosampler sample is not analyzed, so its 
 const AUTOSAMPLER_NOT_SELECTABLE = "An autosampler sample has one image, so there is nothing to select."
 
 _autosampler_refusal(message) = HTTP.Response(422, ["Content-Type" => "application/json"],
-    JSON3.write(Dict(:error => message)))
+    to_json(Dict(:error => message)))
 
 _in_autosampler_setup(db::SQLite.DB, sql::AbstractString, id::Integer) =
     !isempty(sqlrows(DBInterface.execute(db, sql, [Int(id)])))

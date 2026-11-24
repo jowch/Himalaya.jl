@@ -1,7 +1,6 @@
 using Oxygen
 using HTTP
 using SQLite
-using JSON3
 import Sockets
 
 const _DB_REF = Ref{Union{SQLite.DB, Nothing}}(nothing)

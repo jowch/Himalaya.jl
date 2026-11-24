@@ -1,4 +1,5 @@
-using Test, HTTP, JSON3, SQLite, DBInterface, Tables
+using Test, HTTP, SQLite, DBInterface, Tables
+import JSON
 using HimalayaUI
 
 # Idempotency replay invariant (Tier 1.4).
@@ -82,7 +83,7 @@ end
                            "X-Username"   => "alice",
                            "X-Client-Id"  => "tab-1",
                            "X-Client-Op-Id" => op_id]
-                body_json = JSON3.write(Dict(:q => 0.99))
+                body_json = JSON.json(Dict(:q => 0.99))
 
                 pre_count = _count_actions(db, "peak_added")
                 r1 = nothing; r2 = nothing
@@ -125,7 +126,7 @@ end
                            "X-Username"   => "alice",
                            "X-Client-Id"  => "tab-1",
                            "X-Client-Op-Id" => op_id]
-                body_json = JSON3.write(Dict(:index_id => 77))
+                body_json = JSON.json(Dict(:index_id => 77))
 
                 pre_count = _count_actions(db, "assignment_add")
                 r1 = nothing; r2 = nothing
@@ -157,7 +158,7 @@ end
                            "X-Username"   => "alice",
                            "X-Client-Id"  => "tab-1",
                            "X-Client-Op-Id" => op_id]
-                body_json = JSON3.write(Dict(:name => "Renamed Display"))
+                body_json = JSON.json(Dict(:name => "Renamed Display"))
 
                 pre_count = _count_actions(db, "update_sample")
                 r1 = nothing; r2 = nothing

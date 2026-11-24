@@ -1,4 +1,5 @@
-using Test, HTTP, JSON3, SQLite, DBInterface, FileIO, ImageCore, TiffImages
+using Test, HTTP, SQLite, DBInterface, FileIO, ImageCore, TiffImages
+import JSON
 
 @testset "GET /api/exposures/:id/image" begin
     tiff_path = tempname() * ".tiff"

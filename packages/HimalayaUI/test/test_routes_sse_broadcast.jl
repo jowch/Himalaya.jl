@@ -1,4 +1,5 @@
-using Test, HTTP, JSON3, SQLite, DBInterface, Tables
+using Test, HTTP, SQLite, DBInterface, Tables
+import JSON
 using HimalayaUI
 
 # Regression test for PR review issue #5: every migrated route that calls
@@ -61,7 +62,7 @@ end
         _with_sub() do pending
             with_test_server(db) do port, base
                 r = HTTP.patch("$base/api/samples/$s_id";
-                    body = JSON3.write(Dict(:notes => "n")),
+                    body = JSON.json(Dict(:notes => "n")),
                     headers = ["Content-Type" => "application/json",
                                "X-Username"   => "alice"])
                 @test r.status == 200
@@ -82,7 +83,7 @@ end
         _with_sub() do pending
             with_test_server(db) do port, base
                 r = HTTP.patch("$base/api/exposures/$e_id/status";
-                    body = JSON3.write(Dict(:status => "accepted")),
+                    body = JSON.json(Dict(:status => "accepted")),
                     headers = ["Content-Type" => "application/json",
                                "X-Username"   => "alice"])
                 @test r.status == 200
@@ -121,11 +122,11 @@ end
                             :anchor_peak_id => p1, :anchor_ratio => 1,
                             :additional => [Dict(:ratio_position => 2, :peak_id => p2)])
                 r = HTTP.post("$base/api/exposures/$e_id/speculative";
-                    body = JSON3.write(body),
+                    body = JSON.json(body),
                     headers = ["Content-Type" => "application/json",
                                "X-Username"   => "alice"])
                 @test r.status == 200
-                idx_id = JSON3.read(String(r.body)).id
+                idx_id = JSON.parse(String(r.body)).id
 
                 # Also exercise the DELETE path while we have a fresh index
                 r2 = HTTP.delete("$base/api/indices/$idx_id";

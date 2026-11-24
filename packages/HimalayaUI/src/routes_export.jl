@@ -1,4 +1,4 @@
-using HTTP, JSON3, DBInterface, Tables, Oxygen, CSV, SQLite
+using HTTP, DBInterface, Tables, Oxygen, CSV, SQLite
 
 function build_export(db::SQLite.DB, experiment_id::Int)
     samples = sqlrows(DBInterface.execute(db,
@@ -116,7 +116,7 @@ function register_export_routes!()
         if fmt == "json"
             return HTTP.Response(200,
                 ["Content-Type" => "application/json"],
-                JSON3.write(summary))
+                to_json(summary))
         elseif fmt == "csv"
             return HTTP.Response(200,
                 ["Content-Type" => "text/csv"],
@@ -124,7 +124,7 @@ function register_export_routes!()
         else
             return HTTP.Response(400,
                 ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:error => "format must be json or csv")))
+                to_json(Dict(:error => "format must be json or csv")))
         end
     end
 end

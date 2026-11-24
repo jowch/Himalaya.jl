@@ -1,4 +1,5 @@
-using Test, HTTP, JSON3, SQLite, DBInterface, Tables
+using Test, HTTP, SQLite, DBInterface, Tables
+import JSON
 using HimalayaUI
 
 # Failure-class routing parametric test (gap-1 from review-discipline).
@@ -83,7 +84,7 @@ end
                 @testset "$label" begin
                     r = call(method, path;
                         headers = base_headers,
-                        body = Vector{UInt8}(JSON3.write(body)))
+                        body = Vector{UInt8}(JSON.json(body)))
                     @test 400 <= r.status < 500
                 end
             end

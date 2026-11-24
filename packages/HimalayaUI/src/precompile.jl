@@ -76,11 +76,11 @@ _recording(send, record::AbstractVector) =
     (method, target, payload) -> (push!(record, (method, target)); send(method, target, payload))
 
 function _workload_call(send, method::AbstractString, target::AbstractString, body = nothing)
-    payload = body === nothing ? UInt8[] : Vector{UInt8}(JSON3.write(body))
+    payload = body === nothing ? UInt8[] : Vector{UInt8}(to_json(body))
     res = send(method, target, payload)
     res.status < 300 || error("precompile workload: $method $target returned $(res.status)")
     json_body = occursin("json", HTTP.header(res, "Content-Type"))
-    isempty(res.body) || !json_body ? nothing : JSON3.read(res.body)
+    isempty(res.body) || !json_body ? nothing : JSON.parse(res.body)
 end
 
 function _workload_requests(send, experiment::Int, sample::Int, other::Int, exposure::Int, mixed::Int, sibling::Int)

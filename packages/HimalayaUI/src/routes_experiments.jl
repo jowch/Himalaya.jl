@@ -1,4 +1,4 @@
-using HTTP, JSON3, DBInterface, Tables, Oxygen
+using HTTP, DBInterface, Tables, Oxygen
 
 const _READONLY_FIELDS = ["data_dir", "analysis_dir", "manifest_path", "path", "id", "created_at"]
 const _PLAIN_PATCH_FIELDS = ["name", "description"]
@@ -50,7 +50,7 @@ end
 
 _body_get(body, k) = get(body, k, get(body, string(k), nothing))
 
-_json_error(status, d) = HTTP.Response(status, ["Content-Type" => "application/json"], JSON3.write(d))
+_json_error(status, d) = HTTP.Response(status, ["Content-Type" => "application/json"], to_json(d))
 
 function _mode_problem(v)
     v === nothing && return nothing
@@ -93,7 +93,7 @@ function _setup_spec(spec; default_analysis_dir, data_dir)
     out
 end
 
-_is_obj(v) = v isa AbstractDict || v isa JSON3.Object
+_is_obj(v) = v isa AbstractDict
 _under(child, parent) = (c = _canonical_dir(child); q = _canonical_dir(parent);
     c == q || startswith(c, rstrip(q, '/') * "/"))
 
@@ -245,7 +245,7 @@ function register_experiments_routes!()
             entity_type = "experiment", entity_id = exp_id)
 
         HTTP.Response(202, ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:id => exp_id, :status => "scanning",
+            to_json(Dict(:id => exp_id, :status => "scanning",
                              :name => exp_name, :data_dir => data_dir)))
     end
 
@@ -254,7 +254,7 @@ function register_experiments_routes!()
         rows = sqlrows(DBInterface.execute(db,
             "SELECT * FROM experiments ORDER BY id"))
         out = [_experiment_row_to_json(r, db) for r in rows]
-        HTTP.Response(200, ["Content-Type" => "application/json"], JSON3.write(out))
+        HTTP.Response(200, ["Content-Type" => "application/json"], to_json(out))
     end
 
     @get "/api/experiments/{id}" function(req::HTTP.Request, id::Int)
@@ -263,9 +263,9 @@ function register_experiments_routes!()
             "SELECT * FROM experiments WHERE id = ?", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "experiment not found")))
+            to_json(Dict(:error => "experiment not found")))
         HTTP.Response(200, ["Content-Type" => "application/json"],
-            JSON3.write(_experiment_row_to_json(rows[1], db)))
+            to_json(_experiment_row_to_json(rows[1], db)))
     end
 
     @patch "/api/experiments/{id}" function(req::HTTP.Request, id::Int)
@@ -274,7 +274,7 @@ function register_experiments_routes!()
             "SELECT id FROM experiments WHERE id = ?", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "experiment not found")))
+            to_json(Dict(:error => "experiment not found")))
 
         body = json(req)
 
@@ -282,12 +282,12 @@ function register_experiments_routes!()
             (haskey(body, Symbol(k)) || haskey(body, k)) &&
                 return HTTP.Response(400,
                     ["Content-Type" => "application/json"],
-                    JSON3.write(Dict(:error => "$k is read-only; change it via create/scan")))
+                    to_json(Dict(:error => "$k is read-only; change it via create/scan")))
         end
         unknown = sort!([String(k) for k in keys(body) if !(String(k) in _PLAIN_PATCH_FIELDS)])
         isempty(unknown) || return HTTP.Response(400,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "not an experiment field: $(join(unknown, ", ")); " *
+            to_json(Dict(:error => "not an experiment field: $(join(unknown, ", ")); " *
                                        "only name and description can be changed")))
 
         set_clauses = String[]
@@ -301,7 +301,7 @@ function register_experiments_routes!()
             if field == "name"
                 (val isa AbstractString && !isempty(strip(val))) || return HTTP.Response(400,
                     ["Content-Type" => "application/json"],
-                    JSON3.write(Dict(:error => "name must be a non-empty string")))
+                    to_json(Dict(:error => "name must be a non-empty string")))
                 val = String(strip(val))
             end
             push!(set_clauses, "$field = ?"); push!(params, something(val, missing))
@@ -310,7 +310,7 @@ function register_experiments_routes!()
 
         isempty(set_clauses) && return HTTP.Response(400,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "no patchable fields; supply name or description")))
+            to_json(Dict(:error => "no patchable fields; supply name or description")))
 
         push!(params, id)
         return with_idempotency(db, req) do
@@ -325,7 +325,7 @@ function register_experiments_routes!()
             updated_rows = sqlrows(DBInterface.execute(db,
                 "SELECT * FROM experiments WHERE id = ?", [id]))
             HTTP.Response(200, ["Content-Type" => "application/json"],
-                JSON3.write(_experiment_row_to_json(updated_rows[1], db)))
+                to_json(_experiment_row_to_json(updated_rows[1], db)))
         end
     end
 
@@ -350,7 +350,7 @@ function register_experiments_routes!()
         Threads.@spawn run_ingest!(db, id; phase = "rescan")
         log_action!(db, req; action = "setups_added", entity_type = "experiment", entity_id = id)
         HTTP.Response(202, ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:status => "scanning", :experiment_id => id, :setup_ids => added)))
+            to_json(Dict(:status => "scanning", :experiment_id => id, :setup_ids => added)))
     end
 
     @post "/api/experiments/{id}/scan" function(req::HTTP.Request, id::Int)
@@ -359,10 +359,10 @@ function register_experiments_routes!()
             "SELECT id, ingest_status FROM experiments WHERE id = ?", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "experiment not found")))
+            to_json(Dict(:error => "experiment not found")))
 
         req_body = isempty(req.body) ? Dict{String,Any}() : try
-            JSON3.read(String(copy(req.body::Vector{UInt8})))
+            JSON.parse(String(copy(req.body::Vector{UInt8})))
         catch
             Dict{String,Any}()
         end
@@ -373,7 +373,7 @@ function register_experiments_routes!()
         end
         if !(force_scan || ingest_running(id) || ingest_has_work(db, id))
             return HTTP.Response(200, ["Content-Type" => "application/json"],
-                JSON3.write(Dict(:status => coalesce(first(rows).ingest_status, "complete"),
+                to_json(Dict(:status => coalesce(first(rows).ingest_status, "complete"),
                                  :experiment_id => id, :changed => false)))
         end
         phase = _ingest_phase(db, id)
@@ -384,7 +384,7 @@ function register_experiments_routes!()
             entity_type = "experiment", entity_id = id)
 
         HTTP.Response(202, ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:status => "scanning", :experiment_id => id)))
+            to_json(Dict(:status => "scanning", :experiment_id => id)))
     end
 
     @delete "/api/experiments/{id}" function(req::HTTP.Request, id::Int)
@@ -393,10 +393,10 @@ function register_experiments_routes!()
             "SELECT id, ingest_status FROM experiments WHERE id = ?", [id]))
         isempty(rows) && return HTTP.Response(404,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "experiment not found")))
+            to_json(Dict(:error => "experiment not found")))
         isequal(first(rows).ingest_status, "scanning") && return HTTP.Response(409,
             ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:error => "the experiment is still ingesting")))
+            to_json(Dict(:error => "the experiment is still ingesting")))
 
         lock(_DB_WRITE_LOCK) do
             SQLite.transaction(db) do
@@ -408,7 +408,7 @@ function register_experiments_routes!()
             entity_type = "experiment", entity_id = id)
 
         HTTP.Response(200, ["Content-Type" => "application/json"],
-            JSON3.write(Dict(:id => id, :deleted => true)))
+            to_json(Dict(:id => id, :deleted => true)))
     end
 end
 

@@ -1,4 +1,5 @@
-using Test, Dates, SQLite, DBInterface, Tables, JSON3, HimalayaUI
+using Test, Dates, SQLite, DBInterface, Tables, HimalayaUI
+import JSON
 isdefined(@__MODULE__, :_as_write_folder!) || include("test_setup_mode.jl")
 
 _fc_frame_line(i; rejected = false) =
@@ -166,9 +167,9 @@ end
         sample_of(stem) = first(Tables.rowtable(DBInterface.execute(db,
             "SELECT sample_id FROM exposures WHERE filename = ?", [stem]))).sample_id
         with_inproc_routes(db) do call
-            body = only(JSON3.read(String(call("GET", "/api/samples/$(sample_of("wat_01B_S101"))/exposures").body)))
+            body = only(JSON.parse(String(call("GET", "/api/samples/$(sample_of("wat_01B_S101"))/exposures").body)))
             @test (body.frames_total, body.frames_rejected) == (10, 1)
-            body = only(JSON3.read(String(call("GET", "/api/samples/$(sample_of("pep_01B_S104"))/exposures").body)))
+            body = only(JSON.parse(String(call("GET", "/api/samples/$(sample_of("pep_01B_S104"))/exposures").body)))
             @test body.frames_total === nothing && body.frames_rejected === nothing
         end
     end

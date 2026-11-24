@@ -1,4 +1,5 @@
-using Test, HTTP, JSON3, Random, SQLite, DBInterface, Tables
+using Test, HTTP, Random, SQLite, DBInterface, Tables
+import JSON
 using HimalayaUI
 import HimalayaPeakModel as HPM
 isdefined(@__MODULE__, :_pt_db) || include("peak_training_fixture.jl")
@@ -16,7 +17,7 @@ function _pmp_frames(sub)
     out = Any[]
     while isready(sub.pending)
         frame = take!(sub.pending)
-        push!(out, JSON3.read(split(split(frame, "data: ")[2], "\n")[1]))
+        push!(out, JSON.parse(split(split(frame, "data: ")[2], "\n")[1]))
     end
     out
 end
@@ -191,7 +192,7 @@ end
         before = _pma_peaks(b.db, e)
         with_inproc_routes(b.db) do call
             r = call("POST", "/api/exposures/$e/peaks"; headers = ["X-Username" => "alice", "Content-Type" => "application/json",
-                     "X-Client-Op-Id" => "op-1"], body = Vector{UInt8}(JSON3.write(Dict(:q => 0.123))))
+                     "X-Client-Op-Id" => "op-1"], body = Vector{UInt8}(JSON.json(Dict(:q => 0.123))))
             @test r.status == 201
         end
         @test isequal(_pma_peaks(b.db, e), before)
@@ -225,7 +226,7 @@ end
         _pmp_with_pass() do sub
             HimalayaUI.PEAK_TRAINING.stopped = false
             HimalayaUI.PEAK_TRAINING.attempted_watermark = 0
-            result = JSON3.write(_pma_result(watermark = 3))
+            result = JSON.json(_pma_result(watermark = 3))
             HimalayaUI.PEAK_TRAINING_COMMAND[] = path -> addenv(`$(Base.julia_cmd()) --startup-file=no -e "println(ENV[\"FAKE_RESULT\"])"`,
                                                                  "FAKE_RESULT" => result)
             try

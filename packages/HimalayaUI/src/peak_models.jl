@@ -1,5 +1,3 @@
-using JSON3
-
 const PEAK_TRAINING_MIN_EVENTS = 20
 const PEAK_TRAINING_QUIET_SECONDS = 600.0
 const PEAK_MODEL_STATUSES = ("passed", "rejected", "active", "retired", "failed")
@@ -52,7 +50,7 @@ function peak_training_due(db::SQLite.DB; min_events::Integer = PEAK_TRAINING_MI
     r.n >= min_events && r.n > 0 && r.idle >= quiet_seconds
 end
 
-_json_or_null(x) = x === nothing ? nothing : JSON3.write(x)
+_json_or_null(x) = x === nothing ? nothing : to_json(x)
 
 function _insert_peak_model_row!(db::SQLite.DB; status, watermark, counts = nothing, recipe = nothing,
                                  recipe_id = nothing, feature_version = nothing,
@@ -95,11 +93,11 @@ const PEAK_MODEL_CACHE_LOCK = ReentrantLock()
 invalidate_peak_model_cache!() = lock(() -> empty!(PEAK_MODEL_CACHE), PEAK_MODEL_CACHE_LOCK)
 
 function trained_model_from_row(row)::HimalayaPeakModel.TrainedModel
-    recipe = HimalayaPeakModel.from_dict(HimalayaPeakModel.Recipe, JSON3.read(String(row.recipe_json)::String))
+    recipe = HimalayaPeakModel.from_dict(HimalayaPeakModel.Recipe, JSON.parse(String(row.recipe_json)::String))
     row.feature_version == HimalayaPeakModel.feature_version(recipe.features) ||
         error("the model was trained with feature version $(row.feature_version), not the current one")
-    fitted = HimalayaPeakModel.from_dict(HimalayaPeakModel.Fitted, JSON3.read(String(row.fitted_json)::String))
-    counts = ismissing(row.counts_json) ? nothing : JSON3.read(String(row.counts_json)::String)
+    fitted = HimalayaPeakModel.from_dict(HimalayaPeakModel.Fitted, JSON.parse(String(row.fitted_json)::String))
+    counts = ismissing(row.counts_json) ? nothing : JSON.parse(String(row.counts_json)::String)
     trained_on = (positive = counts === nothing ? 0 : Int(get(counts, :positive, 0)),
                   negative = counts === nothing ? 0 : Int(get(counts, :negative, 0)))
     HimalayaPeakModel.TrainedModel(recipe, fitted, recipe.threshold, recipe.nms,
@@ -141,7 +139,7 @@ function retire_stale_peak_models!(db::SQLite.DB)
                 "SELECT id, recipe_json, feature_version FROM peak_models WHERE status = 'active' ORDER BY id"))
             usable = try
                 !ismissing(r.recipe_json) && r.feature_version == HimalayaPeakModel.feature_version(
-                    HimalayaPeakModel.from_dict(HimalayaPeakModel.Recipe, JSON3.read(String(r.recipe_json)::String)).features)
+                    HimalayaPeakModel.from_dict(HimalayaPeakModel.Recipe, JSON.parse(String(r.recipe_json)::String)).features)
             catch
                 false
             end
@@ -158,7 +156,7 @@ const PEAK_MODEL_GROWTH = 0.25
 
 function _curation_count(counts_json)
     ismissing(counts_json) && return 0
-    Int(get(JSON3.read(String(counts_json)::String), :curations, 0))
+    Int(get(JSON.parse(String(counts_json)::String), :curations, 0))
 end
 
 function _seed_peak_model_cache!(db::SQLite.DB, model::ProductionModel)

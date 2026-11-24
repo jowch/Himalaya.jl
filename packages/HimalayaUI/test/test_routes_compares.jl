@@ -1,4 +1,5 @@
-using Test, HTTP, JSON3, SQLite, DBInterface, Tables
+using Test, HTTP, SQLite, DBInterface, Tables
+import JSON
 using HimalayaUI
 
 if !isdefined(@__MODULE__, :with_test_server)
@@ -15,12 +16,12 @@ function _seed_compare_samples(db, n::Int)
 end
 
 _compare_headers(user = "alice") = ["Content-Type" => "application/json", "X-Username" => user]
-_compare_body(; kw...) = Vector{UInt8}(JSON3.write(Dict(kw...)))
+_compare_body(; kw...) = Vector{UInt8}(JSON.json(Dict(kw...)))
 
 function _compares(call, exp_id)
     r = call("GET", "/api/experiments/$exp_id/compares")
     @test r.status == 200
-    JSON3.read(String(r.body))
+    JSON.parse(String(r.body))
 end
 
 _refs(body, sid) = [Int(c.ref_sample_id) for c in body.compares if Int(c.sample_id) == sid]
@@ -160,7 +161,7 @@ _stored(db, sid) = [(r.ref_sample_id,) for r in Tables.rowtable(DBInterface.exec
         with_inproc_routes(db) do call
             r = _patch(call, s1; subtraction=b2)
             @test r.status == 200
-            body = JSON3.read(String(r.body))
+            body = JSON.parse(String(r.body))
             @test _background(body, s1).ref_sample_id == b2
             @test _background(body, s1).source == "user"
             @test _background(body, s1).default_ref_sample_id == b1
@@ -175,7 +176,7 @@ _stored(db, sid) = [(r.ref_sample_id,) for r in Tables.rowtable(DBInterface.exec
             _patch(call, s1; subtraction=b2)
             r = call("PATCH", "/api/samples/$s1/compares"; headers=_compare_headers(), body=_null_subtraction())
             @test r.status == 200
-            body = JSON3.read(String(r.body))
+            body = JSON.parse(String(r.body))
             @test _background(body, s1).ref_sample_id === nothing
             @test _background(body, s1).source == "user"
             @test _sub(body, s1) === nothing
@@ -190,8 +191,8 @@ _stored(db, sid) = [(r.ref_sample_id,) for r in Tables.rowtable(DBInterface.exec
             call("PATCH", "/api/samples/$s1/compares"; headers=_compare_headers(), body=_null_subtraction())
             r = _patch(call, s1; subtraction="default")
             @test r.status == 200
-            @test _background(JSON3.read(String(r.body)), s1).ref_sample_id == b1
-            @test _background(JSON3.read(String(r.body)), s1).source == "default"
+            @test _background(JSON.parse(String(r.body)), s1).ref_sample_id == b1
+            @test _background(JSON.parse(String(r.body)), s1).source == "default"
             @test _stored(db, s1) == []
         end
     end
@@ -234,7 +235,7 @@ _stored(db, sid) = [(r.ref_sample_id,) for r in Tables.rowtable(DBInterface.exec
             _patch(call, s1; add=[b1], subtraction=b1)
             r = _patch(call, s1; subtraction="default")
             @test r.status == 200
-            @test _sub(JSON3.read(String(r.body)), s1) === nothing
+            @test _sub(JSON.parse(String(r.body)), s1) === nothing
         end
     end
 
@@ -304,7 +305,7 @@ end
         with_inproc_routes(db) do call
             r = call("PATCH", "/api/samples/$a/compares"; headers=_compare_headers(), body=_compare_body(add=[c, b]))
             @test r.status == 200
-            @test _refs(JSON3.read(String(r.body)), a) == [c, b]
+            @test _refs(JSON.parse(String(r.body)), a) == [c, b]
             call("PATCH", "/api/samples/$d/compares"; headers=_compare_headers(), body=_compare_body(add=[b]))
             call("PATCH", "/api/samples/$a/compares"; headers=_compare_headers(), body=_compare_body(remove=[c]))
             body = _compares(call, exp_id)
