@@ -92,6 +92,148 @@ end
     end
 end
 
+_patch(call, sid; user = "alice", kw...) =
+    call("PATCH", "/api/samples/$sid/compares"; headers=_compare_headers(user), body=_compare_body(; kw...))
+
+_null_subtraction() = Vector{UInt8}("{\"subtraction\": null}")
+
+_background(body, sid) = only(b for b in body.backgrounds if Int(b.sample_id) == sid)
+
+_stored(db, sid) = [(r.ref_sample_id,) for r in Tables.rowtable(DBInterface.execute(db,
+    "SELECT ref_sample_id FROM sample_subtractions WHERE sample_id = ?", [sid]))]
+
+@testset "autosampler backgrounds" begin
+    run = [("B", 100), ("S", 101), ("S", 102), ("B", 103)]
+
+    @testset "the experiment reports each autosampler sample's effective background and where it came from" begin
+        (db, exp_id, ((b1, s1, s2, b2),)) = _seed_autosampler(run)
+        with_inproc_routes(db) do call
+            body = _compares(call, exp_id)
+            @test _background(body, s1).ref_sample_id == b1
+            @test _background(body, s1).source == "default"
+            @test _background(body, s1).default_ref_sample_id == b1
+            @test _background(body, b1).ref_sample_id === nothing
+            @test _background(body, b1).default_ref_sample_id === nothing
+            @test isempty(body.subtractions)
+            @test _stored(db, s1) == []
+        end
+    end
+
+    @testset "a capillary experiment reports no backgrounds and keeps its subtractions" begin
+        (db, exp_id, ((b1, s1, s2, b2),)) = _seed_autosampler(run; mode = "capillary")
+        with_inproc_routes(db) do call
+            _patch(call, s1; add=[b1], subtraction=b1)
+            body = _compares(call, exp_id)
+            @test isempty(body.backgrounds)
+            @test _sub(body, s1) == b1
+        end
+    end
+
+    @testset "choosing another sample stores it as the user's choice and uses no comparison slot" begin
+        (db, exp_id, ((b1, s1, s2, b2),)) = _seed_autosampler(run)
+        with_inproc_routes(db) do call
+            r = _patch(call, s1; subtraction=b2)
+            @test r.status == 200
+            body = JSON3.read(String(r.body))
+            @test _background(body, s1).ref_sample_id == b2
+            @test _background(body, s1).source == "user"
+            @test _background(body, s1).default_ref_sample_id == b1
+            @test _sub(body, s1) == b2
+            @test _refs(body, s1) == Int[]
+        end
+    end
+
+    @testset "none is stored as its own state, and the default does not come back" begin
+        (db, exp_id, ((b1, s1, s2, b2),)) = _seed_autosampler(run)
+        with_inproc_routes(db) do call
+            _patch(call, s1; subtraction=b2)
+            r = call("PATCH", "/api/samples/$s1/compares"; headers=_compare_headers(), body=_null_subtraction())
+            @test r.status == 200
+            body = JSON3.read(String(r.body))
+            @test _background(body, s1).ref_sample_id === nothing
+            @test _background(body, s1).source == "user"
+            @test _sub(body, s1) === nothing
+            @test ismissing(only(_stored(db, s1))[1])
+            @test _background(_compares(call, exp_id), s2).ref_sample_id == b1
+        end
+    end
+
+    @testset "back to the default deletes the stored choice" begin
+        (db, exp_id, ((b1, s1, s2, b2),)) = _seed_autosampler(run)
+        with_inproc_routes(db) do call
+            call("PATCH", "/api/samples/$s1/compares"; headers=_compare_headers(), body=_null_subtraction())
+            r = _patch(call, s1; subtraction="default")
+            @test r.status == 200
+            @test _background(JSON3.read(String(r.body)), s1).ref_sample_id == b1
+            @test _background(JSON3.read(String(r.body)), s1).source == "default"
+            @test _stored(db, s1) == []
+        end
+    end
+
+    @testset "adding or removing a comparison leaves the background alone" begin
+        (db, exp_id, ((b1, s1, s2, b2),)) = _seed_autosampler(run)
+        with_inproc_routes(db) do call
+            _patch(call, s1; subtraction=b2)
+            _patch(call, s1; add=[s2])
+            _patch(call, s1; remove=[s2])
+            @test _background(_compares(call, exp_id), s1).ref_sample_id == b2
+        end
+    end
+
+    @testset "a change to what it already is logs nothing" begin
+        (db, exp_id, ((b1, s1, s2, b2),)) = _seed_autosampler(run)
+        with_inproc_routes(db) do call
+            _patch(call, s1; subtraction="default")
+            _patch(call, s1; subtraction=b2)
+            _patch(call, s1; subtraction=b2)
+        end
+        n = Int(first(Tables.rowtable(DBInterface.execute(db,
+            "SELECT COUNT(*) AS n FROM user_actions WHERE action = 'compares_changed'"))).n)
+        @test n == 1
+    end
+
+    @testset "the background must be a sample of the same experiment and not the sample itself" begin
+        (db, exp_id, ((b1, s1, s2, b2),)) = _seed_autosampler(run)
+        (exp2, (x,)) = _seed_compare_samples(db, 1)
+        with_inproc_routes(db) do call
+            @test _patch(call, s1; subtraction=s1).status == 400
+            @test _patch(call, s1; subtraction=x).status == 422
+            @test _patch(call, s1; subtraction="buffer").status == 400
+        end
+    end
+
+    @testset "default is accepted for a capillary sample and clears its subtraction" begin
+        (db, exp_id, ((b1, s1, s2, b2),)) = _seed_autosampler(run; mode = "capillary")
+        with_inproc_routes(db) do call
+            _patch(call, s1; add=[b1], subtraction=b1)
+            r = _patch(call, s1; subtraction="default")
+            @test r.status == 200
+            @test _sub(JSON3.read(String(r.body)), s1) === nothing
+        end
+    end
+
+    @testset "an event log from before none existed replays the same, and the new states replay too" begin
+        (db, exp_id, ((b1, s1, s2, b2),)) = _seed_autosampler(run)
+        (_, (a, b)) = (nothing, _seed_compare_samples(db, 2)[2])
+        with_inproc_routes(db) do call
+            _patch(call, a; add=[b], subtraction=b)
+            call("PATCH", "/api/samples/$a/compares"; headers=_compare_headers(), body=_null_subtraction())
+            _patch(call, s1; subtraction=b2)
+            call("PATCH", "/api/samples/$s2/compares"; headers=_compare_headers(), body=_null_subtraction())
+            _patch(call, s2; subtraction=b2)
+            call("PATCH", "/api/samples/$s2/compares"; headers=_compare_headers(), body=_null_subtraction())
+        end
+        q(sql) = Tables.rowtable(DBInterface.execute(db, sql))
+        live = q("SELECT sample_id, ref_sample_id FROM sample_subtractions ORDER BY sample_id")
+        @test length(live) == 2
+        DBInterface.execute(db, "DELETE FROM sample_subtractions")
+        for s in (a, s1, s2)
+            HimalayaUI.rebuild_views_from_log!(db, s; entity_type = "sample")
+        end
+        @test q("SELECT sample_id, ref_sample_id FROM sample_subtractions ORDER BY sample_id") == live
+    end
+end
+
 @testset "sample compares" begin
     @testset "adding and removing comparisons keeps them per sample, in the order added" begin
         db = open_prepared_clone(mktempdir())
@@ -243,5 +385,24 @@ end
         @test cc(Set([1]), 2, Int[], [1], false, nothing) == Dict(:remove => [1], :subtraction => nothing)
         @test cc(Set([1]), 2, Int[], Int[], false, nothing) == Dict()
         @test cc(Set([1]), 2, [2], Int[], true, 2) == Dict(:add => [2])
+    end
+
+    @testset "compare_changes for an autosampler sample never clears the background with a chip" begin
+        cc(args...) = HimalayaUI.compare_changes(args...; managed = true)
+        @test cc(Set([1]), 2, Int[], [1], false, nothing) == Dict(:remove => [1])
+        @test cc(Set([1]), 2, [3], Int[], false, nothing) == Dict(:add => [3])
+        @test cc(Set([1]), nothing, Int[], Int[], true, nothing) == Dict(:subtraction => "none")
+        @test cc(Set([1]), :none, Int[], Int[], true, nothing) == Dict()
+        @test cc(Set([1]), :none, Int[], Int[], true, "default") == Dict(:subtraction => nothing)
+        @test cc(Set([1]), nothing, Int[], Int[], true, "default") == Dict()
+        @test cc(Set([1]), 2, Int[], Int[], true, "default") == Dict(:subtraction => nothing)
+        @test cc(Set([1]), :none, Int[], Int[], true, 2) == Dict(:subtraction => 2)
+        @test cc(Set([1]), 2, Int[], Int[], true, 2) == Dict()
+    end
+
+    @testset "compare_changes treats default like null for a capillary sample" begin
+        cc = HimalayaUI.compare_changes
+        @test cc(Set([1]), 1, Int[], Int[], true, "default") == Dict(:subtraction => nothing)
+        @test cc(Set([1]), nothing, Int[], Int[], true, "default") == Dict()
     end
 end
