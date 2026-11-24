@@ -135,6 +135,7 @@ Every row also needs the date it was decided, as `YYYY-MM-DD`.
 |---|---|---|---|---|
 | autosampler-mode | Autosampler setups are a dedicated mode per setup: one sample per acquisition, read from its averaged `_tot.dat`. | 2026-11-23 | built | packages/HimalayaUI/test/test_setup_mode.jl › an undecided setup with the wrong patterns is put right on its first scan |
 | autosampler-no-analysis | Automatic analysis is off for autosampler setups. | 2026-11-23 | built | packages/HimalayaUI/test/test_setup_mode.jl › nothing is analyzed and nothing is reported as a problem |
+| autosampler-beamline-average | An autosampler image is shown as the beamline's average of the frames it kept, not as a single image. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › shows an autosampler exposure as the beamline's average of the images it kept |
 
 ## Images and combining them
 
