@@ -2375,7 +2375,7 @@ describe("WorkspacePage", () => {
     fireEvent.click(within(screen.getByRole("dialog")).getByText("A2"));
     const scale = screen.getByRole("button", { name: "Remove A2" }).parentElement!.querySelector("[data-scale-source]")!;
     expect(scale).toHaveAttribute("data-scale-source", "capillary");
-    expect(scale).toHaveTextContent("×0.500 matched");
+    expect(scale.textContent).toBe("×0.500");
   });
 
   it("matches a comparison from another setup at high q, even when both carry monitors", () => {
@@ -2388,7 +2388,7 @@ describe("WorkspacePage", () => {
     fireEvent.click(within(screen.getByRole("dialog")).getByText("A2"));
     const scale = screen.getByRole("button", { name: "Remove A2" }).parentElement!.querySelector("[data-scale-source]")!;
     expect(scale).toHaveAttribute("data-scale-source", "other_setup");
-    expect(scale).toHaveTextContent("×0.500 matched");
+    expect(scale.textContent).toBe("×0.500");
   });
 
   it("matches at high q while the sample's setup is unknown, even when both carry monitors", () => {
@@ -2413,7 +2413,7 @@ describe("WorkspacePage", () => {
     fireEvent.click(within(screen.getByRole("dialog")).getByText("A2"));
     const scale = screen.getByRole("button", { name: "Remove A2" }).parentElement!.querySelector("[data-scale-source]")!;
     expect(scale).toHaveAttribute("data-scale-source", "matched");
-    expect(scale).toHaveTextContent("×0.500 matched");
+    expect(scale.textContent).toBe("×0.500");
   });
 
   it("Ctrl-clicking the subtracted chip stops subtracting, the palette hides comparisons, and × removes one", () => {
