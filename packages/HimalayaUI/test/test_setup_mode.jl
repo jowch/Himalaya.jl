@@ -714,23 +714,24 @@ end
 
 @testset "the stored calibration shot is renamed rather than ingested twice" begin
     root = mktempdir()
-    _as_add_stem!(root, "agbe_S0090"; frames = 1, trace = false)
+    _as_add_stem!(root, "agbe_S0090"; frames = 3, trace = false)
     db = fresh_db()
     eid = HimalayaUI.create_experiment!(db; name = "bt", path = root)
     sid = HimalayaUI.add_setup_from_folder!(db, eid, root)
     HimalayaUI.scan_and_group!(db, eid)
-    @test only(Tables.rowtable(DBInterface.execute(db,
-        "SELECT filename FROM exposures WHERE setup_id = ?", [sid]))).filename == "agbe_S0090_0_001"
+    stored() = [x.filename for x in Tables.rowtable(DBInterface.execute(db,
+        "SELECT filename FROM exposures WHERE setup_id = ? AND kind = 'file' ORDER BY filename", [sid]))]
+    @test stored() == ["agbe_S0090_0_001", "agbe_S0090_0_002", "agbe_S0090_0_003"]
     for a in _AS_RUN_A
         _as_add_acquisition!(root, a)
     end
     _as_add_at!(root, "wat", 100)
     HimalayaUI.scan_and_group!(db, eid)
     @test _as_setup_mode(db, sid) == ("autosampler", "detected")
-    names = [x.filename for x in Tables.rowtable(DBInterface.execute(db,
-        "SELECT filename FROM exposures WHERE setup_id = ? ORDER BY filename", [sid]))]
-    @test names == ["agbe_S0090", "wat_01A_B100", "wat_01B_S101", "wat_01C_S102"]
-    @test _as_most_per_sample(db, sid) == 1
+    @test stored() == ["agbe_S0090", "agbe_S0090_0_002", "agbe_S0090_0_003",
+                       "wat_01A_B100", "wat_01B_S101", "wat_01C_S102"]
+    @test HimalayaUI.scan_and_group!(db, eid).added_exposures == 0
+    @test stored() |> length == 6
 end
 
 @testset "a migrated database and a fresh one list setup columns in the same order" begin
