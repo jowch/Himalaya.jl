@@ -214,6 +214,7 @@ Every row also needs the date it was decided, as `YYYY-MM-DD`.
 | phase-curvature-bonnet | In the Assignment list only a Bonnet group's header shows κ. Single candidate rows and group members show none. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/workspace/CandidateList.test.tsx › leaves the curvature off single candidate rows, cubic or not |
 | phase-bonnet-groups | Bonnet-related cubics that share peaks are offered as one group, ticked whole or one member at a time. | 2026-11-22 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › ticks a Bonnet group whole with its number key and undoes it as one edit |
 | phase-contested-best-fit | A peak two auto-called lattices both match goes to the lattice that predicts it most closely, so coexisting cubics are both called. The real cubic fixture now auto-calls Im3m + Pn3m, which is not yet verified. | 2026-11-23 | built | packages/HimalayaUI/test/test_auto_group_peak_id_claiming.jl › auto_group: coexisting Im3m and Pn3m each keep the peaks their lattice fits best |
+| phase-custom-snap-holds | Once a click snaps the custom index to a peak, changing the symmetry keeps that peak as the first order and recomputes the lattice from it. Moving the lattice by hand lets go of the peak. | 2026-11-24 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › changing the custom index's symmetry keeps the first order on the peak a click snapped to, until the lattice is moved by hand |
 
 ## Export
 

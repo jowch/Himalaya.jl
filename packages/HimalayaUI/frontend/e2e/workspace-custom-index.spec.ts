@@ -102,3 +102,18 @@ test("a value typed in the lattice field gives way to the peak the click snaps t
   expect(posted).toHaveLength(1);
   expect(snapped).not.toBe("150.0");
 });
+
+test("a symmetry picked after clicking a peak keeps its first order on that peak", async ({ page }) => {
+  const posted = await recordCustomIndex(page);
+  await openCustomIndex(page);
+  await page.locator('[data-peak-key="auto:2"]').click();
+  await page.keyboard.press("Shift+Tab");
+  const symmetry = page.getByRole("group", { name: "Symmetry" });
+  await expect(symmetry.getByRole("button", { name: "Square" })).toHaveAttribute("aria-pressed", "true");
+  await symmetry.getByRole("button", { name: "Lamellar" }).click();
+  await page.getByTestId("workspace-custom-index").getByRole("button", { name: /^Add Lamellar/ }).click();
+  await expect(page.getByTestId("workspace-custom-index")).toBeHidden();
+  const [body] = posted as { phase: string; basis: number }[];
+  expect(body!.phase).toBe("Lamellar");
+  expect(body!.basis).toBeCloseTo(0.1414, 3);
+});
