@@ -34,10 +34,10 @@ describe("ExperimentsHomePage (Phase E1)", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it("lists experiment cards", async () => {
-    vi.spyOn(api, "listExperiments").mockResolvedValue([EXP({}), EXP({ id: 8, name: "JC plate" })]);
+    vi.spyOn(api, "listExperiments").mockResolvedValue([EXP({}), EXP({ id: 8, name: "Plate A" })]);
     renderPage();
     expect(await screen.findByText("Beamtime 1 · setup1")).toBeInTheDocument();
-    expect(screen.getByText("JC plate")).toBeInTheDocument();
+    expect(screen.getByText("Plate A")).toBeInTheDocument();
   });
 
   it("shows when each beamtime collected its samples and how many are left to review", async () => {
@@ -159,7 +159,7 @@ describe("ExperimentsHomePage (Phase E1)", () => {
   });
 
   it("moves between experiment cards with the arrow keys", async () => {
-    vi.spyOn(api, "listExperiments").mockResolvedValue([EXP({}), EXP({ id: 8, name: "JC plate" }), EXP({ id: 9, name: "Third" })]);
+    vi.spyOn(api, "listExperiments").mockResolvedValue([EXP({}), EXP({ id: 8, name: "Plate A" }), EXP({ id: 9, name: "Third" })]);
     renderPage();
     const first = await screen.findByTestId("experiment-card-7");
     const second = screen.getByTestId("experiment-card-8");
