@@ -131,6 +131,8 @@ julia --threads=4,1 --project=packages/HimalayaUI -e 'using HimalayaUI; main(ARG
 
 **Env vars** (see `packages/HimalayaUI/.env.example`): `HIMALAYA_DB_PATH`, `HIMALAYA_HOST`, `HIMALAYA_PORT`, `HIMALAYA_FRONTEND_DIST`.
 
+**Deploying:** `git pull && make deploy` builds, checks and swaps in the new frontend and sysimage without sudo and without restarting. It ends by printing the restart command (`sudo systemctl restart himalaya`) for the person to run. See "Updating a deployment" in [packages/HimalayaUI/README.md](packages/HimalayaUI/README.md).
+
 Frontend dev loop (live backend, port cleanup, side-by-side prod-DB sessions): [docs/frontend-dev-loop.md](docs/frontend-dev-loop.md).
 
 **No lab data handy (or in a cloud session)?** `make dev-setup && make demo` generates a synthetic SSRL-style experiment into gitignored `scratch/`, ingests it and starts backend + Vite; `make demo-empty` starts on an empty DB to walk the ingest funnel. Never commit the generated data. See [docs/demo.md](docs/demo.md), including the cloud-environment requirements.
