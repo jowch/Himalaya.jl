@@ -1680,7 +1680,8 @@ export function WorkspacePage(): JSX.Element {
                 />
               }
             />
-            <div className="relative px-3.5 py-1">
+            <div className="mx-3.5 mt-1">
+              <PlotCard legend={<div className="relative">
               <CompareBar
                 chips={activeRefs.map((rid) => ({
                   id: rid,
@@ -1720,9 +1721,7 @@ export function WorkspacePage(): JSX.Element {
                   onClose={() => setPicking(false)}
                 />
               )}
-            </div>
-            <div className="mx-3.5">
-              <PlotCard {...(darkNotice ? { notice: darkNotice } : {})} corner={<PlotViewToggle options={PLOT_VIEWS} view={view} onChange={setView} />}>
+            </div>} {...(darkNotice ? { notice: darkNotice } : {})} corner={<PlotViewToggle options={PLOT_VIEWS} view={view} onChange={setView} />}>
                 <WorkspacePlot
                   trace={backgroundLoading ? undefined : trace.data}
                   {...(backgroundLoading
