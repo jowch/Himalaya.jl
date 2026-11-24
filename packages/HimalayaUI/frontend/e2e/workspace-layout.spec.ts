@@ -302,6 +302,25 @@ for (const viewport of VIEWPORTS) {
   });
 }
 
+test("on a tall window Indexing sits right under Assignment, where it sits on a 900-px window, not at the bottom", async ({ page }) => {
+  const indexingTop = async (height: number) => {
+    await page.setViewportSize({ width: 1440, height });
+    await page.goto("/experiments/17/workspace/41");
+    await openSample(page, 41);
+    return page.locator("aside section[data-section=Indexing]").evaluate((el) => Math.round(el.getBoundingClientRect().top));
+  };
+  const usual = await indexingTop(900);
+  expect(await indexingTop(1400)).toBe(usual);
+});
+
+test("each workspace pane that scrolls paints its scroll bar over its own content", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto("/experiments/17/workspace/41");
+  await openSample(page, 41);
+  const isolation = await page.evaluate(() => ["main", "aside", "[data-testid=workspace-samples]"].map((sel) => getComputedStyle(document.querySelector(sel)!).isolation));
+  expect(isolation).toEqual(["isolate", "isolate", "isolate"]);
+});
+
 test("a long Call list (ten candidates, more than the number keys reach) keeps Indexing and Frame in place, and the column never scrolls", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/experiments/17/workspace/45");
