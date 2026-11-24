@@ -4445,6 +4445,18 @@ describe("WorkspacePage autosampler background", () => {
     expect(within(module()).getByRole("button", { name: /Change/ })).toBeEnabled();
   });
 
+  it("sits above the Image section's beamline average without sharing its text", () => {
+    seed();
+    state.exposures = [exposure(100, { sample_id: FIRST, exposure_time: 1, frames_total: 10, frames_rejected: 1 })];
+    open(FIRST);
+    expect(slotOrder()).toEqual(["Background", "Image"]);
+    const image = tools().querySelector("[data-section='Image']")!.textContent ?? "";
+    expect(image).toContain("9 of 10 images, beamline average");
+    expect(image).not.toContain("lipidA 01A (B0100)");
+    expect(module().textContent).not.toContain("beamline average");
+    expect(module().nextElementSibling).toBe(tools().querySelector("[data-section='Image']"));
+  });
+
   it("does not offer to subtract a comparison on a buffer sample, and Ctrl-click changes nothing", () => {
     seed();
     open(BUFFER);
