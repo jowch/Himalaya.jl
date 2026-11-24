@@ -25,16 +25,20 @@ end
 
 function backgrounds_for_experiment(db, exp_id::Int, subs)
     stored = Dict(Int(r.sample_id) => (ismissing(r.ref_sample_id) ? nothing : Int(r.ref_sample_id)) for r in subs)
-    [begin
-         default = run.is_buffer || isempty(run.run_buffers) ? nothing : first(run.run_buffers)
-         Dict(:sample_id => id,
-              :ref_sample_id => haskey(stored, id) ? stored[id] : default,
-              :source => haskey(stored, id) ? "user" : "default",
-              :default_ref_sample_id => default,
-              :is_buffer => run.is_buffer,
-              :run_buffer_ids => run.run_buffers)
-     end
-     for (id, run) in sort!(collect(autosampler_runs(db, exp_id)); by = first)]
+    runs = autosampler_runs(db, exp_id)
+    defaults = default_backgrounds(runs)
+    out = Dict{Symbol,Any}[]
+    for id in sort!(collect(keys(runs)))
+        entry = Dict{Symbol,Any}()
+        entry[:sample_id] = id
+        entry[:ref_sample_id] = haskey(stored, id) ? stored[id] : defaults[id]
+        entry[:source] = haskey(stored, id) ? "user" : "default"
+        entry[:default_ref_sample_id] = defaults[id]
+        entry[:is_buffer] = runs[id].is_buffer
+        entry[:run_buffer_ids] = runs[id].run_buffers
+        push!(out, entry)
+    end
+    out
 end
 
 _int_list(raw) = raw === nothing ? Int[] :

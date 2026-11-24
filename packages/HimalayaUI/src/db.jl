@@ -692,6 +692,11 @@ end
 
 function migrate_subtraction_none!(db::SQLite.DB)
     _migrated(db, MIGRATION_SUBTRACTION_NONE) && return nothing
+    already = any(r -> r.name == "ref_sample_id" && r.notnull == 0, sqlrows(DBInterface.execute(db, "PRAGMA table_info(sample_subtractions)")))
+    if already
+        _record_migration!(db, MIGRATION_SUBTRACTION_NONE)
+        return nothing
+    end
     SQLite.transaction(db) do
         kept = sqlrows(DBInterface.execute(db, "SELECT sample_id, ref_sample_id FROM sample_subtractions"))
         DBInterface.execute(db, "DROP TABLE sample_subtractions")
