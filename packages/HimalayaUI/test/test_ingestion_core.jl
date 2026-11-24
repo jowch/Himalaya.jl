@@ -360,27 +360,27 @@ end
 
     @testset "parse_prp beam monitors" begin
         dir = mktempdir()
-        p = joinpath(dir, "HA_01_001_S395_0_001.prp")
+        p = joinpath(dir, "SYN_01_001_S100_0_001.prp")
         write(p, """
-            Image file name: HA_01_001_S395_0_001.tif
-            Time this file was written: 01 Nov 2026 13:32:38
+            Image file name: SYN_01_001_S100_0_001.tif
+            Time this file was written: 03 Mar 2026 10:15:00
             I_Signal (i.e. I1 in header file) is from: i_apd
-            I_signal=7365.0 (corrected for dark counts)
-            I_0(daqIon3.0)=1.5007
-            I_1(daqCounter1.0)=296821.0
-            I_2(daqCounter1.1)=55470836.4 (corrected for dark counts)
-            I_apd(daqCounter1.0)=296821.0
+            I_signal=4100.0 (corrected for dark counts)
+            I_0(daqIon3.0)=1.2345
+            I_1(daqCounter1.0)=210000.0
+            I_2(daqCounter1.1)=31000000.5 (corrected for dark counts)
+            I_apd(daqCounter1.0)=210000.0
             Exposure time=15
             Counting time=15.8
-            i1 dark counts=18320.0 per sec
+            i1 dark counts=19000.0 per sec
             Beam energy=9000.027604502573 eV
             Beam Intensity Reference: i1 i2 acquisition_time
-            empty(air)=285.0 12753866.0 20260526_184126
-            water=37652.0 7800567 20261027_0010
+            empty(air)=300.0 12000000.0 20260101_120000
+            water=40000.0 8000000 20260101_1300
             """)
         prp = HimalayaUI.parse_prp(p)
-        @test prp.transmitted_counts ≈ 7365.0
-        @test prp.incident_monitor ≈ 1.5007
+        @test prp.transmitted_counts ≈ 4100.0
+        @test prp.incident_monitor ≈ 1.2345
         @test prp.counting_time_s ≈ 15.8
         @test prp.exposure_time_s ≈ 15.0
 
@@ -389,7 +389,7 @@ end
         @test HimalayaUI.parse_prp(mixed).transmitted_counts ≈ 812.5
 
         q = joinpath(dir, "no_signal.prp")
-        write(q, "I_1(daqCounter1.0)=296821.0\nExposure time=15\n")
+        write(q, "I_1(daqCounter1.0)=210000.0\nExposure time=15\n")
         @test HimalayaUI.parse_prp(q).transmitted_counts === missing
     end
 

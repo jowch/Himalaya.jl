@@ -187,12 +187,12 @@ end
 # physics: top-ups) times the sample's transmission, and the beamstop APD downstream
 # physics: records it as I_signal. Dividing a trace by its I_signal puts every
 # physics: exposure on one scale; a high-q match cannot, when the sample scatters there.
-# physics: The constants follow the real SSRL 2026 .prp: I_0 ≈ 1.50 V and
-# physics: I_signal ≈ 7365 counts for 15 s on a lipid sample, with the APD's dark rate
-# physics: (18320 /s) included in raw I_1 and removed from I_signal.
-const I0_VOLTS     = 1.5007
-const APD_PER_VOLT = 7365.0 / (1.5007 * 0.86)
-const APD_DARK_RATE = 18320.0
+# physics: The constants are round numbers of the size an SSRL .prp shows: I_0 about
+# physics: 1.5 V and I_signal about 7000 counts for 15 s on a lipid sample, with the
+# physics: APD's dark rate included in raw I_1 and removed from I_signal.
+const I0_VOLTS     = 1.5
+const APD_PER_VOLT = 7000.0 / (1.5 * 0.86)
+const APD_DARK_RATE = 18000.0
 # physics: I_signal is a small difference of two large numbers: raw I_1 minus the
 # physics: nominal dark rate × counting time, about 97% of I_1 in the real file. The
 # physics: dark rate drifts between its calibration and each exposure, so a 0.1% drift

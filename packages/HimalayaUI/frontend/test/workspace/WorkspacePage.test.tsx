@@ -3033,12 +3033,12 @@ describe("WorkspacePage", () => {
   });
 
   it("lists the shown exposure's time, I₀ and I signal under the .prp names", () => {
-    state.exposures = [exposure(100), exposure(101, { exposure_time: 10, incident_monitor: 1.5007, transmitted_counts: 7798.4 })];
+    state.exposures = [exposure(100), exposure(101, { exposure_time: 10, incident_monitor: 1.4321, transmitted_counts: 7798.4 })];
     renderAt("/experiments/1/workspace/10");
     const section = screen.getByRole("heading", { name: "Image" }).closest("section")!;
     const text = section.textContent ?? "";
     expect(text).toContain("Exposure10.0 s");
-    expect(text).toContain("I₀1.501");
+    expect(text).toContain("I₀1.432");
     expect(text).toContain("I signal7,798");
   });
 

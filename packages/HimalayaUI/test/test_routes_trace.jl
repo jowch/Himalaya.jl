@@ -17,7 +17,7 @@ using Test, HTTP, JSON3
     sib_id = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="cubic_tot",
         transmitted_counts=1.0, exposure_time=5.0, counting_time=5.4)
     e_id   = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot",
-        transmitted_counts=7365.0, exposure_time=15.0, counting_time=15.8)
+        transmitted_counts=7000.0, exposure_time=15.0, counting_time=15.8)
     bare_id = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="form-factor_tot")
 
     with_inproc_routes(db) do call
@@ -25,7 +25,7 @@ using Test, HTTP, JSON3
         @test r.status == 200
         body = JSON3.read(String(r.body))
         @test haskey(body, :q) && haskey(body, :I) && haskey(body, :sigma)
-        @test body.monitors.transmitted_counts ≈ 7365.0
+        @test body.monitors.transmitted_counts ≈ 7000.0
         @test body.monitors.exposure_time ≈ 15.0
         @test body.monitors.counting_time ≈ 15.8
         @test !haskey(body, :frames)

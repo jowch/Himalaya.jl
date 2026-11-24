@@ -13,7 +13,7 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
     s_id   = HimalayaUI.create_sample!(db; experiment_id=exp_id,
         name="D1")
     e1 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="example_tot",
-        exposure_time=15.0, transmitted_counts=7365.0, incident_monitor=1.5007, counting_time=15.8)
+        exposure_time=15.0, transmitted_counts=7000.0, incident_monitor=1.4321, counting_time=15.8)
     e2 = HimalayaUI.create_exposure!(db; experiment_id=exp_id, sample_id=s_id, filename="other")
     prp = joinpath(tmp, "with_prp.prp")
     write(prp, "Time this file was written: 26 Apr 2026 18:20:27\nBeam energy=9000.5 eV\nPipe length=1700 mm\nDetector=Pilatus 1M\n")
@@ -33,8 +33,8 @@ using Test, HTTP, JSON3, SQLite, DBInterface, Tables
         @test list[1].selected === true
         @test !haskey(list[1], :tags)
         @test list[1].sources  == []
-        @test list[1].transmitted_counts ≈ 7365.0
-        @test list[1].incident_monitor ≈ 1.5007
+        @test list[1].transmitted_counts ≈ 7000.0
+        @test list[1].incident_monitor ≈ 1.4321
         @test list[1].counting_time ≈ 15.8
         @test list[1].exposure_time ≈ 15.0
         @test list[2].transmitted_counts === nothing
