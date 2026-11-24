@@ -95,6 +95,32 @@ describe("compare mutations", () => {
     expect(spy.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey))).toEqual([JSON.stringify(queryKeys.compares(7))]);
   });
 
+  it("a remote none or default change refetches that experiment's comparisons, backgrounds included", () => {
+    const qc = new QueryClient();
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    for (const subtraction of ["none", null, 9]) {
+      applyRemoteToCache({ kind: "compares_changed", entity_id: 1, entity_type: "sample", payload: { subtraction, experiment_id: 7 } } as unknown as SseEvent, qc);
+    }
+    expect(spy.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey))).toEqual(Array(3).fill(JSON.stringify(queryKeys.compares(7))));
+  });
+
+  it("shows an autosampler background change at once, rolls it back, and takes the server's backgrounds", () => {
+    const qc = new QueryClient();
+    const withBackground: CompareState = {
+      compares: [],
+      subtractions: [],
+      backgrounds: [{ sample_id: 1, ref_sample_id: 8, source: "default", default_ref_sample_id: 8, is_buffer: false, run_buffer_ids: [8] }],
+    };
+    qc.setQueryData(queryKeys.compares(7), withBackground);
+    const ctx = patchComparesMutator.onMutate({ ...scope, sampleId: 1, change: { subtraction: null } }, qc);
+    expect(comparesOf(qc.getQueryData<CompareState>(queryKeys.compares(7))!, 1).background).toMatchObject({ ref_sample_id: null, source: "user" });
+    ctx.restore();
+    expect(qc.getQueryData(queryKeys.compares(7))).toEqual(withBackground);
+    const server: CompareState = { ...withBackground, backgrounds: [{ ...withBackground.backgrounds![0]!, ref_sample_id: null, source: "user" }] };
+    patchComparesMutator.onSuccess({ ...scope, sampleId: 1, change: { subtraction: null } }, server, qc);
+    expect(qc.getQueryData(queryKeys.compares(7))).toEqual(server);
+  });
+
   it("routes the outbound op and its echo to the compare mutator", () => {
     expect(resolveMutator({ kind: "patch_compares", payload: {} })).toBe(patchComparesMutator);
     expect(resolveMutatorForEvent("compares_changed")).toBe(patchComparesMutator);
