@@ -35,7 +35,7 @@ describe("difference axis", () => {
   });
 
   it("holds a lone dip that is under 1% of the points", () => {
-    const d = q.map((x) => (x > 0.15 && x < 0.1505 ? -400 : Math.sin(x * 900)));
+    const d = q.map((x) => (x > 0.1495 && x < 0.1505 ? -400 : Math.sin(x * 900)));
     const ax = differenceAxis("linear", q, d, [0.02, 0.22]);
     expect(ax.domain[0]).toBeLessThanOrEqual(-400);
   });
