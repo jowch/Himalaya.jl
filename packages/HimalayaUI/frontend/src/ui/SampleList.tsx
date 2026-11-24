@@ -137,15 +137,19 @@ export function SampleList({ samples, setupHeaders, currentId, filter, onFilter,
           const bridges = bridgeCounts?.get(s.id) ?? 0;
           const compareColor = compareColors?.get(s.id);
           const beamOff = s.beam_off_images ?? 0;
+          const run = header !== undefined ? runLength(samples, i) : 0;
           const beamOffText = beamOff === 1 ? "1 image likely beam-off" : `${beamOff} images likely beam-off`;
           return (
             <Fragment key={s.id}>
             {header !== undefined && (
               <li data-testid="setup-header" className="sticky top-0 z-[1] flex items-center gap-2.5 bg-paper px-3.5 pb-1 pt-2 text-xs">
-                <span data-setup-name="" className="min-w-0 truncate font-semibold text-ink-soft">{header}</span>
-                <span aria-hidden="true" className="flex-1 border-t border-hair" />
-                <span data-setup-count="" role="img" aria-label={`${runLength(samples, i)} ${runLength(samples, i) === 1 ? "sample" : "samples"}`} className="text-ink-faint">
-                  {runLength(samples, i)}
+                <Tooltip content={header} overflowOnly>
+                  <span data-setup-name="" className="min-w-0 truncate font-semibold text-ink-soft">{header}</span>
+                </Tooltip>
+                <span aria-hidden="true" className="min-w-4 flex-1 border-t border-hair" />
+                <span data-setup-count="" className="shrink-0 text-ink-faint">
+                  <span aria-hidden="true">{run}</span>
+                  <span className="sr-only">{run === 1 ? "1 sample" : `${run} samples`}</span>
                 </span>
               </li>
             )}

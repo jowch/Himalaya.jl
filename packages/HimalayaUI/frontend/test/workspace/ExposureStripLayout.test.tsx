@@ -53,4 +53,26 @@ describe("ExposureStrip tile layout", () => {
     expect(within(row as HTMLElement).getByRole("button", { name: "Select none" })).toBeTruthy();
     expect(screen.getAllByTestId("exposure-selection-tools")).toHaveLength(1);
   });
+
+  it("leaves each bridged group's selection tools under that group's own title", () => {
+    const sel = (ids: number[]) => ({ selectedIds: new Set(ids), selectableIds: new Set(ids), onToggle: () => {}, onRange: () => {}, onAll: () => {}, onNone: () => {} });
+    render(
+      <ExposureStrip
+        title="Images"
+        groups={[
+          { key: 1, title: "Here", exposures: [makeExposure({ id: 1 })], selection: sel([1]) },
+          { key: 2, title: "Mate", exposures: [makeExposure({ id: 2 })], selection: sel([2]) },
+        ]}
+        currentId={1}
+        onPick={() => {}}
+        onToggleDrop={() => {}}
+      />,
+    );
+    const row = screen.getByRole("heading", { level: 2, name: "Images" }).closest("[data-strip-heading]") as HTMLElement;
+    expect(within(row).queryByTestId("exposure-selection-tools")).toBeNull();
+    for (const name of ["Here", "Mate"]) {
+      const group = screen.getByRole("region", { name });
+      expect(within(group).getByTestId("exposure-selection-tools")).toBeTruthy();
+    }
+  });
 });

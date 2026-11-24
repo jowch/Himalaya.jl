@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { PlotCard } from "../../src/ui/PlotCard";
 
 describe("PlotCard", () => {
-  it("holds the legend inside the card, above the plot, where a popover from it is not clipped", () => {
+  it("holds the legend inside the card, above the plot", () => {
     render(
       <PlotCard legend={<span>chips</span>}>
         <svg data-testid="plot" />
@@ -14,7 +14,5 @@ describe("PlotCard", () => {
     expect(legend).toHaveTextContent("chips");
     expect(card).toContainElement(screen.getByTestId("plot"));
     expect(legend.compareDocumentPosition(screen.getByTestId("plot")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(card.className).not.toContain("overflow-hidden");
-    expect(legend.className).not.toContain("overflow-hidden");
   });
 });

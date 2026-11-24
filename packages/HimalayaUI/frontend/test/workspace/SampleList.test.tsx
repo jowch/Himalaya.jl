@@ -133,8 +133,8 @@ describe("SampleList setup headers", () => {
     );
     const headers = screen.getAllByTestId("setup-header");
     expect(headers.map((h) => h.querySelector("[data-setup-name]")?.textContent)).toEqual(["Long pipe", "setup2"]);
-    expect(headers.map((h) => h.querySelector("[data-setup-count]")?.textContent)).toEqual(["2", "1"]);
-    expect(headers[0]!.querySelector("[data-setup-count]")).toHaveAccessibleName("2 samples");
+    expect(headers.map((h) => h.querySelector("[data-setup-count] [aria-hidden]")?.textContent)).toEqual(["2", "1"]);
+    expect(headers.map((h) => h.querySelector("[data-setup-count] .sr-only")?.textContent)).toEqual(["2 samples", "1 sample"]);
     const items = screen.getByTestId("workspace-samples").querySelectorAll(":scope > li");
     expect([...items].map((li) => li.querySelector("[data-setup-name]")?.textContent ?? li.textContent?.trim().slice(0, 2))).toEqual(["Long pipe", "A○", "B○", "setup2", "C○"]);
   });

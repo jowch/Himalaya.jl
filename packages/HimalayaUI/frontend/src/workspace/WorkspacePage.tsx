@@ -1600,6 +1600,49 @@ export function WorkspacePage(): JSX.Element {
     </Section>
   ) : null;
 
+  const compareLegend = sample ? (
+    <div className="relative">
+      <CompareBar
+        chips={activeRefs.map((rid) => ({
+          id: rid,
+          name: sampleNames.get(rid) ?? `Sample ${rid}`,
+          setup: sampleSetup.get(rid) !== (sampleId === undefined ? undefined : sampleSetup.get(sampleId)) ? sampleSetup.get(rid) : undefined,
+          color: COMPARE_COLORS[activeRefs.indexOf(rid) % COMPARE_COLORS.length]!,
+          scale: chipScale(rid),
+          minus: chipMinus(rid),
+          hidden: shownCompareSet.has(rid),
+        }))}
+        subtractId={subRef}
+        hidden={!refsOn}
+        modKey={MOD_KEY}
+        onToggleShown={(rid) => {
+          if (minusOn && !managed && rid !== subRef) {
+            setMinus(false);
+            setShown(rid, true);
+            return;
+          }
+          setRefsOn(true);
+          setShown(rid, !(refsOn && !hiddenRefs.has(rid)));
+        }}
+        onSubtract={toggleSubtract}
+        onRemove={removeCompare}
+        onAdd={() => setPicking(true)}
+        full={comparesFull}
+        canSubtract={!bgEntry?.is_buffer}
+        trailing={difference && subRef !== undefined ? <SubtractToggle name={subName} on={minusOn} onChange={setMinus} /> : backgroundLoading ? <SubtractToggle name="" on onChange={setMinus} reserved /> : undefined}
+      />
+      {picking && (
+        <ComparePicker
+          samples={pickable}
+          notes={bufferNotes}
+          setups={sampleSetup}
+          full={comparesFull ? COMPARES_FULL : undefined}
+          onPick={addReference}
+          onClose={() => setPicking(false)}
+        />
+      )}
+    </div>
+  ) : null;
   return (
     <WorkspaceLayout
       theme={theme.theme}
@@ -1684,47 +1727,7 @@ export function WorkspacePage(): JSX.Element {
               }
             />
             <div className="mt-1">
-              <PlotCard legend={<div className="relative">
-              <CompareBar
-                chips={activeRefs.map((rid) => ({
-                  id: rid,
-                  name: sampleNames.get(rid) ?? `Sample ${rid}`,
-                  setup: sampleSetup.get(rid) !== (sampleId === undefined ? undefined : sampleSetup.get(sampleId)) ? sampleSetup.get(rid) : undefined,
-                  color: COMPARE_COLORS[activeRefs.indexOf(rid) % COMPARE_COLORS.length]!,
-                  scale: chipScale(rid),
-                  minus: chipMinus(rid),
-                  hidden: shownCompareSet.has(rid),
-                }))}
-                subtractId={subRef}
-                hidden={!refsOn}
-                modKey={MOD_KEY}
-                onToggleShown={(rid) => {
-                  if (minusOn && !managed && rid !== subRef) {
-                    setMinus(false);
-                    setShown(rid, true);
-                    return;
-                  }
-                  setRefsOn(true);
-                  setShown(rid, !(refsOn && !hiddenRefs.has(rid)));
-                }}
-                onSubtract={toggleSubtract}
-                onRemove={removeCompare}
-                onAdd={() => setPicking(true)}
-                full={comparesFull}
-                canSubtract={!bgEntry?.is_buffer}
-                trailing={difference && subRef !== undefined ? <SubtractToggle name={subName} on={minusOn} onChange={setMinus} /> : backgroundLoading ? <SubtractToggle name="" on onChange={setMinus} reserved /> : undefined}
-              />
-              {picking && (
-                <ComparePicker
-                  samples={pickable}
-                  notes={bufferNotes}
-                  setups={sampleSetup}
-                  full={comparesFull ? COMPARES_FULL : undefined}
-                  onPick={addReference}
-                  onClose={() => setPicking(false)}
-                />
-              )}
-            </div>} {...(darkNotice ? { notice: darkNotice } : {})} corner={<PlotViewToggle options={PLOT_VIEWS} view={view} onChange={setView} />}>
+              <PlotCard legend={compareLegend} {...(darkNotice ? { notice: darkNotice } : {})} corner={<PlotViewToggle options={PLOT_VIEWS} view={view} onChange={setView} />}>
                 <WorkspacePlot
                   trace={backgroundLoading ? undefined : trace.data}
                   {...(backgroundLoading
