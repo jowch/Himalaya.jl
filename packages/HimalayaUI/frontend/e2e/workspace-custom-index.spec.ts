@@ -110,10 +110,10 @@ test("a symmetry picked after clicking a peak keeps its first order on that peak
   await page.keyboard.press("Shift+Tab");
   const symmetry = page.getByRole("group", { name: "Symmetry" });
   await expect(symmetry.getByRole("button", { name: "Square" })).toHaveAttribute("aria-pressed", "true");
-  await symmetry.getByRole("button", { name: "Lamellar" }).click();
-  await page.getByTestId("workspace-custom-index").getByRole("button", { name: /^Add Lamellar/ }).click();
+  await symmetry.getByRole("button", { name: "Hexagonal" }).click();
+  await page.getByTestId("workspace-custom-index").getByRole("button", { name: /^Add Hexagonal/ }).click();
   await expect(page.getByTestId("workspace-custom-index")).toBeHidden();
   const [body] = posted as { phase: string; basis: number }[];
-  expect(body!.phase).toBe("Lamellar");
+  expect(body!.phase).toBe("Hexagonal");
   expect(body!.basis).toBeCloseTo(0.1414, 3);
 });

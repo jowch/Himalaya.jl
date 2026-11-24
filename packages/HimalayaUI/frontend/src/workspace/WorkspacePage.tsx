@@ -1143,7 +1143,7 @@ export function WorkspacePage(): JSX.Element {
   const setDraftClamped = useCallback(
     (d: CustomDraft) =>
       setDraft((prev) => {
-        const next = reviseDraft(prev, d, (ref) => (peaks.data ?? []).find((pk) => samePeak(pk, ref))?.q);
+        const next = reviseDraft(prev, d, (ref) => (peaks.data ?? []).find((pk) => !pk.excluded && samePeak(pk, ref))?.q);
         return { ...next, lattice: clampLattice(next.phase, next.lattice, xExtent) };
       }),
     [xExtent, peaks.data],
