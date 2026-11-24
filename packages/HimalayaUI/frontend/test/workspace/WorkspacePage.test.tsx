@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, render, screen, fireEvent, within, waitFor } from "@testing-library/react";
-import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
+import { MemoryRouter, Routes, Route, useLocation } from "react-router";
 import type { CorpusSample, SampleBackground, Exposure, IndexEntry, Assignment, Peak, ProblemExposure, SampleBridge, SampleCall, SampleCallMember, SampleLabel, LabelColorEntry, LabelColor, Trace } from "../../src/api";
 import { ApiError } from "../../src/api";
 import { WorkspacePage } from "../../src/workspace/WorkspacePage";

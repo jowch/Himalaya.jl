@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { StrictMode } from "react";
-import { MemoryRouter, useLocation } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useAppState } from "../../src/state";
 import { AppRoutes } from "../../src/shell/AppRoutes";

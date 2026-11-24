@@ -21,8 +21,8 @@ async function titleErrors(code: string): Promise<number> {
 describe("native title tooltips are banned", () => {
   it("rejects title on DOM elements and on router links, and allows component props named title", async () => {
     expect(await titleErrors(`export const A = () => <span title="x">a</span>;`)).toBe(1);
-    expect(await titleErrors(`import { Link } from "react-router-dom";\nexport const A = () => <Link to="/" title="x">a</Link>;`)).toBe(1);
-    expect(await titleErrors(`import { NavLink } from "react-router-dom";\nexport const A = () => <NavLink to="/" title="x">a</NavLink>;`)).toBe(1);
+    expect(await titleErrors(`import { Link } from "react-router";\nexport const A = () => <Link to="/" title="x">a</Link>;`)).toBe(1);
+    expect(await titleErrors(`import { NavLink } from "react-router";\nexport const A = () => <NavLink to="/" title="x">a</NavLink>;`)).toBe(1);
     expect(await titleErrors(`import { Section } from "./ui/Section";\nexport const A = () => <Section title="Call">a</Section>;`)).toBe(0);
   });
 
