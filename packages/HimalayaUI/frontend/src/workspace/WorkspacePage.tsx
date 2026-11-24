@@ -1798,7 +1798,7 @@ export function WorkspacePage(): JSX.Element {
               />
             )}
             {modules.calls && (
-              <div className={callOpen ? "flex min-h-24 flex-1 flex-col overflow-y-auto" : "shrink-0"} data-testid="workspace-tools-middle">
+              <div className={callOpen ? (shortWindow ? "flex min-h-24 flex-1 flex-col overflow-y-auto" : "flex max-h-[27rem] min-h-24 flex-[1_1_17rem] flex-col overflow-y-auto") : "shrink-0"} data-testid="workspace-tools-middle">
                 {draft && draftBounds ? (
                   <Section title="Assignment" aside={customIndexButton} pinAside collapsible={shortWindow ? { open: true } : undefined}>
                     <CustomIndexPanel

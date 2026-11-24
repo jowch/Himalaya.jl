@@ -127,7 +127,7 @@ export function SampleList({ samples, setupHeaders, currentId, filter, onFilter,
         </div>
       </div>
       {notice}
-      <ul ref={listRef} className="min-h-0 flex-1 overflow-y-auto" data-testid="workspace-samples">
+      <ul ref={listRef} className="isolate min-h-0 flex-1 overflow-y-auto" data-testid="workspace-samples">
         {samples.map((s, i) => {
           const cur = s.id === currentId;
           const setupId = s.setup_id ?? undefined;

@@ -302,6 +302,28 @@ for (const viewport of VIEWPORTS) {
   });
 }
 
+test("at 1920×1080 a nine-choice Assignment list shows whole, without scrolling", async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.goto("/experiments/17/workspace/45");
+  await openSample(page, 45);
+  const middle = page.getByTestId("workspace-tools-middle");
+  const ninth = page.locator("[data-testid=workspace-candidates] li").nth(8);
+  const fits = await middle.evaluate((m, row) => row!.getBoundingClientRect().bottom <= m.getBoundingClientRect().bottom && m.scrollTop === 0, await ninth.elementHandle());
+  expect(fits).toBe(true);
+});
+
+test("on tall windows Indexing stops moving down once Assignment holds nine choices", async ({ page }) => {
+  const indexingTop = async (height: number) => {
+    await page.setViewportSize({ width: 1440, height });
+    await page.goto("/experiments/17/workspace/45");
+    await openSample(page, 45);
+    return page.locator("aside section[data-section=Indexing]").evaluate((el) => Math.round(el.getBoundingClientRect().top));
+  };
+  const at1400 = await indexingTop(1400);
+  expect(at1400).toBeLessThan(600);
+  expect(await indexingTop(2000)).toBe(at1400);
+});
+
 test("a long Call list (ten candidates, more than the number keys reach) keeps Indexing and Frame in place, and the column never scrolls", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/experiments/17/workspace/45");
@@ -579,14 +601,13 @@ for (const width of [1024, 1280, 1440]) {
         return {
           left: r.left, right: r.right, top: r.top,
           inner: Math.max(...Array.from(n.children).map((c) => c.getBoundingClientRect().right)),
-          value: box("[data-scale-value]"), wrapper: box("[data-scale-source]"), remove: box("button[aria-label^='Remove']"),
+          value: box("[data-scale-value]"), remove: box("button[aria-label^='Remove']"),
           name: box("button[aria-pressed] > span:first-child").width,
         };
       }));
       for (const [i, c] of chips.entries()) {
         expect(c.inner).toBeLessThanOrEqual(c.right + 1);
         expect(c.right).toBeLessThanOrEqual(area.right + 1);
-        expect(c.wrapper.width + 0.5).toBeGreaterThanOrEqual(c.value.width);
         expect(c.remove.left + 0.5).toBeGreaterThanOrEqual(c.value.right);
         expect(c.name).toBeGreaterThan(width >= 1280 && !subtracting ? 60 : 20);
         const prev = chips[i - 1];

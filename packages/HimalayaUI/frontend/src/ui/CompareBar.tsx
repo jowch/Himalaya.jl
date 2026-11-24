@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Kbd } from "./Kbd";
 import { Tooltip } from "./Tooltip";
-import { isMatchedScale, type CompareScale } from "../workspace/compare";
+import type { CompareScale } from "../workspace/compare";
 import { SKIP_NOTES, type SkipReason } from "../workspace/minusCompares";
 import { COMPARE_DASH } from "./WorkspacePlot";
 
@@ -41,11 +41,14 @@ export const SCALE_NOTES: Record<CompareScale["source"], string> = {
   unknown_normalisation: "Integration settings not found, so matched at high q",
 };
 
+const isMatchedAtHighQ = (s: CompareScale): boolean => s.source !== "normalised" && s.source !== "monitor";
+
 function describe(c: CompareChip, subtracted: boolean): string | undefined {
   const parts = [
     subtracted ? "Subtracted from the current trace" : undefined,
     c.minus?.kind === "drawn" ? `Minus ${c.minus.background}` : undefined,
     c.minus?.kind === "skipped" ? SKIP_NOTES[c.minus.reason] : undefined,
+    c.scale && isMatchedAtHighQ(c.scale) ? SCALE_NOTES[c.scale.source] : undefined,
   ].filter(Boolean);
   return parts.length > 0 ? parts.join(". ") : undefined;
 }
@@ -115,12 +118,8 @@ export function CompareBar({ chips, subtractId, hidden, modKey, onToggleShown, o
               )}
               {c.scale !== undefined && (
                 <Tooltip content={SCALE_NOTES[c.scale.source]}>
-                  <span
-                    className={"grid min-w-min grid-cols-[auto_minmax(0,1fr)] items-baseline whitespace-nowrap text-ink-faint" + dim}
-                    data-scale-source={c.scale.source}
-                  >
-                    <span data-scale-value className="shrink-0">×{c.scale.scale.toPrecision(3)}</span>
-                    {isMatchedScale(c.scale) && <span data-chip-truncates className="min-w-0 truncate">{"\u00a0matched"}</span>}
+                  <span className={"shrink-0 whitespace-nowrap text-ink-faint" + dim} data-scale-source={c.scale.source} data-scale-value>
+                    ×{c.scale.scale.toPrecision(3)}
                   </span>
                 </Tooltip>
               )}

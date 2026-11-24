@@ -88,10 +88,19 @@ describe("CompareBar scale tooltip", () => {
     }
   });
 
-  it("says a chip from another setup was matched at high q", () => {
+  it("tells a screen reader why a chip was matched at high q, and says nothing extra for a monitor-scaled one", () => {
+    bar([
+      chip({ scale: { scale: 1, source: "other_setup" } as CompareChip["scale"] }),
+      chip({ id: 3, name: "MO_PEG6", scale: { scale: 1, source: "monitor" } as CompareChip["scale"] }),
+    ]);
+    expect(screen.getByRole("button", { name: "MO_PEG5" })).toHaveAccessibleDescription("From another setup, so matched at high q");
+    expect(screen.getByRole("button", { name: "MO_PEG6" })).toHaveAccessibleDescription("");
+  });
+
+  it("shows only the factor on a chip from another setup, and says in its tooltip that it was matched at high q", () => {
     bar([chip({ scale: { scale: 1, source: "other_setup" } as CompareChip["scale"] })]);
     const scale = document.querySelector("[data-scale-source]") as HTMLElement;
-    expect(scale).toHaveTextContent("matched");
+    expect(scale.textContent).toBe("×1.00");
     fireEvent.mouseEnter(scale);
     act(() => {
       vi.advanceTimersByTime(TOOLTIP_OPEN_DELAY_MS);
@@ -116,10 +125,10 @@ describe("CompareBar in Minus view", () => {
     expect(document.querySelector("[data-minus-note]")).toBeNull();
   });
 
-  it("flags a pair that was matched at high q in the chip's words", () => {
+  it("says in the tooltip that a pair was matched at high q, and shows only its factor", () => {
     bar([chip({ minus: { kind: "drawn", background: "buf" }, scale: { scale: 0.9, source: "beam_off" } })]);
     expect(hover("MO_PEG5")).toHaveTextContent("Taken with the beam off, so matched at high q");
-    expect(document.querySelector("[data-scale-source='beam_off']")).toHaveTextContent("matched");
+    expect(document.querySelector("[data-scale-source='beam_off']")!.textContent).toBe("×0.900");
   });
 
   it.each([
