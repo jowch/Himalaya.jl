@@ -22,7 +22,8 @@ const AUTOSAMPLER_TRUTH = [
 ].join("\n");
 
 function demoWithTruth(autosampler = true) {
-  const demoDir = demoWithTruth();
+  const demoDir = fs.mkdtempSync(path.join(os.tmpdir(), "verify-truth-"));
+  fs.writeFileSync(path.join(demoDir, "TRUTH.csv"), TRUTH);
   if (autosampler) fs.writeFileSync(path.join(demoDir, "TRUTH_autosampler.csv"), AUTOSAMPLER_TRUTH);
   return demoDir;
 }
