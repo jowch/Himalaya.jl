@@ -41,6 +41,7 @@ Every row also needs the date it was decided, as `YYYY-MM-DD`.
 | keys-keycap-every-control | A control with a shortcut shows its key as a keycap, except Drop (keys-drop-no-keycap). | 2026-11-20 | untested | Buttons with shortcuts render the Kbd primitive; no test checks every one |
 | keys-drop-no-keycap | The Drop button carries no keycap, which would be noise; its X shortcut is listed in the ? shortcut list. | 2026-11-23 | untested | The shortcut list in packages/HimalayaUI/frontend/src/workspace/WorkspacePage.tsx has the X row; the cited ? test checks only that the list opens |
 | keys-tab-assignment | In the workspace Tab and Shift+Tab cycle only the assignment choices, and Esc frees Tab until the next sample. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › Tab and Shift+Tab cycle only the phase choices, wrapping |
+| keys-folder-browser | The folder browser for adding a beamtime follows the list rule: Enter adds a beamtime or setup, or opens a plain folder; → opens; ← and Esc go up. | 2026-11-24 | built | packages/HimalayaUI/frontend/test/FolderPicker.test.tsx › Enter on a beamtime picks it, Enter on a plain folder opens it |
 | keys-drop-moves | Dropping an image moves to the nearest kept one. | 2026-11-21 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › X drops the shown frame and shows the nearest kept frame, so a phase key calls there |
 
 ## Undo
@@ -158,6 +159,7 @@ Every row also needs the date it was decided, as `YYYY-MM-DD`.
 
 | id | Decision | Decided | Status | Evidence |
 |---|---|---|---|---|
+| beamtime-folder-browser | A beamtime is added by browsing the server's folders, not by typing a path with suggestions; a path can still be pasted. | 2026-11-24 | built | packages/HimalayaUI/frontend/e2e/new-experiment.spec.ts › the keyboard browses to a beamtime, into it and back, and adds it |
 | bridge-is-merge | A bridge says two samples are the same sample measured in two setups. It is not a comparison and takes no comparison slot. | 2026-11-22 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › the same sample takes no comparison slot, so a fifth comparison goes in past a bridge |
 | bridge-search-words | Typing "merge", "bridge" or "link" in the palette finds "Same sample as…" and "Not the same sample as…". | 2026-11-23 | built | packages/HimalayaUI/frontend/test/workspace/workspacePalette.test.ts › finds the same-sample commands when typing merge, bridge, link or same |
 | bridge-ranked-mates | The "Same sample as" page lists samples from other setups first, the closest name on top. | 2026-11-23 | built | packages/HimalayaUI/frontend/test/workspace/WorkspacePage.test.tsx › the same-sample page lists the samples of other setups first, the closest name on top |

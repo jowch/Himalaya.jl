@@ -4,7 +4,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as api from "../api";
 import { queryKeys } from "../queries";
 import { PageFrame } from "../components/PageFrame";
-import { DirectoryPickerField } from "../components/DirectoryPickerField";
+import { FolderPicker } from "../components/FolderPicker";
+import { ChosenFolder } from "../ui/ChosenFolder";
 import { Button } from "../ui/Button";
 import { Checkbox } from "../ui/Checkbox";
 import { Input } from "../ui/Input";
@@ -12,8 +13,6 @@ import { FieldError } from "../ui/FieldError";
 import { Kbd } from "../ui/Kbd";
 import { modCombo } from "../lib/modKey";
 import { Kicker } from "../ui/Kicker";
-import { useFireOnce } from "../hooks/useFireOnce";
-import { isFullPath, useFolderSuggestions } from "../hooks/useFolderSuggestions";
 
 type Patterns = api.SetupPreview["patterns"];
 type GeometryKey = "flight_path_m" | "beam_center_x" | "beam_center_y" | "energy_kev" | "pixel_size_um";
@@ -143,17 +142,36 @@ function DetailsField({ label, value, onChange, placeholder, testId, error }: {
   );
 }
 
+const parentFolder = (p: string): string => {
+  const t = p.replace(/\/+$/, "");
+  const cut = t.lastIndexOf("/");
+  return cut <= 0 ? "/" : t.slice(0, cut);
+};
+
 function FolderField({ label, value, onChange, testId }: {
   label: string; value: string; onChange: (v: string) => void; testId: string;
 }): JSX.Element {
-  const [focused, setFocused] = useState(false);
-  const typed = useDebounced(value.trim(), 200);
-  const suggested = useFolderSuggestions(typed, focused);
+  const [browsing, setBrowsing] = useState(false);
+  const browseRef = useRef<HTMLButtonElement>(null);
+  const closeBrowser = (): void => {
+    setBrowsing(false);
+    requestAnimationFrame(() => browseRef.current?.focus());
+  };
   return (
-    <div className="flex flex-col gap-1" onFocus={() => setFocused(true)}>
+    <div className="flex flex-col gap-1 md:col-span-2">
       <FieldCaption>{label}</FieldCaption>
-      <DirectoryPickerField value={value} onChange={onChange} folders={suggested.folders} more={suggested.more}
-        ariaLabel={label} placeholder="A folder, starting with / or ~" inputSize="sm" testId={testId} />
+      <div className="flex items-center gap-2">
+        <Input inputSize="sm" value={value} onValueChange={onChange} testId={testId} aria-label={label}
+          placeholder="A folder, starting with / or ~" spellCheck={false} autoComplete="off" className="min-w-0 flex-1" />
+        <Button ref={browseRef} variant="ghost" data-testid={`${testId}-browse`} aria-expanded={browsing} onClick={() => setBrowsing((b) => !b)}>
+          {browsing ? "Close" : "Browse"}
+        </Button>
+      </div>
+      {browsing && (
+        <FolderPicker mode="any" start={value === "" ? "" : parentFolder(value)} highlight={value === "" ? undefined : value.replace(/\/+$/, "")}
+          testId={`${testId}-browser`} autoFocus className="mt-1"
+          onChoose={(path) => { onChange(path); closeBrowser(); }} onCancel={closeBrowser} />
+      )}
     </div>
   );
 }
@@ -246,15 +264,14 @@ export function NewExperimentPage(): JSX.Element {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [search] = useSearchParams();
-  const [path, setPath] = useState(() => search.get("path") ?? "");
+  const [picked, setPicked] = useState(() => (search.get("path") ?? "").trim());
+  const [browseFrom, setBrowseFrom] = useState<{ start: string; highlight: string | undefined }>({ start: "", highlight: undefined });
   const [edits, setEdits] = useState<Record<string, RowEdit>>({});
   const [typedName, setTypedName] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [refused, setRefused] = useState<{ id: number; name: string } | undefined>(undefined);
   const [submitting, setSubmitting] = useState(false);
-  const picked = useDebounced(path.trim(), 200);
-  const full = isFullPath(picked);
-  const suggested = useFolderSuggestions(picked);
+  const full = picked !== "";
 
   const preview = useQuery({
     queryKey: queryKeys.folderPreview(picked),
@@ -280,9 +297,8 @@ export function NewExperimentPage(): JSX.Element {
 
   const chosen = setups.filter((s) => edits[s.root]?.include === true);
   const patternsOk = chosen.every((s) => patternsValid(edits[s.root]!));
-  const current = path.trim() === picked && !preview.isFetching && preview.data !== undefined && setups.every((s) => edits[s.root] !== undefined);
+  const current = full && !preview.isFetching && preview.data !== undefined && setups.every((s) => edits[s.root] !== undefined);
   const canSubmit = current && chosen.length > 0 && patternsOk && !submitting && (existing !== undefined || name.trim() !== "");
-  const [submitWhenReady, setSubmitWhenReady] = useState<{ path: string } | undefined>(undefined);
   const inFlight = useRef(false);
 
   const submit = useCallback(async (): Promise<void> => {
@@ -331,15 +347,6 @@ export function NewExperimentPage(): JSX.Element {
   }, [canSubmit, setups, edits, name, folder, existing, navigate, queryClient]);
 
   useEffect(() => {
-    if (submitWhenReady !== undefined && submitWhenReady.path !== path.trim()) setSubmitWhenReady(undefined);
-  }, [submitWhenReady, path]);
-  const fireQueued = useCallback(() => {
-    setSubmitWhenReady(undefined);
-    if (canSubmit) void submit();
-  }, [canSubmit, submit]);
-  useFireOnce(submitWhenReady?.path === path.trim() ? submitWhenReady : undefined, current, fireQueued);
-
-  useEffect(() => {
     const onKey = (ev: KeyboardEvent): void => {
       if (ev.key !== "Enter" || !(ev.metaKey || ev.ctrlKey)) return;
       if (ev.isComposing || ev.repeat || ev.shiftKey || ev.altKey || !canSubmit) return;
@@ -354,23 +361,22 @@ export function NewExperimentPage(): JSX.Element {
     return () => window.removeEventListener("keydown", onKey, true);
   }, [submit, canSubmit]);
 
-  const status = picked === ""
-    ? "Pick a beamtime folder to add every setup in it, or one setup folder."
-    : !full
-      ? "Type a full path, starting with / or ~."
+  const status = !full
+    ? "Pick a beamtime folder to add every setup in it, or open it to pick one setup."
     : preview.isError
-      ? preview.error instanceof api.ApiError && preview.error.status === 400
-        ? suggested.folders.length > 0 ? "Keep typing, or press ↓ to choose a folder." : "That folder does not exist."
-        : `Could not read that folder: ${preview.error instanceof Error ? preview.error.message : "unknown error"}`
+      ? `Could not read that folder: ${preview.error instanceof Error ? preview.error.message : "unknown error"}`
       : preview.isFetching && setups.length === 0
         ? "Looking for setups…"
         : setups.length === 0
-          ? suggested.folders.some((f) => f.kind !== null)
-            ? "No images here. Press ↓ to choose a beamtime or setup inside it."
-            : "No images found here or in the folders directly inside it."
+          ? "No images found here or in the folders directly inside it."
           : setups.length === 1
             ? "Found 1 setup."
             : `Found ${setups.length} setups.`;
+
+  const change = (): void => {
+    setBrowseFrom({ start: parentFolder(picked), highlight: picked.replace(/\/+$/, "") });
+    setPicked("");
+  };
 
   return (
     <>
@@ -378,7 +384,9 @@ export function NewExperimentPage(): JSX.Element {
         <Kicker tone="accent">New experiment</Kicker>
         <h1 className="text-display text-ink">Add a beamtime</h1>
         <div className="mt-6">
-          <DirectoryPickerField value={path} onChange={setPath} onSubmit={() => (canSubmit ? void submit() : setSubmitWhenReady({ path: path.trim() }))} folders={suggested.folders} more={suggested.more} autoFocus />
+          {full
+            ? <ChosenFolder label="Beamtime folder" path={folder} onChange={change} />
+            : <FolderPicker mode="beamtime" start={browseFrom.start} highlight={browseFrom.highlight} autoFocus onChoose={setPicked} />}
           <p data-testid="preview-status" role="status" className="text-meta text-ink-soft mt-2">{existing === undefined
             ? status
             : setups.some((s) => s.duplicate_of === null)

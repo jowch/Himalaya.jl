@@ -2,7 +2,7 @@ function _find_setup_files(analysis_dir::AbstractString)
     dir = analysis_dir
     for _ in 1:4
         if isdir(dir)
-            hits = String[joinpath(dir, f) for f in readdir(dir)
+            hits = String[joinpath(dir, f) for f in list_names(dir)
                           if startswith(f, "setup_info_") && endswith(f, ".txt")]
             isempty(hits) || return hits
         end
@@ -267,11 +267,7 @@ function _file_finder(base::String, pattern::String; strip_acquisition::Bool = f
         end
     end
     dir = joinpath(base, pattern_dir)
-    names = try
-        Set(readdir(dir))
-    catch
-        Set{String}()
-    end
+    names = Set(list_names(dir))
     leaf = basename(pattern)
     function (stem)
         stem = String(stem)

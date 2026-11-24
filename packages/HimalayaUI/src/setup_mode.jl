@@ -13,21 +13,15 @@ is_autosampler(setup) =
     hasproperty(setup, :mode) && !ismissing(setup.mode) && setup.mode == "autosampler"
 
 function detect_setup_mode(data_dir::AbstractString)::Union{String,Nothing}
-    names = try
-        readdir(String(data_dir))
-    catch
-        return nothing
-    end
+    isdir(data_dir) || return nothing
+    names = list_names(data_dir)
     any(f -> occursin(AUTOSAMPLER_RUN_FILE, f), names) && return "autosampler"
     any(f -> endswith(f, ".tif") && !startswith(f, "."), names) ? "capillary" : nothing
 end
 
 function first_frame_suffix(data_dir::AbstractString)::String
-    names = try
-        readdir(String(data_dir))
-    catch
-        return DEFAULT_FRAME_SUFFIX
-    end
+    isdir(data_dir) || return DEFAULT_FRAME_SUFFIX
+    names = list_names(data_dir)
     best = nothing
     for f in names
         startswith(f, ".") && continue

@@ -87,7 +87,10 @@ function _workload_requests(send, experiment::Int, sample::Int, other::Int, expo
     _workload_call(send, "GET", "/api/health")
     _workload_call(send, "GET", "/api/users")
     _workload_call(send, "GET", "/api/experiments")
-    _workload_call(send, "GET", "/api/experiments/$experiment")
+    folder = _workload_call(send, "GET", "/api/experiments/$experiment").path
+    _workload_call(send, "GET", "/api/fs/list?path=$(HTTP.escapeuri(folder))")
+    _workload_call(send, "GET", "/api/fs/describe?path=$(HTTP.escapeuri(folder))")
+    _workload_call(send, "GET", "/api/fs/describe?path=$(HTTP.escapeuri(joinpath(folder, "data")))")
     _workload_call(send, "GET", "/api/experiments/$experiment/bridges")
     _workload_call(send, "GET", "/api/experiments/$experiment/problems")
     _workload_call(send, "GET", "/api/samples")
