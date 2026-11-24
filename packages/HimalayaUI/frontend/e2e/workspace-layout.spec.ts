@@ -324,6 +324,15 @@ test("on tall windows Indexing stops moving down once Assignment holds nine choi
   expect(await indexingTop(2000)).toBe(at1400);
 });
 
+test("the + Label chip is as tall as the + Compare chip", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/experiments/17/workspace/41");
+  await openSample(page, 41);
+  const height = (loc: ReturnType<Page["locator"]>) => loc.evaluate((el) => el.getBoundingClientRect().height);
+  const add = await height(page.getByRole("button", { name: "+ Label L" }));
+  expect(add).toBe(await height(page.getByRole("button", { name: /^\+ Compare/ })));
+});
+
 test("a long Call list (ten candidates, more than the number keys reach) keeps Indexing and Frame in place, and the column never scrolls", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/experiments/17/workspace/45");
