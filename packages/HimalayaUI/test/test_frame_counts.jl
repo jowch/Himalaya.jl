@@ -2,13 +2,13 @@ using Test, Dates, SQLite, DBInterface, Tables, JSON3, HimalayaUI
 isdefined(@__MODULE__, :_as_write_folder!) || include("test_setup_mode.jl")
 
 _fc_frame_line(i; rejected = false) =
-    "frame #$i: 0.0013  -38.1  1800.0   -nan" * (rejected ? "  Frame rejected!!" : "") * "\n"
+    "frame #$i: 0.001  -10  100   -nan" * (rejected ? "  Frame rejected!!" : "") * "\n"
 
 function _fc_sample_log(; total = 10, rejected = 1, summary = true)
     io = IOBuffer()
     print(io, "Variance of frames relative to the first frame for buffer files:\n")
     foreach(i -> print(io, _fc_frame_line(i)), 1:3)
-    print(io, "Average variance for buffer:\n1790.9\n\nVariance used for rejection: 1790.9\nFactor used for rejection: 1.5\n")
+    print(io, "Average variance for buffer:\n100\n\nVariance used for rejection: 100\nFactor used for rejection: 2\n")
     print(io, "Variance of frames relative to the first frame for sample files:\n")
     foreach(i -> print(io, _fc_frame_line(i; rejected = i <= rejected)), 1:total)
     summary && print(io, "Buffer frames:10 Rejected:0\nSample frames:$total Rejected:$rejected\n")
@@ -40,13 +40,23 @@ function _fc_counts(db, sid)
             "SELECT filename, frames_total, frames_rejected FROM exposures WHERE setup_id = ?", [sid])))
 end
 
+function _fc_add_experiment!(db, root)
+    eid = HimalayaUI.create_experiment!(db; name = basename(root), path = root)
+    sid = HimalayaUI.create_setup!(db; experiment_id = eid, data_dir = joinpath(root, "data"),
+        analysis_dir = joinpath(root, "analysis"), root_dir = root,
+        image_pattern = "{name}_0_009.tif", metadata_pattern = "{name}_0_009.prp",
+        integration_pattern = "{name}_tot.dat")
+    HimalayaUI.scan_and_group!(db, eid)
+    (eid, sid)
+end
+
 function _fc_scanned(; logs = Dict{String,String}())
     root = _as_write_folder!(mktempdir(), vcat(_AS_RUN_A, _AS_RUN_B); at = [("wat", 100), ("pep", 103)])
     for (stem, text) in logs
         _fc_write_log(root, stem, text)
     end
-    db, eid, sid = _as_live_row_db(root)
-    HimalayaUI.scan_and_group!(db, eid)
+    db = fresh_db()
+    eid, sid = _fc_add_experiment!(db, root)
     (; root, db, eid, sid)
 end
 
@@ -161,5 +171,34 @@ end
             body = only(JSON3.read(String(call("GET", "/api/samples/$(sample_of("pep_01B_S104"))/exposures").body)))
             @test body.frames_total === nothing && body.frames_rejected === nothing
         end
+    end
+
+    @testset "the boot pass fills every autosampler experiment and leaves a capillary one alone" begin
+        db = fresh_db()
+        roots = [_as_write_folder!(mktempdir(), _AS_RUN_A; at = [("wat", 100)]),
+                 _as_write_folder!(mktempdir(), _AS_RUN_B; at = [("pep", 103)]),
+                 _as_write_folder!(mktempdir(), _AS_RUN_A; at = [("wat", 100)])]
+        added = [_fc_add_experiment!(db, r) for r in roots]
+        DBInterface.execute(db, "UPDATE setups SET mode = 'capillary' WHERE id = ?", [added[3][2]])
+        _fc_write_log(roots[1], "wat_01B_S101", _fc_sample_log(total = 10, rejected = 2))
+        _fc_write_log(roots[2], "pep_01B_S104", _fc_sample_log(total = 6, rejected = 0))
+        _fc_write_log(roots[3], "wat_01B_S101", _fc_sample_log(total = 10, rejected = 2))
+        HimalayaUI.backfill_all_frame_counts!(db)
+        @test _fc_counts(db, added[1][2])["wat_01B_S101"] == (10, 2)
+        @test _fc_counts(db, added[1][2])["wat_01C_S102"] === nothing
+        @test _fc_counts(db, added[2][2])["pep_01B_S104"] == (6, 0)
+        @test all(isnothing, values(_fc_counts(db, added[3][2])))
+    end
+
+    @testset "a scan request fills the counts of rows that were already stored" begin
+        (; root, db, eid, sid) = _fc_scanned()
+        _fc_write_log(root, "wat_01B_S101", _fc_sample_log(total = 10, rejected = 1))
+        with_test_server(db) do port, base
+            r = HTTP.post("$base/api/experiments/$eid/scan"; body = JSON3.write(Dict(:force => false)),
+                headers = ["Content-Type" => "application/json"], status_exception = false)
+            @test r.status in (200, 202)
+            @test timedwait(() -> _fc_counts(db, sid)["wat_01B_S101"] !== nothing, 30.0) === :ok
+        end
+        @test _fc_counts(db, sid)["wat_01B_S101"] == (10, 1)
     end
 end

@@ -3090,7 +3090,7 @@ describe("WorkspacePage", () => {
     state.exposures = [exposure(100), exposure(101, { exposure_time: 1, frames_total: 10, frames_rejected: 1 })];
     renderAt("/experiments/1/workspace/10");
     const text = screen.getByRole("heading", { name: "Image" }).closest("section")!.textContent ?? "";
-    expect(text).toContain("KindBeamline average of 9 of 10 images");
+    expect(text).toContain("Kind9 of 10 images, beamline average");
     expect(text).toContain("Exposure9 × 1.0 s");
   });
 
