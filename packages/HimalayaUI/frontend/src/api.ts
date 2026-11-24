@@ -227,7 +227,7 @@ export interface IngestProblems { ingest_error: string | null; exposures: Proble
 export const listProblems = (id: number) =>
   request<IngestProblems>("GET", `/api/experiments/${id}/problems`);
 
-export interface FolderListing { path: string; parent: string | null; folders: string[] }
+export interface FolderListing { path: string; parent: string | null; folders: string[]; inside_setup: boolean }
 export const listFolder = (path: string, opts?: AuthOpts) =>
   request<FolderListing>("GET", `/api/fs/list?path=${encodeURIComponent(path)}`, undefined, opts);
 

@@ -18,7 +18,7 @@ async function mockShell(page: Page): Promise<void> {
   await page.route("**/api/users", (r) => r.fulfill(json([])));
   await page.route("**/api/events*", (r) => r.fulfill({ status: 200, contentType: "text/event-stream", body: "" }));
   await page.route("**/api/label-colors", (r) => r.fulfill(json([])));
-  await page.route(/\/api\/fs\/list\?/, (r) => r.fulfill(json({ path: "/lab", parent: "/", folders: ["20261103", "calibrants"] })));
+  await page.route(/\/api\/fs\/list\?/, (r) => r.fulfill(json({ path: "/lab", parent: "/", folders: ["20261103", "calibrants"], inside_setup: false })));
   await page.route(/\/api\/fs\/describe\?/, (r) => r.fulfill(json({ path: "/lab/x", kind: null, setups: null, added: null })));
   await page.route(/\/api\/fs\/preview\?/, (r) => r.fulfill(json({ path: "", setups: [] })));
   await page.route((url) => url.pathname === "/api/experiments", (r) =>

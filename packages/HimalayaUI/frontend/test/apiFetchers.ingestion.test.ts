@@ -30,7 +30,7 @@ describe("ingestion fetchers (Phase E1)", () => {
   });
 
   it("listFolder GETs /api/fs/list?path=… with the path encoded once", async () => {
-    const spy = mockFetchSpy({ path: "/data/run 42", parent: "/data", folders: ["setup1"] });
+    const spy = mockFetchSpy({ path: "/data/run 42", parent: "/data", folders: ["setup1"], inside_setup: false });
     const out = await api.listFolder("/data/run 42");
     expect(out.folders).toEqual(["setup1"]);
     expect(spy.mock.calls[0]![0]).toBe("/api/fs/list?path=%2Fdata%2Frun%2042");

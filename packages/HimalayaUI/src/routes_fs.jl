@@ -243,21 +243,26 @@ end
 
 _canonical_dir(p) = (q = rstrip(String(p), '/'); isempty(q) ? "/" : (ispath(q) ? realpath(q) : q))
 
+_experiment_label(name, path) =
+    !ismissing(name) && !isempty(name) ? String(name) : ismissing(path) ? "" : basename(_trim_slash(String(path)))
+
+_named_experiment(row) = (; id = Int(row.id), name = _experiment_label(row.name, row.path))
+
 function experiment_using_dir(db, dir)
     plain = rstrip(String(dir), '/')
     rows = sqlrows(DBInterface.execute(db,
-        """SELECT x.id, x.name FROM setups st JOIN experiments x ON x.id = st.experiment_id
+        """SELECT x.id, x.name, x.path FROM setups st JOIN experiments x ON x.id = st.experiment_id
             WHERE rtrim(st.data_dir, '/') IN (?, ?) ORDER BY x.id LIMIT 1""",
         [plain, _canonical_dir(dir)]))
-    isempty(rows) ? nothing : (; id = Int(first(rows).id), name = String(first(rows).name))
+    isempty(rows) ? nothing : _named_experiment(first(rows))
 end
 
 function experiment_at_path(db, dir)
     plain = rstrip(String(dir), '/')
     rows = sqlrows(DBInterface.execute(db,
-        "SELECT id, name FROM experiments WHERE rtrim(path, '/') IN (?, ?) ORDER BY id LIMIT 1",
+        "SELECT id, name, path FROM experiments WHERE rtrim(path, '/') IN (?, ?) ORDER BY id LIMIT 1",
         [plain, _canonical_dir(dir)]))
-    isempty(rows) ? nothing : (; id = Int(first(rows).id), name = String(first(rows).name))
+    isempty(rows) ? nothing : _named_experiment(first(rows))
 end
 
 _trim_slash(p) = rstrip(p, '/')
@@ -332,7 +337,10 @@ function list_folder(db, path::AbstractString)
     isabspath(dir) || return (400, "use a full path, starting with / or ~")
     isdir(dir) || return (400, "that folder does not exist")
     dir = _trim_slash(dir) == "" ? "/" : String(_trim_slash(dir))
-    (200, Dict(:path => dir, :parent => _parent_folder(dir), :folders => natural_sort(folder_names(dir))))
+    here = folder_listing(dir, _is_tif)
+    in_setup = here.holds_image || ("data" in here.folders && _has_tifs(joinpath(dir, "data")))
+    (200, Dict(:path => dir, :parent => _parent_folder(dir), :folders => natural_sort(here.folders),
+               :inside_setup => in_setup))
 end
 
 function register_fs_routes!()

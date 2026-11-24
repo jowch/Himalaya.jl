@@ -1,7 +1,7 @@
 using Test, HTTP, JSON3, SQLite
 using HimalayaUI
 
-@testset "list_names, folder_names and any_name read a folder without stat-ing every entry" begin
+@testset "list_names, folder_names and folder_listing read a folder, and any_name stops at the first match" begin
     root = mktempdir()
     for i in 1:600
         touch(joinpath(root, "f$(lpad(i, 4, '0')).tif"))
@@ -9,6 +9,8 @@ using HimalayaUI
     mkpath(joinpath(root, "sub"))
     @test length(HimalayaUI.list_names(root)) == 601
     @test HimalayaUI.folder_names(root) == ["sub"]
+    @test HimalayaUI.folder_listing(root, endswith(".tif")) == (folders = ["sub"], holds_image = true)
+    @test HimalayaUI.folder_listing(root, endswith(".dat")).holds_image == false
     seen = Ref(0)
     @test HimalayaUI.any_name(n -> (seen[] += 1; endswith(n, ".tif")), root)
     @test seen[] < 600
@@ -45,6 +47,26 @@ _describe(call, path) = JSON3.read(call("GET", "/api/fs/describe?path=$(HTTP.esc
             @test r.path == root
             @test r.parent == dirname(root)
             @test collect(r.folders) == ["linked", "setup1", "setup2", "setup10"]
+        end
+    end
+end
+
+@testset "GET /api/fs/list says when the listed folder is a setup or holds its images, so its rows go undescribed" begin
+    mktempdir() do tmp
+        db = open_prepared_clone(tmp)
+        with_inproc_routes(db) do call
+            beamtime = mktempdir()
+            nested = joinpath(beamtime, "nested")
+            mkpath(joinpath(nested, "data")); mkpath(joinpath(nested, "analysis"))
+            touch(joinpath(nested, "data", "s_0001.tif"))
+            flat = joinpath(beamtime, "flat")
+            mkpath(joinpath(flat, "notes"))
+            touch(joinpath(flat, "s_0001.tif"))
+            @test _list(call, beamtime).inside_setup == false
+            @test _list(call, nested).inside_setup == true
+            @test _list(call, joinpath(nested, "data")).inside_setup == true
+            @test _list(call, flat).inside_setup == true
+            @test _list(call, joinpath(nested, "analysis")).inside_setup == false
         end
     end
 end
@@ -91,6 +113,22 @@ end
                 HimalayaUI.create_experiment!(db; name = "Newer", path = joinpath(share, "newer"))
                 @test _list(call, "").path == share
             end
+        end
+    end
+end
+
+@testset "GET /api/fs/describe names an experiment that has no name by its folder" begin
+    mktempdir() do tmp
+        db = open_prepared_clone(tmp)
+        setup = joinpath(mktempdir(), "run7")
+        mkpath(joinpath(setup, "data"))
+        touch(joinpath(setup, "data", "a_0_001.tif"))
+        HimalayaUI.init_experiment!(db; path = setup, data_dir = joinpath(setup, "data"),
+                                    analysis_dir = joinpath(setup, "analysis"))
+        with_inproc_routes(db) do call
+            resp = call("GET", "/api/fs/describe?path=$(HTTP.escapeuri(setup))")
+            @test resp.status == 200
+            @test JSON3.read(resp.body).added.name == "run7"
         end
     end
 end

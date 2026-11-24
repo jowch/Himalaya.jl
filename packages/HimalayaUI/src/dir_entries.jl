@@ -37,8 +37,15 @@ list_names(dir::AbstractString)::Vector{String} = sort!(first.(_scandir(dir)))
 _is_folder(dir, name, typ) = typ == UV_DIRENT_DIR ||
     ((typ == UV_DIRENT_LINK || typ == UV_DIRENT_UNKNOWN) && isdir(joinpath(dir, name)))
 
-folder_names(dir::AbstractString)::Vector{String} =
-    sort!(String[name for (name, typ) in _scandir(dir) if !startswith(name, ".") && _is_folder(dir, name, typ)])
+_folders_in(dir, entries) =
+    sort!(String[name for (name, typ) in entries if !startswith(name, ".") && _is_folder(dir, name, typ)])
+
+folder_names(dir::AbstractString)::Vector{String} = _folders_in(dir, _scandir(dir))
+
+function folder_listing(dir::AbstractString, holds_image)
+    entries = _scandir(dir)
+    (folders = _folders_in(dir, entries), holds_image = any(e -> holds_image(first(e)), entries))
+end
 
 function _open_dir(req, dir::AbstractString)::Ptr{Cvoid}
     err = @ccall gc_safe=true uv_fs_opendir(C_NULL::Ptr{Cvoid}, req::Ptr{Cvoid}, String(dir)::Cstring,

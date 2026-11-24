@@ -15,6 +15,7 @@ export interface FolderPickerProps {
   highlight?: string | undefined;
   mode: FolderPickerMode;
   onChoose: (path: string) => void;
+  onCancel?: (() => void) | undefined;
   autoFocus?: boolean;
   testId?: string;
   className?: string;
@@ -41,7 +42,14 @@ export function describeHint(d: api.FolderDescription | undefined): string {
 const isTypedChar = (e: KeyboardEvent): boolean =>
   e.key.length === 1 && e.key !== "/" && e.key !== "?" && e.key !== " " && !e.metaKey && !e.ctrlKey && !e.altKey && !e.nativeEvent.isComposing;
 
-export function FolderPicker({ start, highlight, mode, onChoose, autoFocus = false, testId = "folder-browser", className }: FolderPickerProps): JSX.Element {
+export const folderAbove = (path: string): string => {
+  const t = path.replace(/\/+$/, "");
+  if (!t.startsWith("/") && !t.startsWith("~")) return "";
+  const cut = t.lastIndexOf("/");
+  return cut <= 0 ? (t.startsWith("/") ? "/" : "") : t.slice(0, cut);
+};
+
+export function FolderPicker({ start, highlight, mode, onChoose, onCancel, autoFocus = false, testId = "folder-browser", className }: FolderPickerProps): JSX.Element {
   const [dir, setDir] = useState(start);
   const [filter, setFilter] = useState("");
   const [editing, setEditing] = useState(false);
@@ -58,16 +66,21 @@ export function FolderPicker({ start, highlight, mode, onChoose, autoFocus = fal
     placeholderData: keepPreviousData,
   });
   const here = listing.data;
+  const lost = listing.isError && here === undefined && dir !== "" && dir !== "/";
+  useEffect(() => {
+    if (lost) setDir(folderAbove(dir));
+  }, [lost, dir]);
   const shown = useMemo(() => {
     if (here === undefined) return [];
     const needle = filter.toLowerCase();
     return here.folders.filter((n) => n.toLowerCase().includes(needle)).map((n) => joinFolder(here.path, n));
   }, [here, filter]);
-  const describing = mode === "beamtime" && !listing.isPlaceholderData;
+  const describing = mode === "beamtime" && !listing.isPlaceholderData && here?.inside_setup !== true;
   const { found, describeNow } = useFolderDescriptions(shown, describing);
 
   const choose = async (path: string): Promise<void> => {
     if (mode === "any") { onChoose(path); return; }
+    if (here?.inside_setup === true) { open(path); return; }
     const d = found.get(path) ?? await describeNow(path).catch(() => undefined);
     if (d !== undefined && d.kind !== null) onChoose(d.path);
     else open(path);
@@ -87,7 +100,7 @@ export function FolderPicker({ start, highlight, mode, onChoose, autoFocus = fal
     keys: shown,
     resetKey: `${here?.path ?? ""}\n${filter}`,
     onCommit: (i) => { const p = shown[i]; if (p !== undefined) void choose(p); },
-    onEscape: () => (filter !== "" ? setFilter("") : up()),
+    onEscape: () => (filter !== "" ? setFilter("") : onCancel !== undefined ? onCancel() : up()),
   });
   const { setAt } = hl;
 
@@ -158,7 +171,9 @@ export function FolderPicker({ start, highlight, mode, onChoose, autoFocus = fal
       : { path, name, hint: "", waiting: false, strong: false };
   });
 
-  const status = listing.isError
+  const status = lost
+    ? "Opening folder…"
+    : listing.isError
     ? listing.error instanceof api.ApiError ? sentence(listing.error.message) : "Could not read this folder."
     : here === undefined || listing.isPlaceholderData
       ? "Opening folder…"
@@ -181,6 +196,7 @@ export function FolderPicker({ start, highlight, mode, onChoose, autoFocus = fal
       draft={draft}
       draftError={draftError}
       chooseHint={mode === "any" ? "to use this folder" : "to add a beamtime or setup, or open a folder"}
+      escCloses={onCancel !== undefined}
       listRef={listRef}
       onCrumb={(p) => { open(p); listRef.current?.focus(); }}
       onPick={(i) => { const p = shown[i]; if (p !== undefined) void choose(p); }}

@@ -62,7 +62,7 @@ async function pick(path: string): Promise<void> {
 describe("NewExperimentPage", () => {
   beforeEach(() => {
     navigate.mockClear();
-    vi.spyOn(api, "listFolder").mockImplementation(async (p) => ({ path: p === "" ? "/b" : trimmed(p), parent: "/", folders: [] }));
+    vi.spyOn(api, "listFolder").mockImplementation(async (p) => ({ path: p === "" ? "/b" : trimmed(p), parent: "/", folders: [], inside_setup: false }));
     vi.spyOn(api, "describeFolder").mockImplementation(async (p) => ({ path: trimmed(p), kind: "beamtime", setups: 1, added: null }));
   });
   afterEach(() => vi.restoreAllMocks());
@@ -74,7 +74,7 @@ describe("NewExperimentPage", () => {
     const row = await screen.findByTestId("setup-row");
     fireEvent.click(within(row).getByRole("button", { name: "Details" }));
     vi.mocked(api.listFolder).mockImplementation(async (p) =>
-      ({ path: trimmed(p), parent: "/b/day1", folders: p === "/b/day1/setup1" ? ["data", "data_old"] : [] }));
+      ({ path: trimmed(p), parent: "/b/day1", folders: p === "/b/day1/setup1" ? ["data", "data_old"] : [], inside_setup: false }));
     fireEvent.click(screen.getByTestId("details-data-dir-browse"));
     const list = await screen.findByTestId("details-data-dir-browser-list");
     await within(list).findByRole("option", { name: "data_old" });
@@ -84,6 +84,28 @@ describe("NewExperimentPage", () => {
     expect(within(row).getByRole("textbox", { name: "Data folder" })).toHaveValue("/b/day1/setup1/data_old");
     expect(screen.queryByTestId("details-data-dir-browser")).toBeNull();
     expect(within(row).getByRole("textbox", { name: "Integration folder" })).toBeInTheDocument();
+  });
+
+  it("Esc closes a Details folder browser from any folder and hands focus back to Browse", async () => {
+    vi.spyOn(api, "previewFolder").mockResolvedValue({ path: "/b/day1", setups: [setup("/b/day1/setup1")] });
+    renderPage();
+    await pick("/b/day1");
+    const row = await screen.findByTestId("setup-row");
+    fireEvent.click(within(row).getByRole("button", { name: "Details" }));
+    vi.mocked(api.listFolder).mockImplementation(async (p) =>
+      ({ path: trimmed(p), parent: trimmed(p) === "/" ? null : "/", folders: ["data"], inside_setup: false }));
+    const browse = screen.getByTestId("details-data-dir-browse");
+    fireEvent.click(browse);
+    const list = await screen.findByTestId("details-data-dir-browser-list");
+    await within(list).findByRole("option", { name: "data" });
+    expect(screen.getByTestId("details-data-dir-browser")).toHaveTextContent("Esc to close");
+    fireEvent.keyDown(list, { key: "d" });
+    fireEvent.keyDown(list, { key: "Escape" });
+    expect(screen.getByTestId("details-data-dir-browser")).toBeInTheDocument();
+    fireEvent.keyDown(list, { key: "Escape" });
+    expect(screen.queryByTestId("details-data-dir-browser")).toBeNull();
+    await waitFor(() => expect(browse).toHaveFocus());
+    expect(within(row).getByRole("textbox", { name: "Data folder" })).toHaveValue("/b/day1/setup1/data");
   });
 
   it("starts on the folder a link passes in", async () => {

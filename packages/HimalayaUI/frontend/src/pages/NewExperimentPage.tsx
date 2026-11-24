@@ -152,20 +152,25 @@ function FolderField({ label, value, onChange, testId }: {
   label: string; value: string; onChange: (v: string) => void; testId: string;
 }): JSX.Element {
   const [browsing, setBrowsing] = useState(false);
+  const browseRef = useRef<HTMLButtonElement>(null);
+  const closeBrowser = (): void => {
+    setBrowsing(false);
+    requestAnimationFrame(() => browseRef.current?.focus());
+  };
   return (
     <div className="flex flex-col gap-1 md:col-span-2">
       <FieldCaption>{label}</FieldCaption>
       <div className="flex items-center gap-2">
         <Input inputSize="sm" value={value} onValueChange={onChange} testId={testId} aria-label={label}
           placeholder="A folder, starting with / or ~" spellCheck={false} autoComplete="off" className="min-w-0 flex-1" />
-        <Button variant="ghost" data-testid={`${testId}-browse`} aria-expanded={browsing} onClick={() => setBrowsing((b) => !b)}>
+        <Button ref={browseRef} variant="ghost" data-testid={`${testId}-browse`} aria-expanded={browsing} onClick={() => setBrowsing((b) => !b)}>
           {browsing ? "Close" : "Browse"}
         </Button>
       </div>
       {browsing && (
         <FolderPicker mode="any" start={value === "" ? "" : parentFolder(value)} highlight={value === "" ? undefined : value.replace(/\/+$/, "")}
           testId={`${testId}-browser`} autoFocus className="mt-1"
-          onChoose={(path) => { onChange(path); setBrowsing(false); }} />
+          onChoose={(path) => { onChange(path); closeBrowser(); }} onCancel={closeBrowser} />
       )}
     </div>
   );

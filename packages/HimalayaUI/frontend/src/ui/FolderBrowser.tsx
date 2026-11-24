@@ -24,6 +24,7 @@ export interface FolderBrowserProps {
   draft: string;
   draftError: string | undefined;
   chooseHint: string;
+  escCloses?: boolean;
   listRef: Ref<HTMLDivElement>;
   testId?: string;
   className?: string | undefined;
@@ -40,7 +41,7 @@ export interface FolderBrowserProps {
 export const folderRowId = (testId: string, index: number): string => `${testId}-row-${index}`;
 
 export function FolderBrowser({
-  crumbs, rows, active, filter, status, editing, draft, draftError, chooseHint, listRef,
+  crumbs, rows, active, filter, status, editing, draft, draftError, chooseHint, escCloses = false, listRef,
   testId = "folder-browser", className = "",
   onCrumb, onPick, onOpen, onHover, onListKeyDown, onStartEditing, onDraftChange, onDraftKeyDown,
 }: FolderBrowserProps): JSX.Element {
@@ -146,7 +147,12 @@ export function FolderBrowser({
         <span className="flex items-center gap-1"><Kbd>↑</Kbd><Kbd>↓</Kbd> or <Kbd>Tab</Kbd> to move</span>
         <span className="flex items-center gap-1"><Kbd>↵</Kbd> {chooseHint}</span>
         <span className="flex items-center gap-1"><Kbd>→</Kbd> to open a folder</span>
-        <span className="flex items-center gap-1"><Kbd>←</Kbd> or <Kbd>Esc</Kbd> to go up one folder</span>
+        {escCloses
+          ? <>
+              <span className="flex items-center gap-1"><Kbd>←</Kbd> to go up one folder</span>
+              <span className="flex items-center gap-1"><Kbd>Esc</Kbd> to close</span>
+            </>
+          : <span className="flex items-center gap-1"><Kbd>←</Kbd> or <Kbd>Esc</Kbd> to go up one folder</span>}
       </div>
     </div>
   );

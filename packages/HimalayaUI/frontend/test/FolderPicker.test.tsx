@@ -9,6 +9,7 @@ const TREE: Record<string, string[]> = {
   "/srv/beamtimes": ["2026-10", "2026-11", "calibrants"],
   "/srv/beamtimes/2026-11": ["setup1", "setup2", "notes"],
   "/srv/beamtimes/calibrants": ["agbe"],
+  "/srv/beamtimes/2026-11/setup1": ["analysis", "data"],
   "/srv": ["beamtimes"],
   "/": ["srv"],
 };
@@ -26,7 +27,7 @@ function fakeFs(): void {
     const path = p === "" ? "/srv/beamtimes" : p.replace(/\/+$/, "") || "/";
     const folders = TREE[path];
     if (folders === undefined) throw new api.ApiError(400, "that folder does not exist", null);
-    return { path, parent: parentOf(path), folders };
+    return { path, parent: parentOf(path), folders, inside_setup: KINDS[path] === "setup" };
   });
   vi.spyOn(api, "describeFolder").mockImplementation(async (p) => {
     const kind = KINDS[p] ?? null;
@@ -34,12 +35,12 @@ function fakeFs(): void {
   });
 }
 
-function renderPicker(mode: FolderPickerMode = "beamtime", start = "") {
+function renderPicker(mode: FolderPickerMode = "beamtime", start = "", onCancel?: () => void) {
   const onChoose = vi.fn();
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={qc}>
-      <FolderPicker mode={mode} start={start} onChoose={onChoose} autoFocus />
+      <FolderPicker mode={mode} start={start} onChoose={onChoose} onCancel={onCancel} autoFocus />
     </QueryClientProvider>,
   );
   return { onChoose, list: screen.getByTestId("folder-browser-list") };
@@ -170,9 +171,34 @@ describe("FolderPicker", () => {
     expect(api.describeFolder).not.toHaveBeenCalled();
   });
 
-  it("says when the folder it was asked to open can't be read", async () => {
-    renderPicker("beamtime", "/gone");
-    await waitFor(() => expect(screen.getByTestId("folder-browser-status")).toHaveTextContent("That folder does not exist."));
+  it("opens the nearest folder above one that no longer exists, and ← works from there", async () => {
+    const { list } = renderPicker("beamtime", "/srv/beamtimes/gone/deeper");
+    await waitFor(() => expect(names(list)).toEqual(["2026-10", "2026-11", "calibrants"]));
+    fireEvent.keyDown(list, { key: "ArrowLeft" });
+    await waitFor(() => expect(names(list)).toEqual(["beamtimes"]));
+  });
+
+  it("inside a setup labels nothing and Enter opens the highlighted folder", async () => {
+    const { list, onChoose } = renderPicker("beamtime", "/srv/beamtimes/2026-11/setup1");
+    await waitFor(() => expect(names(list)).toEqual(["analysis", "data"]));
+    expect(within(list).getByRole("option", { name: "analysis" })).toBeInTheDocument();
+    fireEvent.keyDown(list, { key: "Enter" });
+    await waitFor(() => expect(api.listFolder).toHaveBeenLastCalledWith("/srv/beamtimes/2026-11/setup1/analysis", expect.anything()));
+    expect(onChoose).not.toHaveBeenCalled();
+    expect(api.describeFolder).not.toHaveBeenCalled();
+  });
+
+  it("with a cancel handler, Esc clears the filter first and then cancels instead of going up", async () => {
+    const onCancel = vi.fn();
+    const { list } = renderPicker("any", "/srv/beamtimes", onCancel);
+    await waitFor(() => expect(names(list)).toHaveLength(3));
+    fireEvent.keyDown(list, { key: "c" });
+    fireEvent.keyDown(list, { key: "Escape" });
+    expect(onCancel).not.toHaveBeenCalled();
+    expect(names(list)).toHaveLength(3);
+    fireEvent.keyDown(list, { key: "Escape" });
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(names(list)).toHaveLength(3);
   });
 
   it("says when a folder has no folders", async () => {

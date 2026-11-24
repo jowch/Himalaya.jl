@@ -35,7 +35,7 @@ describe("shell keys on the pages outside the workspace", () => {
   });
 
   it("⌘K opens the palette from the folder path field, where ? and / type", async () => {
-    vi.spyOn(api, "listFolder").mockResolvedValue({ path: "/lab", parent: "/", folders: [] });
+    vi.spyOn(api, "listFolder").mockResolvedValue({ path: "/lab", parent: "/", folders: [], inside_setup: false });
     renderAt("/experiments/new");
     await screen.findByTestId("app-shell");
     const list = screen.getByTestId("folder-browser-list");
@@ -52,7 +52,7 @@ describe("shell keys on the pages outside the workspace", () => {
   });
 
   it("? from the folder list opens the shortcuts list, which names the browser keys", async () => {
-    vi.spyOn(api, "listFolder").mockResolvedValue({ path: "/lab", parent: "/", folders: [] });
+    vi.spyOn(api, "listFolder").mockResolvedValue({ path: "/lab", parent: "/", folders: [], inside_setup: false });
     renderAt("/experiments/new");
     await screen.findByTestId("app-shell");
     fireEvent.keyDown(screen.getByTestId("folder-browser-list"), { key: "?" });
@@ -61,7 +61,7 @@ describe("shell keys on the pages outside the workspace", () => {
   });
 
   it("⌘? and Ctrl+? in the folder list do not open the shortcuts", async () => {
-    vi.spyOn(api, "listFolder").mockResolvedValue({ path: "/lab", parent: "/", folders: [] });
+    vi.spyOn(api, "listFolder").mockResolvedValue({ path: "/lab", parent: "/", folders: [], inside_setup: false });
     renderAt("/experiments/new");
     await screen.findByTestId("app-shell");
     const list = screen.getByTestId("folder-browser-list");

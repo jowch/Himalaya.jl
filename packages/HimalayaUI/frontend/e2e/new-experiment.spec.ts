@@ -50,7 +50,7 @@ async function mockFunnel(page: Page, created: Created[]): Promise<void> {
     const folders = tree[path];
     return folders === undefined
       ? r.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "that folder does not exist" }) })
-      : r.fulfill(json({ path, parent: path.slice(0, path.lastIndexOf("/")) || "/", folders }));
+      : r.fulfill(json({ path, parent: path.slice(0, path.lastIndexOf("/")) || "/", folders, inside_setup: kinds[path]?.kind === "setup" }));
   });
   await page.route(/\/api\/fs\/describe\?/, (r) => {
     const path = new URL(r.request().url()).searchParams.get("path") ?? "";

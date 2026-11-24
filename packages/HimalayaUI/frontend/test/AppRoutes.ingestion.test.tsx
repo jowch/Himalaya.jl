@@ -27,7 +27,7 @@ describe("AppRoutes ingestion tree (Phase E1)", () => {
   });
 
   it("/experiments/new renders the folder browser", () => {
-    vi.spyOn(api, "listFolder").mockResolvedValue({ path: "/lab", parent: "/", folders: [] });
+    vi.spyOn(api, "listFolder").mockResolvedValue({ path: "/lab", parent: "/", folders: [], inside_setup: false });
     renderAt("/experiments/new");
     expect(screen.getByTestId("folder-browser-list")).toBeInTheDocument();
   });
