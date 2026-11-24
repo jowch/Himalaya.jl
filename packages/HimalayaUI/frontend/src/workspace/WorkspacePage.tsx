@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
-import type { AssignmentState, CorpusSample, Exposure, IndexEntry, LabelColor, SampleBridge, SampleCallMember, SampleLabel } from "../api";
+import type { AssignmentState, CorpusSample, Exposure, IndexEntry, LabelColor, Peak, SampleBridge, SampleCallMember, SampleLabel } from "../api";
 import { ApiError } from "../api";
 import {
   useAddAssignmentPhase,
@@ -92,7 +92,7 @@ import { useSampleListHidden } from "./sampleListHidden";
 import { positiveExtent } from "../plot/projection";
 import { CustomIndexPanel, NUDGE_STEP, NUDGE_STEP_LARGE } from "../ui/CustomIndexPanel";
 import { IndexingPlot, type IndexSeries } from "../ui/IndexingPlot";
-import { clampLattice, stepSymmetry, draftCommit, draftPrediction, indexFit, initialDraft, latticeParam, storedFit, type CustomDraft } from "./indexing";
+import { clampLattice, stepSymmetry, draftCommit, draftPrediction, indexFit, initialDraft, latticeParam, reviseDraft, storedFit, type CustomDraft } from "./indexing";
 import { latticeBounds, latticeForFirstOrderOnPeak } from "../lib/customIndex";
 
 import { WorkspaceHeader } from "../ui/WorkspaceHeader";
@@ -1141,8 +1141,12 @@ export function WorkspacePage(): JSX.Element {
     setDraft((d) => d ?? initialDraft(candidates[0]));
   }, [canCall, candidates]);
   const setDraftClamped = useCallback(
-    (d: CustomDraft) => setDraft({ phase: d.phase, lattice: clampLattice(d.phase, d.lattice, xExtent) }),
-    [xExtent],
+    (d: CustomDraft) =>
+      setDraft((prev) => {
+        const next = reviseDraft(prev, d, (ref) => (peaks.data ?? []).find((pk) => !pk.excluded && samePeak(pk, ref))?.q);
+        return { ...next, lattice: clampLattice(next.phase, next.lattice, xExtent) };
+      }),
+    [xExtent, peaks.data],
   );
   const addCustom = useCallback(() => {
     if (!draft || !exposure || !canCall) return;
@@ -1156,29 +1160,33 @@ export function WorkspacePage(): JSX.Element {
       phase: c.phase, basis: c.basis, ratios: c.ratios, wasFormFactor: isFormFactor,
     }));
   }, [draft, exposure, canCall, commitCustom, sampleId, sample?.name, isFormFactor, history, ops]);
+  const snapDraftTo = useCallback(
+    (q: number, snap?: PeakRef) => {
+      if (!draft) return;
+      customPanel.current?.focus();
+      const lattice = clampLattice(draft.phase, latticeForFirstOrderOnPeak(draft.phase, q), xExtent);
+      setDraft(snap ? { phase: draft.phase, lattice, snap } : { phase: draft.phase, lattice });
+    },
+    [draft, xExtent],
+  );
   const snapDraft = useCallback(
     (q: number) => {
-      if (!draft) return;
-      let target = q;
-      let bestD = Infinity;
-      for (const pq of activePeakQs) {
-        const d = Math.abs(pq - q);
-        if (d < bestD) {
-          bestD = d;
-          target = pq;
-        }
+      let nearest: Peak | null = null;
+      for (const p of peaks.data ?? []) {
+        if (!p.excluded && (nearest === null || Math.abs(p.q - q) < Math.abs(nearest.q - q))) nearest = p;
       }
-      customPanel.current?.focus();
-      setDraftClamped({ ...draft, lattice: latticeForFirstOrderOnPeak(draft.phase, target) });
+      if (nearest) snapDraftTo(nearest.q, { id: nearest.id, source: nearest.source });
+      else snapDraftTo(q);
     },
-    [draft, activePeakQs, setDraftClamped],
+    [peaks.data, snapDraftTo],
   );
   const snapDraftToPeak = useCallback(
     (ref: PeakRef) => {
       const p = (peaks.data ?? []).find((pk) => samePeak(pk, ref));
-      if (p) snapDraft(p.q);
+      if (p?.excluded) snapDraft(p.q);
+      else if (p) snapDraftTo(p.q, { id: p.id, source: p.source });
     },
-    [peaks.data, snapDraft],
+    [peaks.data, snapDraft, snapDraftTo],
   );
   const draftFit = useMemo(() => (draft ? indexFit(draftQs, activePeakQs, xExtent) : null), [draft, draftQs, activePeakQs, xExtent]);
 
