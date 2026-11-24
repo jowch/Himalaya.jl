@@ -3,6 +3,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { IndexEntry } from "../../src/api";
 import { CandidateList } from "../../src/ui/CandidateList";
+import { phaseColor } from "../../src/phases";
 import type { CallRow } from "../../src/workspace/bonnetGroups";
 
 function candidate(id: number, phase = "Lamellar", lattice: number | null = 40 + id): IndexEntry {
@@ -108,14 +109,15 @@ describe("CandidateList", () => {
     expect(off!.querySelector("kbd")).not.toHaveAttribute("data-pressed");
   });
 
-  it("names its phase with a tinted chip, so the chosen keycap is the only fill in the row", () => {
+  it("names its phase as plain text in the phase colour, so the chosen keycap is the only fill in the row", () => {
     render(
       <CandidateList rows={[one(candidate(1, "Pn3m"))]} assigned={new Set([1])} disabled={false} formFactor={false}
         onToggle={() => {}} onToggleGroup={() => {}} onFormFactor={() => {}} onHover={() => {}} />,
     );
-    const chip = within(screen.getByTestId("workspace-candidates")).getByTestId("phase-chip");
-    expect(chip.style.background).not.toBe("");
-    expect(chip.style.color).not.toBe("var(--color-paper)");
+    const name = within(screen.getByTestId("workspace-candidates")).getByTestId("phase-chip");
+    expect(name).toHaveAttribute("data-variant", "text");
+    expect(name.style.background).toBe("");
+    expect(name.style.color).toBe(phaseColor("Pn3m"));
   });
 
   it("keeps a ticked, a partly ticked and a hovered choice apart by the keycap alone, since a row tint for ticks reads like hover", () => {

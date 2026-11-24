@@ -47,6 +47,9 @@ if (( large )); then
 elif [[ ! -f "$DEMO_DIR/TRUTH.csv" ]]; then
   echo "No demo data at $DEMO_DIR; generating it (make demo-data)."
   $JL packages/HimalayaUI/scripts/make_demo_data.jl "$DEMO_DIR" ${DEMO_DATA_FLAGS:-}
+elif [[ -d "$DEMO_DIR/data" && ! -d "$DEMO_DIR/capillary" ]]; then
+  echo "$DEMO_DIR has the layout from before the demo had two setups; run make demo-clean demo-data (and delete the demo DB, which make demo-clean does)." >&2
+  exit 1
 elif grep -q ',false,' "$DEMO_DIR/TRUTH.csv"; then
   echo "$DEMO_DIR was generated with --no-images (empty TIFFs); run make demo-data to regenerate it." >&2
   exit 1

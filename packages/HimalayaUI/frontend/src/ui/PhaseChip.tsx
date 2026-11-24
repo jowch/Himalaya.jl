@@ -2,7 +2,7 @@ import { Fragment, type CSSProperties, type HTMLAttributes } from "react";
 import { phaseColor } from "../phases";
 import { PhaseShortName } from "./PhaseName";
 
-export type PhaseChipVariant = "tint" | "solid";
+export type PhaseChipVariant = "tint" | "solid" | "text";
 export type PhaseChipSize = "sm" | "md";
 
 
@@ -20,7 +20,12 @@ const sizeClass: Record<PhaseChipSize, string> = {
   sm: "text-xs font-semibold px-2 py-0.5",
   md: "text-base font-semibold px-1.5 py-0.5",
 };
+const textSize: Record<PhaseChipSize, string> = {
+  sm: "text-xs font-semibold",
+  md: "text-base font-semibold",
+};
 function variantStyle(variant: PhaseChipVariant, color: string): CSSProperties {
+  if (variant === "text") return { color };
   if (variant === "solid") {
     return {
       color: "var(--color-paper)",
@@ -80,7 +85,7 @@ export function PhaseChip({
       data-size={size}
       data-coexist={coexist.length > 0 ? "true" : undefined}
       data-coexist-count={coexist.length > 0 ? String(coexist.length + 1) : undefined}
-      className={`${base} ${sizeClass[size]} ${className}`}
+      className={variant === "text" ? `inline-flex items-center ${textSize[size]} ${className}` : `${base} ${sizeClass[size]} ${className}`}
       style={variantStyle(variant, color)}
       {...props}
     >

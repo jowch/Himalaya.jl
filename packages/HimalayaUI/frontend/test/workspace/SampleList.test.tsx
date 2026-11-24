@@ -131,9 +131,12 @@ describe("SampleList setup headers", () => {
         currentId={1} filter="" onFilter={() => {}} onPick={() => {}}
       />,
     );
-    expect(screen.getAllByTestId("setup-header").map((h) => h.textContent)).toEqual(["Long pipe", "setup2"]);
+    const headers = screen.getAllByTestId("setup-header");
+    expect(headers.map((h) => h.querySelector("[data-setup-name]")?.textContent)).toEqual(["Long pipe", "setup2"]);
+    expect(headers.map((h) => h.querySelector("[data-setup-count] [aria-hidden]")?.textContent)).toEqual(["2", "1"]);
+    expect(headers.map((h) => h.querySelector("[data-setup-count] .sr-only")?.textContent)).toEqual(["2 samples", "1 sample"]);
     const items = screen.getByTestId("workspace-samples").querySelectorAll(":scope > li");
-    expect([...items].map((li) => li.textContent?.trim().slice(0, 9))).toEqual(["Long pipe", "A○", "B○", "setup2", "C○"]);
+    expect([...items].map((li) => li.querySelector("[data-setup-name]")?.textContent ?? li.textContent?.trim().slice(0, 2))).toEqual(["Long pipe", "A○", "B○", "setup2", "C○"]);
   });
 
   it("shows no headers without them, as in a one-setup workspace", () => {

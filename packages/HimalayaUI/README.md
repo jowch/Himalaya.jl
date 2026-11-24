@@ -20,7 +20,7 @@ A web application for semi-automatic indexing of SAXS diffraction patterns. Poin
 | Tool     | Version |
 |----------|---------|
 | Julia    | 1.9 or newer |
-| Node.js  | 22 (22.22.2+), 24 (24.15+) or 26+ (`make setup` and `make deploy` build the frontend) |
+| Node.js  | 22 (22.22.2+), 24 (24.15+) or 26+ (`make setup` and `make deploy` build the frontend; `npm ci` stops with `EBADENGINE` on an older Node) |
 | Browser  | Any modern Chromium/Firefox/Safari |
 
 Runs locally on your workstation or on a lab server over SSH port-forward. No external services.
@@ -191,6 +191,8 @@ folder under `dist.releases/` and the sysimage into `build/next/`, and runs
 `make check-sysimage` on the new sysimage. Only when all of that passes does it
 swap both in, and it stops at the first step that fails. It takes about 5–10
 min. The frontend goes next to `HIMALAYA_FRONTEND_DIST` when `.env` sets it.
+If it stops at `npm ci` with `EBADENGINE`, the server's Node is too old: install
+Node 24 LTS (24.15+) and run `make deploy` again.
 
 `make deploy` never uses sudo and never restarts the server. When it finishes it
 prints the command to run yourself:

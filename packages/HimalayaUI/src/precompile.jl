@@ -207,7 +207,9 @@ function _save_module_state()
      models = lock(() -> copy(PEAK_MODEL_CACHE), PEAK_MODEL_CACHE_LOCK),
      hashes = lock(() -> (copy(_PEAK_SET_HASH_CACHE), copy(_PEAK_SET_HASH_CACHE_ORDER)), _PEAK_SET_HASH_CACHE_LOCK),
      cache_bytes = lock(() -> copy(_CACHE_BYTES), _IMAGE_CACHE_LOCK),
-     prp = lock(() -> copy(PRP_DETAILS), PRP_DETAILS_LOCK))
+     prp = lock(() -> copy(PRP_DETAILS), PRP_DETAILS_LOCK),
+     prewarms = lock(() -> copy(THUMB_PREWARMS), _THUMB_PREWARMS_LOCK),
+     ingest_locks = lock(() -> copy(INGEST_LOCKS), INGEST_LOCKS_MU))
 end
 
 function _restore_module_state!(saved)
@@ -223,6 +225,8 @@ function _restore_module_state!(saved)
     end
     lock(() -> (empty!(_CACHE_BYTES); merge!(_CACHE_BYTES, saved.cache_bytes)), _IMAGE_CACHE_LOCK)
     lock(() -> (empty!(PRP_DETAILS); merge!(PRP_DETAILS, saved.prp)), PRP_DETAILS_LOCK)
+    lock(() -> (empty!(THUMB_PREWARMS); merge!(THUMB_PREWARMS, saved.prewarms)), _THUMB_PREWARMS_LOCK)
+    lock(() -> (empty!(INGEST_LOCKS); merge!(INGEST_LOCKS, saved.ingest_locks)), INGEST_LOCKS_MU)
     nothing
 end
 
@@ -238,6 +242,7 @@ function run_route_workload(dir::AbstractString; record = nothing)
     _workload_frame(image)
     prp = joinpath(data_dir, "frame.prp")
     _workload_prp(prp)
+    beamtime = _workload_beamtime_tree(joinpath(dir, "beamtime"))
     saved = _save_module_state()
     db = open_db(joinpath(dir, "himalaya.db"))
     try
@@ -267,6 +272,7 @@ function run_route_workload(dir::AbstractString; record = nothing)
         inproc = _recording(_workload_inproc, record)
         _workload_call(inproc, "POST", "/api/users", Dict(:username => "precompile"))
         _workload_requests(inproc, experiment, sample, other, exposure, mixed, sibling)
+        _workload_autosampler_requests(inproc, beamtime)
         _workload_peak_model!(db, experiment, sample, image, analysis_dir)
         _gc_sweep(db, 3600)
         _boot_background_work(db, false)

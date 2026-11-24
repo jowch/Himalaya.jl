@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { UsageError } from "./args.mjs";
+import { capillaryDir } from "./demo.mjs";
 
 const SUFFIX = "_tot.dat";
 
@@ -23,7 +24,7 @@ export function deliverLate(cfg) {
   if (!files.length) {
     throw new UsageError(`no held traces in ${lateDir(cfg)}`, "generate a demo with one: `bin/verify seed --reset --late-trace`");
   }
-  const tot = path.join(cfg.demoDir, "analysis", "automatic_analysis", "tot_files");
+  const tot = path.join(capillaryDir(cfg), "analysis", "automatic_analysis", "tot_files");
   const now = new Date();
   for (const f of files) {
     const dst = path.join(tot, f);
