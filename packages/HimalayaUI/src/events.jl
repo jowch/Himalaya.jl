@@ -481,7 +481,7 @@ function update_view_for_event!(db, kind, entity_id, payload, event_id)
                 DBInterface.execute(db,
                     """INSERT INTO sample_subtractions (sample_id, ref_sample_id) VALUES (?, ?)
                        ON CONFLICT(sample_id) DO UPDATE SET ref_sample_id = excluded.ref_sample_id""",
-                    [sid, Int(sub)])
+                    [sid, sub == "none" ? missing : Int(sub)])
             end
         end
         return nothing

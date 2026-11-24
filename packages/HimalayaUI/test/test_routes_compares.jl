@@ -214,7 +214,7 @@ _stored(db, sid) = [(r.ref_sample_id,) for r in Tables.rowtable(DBInterface.exec
 
     @testset "an event log from before none existed replays the same, and the new states replay too" begin
         (db, exp_id, ((b1, s1, s2, b2),)) = _seed_autosampler(run)
-        (_, (a, b)) = (nothing, _seed_compare_samples(db, 2)[2])
+        (a, b) = _seed_compare_samples(db, 2)[2]
         with_inproc_routes(db) do call
             _patch(call, a; add=[b], subtraction=b)
             call("PATCH", "/api/samples/$a/compares"; headers=_compare_headers(), body=_null_subtraction())
@@ -230,7 +230,7 @@ _stored(db, sid) = [(r.ref_sample_id,) for r in Tables.rowtable(DBInterface.exec
         for s in (a, s1, s2)
             HimalayaUI.rebuild_views_from_log!(db, s; entity_type = "sample")
         end
-        @test q("SELECT sample_id, ref_sample_id FROM sample_subtractions ORDER BY sample_id") == live
+        @test isequal(q("SELECT sample_id, ref_sample_id FROM sample_subtractions ORDER BY sample_id"), live)
     end
 end
 
