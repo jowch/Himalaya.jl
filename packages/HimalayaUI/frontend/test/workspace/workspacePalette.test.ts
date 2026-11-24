@@ -313,4 +313,15 @@ describe("workspacePalette", () => {
     const found = rootRows(groups, pages, "lipid").flatMap((r) => (r.kind === "item" ? [r.item.label] : []));
     expect(found.indexOf("Go to lipid_B")).toBeLessThan(found.indexOf("Go to lipid_A"));
   });
+
+  it("offers selecting the shown image only when it can be selected, named by whether it is selected", () => {
+    const toggle = vi.fn();
+    const item = (over: Partial<WorkspacePaletteInput>) => workspacePalette(input(over)).groups[0]!.items.find((i) => i.id === "select-image");
+    expect(item({})).toBeUndefined();
+    const off = item({ image: { selected: false, toggle } });
+    expect(off).toMatchObject({ label: "Select this image to analyze", shortcut: "Enter" });
+    off!.run!();
+    expect(toggle).toHaveBeenCalledTimes(1);
+    expect(item({ image: { selected: true, toggle } })?.label).toBe("Take this image out of the selection");
+  });
 });

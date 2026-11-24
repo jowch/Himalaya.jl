@@ -162,8 +162,14 @@ step 13-bridge-selection log bash -c '
     bin/verify click --role checkbox --name "Analyze image $n of $name" > "$out/13-selection-tick-$n.json" || { echo "no checkbox for image $n of $name in sample $a strip"; exit 1; }
   done
   [[ $(selected $b) == "$before" ]] || { echo "ticking images $positions of $name again left [$(selected $b)], not [$before]"; exit 1; }
+  first=${positions%% *}
+  bin/verify click --role button --name "Image $first of $name" > "$out/13-selection-view.json" || { echo "no tile for image $first of $name"; exit 1; }
+  bin/verify press Enter > "$out/13-selection-enter-off.json"
+  [[ $(selected $b) != "$before" ]] || { echo "Enter on image $first of $name left [$before] selected"; exit 1; }
+  bin/verify press Enter > "$out/13-selection-enter-on.json"
+  [[ $(selected $b) == "$before" ]] || { echo "a second Enter on image $first of $name left [$(selected $b)], not [$before]"; exit 1; }
   bin/verify check-truth > "$out/13-selection-truth.json" || { echo "check-truth failed after reticking $name"; exit 1; }
-  echo "from sample $a: Select none of $name emptied [$before] and kept its call $called; ticking images $positions brought back [$before]; sample $a stayed [$own]"' _ "$OUT"
+  echo "from sample $a: Select none of $name emptied [$before] and kept its call $called; ticking images $positions brought back [$before]; Enter on image $first took it out and put it back; sample $a stayed [$own]"' _ "$OUT"
 step 14-call-lost-in-place log bash -c '
   set -e
   out=$1 help=$2 label=$3
