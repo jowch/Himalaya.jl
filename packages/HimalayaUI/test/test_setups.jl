@@ -246,4 +246,9 @@ end
     write(joinpath(other, "integ.mpp"), "-i yes i2 5\n")
     @test HimalayaUI.read_trace_normalisations!(db) == 1
     @test isequal(stored()[sid2], ("i2", 5.0))
+
+    DBInterface.execute(db, "UPDATE setups SET analysis_dir = ? WHERE id = ?",
+        [joinpath(root, "unmounted"), sid2])
+    @test HimalayaUI.read_trace_normalisations!(db) == 0
+    @test isequal(stored()[sid2], ("i2", 5.0))
 end

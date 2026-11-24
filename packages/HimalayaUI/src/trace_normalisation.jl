@@ -55,6 +55,7 @@ function read_trace_normalisations!(db::SQLite.DB; experiment_id::Union{Integer,
     rows = sqlrows(DBInterface.execute(db, sql, experiment_id === nothing ? [] : [Int(experiment_id)]))
     changed = Tuple{Int,NamedTuple}[]
     for r in rows
+        isdir(String(r.analysis_dir)) || continue
         root = ismissing(r.path) || isempty(String(r.path)) ? String(r.root_dir) : String(r.path)
         n = trace_normalisation(String(r.analysis_dir); within = root)
         isequal(coalesce(r.trace_normalisation, nothing), n.by) &&

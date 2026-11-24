@@ -299,7 +299,7 @@ runs once per included setup (`_scan_setup!`), reading `data_dir`,
    searching no higher than the experiment's own folder
    (`setups.trace_normalisation`: `i2`, `i1`, `none` or `unknown`). It is re-read with the
    monitors on every scan and after new setups are added, and a changed `integ.mpp`
-   updates the stored value.
+   updates the stored value. An unreachable analysis folder keeps the stored value.
    `backfill_monitors!` reads them from the stored `prp_path` of every exposure
    still marked `monitors_read = 0`, on every scan request and at the start of
    every pass, so a finished beamtime ingested before the monitors
