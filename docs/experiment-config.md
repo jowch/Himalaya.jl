@@ -308,9 +308,15 @@ all of them. An `autosampler` sample keeps the trace plot (zoom, plot view,
 comparisons, subtraction), the image strip with Drop and Restore, labels and
 bridges, and has no peak editing, no Assignment or Indexing section, no
 call keys or palette entries, no image selection, and no review state. It has
-no unreviewed mark or call in the sample list, is not counted in the header's
-"k of N reviewed" or on the home card (`review_progress`), and `Z` and the
-landing sample skip it. When no sample in the experiment has a review state,
+no unreviewed mark or call in the sample list (an analysis-gap mark such as
+"All dropped" still shows, without the word "Unreviewed"), is not counted in
+the header's "k of N reviewed" or on the home card (`review_progress`), and `Z`,
+prefetching and the landing sample skip it. The home ribbon draws its span in
+a neutral shade and its tooltip says nothing about review (the timeline's third
+value is `2`, against `1` reviewed and `0` not). Selecting images is refused for
+it: `PUT /api/samples/:id/selection` answers 422. The controls follow the
+sample that owns each image, so a bridged capillary mate keeps its selection
+controls beside an autosampler sample. When no sample in the experiment has a review state,
 the header shows no progress and the card shows no review count.
 
 **Settling a setup.** At the start of every `_scan_setup!`:

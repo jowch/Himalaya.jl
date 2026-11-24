@@ -32,10 +32,10 @@ const ANALYSIS_GAP = {
   none_selected: { mark: "None selected", why: "No image is selected, so nothing is analyzed.", label: "Unreviewed. No image is selected, so nothing is analyzed." },
 } as const;
 
-function GapMark({ gap }: { gap: (typeof ANALYSIS_GAP)[keyof typeof ANALYSIS_GAP] }): JSX.Element {
+function GapMark({ gap, reviewable }: { gap: (typeof ANALYSIS_GAP)[keyof typeof ANALYSIS_GAP]; reviewable: boolean }): JSX.Element {
   return (
     <Tooltip content={gap.why}>
-      <span data-testid="workspace-status" role="img" aria-label={gap.label} className="text-xs text-ink-faint">{gap.mark}</span>
+      <span data-testid="workspace-status" role="img" aria-label={reviewable ? gap.label : gap.why} className="text-xs text-ink-faint">{gap.mark}</span>
     </Tooltip>
   );
 }
@@ -44,7 +44,7 @@ function StatusMark({ s, reviewable }: { s: CorpusSample; reviewable: boolean })
   const st = sampleStatus(s);
   if (!reviewable) {
     const gap = s.analysis_gap ? ANALYSIS_GAP[s.analysis_gap] : null;
-    return gap ? <GapMark gap={gap} /> : null;
+    return gap ? <GapMark gap={gap} reviewable={false} /> : null;
   }
   if (st.kind === "phase") {
     const name = st.phases.join(" + ");
@@ -57,7 +57,7 @@ function StatusMark({ s, reviewable }: { s: CorpusSample; reviewable: boolean })
   }
   if (st.kind === "form_factor") return <span data-testid="workspace-status" className="text-xs text-ink-faint">Form factor</span>;
   const gap = s.analysis_gap ? ANALYSIS_GAP[s.analysis_gap] : null;
-  if (gap) return <GapMark gap={gap} />;
+  if (gap) return <GapMark gap={gap} reviewable />;
   return (
     <Tooltip content="Unreviewed">
       <span data-testid="workspace-status" role="img" aria-label="Unreviewed" className="text-xs text-ink-faint">○</span>

@@ -4083,7 +4083,7 @@ describe("WorkspacePage modules by setup mode", () => {
       expect(checkboxes().every((l) => / of /.test(l))).toBe(true);
       fireEvent.click(mateTile());
       fireEvent.keyDown(window, { key: "Enter" });
-      expect(calls.filter((c) => c.hook === "op:setSelection").map((c) => c.arg[0])).toEqual([CAPILLARY]);
+      expect(calls.filter((c) => c.hook === "op:setSelection").map((c) => (c.arg as number[])[0])).toEqual([CAPILLARY]);
     });
 
     it("gives an autosampler mate's image no selection control while the capillary sample is open, and Enter on it does nothing", () => {

@@ -55,10 +55,13 @@ function collection_timeline(db::SQLite.DB, exp_id::Integer)
         a, b = get(spans, im.sample_id, (im.starts, im.ends))
         spans[im.sample_id] = (min(a, im.starts), max(b, im.ends))
     end
-    reviewed = reviewed_samples(db, collect(keys(spans)))
+    ids = collect(keys(spans))
+    reviewed = reviewed_samples(db, ids)
+    reviewable = Set(reviewable_sample_ids(db, exp_id))
+    review_state(sid) = sid ∉ reviewable ? 2 : Int(sid in reviewed)
     ordered = sort(collect(spans); by = kv -> (kv[2][1], kv[1]))
     (start = Dates.format(origin, _TIMELINE_FORMAT),
-     samples = [[_seconds_between(origin, a), _seconds_between(origin, b), Int(sid in reviewed)]
+     samples = [[_seconds_between(origin, a), _seconds_between(origin, b), review_state(sid)]
                 for (sid, (a, b)) in ordered],
      beam_off = sort([_seconds_between(origin, im.ends) for im in images if im.beam_off]))
 end

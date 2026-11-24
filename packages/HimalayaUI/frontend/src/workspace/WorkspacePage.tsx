@@ -363,6 +363,7 @@ export function WorkspacePage(): JSX.Element {
     currentId: sample?.id,
     exposures: exposureList,
     shownId: exposure?.id,
+    reviewable,
     settled: [trace, peaks, indices, assignment].every((q) => q.fetchStatus === "idle"),
   });
   const candidates = useMemo(() => rankCandidates(indices.data), [indices.data]);
@@ -635,7 +636,7 @@ export function WorkspacePage(): JSX.Element {
   useEffect(() => { anchors.current = new Map(); }, [sampleId]);
   const groupSelections = useMemo(() => {
     if (sampleId === undefined) return new Map<number, ExposureSelection>();
-    return new Map(groups.map((g) => {
+    return new Map(groups.filter((g) => modulesOf(inExperiment.find((x) => x.id === g.sampleId) ?? sample!).imageSelection).map((g) => {
       const owner = g.sampleId;
       const ownerName = (owner === sampleId ? sample?.name : inExperiment.find((x) => x.id === owner)?.name) ?? "this sample";
       const kept = keptExposures(g.exposures).map((e) => e.id);
@@ -667,10 +668,10 @@ export function WorkspacePage(): JSX.Element {
       };
       return [owner, selection] as const;
     }));
-  }, [groups, sampleId, sample?.name, inExperiment, ops, history, frameName]);
+  }, [groups, sampleId, sample, inExperiment, ops, history, frameName, modulesOf]);
 
   const tileSelection = tile && username ? groupSelections.get(tile.sample_id) : undefined;
-  const tileSelectable = modules.imageSelection && tile !== undefined && (tileSelection?.selectableIds.has(tile.id) ?? false);
+  const tileSelectable = tile !== undefined && (tileSelection?.selectableIds.has(tile.id) ?? false);
   const tileSelected = tile !== undefined && (tileSelection?.selectedIds.has(tile.id) ?? false);
   const toggleTileSelection = useCallback(() => {
     if (tile && tileSelectable) tileSelection?.onToggle(tile.id);
@@ -904,8 +905,9 @@ export function WorkspacePage(): JSX.Element {
   );
   const unsettledMate = useMemo(() => {
     if (!sample) return undefined;
-    return bridged.map((id) => samples.find((s) => s.id === id)).find((m) => m !== undefined && callStatesSplit(sample, m));
-  }, [sample, samples, bridged]);
+    if (!modules.calls) return undefined;
+    return bridged.map((id) => samples.find((s) => s.id === id)).find((m) => m !== undefined && modulesOf(m).calls && callStatesSplit(sample, m));
+  }, [sample, samples, bridged, modules.calls, modulesOf]);
   const [paletteStart, setPaletteStart] = useState<PaletteForm | undefined>(undefined);
   const settlePrompted = useRef(new Set<number>());
   useEffect(() => {
@@ -1606,7 +1608,7 @@ export function WorkspacePage(): JSX.Element {
               </PlotCard>
             </div>
             <MainSection title="Images" hint={keptHint}>
-              <ExposureStrip groups={groups.map((g) => ({ key: g.sampleId, title: g.title, exposures: g.exposures, selection: username && modules.imageSelection ? groupSelections.get(g.sampleId) : undefined }))} currentId={tile?.id} onPick={setExposureId} onToggleDrop={toggleDrop} warningOf={beamOffWarning} />
+              <ExposureStrip groups={groups.map((g) => ({ key: g.sampleId, title: g.title, exposures: g.exposures, selection: username ? groupSelections.get(g.sampleId) : undefined }))} currentId={tile?.id} onPick={setExposureId} onToggleDrop={toggleDrop} warningOf={beamOffWarning} />
             </MainSection>
           </>
         ) : (

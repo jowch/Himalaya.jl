@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { MouseEvent, ReactNode } from "react";
 import type { CollectionTimeline, ReviewProgress } from "../api";
-import { clockTime, dayAndTime, describeRibbon, duration, reviewSummary, ribbonAt, ribbonLayout, toReview } from "../lib/collectionRibbon";
+import { clockTime, dayAndTime, describeRibbon, duration, reviewLine, reviewSummary, ribbonAt, ribbonLayout, toReview } from "../lib/collectionRibbon";
 import type { RibbonPoint } from "../lib/collectionRibbon";
 import { Tooltip } from "./Tooltip";
 
@@ -28,7 +28,7 @@ function pointCopy(tl: CollectionTimeline, p: RibbonPoint): ReactNode {
   return (
     <span className="flex flex-col">
       <span>{when}</span>
-      <span>{p.reviewed ? "Reviewed" : "Not reviewed yet"}</span>
+      {reviewLine(p) && <span>{reviewLine(p)}</span>}
       {p.beamOff > 0 && <span className="text-warning">{plural(p.beamOff, "image")} with the beam off</span>}
     </span>
   );
@@ -88,7 +88,8 @@ export function CollectionRibbon({ timeline, review: progress, className }: Coll
             <rect
               key={i}
               data-reviewed={s.reviewed}
-              className={s.reviewed ? "fill-success" : "fill-hair-strong"}
+              data-reviewable={s.reviewable}
+              className={s.reviewed ? "fill-success" : s.reviewable ? "fill-hair-strong" : "fill-hair"}
               x={x(s.from)}
               y={1}
               width={Math.max(x(s.to) - x(s.from), MIN_SPAN)}

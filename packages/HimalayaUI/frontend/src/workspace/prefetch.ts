@@ -150,7 +150,11 @@ export function nearestFirst(ids: readonly number[], shownId: number | undefined
     .map((x) => x.id);
 }
 
-export function neighbourSamples(samples: readonly CorpusSample[], currentId: number | undefined): CorpusSample[] {
+export function neighbourSamples(
+  samples: readonly CorpusSample[],
+  currentId: number | undefined,
+  reviewable?: (s: CorpusSample) => boolean,
+): CorpusSample[] {
   const at = samples.findIndex((s) => s.id === currentId);
   if (at < 0) return [];
   const ids = new Set<number>();
@@ -158,7 +162,7 @@ export function neighbourSamples(samples: readonly CorpusSample[], currentId: nu
   const prev = samples[at - 1];
   if (next) ids.add(next.id);
   if (prev) ids.add(prev.id);
-  const unreviewed = nextUnreviewed(samples, currentId, 1);
+  const unreviewed = nextUnreviewed(samples, currentId, 1, reviewable);
   if (unreviewed !== undefined) ids.add(unreviewed);
   return samples.filter((s) => ids.has(s.id));
 }
@@ -180,11 +184,12 @@ export interface PrefetchTarget {
   exposures: readonly Exposure[];
   shownId: number | undefined;
   settled: boolean;
+  reviewable?: (s: CorpusSample) => boolean;
 }
 
-export function usePrefetchNeighbours({ samples, currentId, exposures, shownId, settled }: PrefetchTarget): void {
+export function usePrefetchNeighbours({ samples, currentId, exposures, shownId, settled, reviewable }: PrefetchTarget): void {
   const qc = useQueryClient();
-  const neighbourKey = encodeNeighbours(neighbourSamples(samples, currentId));
+  const neighbourKey = encodeNeighbours(neighbourSamples(samples, currentId, reviewable));
   const framesKey = exposures.flatMap((e) => imageUrl(e, false) ?? []).join("\n");
   const exposureIds = exposures.map((e) => e.id).join(",");
   const shown = exposures.find((e) => e.id === shownId);
