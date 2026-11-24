@@ -7,7 +7,7 @@ const matched = Object.keys(SCALE_REASONS) as Exclude<CompareScale["source"], "n
 describe("explainScale", () => {
   it("explains why a pair divided by I₂ in the same cell needs no rescaling", () => {
     expect(explainScale({ scale: 1, source: "normalised" })).toBe(
-      "Both traces are divided by I₂, the beam transmitted through the sample. Every sample fills the same autosampler cell, so the path length is equal and the traces are already on one scale.",
+      "Both traces are divided by I₂, the beam transmitted through the sample. Every sample fills the same autosampler cell, so the beam crosses the same thickness of sample and the traces are already on one scale.",
     );
   });
 
@@ -19,7 +19,7 @@ describe("explainScale", () => {
 
   it("explains the physics of a high-q match before the factor", () => {
     expect(explainScale({ scale: 1.1, source: "capillary" })).toBe(
-      "Scattered intensity grows with path length, and every capillary has its own. I₂ corrects for transmission but not for thickness. This trace is scaled ×1.10 to match at high q, where the solvent dominates.",
+      "Scattered intensity grows with how much material the beam crosses: the path length and how evenly the sample fills it. Both change from capillary to capillary, and I₂ corrects only for transmission. This trace is scaled ×1.10 to match at high q, where the solvent dominates.",
     );
   });
 

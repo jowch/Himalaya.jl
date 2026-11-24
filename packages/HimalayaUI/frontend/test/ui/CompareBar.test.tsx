@@ -80,7 +80,7 @@ describe("CompareBar scale tooltip", () => {
   });
 
   it("tells a capillary setup apart from one whose type is not set yet", () => {
-    for (const [source, note] of [["capillary", "every capillary has its own"], ["unknown_mode", "this setup isn't marked as one"]] as const) {
+    for (const [source, note] of [["capillary", "Both change from capillary to capillary"], ["unknown_mode", "this setup isn't marked as one"]] as const) {
       resetTooltipWarmth();
       const { unmount } = render(<CompareBar chips={[chip({ scale: { scale: 1, source } })]} subtractId={undefined} hidden={false} modKey="⌘" onToggleShown={() => {}} onSubtract={() => {}} onRemove={() => {}} onAdd={() => {}} />);
       fireEvent.mouseEnter(document.querySelector("[data-scale-source]") as HTMLElement);
