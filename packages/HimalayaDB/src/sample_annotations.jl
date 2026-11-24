@@ -53,8 +53,10 @@ sample_labels(db::SQLite.DB, sample_id::Integer) = Tables.rowtable(DBInterface.e
 """
     subtraction_background(db, sample_id) -> Union{Int, Nothing}
 
-The id of the sample chosen as this sample's subtraction background (usually a
-buffer), or `nothing` when none is set.
+The id of the sample a user chose as this sample's subtraction background
+(usually a buffer), or `nothing` when none is chosen or the user turned
+subtraction off. The app's default for an autosampler sample (the first buffer
+of its run) is computed, not stored, so it is not returned here.
 """
 function subtraction_background(db::SQLite.DB, sample_id::Integer)
     rows = Tables.rowtable(DBInterface.execute(db, """
@@ -62,7 +64,7 @@ function subtraction_background(db::SQLite.DB, sample_id::Integer)
           FROM sample_subtractions t
          WHERE t.sample_id = ?""",
         [Int(sample_id)]))
-    isempty(rows) ? nothing : Int(rows[1].ref_sample_id)
+    isempty(rows) || ismissing(rows[1].ref_sample_id) ? nothing : Int(rows[1].ref_sample_id)
 end
 
 """

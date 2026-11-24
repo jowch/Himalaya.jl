@@ -15,7 +15,7 @@ exps = exposures(db; sample=smp.id)  # each row has setup_id; join it to `sts` f
 call = phase_call(db, smp.id)        # the sample's phase call, as the Call list shows it:
                                      # (; state, phase, call_phases, members)
 sample_labels(db, smp.id)            # confirmed and suggested labels (Buffer, Calibrant, …)
-subtraction_background(db, smp.id)   # the background sample's id, or nothing
+subtraction_background(db, smp.id)   # the background sample the user chose, or nothing (autosampler defaults are not stored)
 bridged_samples(db, smp.id)          # samples a user marked as the same specimen
 
 peaks = curated_peaks(db, exps[1].id)   # auto ∪ adds − excludes; excluded peaks
