@@ -3,6 +3,7 @@ import type { CorpusExperiment, CorpusSampleRow } from "../hooks/useCorpusPalett
 import { joinHints } from "../lib/sample/setupNames";
 import { cleanLabel, labelColorIsFixed, sameLabel, USER_LABEL_COLORS } from "../lib/labels";
 import type { PlotView, PlotViewOption } from "./plotView";
+import { SAMPLE_SORTS, SORT_WORDS, type SampleSort } from "./sampleSort";
 import { latticeParam } from "./indexing";
 import type { AppTheme } from "../lib/theme";
 import { LABEL_SWATCH } from "../ui/labelSwatches";
@@ -62,6 +63,7 @@ export interface WorkspacePaletteInput extends AppActions {
   formFactor: { on: boolean; toggle: () => void };
   image?: { selected: boolean; toggle: () => void };
   views: { options: readonly PlotViewOption[]; current: PlotView; set: (v: PlotView) => void };
+  sort: { current: SampleSort; set: (s: SampleSort) => void };
   resetZoom: () => void;
   comparisons: { shown: boolean; toggle: () => void };
   difference?: { on: boolean; name: string; toggle: () => void };
@@ -270,6 +272,11 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
       deep: true,
       items: p.views.options.map((o) => ({ id: `view-${o.view}`, label: o.name, hint: o.view === p.views.current ? "Current" : undefined, run: () => p.views.set(o.view) })),
     },
+    sort: {
+      title: "Sort samples by",
+      arg: "Order",
+      items: SAMPLE_SORTS.map((o) => ({ id: `sort-${o.sort}`, label: o.name, hint: o.sort === p.sort.current ? "Current" : o.hint, run: () => p.sort.set(o.sort) })),
+    },
     theme: themePage(p.theme),
   };
   if (p.compare.subtractable.length > 0) {
@@ -396,6 +403,7 @@ export function workspacePalette(p: WorkspacePaletteInput): { groups: PaletteGro
     ...(p.difference ? [{ id: "difference", label: p.difference.on ? "Show the raw trace" : `Show minus ${p.difference.name}`, run: p.difference.toggle }] : []),
   ];
   const experiment: PaletteItem[] = [
+    { id: "sort", label: "Sort samples by…", hint: SAMPLE_SORTS.find((o) => o.sort === p.sort.current)?.name, keywords: SORT_WORDS, page: "sort" },
     ...(pages.settings ? [{ id: "settings", label: "Settings", hint: p.settings && p.settings.setups.length > 0 ? "Name, description, setups" : "Name, description", page: "settings" }] : []),
     ...(p.rescan ? [{ id: "rescan", label: "Rescan the data folder", run: p.rescan }] : []),
     ...(p.problems ? [{ id: "problems", label: "Show ingest problems", run: p.problems }] : []),
