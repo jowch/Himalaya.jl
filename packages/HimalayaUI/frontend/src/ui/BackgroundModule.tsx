@@ -36,16 +36,16 @@ const SCALE_LABELS: Record<CompareScale["source"], string | undefined> = {
   normalised: undefined,
   monitor: "scaled",
   matched: MATCHED_AT_HIGH_Q,
-  unknown_normalisation: MATCHED_AT_HIGH_Q,
+  unknown_normalisation: "no integ settings, matched",
   unknown_mode: MATCHED_AT_HIGH_Q,
   capillary: MATCHED_AT_HIGH_Q,
   other_setup: "other setup, matched",
   beam_off: "beam off, matched",
-  i2_collapsed: "I₂ dropped, matched",
+  i2_collapsed: "I₂ low, matched",
 };
 
 function offLabel(view: BackgroundView): string | undefined {
-  if (view.kind === "buffer") return "Buffer";
+  if (view.kind === "buffer") return "This is a buffer";
   if (view.kind === "off") return view.reason === "chosen" ? "None" : "No buffer in this run";
   return undefined;
 }
@@ -55,7 +55,7 @@ function nameLine(view: BackgroundView): ReactNode {
     return (
       <>
         <Tooltip content={view.name} overflowOnly><span className="min-w-0 truncate text-body text-ink">{view.name}</span></Tooltip>
-        <span className="shrink-0 text-caption text-ink-faint">{view.source === "default" ? "run buffer" : "chosen"}</span>
+        <span className="shrink-0 text-caption text-ink-faint">{view.source === "default" ? "run's buffer" : "chosen"}</span>
       </>
     );
   }
@@ -84,7 +84,11 @@ export function BackgroundModule({ view, editable, picker, onChange, onNone, onD
   return (
     <Section title="Background" className="relative shrink-0">
       <div className="flex h-6 items-baseline justify-between gap-2" data-testid="background-name">{nameLine(view)}</div>
-      <p className={NOTE} data-testid="background-note" {...(note?.description ? { "aria-description": note.description } : {})}>{note?.text}</p>
+      {note?.description ? (
+        <Tooltip content={note.description}><p className={NOTE} data-testid="background-note">{note.text}</p></Tooltip>
+      ) : (
+        <p className={NOTE} data-testid="background-note">{note?.text}</p>
+      )}
       <div className="mt-1 flex h-7 items-center gap-1.5 overflow-hidden" data-testid="background-controls">
         {hasControls && (
           <>
@@ -95,7 +99,7 @@ export function BackgroundModule({ view, editable, picker, onChange, onNone, onD
               <button type="button" className={ACTION} disabled={idle} onClick={onNone}>None</button>
             )}
             {offerDefault && (
-              <Tooltip content="Use the run's buffer as the background"><button type="button" className={ACTION} disabled={idle} onClick={onDefault}>Run buffer</button></Tooltip>
+              <Tooltip content="Use the run's buffer as the background."><button type="button" className={ACTION} disabled={idle} onClick={onDefault}>Run's buffer</button></Tooltip>
             )}
           </>
         )}

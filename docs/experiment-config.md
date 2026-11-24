@@ -367,8 +367,8 @@ setups are never read, and a stored value is never overwritten. `backfill_frame_
 fills unset rows at the end of every `scan_and_group!`, on every
 `POST /api/experiments/:id/scan` and once at boot, so rows ingested earlier
 are filled without new files and a log that appears later is picked up on the
-next scan. The Image panel then reads `9 of 10 images` (or
-`10 images` when none were rejected) and an exposure of `9 × 1.0 s`; with
+next scan. The Image panel then reads `9 of 10 averaged` (or
+`10 averaged` when none were rejected, `1 image` for one) and an exposure of `9 × 1.0 s`; with
 NULL counts it reads `Single` and `1.0 s` as before.
 
 **Settling a setup.** At the start of every `_scan_setup!`:
