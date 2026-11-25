@@ -1,4 +1,5 @@
 import { test, expect } from "./fixtures";
+import { expectButtonRowsAligned } from "./buttonRows";
 
 const FIRST_BUFFER = "wat 01A (B0101)";
 const SAMPLE = "wat 01B (S0102)";
@@ -105,6 +106,7 @@ test("an autosampler sample opens in Minus on its run's buffer, and the Backgrou
   await expect(minus(FIRST_BUFFER)).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("workspace-candidates")).toHaveCount(0);
   await expect(page.getByTestId("workspace-custom-index")).toHaveCount(0);
+  await expectButtonRowsAligned(page, "Change and None");
 
   await page.getByRole("button", { name: /^Change/ }).click();
   await page.getByRole("dialog", { name: "Choose the background" }).locator(`[data-sample-id='52']`).click();
@@ -118,6 +120,7 @@ test("an autosampler sample opens in Minus on its run's buffer, and the Backgrou
   await expect(name).toHaveText("None");
   await expect(difference).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Run's buffer" })).toBeVisible();
+  await expectButtonRowsAligned(page, "Change and Run's buffer");
 
   await page.getByRole("button", { name: "Run's buffer" }).click();
   await expect(name).toContainText(FIRST_BUFFER);

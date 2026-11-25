@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { CompareScale } from "../workspace/compare";
+import { Button } from "./Button";
 import { Kbd } from "./Kbd";
 import { Section } from "./Section";
 import { Term } from "./Term";
@@ -29,7 +30,6 @@ interface Props {
 }
 
 const NOTE = "h-5 truncate whitespace-nowrap text-caption text-ink-soft";
-const ACTION = "shrink-0 whitespace-nowrap rounded-sm border border-hair-strong bg-plate px-2 py-0.5 text-caption text-ink hover:bg-paper-sunk disabled:text-ink-faint disabled:hover:bg-plate";
 
 const MATCHED_AT_HIGH_Q = "matched at high q";
 
@@ -91,14 +91,14 @@ export function BackgroundModule({ view, editable, picker, onChange, onNone, onD
       <div className="mt-1 flex h-7 items-center gap-1.5 overflow-hidden" data-testid="background-controls">
         {hasControls && (
           <>
-            <button type="button" className={ACTION} disabled={idle} onClick={onChange}>
+            <Button type="button" variant="outline" size="sm" className="shrink-0" disabled={idle} onClick={onChange}>
               Change <Kbd>B</Kbd>
-            </button>
+            </Button>
             {canTurnOff && (
-              <button type="button" className={ACTION} disabled={idle} onClick={onNone}>None</button>
+              <Button type="button" variant="outline" size="sm" className="shrink-0" disabled={idle} onClick={onNone}>None</Button>
             )}
             {offerDefault && (
-              <Tooltip content="Use the run's buffer as the background."><button type="button" className={ACTION} disabled={idle} onClick={onDefault}>Run's buffer</button></Tooltip>
+              <Tooltip content="Use the run's buffer as the background."><Button type="button" variant="outline" size="sm" className="shrink-0" disabled={idle} onClick={onDefault}>Run's buffer</Button></Tooltip>
             )}
           </>
         )}

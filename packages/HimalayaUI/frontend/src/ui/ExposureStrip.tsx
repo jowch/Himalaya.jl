@@ -50,8 +50,8 @@ function SelectionTools({ selection, of }: { selection: ExposureSelection; of: s
   return (
     <div className="flex items-center gap-1.5" data-testid="exposure-selection-tools">
       <span className="mr-auto text-xs text-ink-soft" data-testid="exposure-selection-caption">{selectionCaption(selection)}</span>
-      <Button type="button" variant="outline" disabled={all} aria-label={`Select all${suffix}`} onClick={selection.onAll}>Select all</Button>
-      <Button type="button" variant="outline" disabled={selection.selectedIds.size === 0} aria-label={`Select none${suffix}`} onClick={selection.onNone}>Select none</Button>
+      <Button type="button" variant="outline" size="sm" disabled={all} aria-label={`Select all${suffix}`} onClick={selection.onAll}>Select all</Button>
+      <Button type="button" variant="outline" size="sm" disabled={selection.selectedIds.size === 0} aria-label={`Select none${suffix}`} onClick={selection.onNone}>Select none</Button>
     </div>
   );
 }

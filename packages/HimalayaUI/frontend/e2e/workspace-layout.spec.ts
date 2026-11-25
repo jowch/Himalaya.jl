@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "./fixtures";
+import { expectButtonRowsAligned } from "./buttonRows";
 import { expectDialogFitsAndScrolls } from "./dialogScroll";
 
 const LONG = "a_sample_with_a_long_descriptive_name_S24";
@@ -170,6 +171,7 @@ for (const viewport of VIEWPORTS) {
     for (const id of [41, 42, 45, 43, 44, 40]) {
       await openSample(page, id);
       expect(await above(), `layout on sample ${id}`).toEqual(first);
+      await expectButtonRowsAligned(page, `sample ${id}`);
     }
   });
 

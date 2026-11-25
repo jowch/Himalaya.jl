@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Button } from "./Button";
+import { Kbd } from "./Kbd";
 
 const meta = {
   title: "ui/Button",
@@ -31,6 +32,19 @@ export const GhostInverse: Story = {
   render: (args) => (
     <div className="bg-ink p-4 rounded-md inline-flex">
       <Button {...args} />
+    </div>
+  ),
+};
+export const SizesWithKeycap: Story = {
+  args: { variant: "outline" },
+  render: (args) => (
+    <div className="inline-flex flex-col gap-3">
+      {(["sm", "md", "lg"] as const).map((size) => (
+        <div key={size} className="inline-flex items-center gap-1.5">
+          <Button {...args} size={size}>Change <Kbd>B</Kbd></Button>
+          <Button {...args} size={size}>None</Button>
+        </div>
+      ))}
     </div>
   ),
 };

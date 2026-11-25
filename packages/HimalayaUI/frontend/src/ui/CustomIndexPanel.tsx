@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { CUSTOM_PHASES, stepSymmetry, type CustomDraft } from "../workspace/indexing";
+import { Button } from "./Button";
 import { Kbd } from "./Kbd";
 
 interface Props {
@@ -137,21 +138,16 @@ export function CustomIndexPanel({ draft, min, max, landed, total, disabled, onC
         </p>
       )}
       <div className="flex flex-col gap-1.5">
-        <button
-          type="button"
-          onClick={onAdd}
-          disabled={!canAdd}
-          className="flex w-full items-center justify-between gap-2 rounded-sm bg-accent-fill px-3 py-2 text-body font-semibold text-on-accent disabled:opacity-50"
-        >
-          <span className="min-w-0 truncate">
+        <Button type="button" variant="accent" className="w-full" onClick={onAdd} disabled={!canAdd}>
+          <span className="min-w-0 flex-1 truncate text-left">
             Add {draft.phase} {(typed ?? draft.lattice).toFixed(1)} Å
           </span>
           <Kbd>Enter</Kbd>
-        </button>
-        <button type="button" onClick={onCancel} className="flex w-full items-center justify-between gap-2 rounded-sm border border-hair bg-paper px-3 py-1.5 text-body">
-          <span>Cancel</span>
+        </Button>
+        <Button type="button" variant="outline" className="w-full" onClick={onCancel}>
+          <span className="flex-1 text-left">Cancel</span>
           <Kbd>Esc</Kbd>
-        </button>
+        </Button>
       </div>
     </div>
   );
