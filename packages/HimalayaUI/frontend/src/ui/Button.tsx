@@ -11,8 +11,8 @@ interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "tit
 export type ButtonSize = "sm" | "md" | "lg";
 const buttonSizeClass: Record<ButtonSize, string> = {
   sm: "inline-flex h-6 items-center justify-center gap-1 rounded-sm px-2 text-caption",
-  md: "inline-flex h-7 items-center justify-center gap-1.5 rounded-md px-2.5 text-meta font-semibold",
-  lg: "inline-flex h-9.5 items-center justify-center gap-2 rounded-md px-4 text-body font-semibold",
+  md: "inline-flex h-7 items-center justify-center gap-1.5 rounded-md px-2.5 text-meta",
+  lg: "inline-flex h-9.5 items-center justify-center gap-2 rounded-md px-4 text-body",
 };
 const variantClass: Record<ButtonVariant, string> = {
   solid:
@@ -52,6 +52,10 @@ const variantClass: Record<ButtonVariant, string> = {
     "bg-transparent text-paper/70 hover:text-paper border border-transparent " +
     "focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-0 focus-visible:outline-accent",
 };
+const QUIET_VARIANTS: ReadonlySet<ButtonVariant> = new Set(["outline", "dashed", "sunk"]);
+function weightClass(size: ButtonSize, variant: ButtonVariant, armed: boolean | undefined): string {
+  return size === "sm" || (QUIET_VARIANTS.has(variant) && !armed) ? "" : "font-semibold";
+}
 const armedClass =
   "bg-accent-fill border border-accent-fill text-on-accent hover:brightness-110";
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
@@ -72,7 +76,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       data-size={size}
       data-armed={armed ? "true" : undefined}
       aria-pressed={armed}
-      className={`${buttonSizeClass[size]} whitespace-nowrap transition-colors disabled:opacity-45 disabled:cursor-not-allowed ${armed ? armedClass : variantClass[variant]} ${className}`}
+      className={`${buttonSizeClass[size]} ${weightClass(size, variant, armed)} whitespace-nowrap transition-colors disabled:opacity-45 disabled:cursor-not-allowed ${armed ? armedClass : variantClass[variant]} ${className}`}
       {...props}
     >
       {children}
