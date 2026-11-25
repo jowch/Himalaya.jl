@@ -38,7 +38,7 @@ export function frameFromLabels(labels, frameOrder) {
 
 export const WORKSPACE_ROUTE = (experimentId, id) => `/experiments/${experimentId}/workspace/${id}`;
 
-async function settledGoto(page, cfg, route) {
+export async function settledGoto(page, cfg, route, heldIds = new Set()) {
   await leavePage(page);
   const tracker = armSettle(page);
   try {
@@ -49,7 +49,7 @@ async function settledGoto(page, cfg, route) {
   }
   const settle = await tracker.wait({ timeoutMs: 20000 });
   if (!settle.settled) throw new Error(`${route} did not settle within 20000 ms (busy ${settle.busy}, in flight: ${settle.inflight.join(" ")})`);
-  failedRequests(settle, route);
+  failedRequests(settle, route, heldIds);
 }
 
 export function workspaceStart(currentUrl, uiBase, experimentId, firstSampleId, { reload = false } = {}) {
@@ -65,6 +65,23 @@ export function workspaceStart(currentUrl, uiBase, experimentId, firstSampleId, 
     return { reuse: true, route: null };
   }
   return { reuse: false, route: WORKSPACE_ROUTE(experimentId, firstSampleId) };
+}
+
+const SAMPLE_ROWS = "[data-testid='workspace-samples'] [data-sample-id]";
+
+export async function waitForSampleRows(page, expected, { timeoutMs = 20000, pollMs = 100 } = {}) {
+  const until = Date.now() + timeoutMs;
+  for (;;) {
+    const count = await page.locator(SAMPLE_ROWS).count();
+    if (count >= expected || Date.now() > until) return count;
+    await page.waitForTimeout(pollMs);
+  }
+}
+
+export async function requireSampleRows(page, expected, options) {
+  const seen = await waitForSampleRows(page, expected, options);
+  if (seen < expected) throw new Error(`the workspace listed ${seen} of ${expected} samples; it had not finished loading, or the server is slow`);
+  return seen;
 }
 
 async function readWorkspaceRows(page) {
@@ -161,6 +178,7 @@ export async function readWorkspace(page, cfg, experimentId, samples, { reload =
   if ((await filter.count()) && (await filter.inputValue())) {
     await filter.fill("");
   }
+  await requireSampleRows(page, samples.length);
   const rows = await readWorkspaceRows(page);
   const texts = new Map(rows.map((r) => [r.id, r.text]));
   for (const s of samples) {

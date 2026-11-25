@@ -204,11 +204,24 @@ this setup never moves a capillary trace or `TRUTH.csv` row.
 | `note` | free text |
 
 `bin/verify check-truth` reads this file into its own `autosampler` block and leaves
-these samples out of everything else. The block gates only on ingestion: each row is
-one sample with one image whose filename is `stem`, in the autosampler setup, and no
-autosampler sample is unlisted. Frame counts, default backgrounds, the collapsed I_2
-and the form factors are in the file for a later check; `test/test_demo_autosampler.jl`
-already checks them against the ingested DB.
+these samples out of everything else. Per row it checks, from the file and not from
+reading the app back:
+
+- ingestion: one sample with one image whose filename is `stem`, in the autosampler
+  setup, and no autosampler sample is unlisted;
+- `GET /api/experiments/:id/compares`: the effective background is `default_background`
+  (the first buffer of the sample's own run, so the run without a closing buffer and the
+  repeated-label run resolve to their own), its source is `default`, and `is_buffer` matches
+  `kind`; a buffer and the calibration shot have none;
+- `frames_total` and `frames_rejected` on the exposure (empty for the calibration shot);
+- no automatic analysis: no peaks, no indices, no call, no ticked indices, no analysis error;
+- with `--ui`, the sample's workspace: the Background module reads `This is a buffer` for a
+  buffer, `<default_background>run's buffer` for a sample and `No buffer in this run` for the
+  calibration shot; a sample is drawn in Minus with its difference line and the Minus button
+  pressed; no call candidates, peak markers or custom index panel are shown.
+
+The collapsed I_2 and the form factors are in the file for a later check;
+`test/test_demo_autosampler.jl` checks them against the ingested DB.
 
 ## Cloud sessions (claude.ai/code)
 

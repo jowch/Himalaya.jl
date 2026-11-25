@@ -3,6 +3,7 @@ import path from "node:path";
 import { getJson, request } from "./http.mjs";
 import { STALE_LAYOUT_HINT, autosamplerDir, findDemoExperiment, readAutosamplerTruth, readTruth, staleDemoLayout } from "./demo.mjs";
 import { AUTOSAMPLER_MODE, collectAutosampler, compareAutosampler, setupMode } from "./autosampler.mjs";
+import { readAutosamplerViews } from "./autosampler_ui.mjs";
 import { UsageError, intFlag } from "./args.mjs";
 import { callFromText, readViews, statusFromText } from "./views.mjs";
 import { heldTraces } from "./late.mjs";
@@ -541,7 +542,7 @@ function loadTruth(cfg, flags) {
   return truth;
 }
 
-async function checkAutosampler(cfg, flags, experimentId, setups) {
+async function checkAutosampler(cfg, flags, experimentId, setups, autosamplerViews) {
   const rows = readAutosamplerTruth(cfg, flags.truth);
   const samples = await getJson(cfg.apiBase, `/api/samples?experiment_id=${experimentId}`);
   if (!rows) {
@@ -552,11 +553,18 @@ async function checkAutosampler(cfg, flags, experimentId, setups) {
       hint: "regenerate the demo with `bin/verify seed --reset`, or pass --truth <TRUTH.csv> from a folder that holds TRUTH_autosampler.csv",
     };
   }
-  const found = await collectAutosampler(cfg.apiBase, samples, setups, rows);
+  const found = await collectAutosampler(cfg.apiBase, experimentId, samples, setups, rows);
+  if (flags.ui) {
+    const kind = new Map(rows.map((r) => [r.sample, r.kind]));
+    const background = new Map(rows.map((r) => [r.sample, r.default_background]));
+    const asked = found.filter((s) => s.mode === AUTOSAMPLER_MODE).map((s) => ({ id: s.id, name: s.name, traceless: kind.get(s.name) === "calibration" && s.exposure_id !== null ? [s.exposure_id] : [], minus: kind.get(s.name) === "sample" && Boolean(background.get(s.name)) }));
+    const read = await autosamplerViews(cfg, experimentId, asked);
+    for (const s of found) if (read.has(s.id)) s.ui = read.get(s.id);
+  }
   return compareAutosampler(rows, found, { dataDir: path.join(autosamplerDir(cfg), "data") });
 }
 
-export async function checkTruth(cfg, flags, { views = readViews } = {}) {
+export async function checkTruth(cfg, flags, { views = readViews, autosamplerViews = readAutosamplerViews } = {}) {
   const gate = flags.gate ?? null;
   if (gate !== null && gate !== "invariants") throw new UsageError(`unknown --gate ${gate}`, "use --gate invariants, or leave it out to gate on TRUTH too");
   if (gate !== null && flags.strict) throw new UsageError("--gate invariants and --strict disagree", "--strict gates on TRUTH's generated phases; --gate invariants ignores TRUTH");
@@ -567,7 +575,7 @@ export async function checkTruth(cfg, flags, { views = readViews } = {}) {
   if (expect !== null && !(expect in EXPECTATIONS)) throw new UsageError(`unknown --expect ${expect}`, `use one of ${Object.keys(EXPECTATIONS).join(", ")}`);
   const setups = await experimentSetups(cfg.apiBase, experimentId);
   const app = await collectApp(cfg, experimentId, setups);
-  const autosampler = await checkAutosampler(cfg, flags, experimentId, setups);
+  const autosampler = await checkAutosampler(cfg, flags, experimentId, setups, autosamplerViews);
   const held = heldTraces(cfg);
   const heldSet = new Set(held);
   let workspaceRead = null;
