@@ -8,10 +8,11 @@ interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "tit
   armed?: boolean;
   size?: ButtonSize;
 }
-export type ButtonSize = "md" | "lg";
-const sizeClass: Record<ButtonSize, string> = {
-  md: "text-meta px-2.5 py-1",
-  lg: "text-body px-4 py-2",
+export type ButtonSize = "sm" | "md" | "lg";
+export const buttonSizeClass: Record<ButtonSize, string> = {
+  sm: "inline-flex h-6 items-center justify-center gap-1 rounded-sm px-2 text-caption",
+  md: "inline-flex h-7 items-center justify-center gap-1.5 rounded-md px-2.5 text-meta font-semibold",
+  lg: "inline-flex h-9.5 items-center justify-center gap-2 rounded-md px-4 text-body font-semibold",
 };
 const variantClass: Record<ButtonVariant, string> = {
   solid:
@@ -59,9 +60,10 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     <button
       ref={ref}
       data-variant={variant}
+      data-size={size}
       data-armed={armed ? "true" : undefined}
       aria-pressed={armed}
-      className={`${sizeClass[size]} font-semibold whitespace-nowrap rounded-md transition-colors disabled:opacity-45 disabled:cursor-not-allowed ${armed ? armedClass : variantClass[variant]} ${className}`}
+      className={`${buttonSizeClass[size]} whitespace-nowrap transition-colors disabled:opacity-45 disabled:cursor-not-allowed ${armed ? armedClass : variantClass[variant]} ${className}`}
       {...props}
     >
       {children}
