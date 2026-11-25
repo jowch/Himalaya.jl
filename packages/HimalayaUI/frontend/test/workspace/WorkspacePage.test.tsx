@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { IMAGE_INFO_TERMS } from "../../src/ui/explanations";
 import { act, render, screen, fireEvent, within, waitFor } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, useLocation } from "react-router";
 import type { CorpusSample, SampleBackground, Exposure, IndexEntry, Assignment, Peak, ProblemExposure, SampleBridge, SampleCall, SampleCallMember, SampleLabel, LabelColorEntry, LabelColor, Trace } from "../../src/api";
@@ -3182,6 +3183,14 @@ describe("WorkspacePage", () => {
     expect(text).toContain("Exposure10.0 s");
     expect(text).toContain("I₀1.433");
     expect(text).toContain("I₂7,654");
+  });
+
+  it("explains every physics row of the image info under the label the panel really shows", () => {
+    renderAt("/experiments/1/workspace/10");
+    const section = within(screen.getByRole("heading", { name: "Image" }).closest("section")!);
+    for (const [label, why] of Object.entries(IMAGE_INFO_TERMS)) {
+      expect(section.getByText(label, { selector: "[tabindex]" })).toHaveAccessibleDescription(why);
+    }
   });
 
   it("lists the shown exposure's acquisition time, flight tube, energy and detector from the .prp", () => {

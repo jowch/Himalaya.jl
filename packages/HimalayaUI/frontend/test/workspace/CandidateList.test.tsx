@@ -5,6 +5,7 @@ import type { IndexEntry } from "../../src/api";
 import { CandidateList } from "../../src/ui/CandidateList";
 import { phaseColor } from "../../src/phases";
 import type { CallRow } from "../../src/workspace/bonnetGroups";
+import { CURVATURE, NOT_FOUND, SCORE } from "../../src/ui/explanations";
 
 function candidate(id: number, phase = "Lamellar", lattice: number | null = 40 + id): IndexEntry {
   return {
@@ -165,5 +166,42 @@ describe("CandidateList", () => {
     );
     expect(screen.getByTestId("workspace-bonnet-curvature")).toHaveTextContent("κ −0.0560 nm⁻²");
     for (const member of within(screen.getByTestId("workspace-candidates")).getAllByRole("button").slice(1)) expect(member).not.toHaveTextContent("κ");
+  });
+});
+
+describe("CandidateList explained terms", () => {
+  const list = (rows: CallRow[], unsupported: ReadonlySet<number> = new Set()) =>
+    render(
+      <CandidateList rows={rows} assigned={new Set()} unsupported={unsupported} disabled={false} formFactor={false}
+        onToggle={() => {}} onToggleGroup={() => {}} onFormFactor={() => {}} onHover={() => {}} />,
+    );
+
+  it("explains the score on the row, without a second Tab stop", () => {
+    list([one(candidate(13))]);
+    const row = within(screen.getByTestId("workspace-candidates")).getByRole("button");
+    expect(screen.getByText("0.87")).not.toHaveAttribute("tabindex");
+    expect(row).toHaveAccessibleDescription(SCORE);
+  });
+
+  it("shows the score's explanation when the keyboard reaches its row", async () => {
+    list([one(candidate(13))]);
+    await userEvent.tab();
+    expect(within(screen.getByTestId("workspace-candidates")).getByRole("button")).toHaveFocus();
+    expect(screen.getByRole("tooltip")).toHaveTextContent(SCORE);
+  });
+
+  it("says Not found means no lattice of the phase fitted enough peaks to be offered", () => {
+    expect(NOT_FOUND).toBe("No lattice of this phase fits enough of the peaks in the selected images to be offered. The call belongs to the sample, so it stays, with lines drawn from the lattice it was called on.");
+  });
+
+  it("explains Not found on the row", () => {
+    const c = candidate(1);
+    list([one(c)], new Set([c.id]));
+    expect(within(screen.getByTestId("workspace-candidates")).getByRole("button")).toHaveAccessibleDescription(NOT_FOUND);
+  });
+
+  it("explains a Bonnet group's curvature on its header", () => {
+    list([{ kind: "group", members: [candidate(1, "Pn3m", 100), candidate(2, "Im3m", 128)], peaks: 6 }]);
+    expect(screen.getByTestId("workspace-bonnet-group")).toHaveAccessibleDescription(CURVATURE);
   });
 });

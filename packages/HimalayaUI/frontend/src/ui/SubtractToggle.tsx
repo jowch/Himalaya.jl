@@ -1,4 +1,6 @@
-import { Tooltip } from "./Tooltip";
+import { useId } from "react";
+import { minusExplanation, RAW } from "./explanations";
+import { Explanation, Term } from "./Term";
 
 interface Props {
   name: string;
@@ -8,18 +10,19 @@ interface Props {
 }
 
 export function SubtractToggle({ name, on, onChange, reserved = false }: Props): JSX.Element {
-  const option = (pressed: boolean, label: string, value: boolean, full = label): JSX.Element => (
-    <Tooltip content={full === label ? undefined : full}>
-      <button
-        type="button"
-        aria-label={full}
-        aria-pressed={pressed}
-        onClick={() => onChange(value)}
-        className={"rounded-sm px-2 " + (pressed ? "bg-plate text-ink shadow-sm" : "text-ink-soft hover:text-ink")}
-      >
-        {label}
-      </button>
-    </Tooltip>
+  const id = useId();
+  const option = (pressed: boolean, label: string, value: boolean, explain: string, full = label): JSX.Element => (
+    <button
+      type="button"
+      aria-label={full}
+      aria-pressed={pressed}
+      aria-describedby={`${id}-${label}`}
+      onClick={() => onChange(value)}
+      className={"rounded-sm px-2 " + (pressed ? "bg-plate text-ink shadow-sm" : "text-ink-soft hover:text-ink")}
+    >
+      <Term explain={explain} nested>{label}</Term>
+      <Explanation id={`${id}-${label}`} texts={[explain]} />
+    </button>
   );
   return (
     <div
@@ -29,8 +32,8 @@ export function SubtractToggle({ name, on, onChange, reserved = false }: Props):
       {...(reserved ? { "aria-hidden": true } : {})}
       className={"flex items-center rounded-sm border border-hair bg-paper text-caption" + (reserved ? " invisible" : "")}
     >
-      {option(!on, "Raw", false)}
-      {option(on, "Minus", true, `Minus ${name}`)}
+      {option(!on, "Raw", false, RAW)}
+      {option(on, "Minus", true, minusExplanation(name), `Minus ${name}`)}
     </div>
   );
 }
