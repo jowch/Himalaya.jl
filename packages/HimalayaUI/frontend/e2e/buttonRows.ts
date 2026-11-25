@@ -1,37 +1,38 @@
 import { expect, type Page } from "./fixtures";
 
-export interface MismatchedRow {
-  row: string;
-  buttons: { text: string; height: number }[];
+export interface MismatchedPair {
+  left: { text: string; height: number };
+  right: { text: string; height: number };
 }
 
-export async function mismatchedButtonRows(page: Page): Promise<MismatchedRow[]> {
+export async function mismatchedButtonRows(page: Page): Promise<MismatchedPair[]> {
   return page.evaluate(() => {
+    const MAX_GAP_PX = 24;
+    const SAME_LINE_PX = 6;
     const visible = (el: Element): boolean => {
       const r = el.getBoundingClientRect();
       const s = getComputedStyle(el);
       return r.width > 0 && r.height > 0 && s.visibility !== "hidden" && s.display !== "none";
     };
-    const describe = (el: Element): string =>
-      (el.getAttribute("data-testid") ?? el.getAttribute("aria-label") ?? el.textContent ?? "").trim().replace(/\s+/g, " ").slice(0, 40);
-    const isBordered = (b: Element): boolean => {
-      const s = getComputedStyle(b);
+    const isBordered = (el: Element): boolean => {
+      const s = getComputedStyle(el);
       return parseFloat(s.borderTopWidth) > 0 && s.borderTopStyle !== "none" && s.borderTopColor !== "rgba(0, 0, 0, 0)";
     };
-    const rows = new Map<Element, Element[]>();
-    for (const b of Array.from(document.querySelectorAll("button"))) {
-      if (!visible(b) || !isBordered(b) || !b.parentElement) continue;
-      const row = b.parentElement;
-      if (!getComputedStyle(row).display.includes("flex")) continue;
-      rows.set(row, [...(rows.get(row) ?? []), b]);
-    }
-    const out: { row: string; buttons: { text: string; height: number }[] }[] = [];
-    for (const [row, buttons] of rows) {
-      if (buttons.length < 2) continue;
-      const sameLine = buttons.filter((b) => Math.abs(b.getBoundingClientRect().top - buttons[0]!.getBoundingClientRect().top) < 12);
-      const heights = sameLine.map((b) => Math.round(b.getBoundingClientRect().height * 4) / 4);
-      if (sameLine.length >= 2 && new Set(heights).size > 1) {
-        out.push({ row: describe(row), buttons: sameLine.map((b, i) => ({ text: describe(b), height: heights[i]! })) });
+    const describe = (el: Element): string =>
+      (el.getAttribute("aria-label") ?? el.textContent ?? "").trim().replace(/\s+/g, " ").slice(0, 40);
+    const quarterPx = (n: number): number => Math.round(n * 4) / 4;
+    const boxes = Array.from(document.querySelectorAll("button"))
+      .filter((b) => visible(b) && isBordered(b))
+      .map((b) => ({ el: b, r: b.getBoundingClientRect() }))
+      .sort((a, b) => a.r.left - b.r.left);
+    const out: { left: { text: string; height: number }; right: { text: string; height: number } }[] = [];
+    for (const [i, a] of boxes.entries()) {
+      for (const b of boxes.slice(i + 1)) {
+        const gap = b.r.left - a.r.right;
+        const sameLine = Math.abs(a.r.top + a.r.height / 2 - (b.r.top + b.r.height / 2)) <= SAME_LINE_PX;
+        if (gap < 0 || gap > MAX_GAP_PX || !sameLine) continue;
+        const [ha, hb] = [quarterPx(a.r.height), quarterPx(b.r.height)];
+        if (ha !== hb) out.push({ left: { text: describe(a.el), height: ha }, right: { text: describe(b.el), height: hb } });
       }
     }
     return out;
