@@ -1,3 +1,4 @@
+import { buttonSizeClass } from "./Button";
 import { Kbd } from "./Kbd";
 import { Tooltip } from "./Tooltip";
 
@@ -16,7 +17,7 @@ export function CustomIndexButton({ open, disabled, onClick }: Props): JSX.Eleme
         disabled={disabled && !open}
         onClick={onClick}
         className={
-          "inline-flex items-center gap-1 rounded-sm border px-2 py-0.5 text-caption disabled:opacity-50 " +
+          buttonSizeClass.sm + " border disabled:opacity-50 " +
           (open ? "border-ink-soft bg-paper-sunk text-ink" : "border-dashed border-hair-strong text-ink-soft hover:text-ink")
         }
       >
