@@ -1,6 +1,6 @@
 export const IMAGE_INFO_TERMS: Readonly<Record<string, string>> = {
   Kind: "One image as measured, or the mean of the selected images. Averaging N images cuts the noise by about √N.",
-  Exposure: "How long the detector counted. Scattered counts grow in proportion, so a longer image reveals weaker peaks, at the cost of more radiation damage to the sample.",
+  Exposure: "How long the detector counted. Scattered counts grow in proportion, so counting longer reveals weaker peaks, at the cost of more radiation damage to the sample.",
   "Flight tube": "The evacuated tube between sample and detector. A longer tube puts the detector farther away, so it reaches lower q at finer resolution but covers a narrower q range.",
   Energy: "The X-ray photon energy. It fixes the wavelength, λ (Å) = 12.398 / E (keV), which turns each scattering angle 2θ into q = 4π sin θ / λ.",
   "I₀": "The ion chamber upstream of the sample, reading the incident beam. I₂ / I₀ is proportional to the sample's transmission.",
@@ -11,7 +11,7 @@ export const SCORE =
   "How well this lattice explains the peaks, from 0 to 1. Low-order reflections are the strongest and appear first, so each found peak counts by 1 / its order. Peaks from one lattice are similarly sharp, so mixed sharpness lowers the score.";
 
 export const CURVATURE =
-  "The average Gaussian curvature of the minimal surface the bilayer follows, from Gauss–Bonnet: 2πχ / (A₀a²). Cubic phases related by the Bonnet transformation share it, so Pn3m, Im3m and Ia3d that coexist in equilibrium show the same κ.";
+  "The average Gaussian curvature of the minimal surface the bilayer midplane follows, from Gauss–Bonnet: 2πχ / (A₀a²). Cubic phases related by the Bonnet transformation share it, so Pn3m, Im3m and Ia3d that coexist in equilibrium should show the same κ.";
 
 export const R_SQUARED =
   "How closely the peaks follow this lattice. Each peak's q against its reflection's ratio should fall on a straight line through the origin, whose slope sets the lattice parameter. 1 is a perfect fit.";
