@@ -1,3 +1,4 @@
+import { Button } from "./Button";
 import { Overlay } from "./Overlay";
 
 interface Props {
@@ -21,13 +22,10 @@ export function RemoveExperimentDialog({ name, samples, removing, error, onRemov
         </p>
         {error !== null && <p role="alert" className="text-error">{error}</p>}
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={onClose} className="rounded-sm border border-hair px-3 py-1 hover:bg-paper-sunk">
-            Cancel
-          </button>
-          <button type="button" onClick={onRemove} disabled={removing}
-            className="rounded-sm border border-error px-3 py-1 text-error hover:bg-paper-sunk disabled:opacity-50">
+          <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+          <Button type="button" variant="outlineDanger" onClick={onRemove} disabled={removing}>
             {removing ? "Removing…" : "Remove experiment"}
-          </button>
+          </Button>
         </div>
       </div>
     </Overlay>

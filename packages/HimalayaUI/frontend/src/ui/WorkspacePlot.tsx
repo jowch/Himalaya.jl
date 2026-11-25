@@ -7,6 +7,7 @@ import { hitTestPeaks, zoomXDomain, PEAK_HIT_PX } from "../plot/interaction";
 import { viewAxes, viewIntensity, viewLabel, type PlotView } from "../workspace/plotView";
 import { fitYDomain, PLOT_MARGINS, ticksFor } from "../workspace/plotScale";
 import { differenceAxis, subtractedSeries } from "../workspace/difference";
+import { Button } from "./Button";
 
 export interface CombLine {
   id: number;
@@ -154,9 +155,9 @@ export function WorkspacePlot({
     return (
       <div className="flex flex-col items-center justify-center gap-2 text-base text-ink-soft" style={{ height }} role="alert" data-testid="workspace-trace-error">
         <span>Couldn't load this sample</span>
-        <button type="button" onClick={onRetry} disabled={retrying} className="rounded-sm border border-hair bg-paper px-2 py-0.5 text-sm text-ink hover:border-hair-strong disabled:text-ink-faint">
+        <Button type="button" variant="outline" size="sm" onClick={onRetry} disabled={retrying}>
           {retrying ? "Retrying…" : "Retry"}
-        </button>
+        </Button>
       </div>
     );
   }
