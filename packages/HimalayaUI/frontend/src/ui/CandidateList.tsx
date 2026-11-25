@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import type { IndexEntry } from "../api";
 import { PhaseChip } from "./PhaseChip";
 import type { CallRow } from "../workspace/bonnetGroups";
@@ -6,6 +6,8 @@ import { formatCurvature, gaussianCurvature } from "../workspace/curvature";
 import { Kbd } from "./Kbd";
 import { Note } from "./Note";
 import { Tooltip } from "./Tooltip";
+import { CURVATURE, NOT_FOUND, SCORE } from "./explanations";
+import { Explanation, Term } from "./Term";
 
 interface Props {
   rows: readonly CallRow[];
@@ -20,7 +22,6 @@ interface Props {
 }
 
 const NONE: ReadonlySet<number> = new Set();
-const NOT_FOUND = "Not found in the selected images. The call stays, with lines drawn from its own lattice.";
 
 const ROW = "grid w-full items-center rounded-sm border px-2 text-left text-base disabled:opacity-50 ";
 const ROW_LOOK = "border-transparent hover:bg-ink/6";
@@ -78,12 +79,16 @@ function Key({ n, pressed }: { n: number; pressed: boolean | "mixed" }): JSX.Ele
 }
 
 function Rows({ rows, assigned, unsupported, disabled, onToggle, onToggleGroup, onHover }: Omit<Props, "formFactor" | "onFormFactor" | "unsupported"> & { unsupported: ReadonlySet<number> }): JSX.Element {
+  const base = useId();
   let n = 0;
   const candidateRow = (c: IndexEntry, inGroup: boolean) => {
     const on = assigned.has(c.id);
     const missing = unsupported.has(c.id);
     const key = ++n;
     const lattice = c.lattice_d !== null ? `${c.lattice_d.toFixed(1)} Å` : "";
+    const score = missing || c.kind === "speculative" ? null : c.score;
+    const why = missing ? NOT_FOUND : score !== null ? SCORE : undefined;
+    const whyId = `${base}-${c.id}`;
     return (
       <li key={c.id} className={inGroup ? "pl-2" : undefined}>
         <button
@@ -95,6 +100,7 @@ function Rows({ rows, assigned, unsupported, disabled, onToggle, onToggleGroup, 
           onMouseMove={() => onHover([c.id])}
           onFocus={() => onHover([c.id])}
           data-unsupported={missing ? "" : undefined}
+          {...(why ? { "aria-describedby": whyId } : {})}
           className={ROW + "grid-cols-[auto_auto_1fr_auto] py-[5px] " + (inGroup ? "gap-1 " : "gap-1.5 ") + ROW_LOOK}
         >
           <Key n={key} pressed={on} />
@@ -102,13 +108,14 @@ function Rows({ rows, assigned, unsupported, disabled, onToggle, onToggleGroup, 
           <Tooltip content={lattice} overflowOnly>
             <span className="min-w-0 truncate whitespace-nowrap text-ink-soft">{lattice}</span>
           </Tooltip>
-          {missing ? (
-            <Tooltip content={NOT_FOUND}>
-              <span className="text-right text-ink-faint">Not found</span>
-            </Tooltip>
-          ) : (
-            <span className="text-right text-ink-faint">{c.kind === "speculative" ? "Custom" : c.score !== null ? c.score.toFixed(2) : ""}</span>
-          )}
+          <span className="text-right text-ink-faint">
+            {missing ? (
+              <Term explain={NOT_FOUND} nested>Not found</Term>
+            ) : score !== null ? (
+              <Term explain={SCORE} nested>{score.toFixed(2)}</Term>
+            ) : c.kind === "speculative" ? "Custom" : ""}
+          </span>
+          {why && <Explanation id={whyId} texts={[why]} />}
         </button>
       </li>
     );
@@ -134,14 +141,16 @@ function Rows({ rows, assigned, unsupported, disabled, onToggle, onToggleGroup, 
               onMouseMove={() => onHover(ids)}
               onFocus={() => onHover(ids)}
               data-testid="workspace-bonnet-group"
+              {...(shared !== null ? { "aria-describedby": `${base}-group-${ids.join("-")}` } : {})}
               className={ROW + "grid-cols-[auto_1fr_auto] gap-1.5 py-[5px] " + ROW_LOOK}
             >
               <Key n={key} pressed={pressed} />
               <span className="min-w-0 truncate whitespace-nowrap">
                 Bonnet group
-                {shared !== null && <span className="ml-1.5 text-xs text-ink-soft" data-testid="workspace-bonnet-curvature">{formatCurvature(shared)}</span>}
+                {shared !== null && <Term explain={CURVATURE} nested className="ml-1.5 text-xs text-ink-soft"><span data-testid="workspace-bonnet-curvature">{formatCurvature(shared)}</span></Term>}
               </span>
               <span className="text-right text-ink-faint">{row.peaks} peaks</span>
+              {shared !== null && <Explanation id={`${base}-group-${ids.join("-")}`} texts={[CURVATURE]} />}
             </button>
             <ol className="mt-1 flex flex-col gap-1">{row.members.map((m) => candidateRow(m, true))}</ol>
           </li>

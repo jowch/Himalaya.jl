@@ -4,6 +4,8 @@ import { PlotFrame } from "../plot/PlotFrame";
 import { makeAxis } from "../plot/projection";
 import type { IndexFit } from "../workspace/indexing";
 import { formatCurvature, gaussianCurvature } from "../workspace/curvature";
+import { CURVATURE, R_SQUARED } from "./explanations";
+import { Term } from "./Term";
 
 export interface IndexSeries {
   key: string;
@@ -83,8 +85,8 @@ export function IndexingPlot({ series }: { series: readonly IndexSeries[] }): JS
             <p key={s.key} className="m-0 truncate" data-testid="workspace-indexing-fit">
               <span className="mr-1" style={{ color: s.color }}>{s.phase}</span>{" "}
               {s.lattice !== null && <span className="mr-1">{`${s.param ?? "a"} = ${s.lattice.toFixed(1)} Å`}</span>}{" "}
-              {kappa !== null && <span className="mr-1" data-testid="workspace-indexing-curvature">{formatCurvature(kappa)}</span>}{" "}
-              {s.r2 !== null && <span>{`R² ${s.r2.toFixed(4)}`}</span>}
+              {kappa !== null && <Term explain={CURVATURE} className="mr-1"><span data-testid="workspace-indexing-curvature">{formatCurvature(kappa)}</span></Term>}{" "}
+              {s.r2 !== null && <Term explain={R_SQUARED}>{`R² ${s.r2.toFixed(4)}`}</Term>}
             </p>
           );
         })}

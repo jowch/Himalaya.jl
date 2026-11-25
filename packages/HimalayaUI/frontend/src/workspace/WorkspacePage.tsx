@@ -113,6 +113,7 @@ import { CandidateList } from "../ui/CandidateList";
 import { callChoices, cycleChoice, inCallChoices } from "./callTab";
 import { callRows, keyedRows } from "./bonnetGroups";
 import { MetaList } from "../ui/MetaList";
+import { IMAGE_INFO_TERMS } from "../ui/explanations";
 import { SampleHeading, Section } from "../ui/Section";
 import { claimedPeaks } from "./claimedPeaks";
 import { callCombs } from "./callCombs";
@@ -1848,7 +1849,7 @@ export function WorkspacePage(): JSX.Element {
               className={shortWindow && exposureOpen ? "min-h-0 flex-1 overflow-y-auto" : exposureOpen ? "min-h-0 shrink overflow-y-auto" : "shrink-0"}
               collapsible={shortWindow && modules.calls ? { open: exposureOpen, onOpen: draft === null ? () => setOpenPanel("exposure") : undefined } : undefined}
             >
-              <MetaList rows={exposureRows(tile, tileOwner)} />
+              <MetaList rows={exposureRows(tile, tileOwner)} explain={IMAGE_INFO_TERMS} />
             </Section>
             {shortWindow && indexingSection}
           </>
