@@ -93,4 +93,20 @@ describe("Term inside a control", () => {
     );
     expect(screen.getByRole("button")).toHaveAccessibleDescription("One. Two.");
   });
+
+  it("opens on keyboard focus of the control it sits in, and closes on blur", () => {
+    render(
+      <button type="button">
+        Pn3m <Term explain={EXPLAIN} nested>0.87</Term>
+      </button>,
+    );
+    act(() => {
+      screen.getByRole("button").focus();
+    });
+    expect(screen.getByRole("tooltip")).toHaveTextContent(EXPLAIN);
+    act(() => {
+      screen.getByRole("button").blur();
+    });
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
 });

@@ -28,7 +28,7 @@ export function Term({ explain, children, className, nested = false }: TermProps
   const id = useId();
   if (nested) {
     return (
-      <Tooltip content={explain} describes={false}>
+      <Tooltip content={explain} describes={false} focusWithin>
         <span className={withClass(MARK, className)}>{children}</span>
       </Tooltip>
     );

@@ -18,6 +18,7 @@ interface TooltipProps {
   side?: Side;
   overflowOnly?: boolean;
   describes?: boolean;
+  focusWithin?: boolean;
 }
 
 type TriggerProps = {
@@ -87,7 +88,7 @@ export function placeTooltip(
   return { top: Math.max(MARGIN, top), left, side };
 }
 
-export function Tooltip({ content, children, shortcut, side = "top", overflowOnly = false, describes = true }: TooltipProps): JSX.Element {
+export function Tooltip({ content, children, shortcut, side = "top", overflowOnly = false, describes = true, focusWithin = false }: TooltipProps): JSX.Element {
   const id = useId();
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number; side: Side } | null>(null);
@@ -151,6 +152,27 @@ export function Tooltip({ content, children, shortcut, side = "top", overflowOnl
     claim();
     timer.current = setTimeout(show, TOOLTIP_OPEN_DELAY_MS);
   };
+
+  useEffect(() => {
+    if (!focusWithin) return;
+    const control = triggerRef.current?.parentElement?.closest<HTMLElement>("button, a, [tabindex]");
+    if (!control) return;
+    const onFocus = (): void => {
+      if (!focusVisible(control)) return;
+      clearTimer();
+      show();
+    };
+    const onBlur = (): void => {
+      suppressed.current = null;
+      close();
+    };
+    control.addEventListener("focus", onFocus);
+    control.addEventListener("blur", onBlur);
+    return () => {
+      control.removeEventListener("focus", onFocus);
+      control.removeEventListener("blur", onBlur);
+    };
+  }, [focusWithin, show, close]);
 
   useEffect(() => {
     if (empty) close();

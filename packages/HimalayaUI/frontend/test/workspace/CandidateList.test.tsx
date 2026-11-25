@@ -183,6 +183,17 @@ describe("CandidateList explained terms", () => {
     expect(row).toHaveAccessibleDescription(SCORE);
   });
 
+  it("shows the score's explanation when the keyboard reaches its row", async () => {
+    list([one(candidate(13))]);
+    await userEvent.tab();
+    expect(within(screen.getByTestId("workspace-candidates")).getByRole("button")).toHaveFocus();
+    expect(screen.getByRole("tooltip")).toHaveTextContent(SCORE);
+  });
+
+  it("says Not found means no lattice of the phase fitted enough peaks to be offered", () => {
+    expect(NOT_FOUND).toBe("No lattice of this phase fits enough of the peaks in the selected images to be offered. The call belongs to the sample, so it stays, with lines drawn from the lattice it was called on.");
+  });
+
   it("explains Not found on the row", () => {
     const c = candidate(1);
     list([one(c)], new Set([c.id]));
